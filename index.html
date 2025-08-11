@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Maison Jiya — Montres</title>
+  <meta name="description" content="Boutique en ligne de montres élégantes — Homme & Femme — Panier et commande rapide." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="brand">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M3 12c3 0 3-4 6-4s3 4 6 4 3-4 6-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <span>Maison Jiya</span>
+    </div>
+    <nav class="nav">
+      <a href="#accueil">Accueil</a>
+      <a href="#homme">Homme</a>
+      <a href="#femme">Femme</a>
+      <a href="#best">Best-sellers</a>
+      <a href="#contact">Contact</a>
+    </nav>
+    <div class="actions">
+      <div class="search">
+        <input id="searchInput" type="search" placeholder="Rechercher une montre..." />
+        <button id="searchBtn" aria-label="Rechercher">
+          <svg viewBox="0 0 24 24" width="20" height="20"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M20 20l-3.2-3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <button id="cartBtn" class="cart-btn" aria-label="Ouvrir le panier">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M3 5h2l2 12h10l2-8H7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span id="cartCount" class="cart-count">0</span>
+      </button>
+    </div>
+  </header>
+
+  <aside id="miniCart" class="mini-cart" aria-hidden="true">
+    <div class="mini-cart__header">
+      <h3>Votre panier</h3>
+      <button id="closeMiniCart" class="icon-btn" aria-label="Fermer le panier">✕</button>
+    </div>
+    <div id="miniCartItems" class="mini-cart__items"></div>
+    <div class="mini-cart__footer">
+      <div class="row">
+        <span>Total</span>
+        <strong id="miniCartTotal">0 DH</strong>
+      </div>
+      <button id="checkoutBtn" class="btn">Commander sur WhatsApp</button>
+    </div>
+  </aside>
+  <div id="overlay" class="overlay" aria-hidden="true"></div>
+
+  <main id="accueil" class="container">
+    <section class="hero">
+      <div class="hero__text">
+        <h1>Montres inspirées, style affirmé.</h1>
+        <p>Élégance, qualité et prix accessibles. Découvrez nos collections Homme & Femme.</p>
+        <div class="hero__cta">
+          <a href="#homme" class="btn btn-outline">Collection Homme</a>
+          <a href="#femme" class="btn">Collection Femme</a>
+        </div>
+      </div>
+      <div class="hero__banner" role="img" aria-label="Bannière élégante"></div>
+    </section>
+
+    <section id="best" class="section">
+      <div class="section__head">
+        <h2>Best-sellers</h2>
+        <p>Les modèles les plus demandés du moment.</p>
+      </div>
+      <div id="bestGrid" class="grid"></div>
+    </section>
+
+    <section id="homme" class="section">
+      <div class="section__head">
+        <h2>Collection Homme</h2>
+        <div class="filters">
+          <select id="hommeSort" aria-label="Trier les montres homme">
+            <option value="featured">Trier : Sélection</option>
+            <option value="price-asc">Prix : croissant</option>
+            <option value="price-desc">Prix : décroissant</option>
+          </select>
+        </div>
+      </div>
+      <div id="hommeGrid" class="grid"></div>
+    </section>
+
+    <section id="femme" class="section">
+      <div class="section__head">
+        <h2>Collection Femme</h2>
+        <div class="filters">
+          <select id="femmeSort" aria-label="Trier les montres femme">
+            <option value="featured">Trier : Sélection</option>
+            <option value="price-asc">Prix : croissant</option>
+            <option value="price-desc">Prix : décroissant</option>
+          </select>
+        </div>
+      </div>
+      <div id="femmeGrid" class="grid"></div>
+    </section>
+
+    <section id="contact" class="section contact">
+      <div class="section__head">
+        <h2>Contact</h2>
+        <p>Une question ? Écrivez-nous, on répond vite.</p>
+      </div>
+      <form id="contactForm" class="card" onsubmit="event.preventDefault(); alert('Merci ! Votre message est bien envoyé.'); this.reset();">
+        <div class="row-2">
+          <label>Nom<input required name="name" type="text" placeholder="Votre nom"></label>
+          <label>Email<input required name="email" type="email" placeholder="email@exemple.com"></label>
+        </div>
+        <label>Message<textarea required name="message" placeholder="Votre message..."></textarea></label>
+        <button class="btn" type="submit">Envoyer</button>
+      </form>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer__top">
+      <div>
+        <h3>Maison Jiya</h3>
+        <p>L’élégance inspirée, à votre prix.</p>
+      </div>
+      <div>
+        <h4>Liens</h4>
+        <ul>
+          <li><a href="#accueil">Accueil</a></li>
+          <li><a href="#best">Best-sellers</a></li>
+          <li><a href="#homme">Homme</a></li>
+          <li><a href="#femme">Femme</a></li>
+          <li><a href="#contact">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Suivez-nous</h4>
+        <p>
+          <a href="#" aria-label="Instagram">Instagram</a> ·
+          <a href="#" aria-label="TikTok">TikTok</a> ·
+          <a href="#" aria-label="Facebook">Facebook</a>
+        </p>
+      </div>
+    </div>
+    <div class="footer__bottom">
+      <small>© <span id="year"></span> Maison Jiya. Tous droits réservés.</small>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
