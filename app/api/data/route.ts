@@ -1,6 +1,7 @@
-import { desc, eq, sql } from "drizzle-orm";
-import { getDb } from "../../../db";
-import { adPerformance, capitalLedger, customers, orders, products, purchases, settings, stockMovements, users } from "../../../db/schema";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { getDb, getRawDb } from "../../../db";
+import { createDailyBackup, purgeExpiredTrash, restoreDailyBackup } from "../../../db/backups";
+import { adPerformance, auditLogs, capitalLedger, customers, dailyBackups, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
 type ActionPayload = Record<string, unknown> & { action?: string };
@@ -77,6 +78,78 @@ function parseCarrierNames(rawValue: string | undefined, legacyValue = "") {
   return result;
 }
 
+async function triggerGoogleSheetsSync() {
+  try {
+    const db = await getDb();
+    const [setting] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, "security_backup_webhook_url")).limit(1);
+    if (!setting?.value) return;
+    const parsedUrl = new URL(setting.value);
+    if (
+      parsedUrl.protocol !== "https:"
+      || parsedUrl.hostname !== "script.google.com"
+      || !/^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(parsedUrl.pathname)
+    ) return;
+    await fetch(parsedUrl.toString(), {
+      method: "POST",
+      redirect: "manual",
+      signal: AbortSignal.timeout(3500),
+      headers: { "user-agent": "Maison-Jiya-Backup/1.0" },
+    });
+  } catch (error) {
+    console.error("Maison Jiya immediate Google Sheets sync failed", error instanceof Error ? error.message : String(error));
+  }
+}
+
+const auditLabels: Record<string, { action: string; entityType: string }> = {
+  createMember: { action: "Ajout", entityType: "Partenaire" },
+  resetMemberPassword: { action: "Mot de passe remplacé", entityType: "Partenaire" },
+  updateMember: { action: "Modification", entityType: "Partenaire" },
+  addOrder: { action: "Ajout", entityType: "Commande" },
+  updateOrder: { action: "Modification", entityType: "Commande" },
+  deleteOrder: { action: "Mise à la corbeille", entityType: "Commande" },
+  restoreOrder: { action: "Restauration", entityType: "Commande" },
+  updateCustomer: { action: "Modification", entityType: "Client" },
+  deleteCustomer: { action: "Suppression", entityType: "Client" },
+  addPurchase: { action: "Ajout", entityType: "Achat" },
+  updatePurchase: { action: "Modification", entityType: "Achat" },
+  deletePurchase: { action: "Suppression", entityType: "Achat" },
+  addAd: { action: "Ajout", entityType: "Publicité" },
+  updateAd: { action: "Modification", entityType: "Publicité" },
+  deleteAd: { action: "Suppression", entityType: "Publicité" },
+  addCapital: { action: "Ajout", entityType: "Capital" },
+  updateCapital: { action: "Modification", entityType: "Capital" },
+  deleteCapital: { action: "Suppression", entityType: "Capital" },
+  addProduct: { action: "Ajout", entityType: "Produit" },
+  updateProduct: { action: "Modification", entityType: "Produit" },
+  deleteProduct: { action: "Suppression", entityType: "Produit" },
+  addStockMovement: { action: "Ajout", entityType: "Stock" },
+  updateStockMovement: { action: "Modification", entityType: "Stock" },
+  deleteStockMovement: { action: "Suppression", entityType: "Stock" },
+  updateAccountSettings: { action: "Modification", entityType: "Compte" },
+  updateBackupToken: { action: "Clé créée", entityType: "Sauvegarde" },
+  revokeBackupToken: { action: "Désactivation", entityType: "Sauvegarde" },
+  updateBackupWebhook: { action: "Connexion", entityType: "Google Sheets" },
+  createBackupNow: { action: "Création", entityType: "Sauvegarde" },
+  restoreBackup: { action: "Restauration", entityType: "Sauvegarde" },
+  updateCarriers: { action: "Modification", entityType: "Transporteurs" },
+  updateSetting: { action: "Modification", entityType: "Paramètre" },
+};
+
+async function writeAudit(user: AppUser, actionName: string, entityId: string | null, entityLabel: string) {
+  const descriptor = auditLabels[actionName];
+  if (!descriptor) return;
+  const db = await getDb();
+  await db.insert(auditLogs).values({
+    userId: user.id,
+    username: user.username,
+    displayName: user.displayName,
+    action: descriptor.action,
+    entityType: descriptor.entityType,
+    entityId,
+    entityLabel,
+  });
+}
+
 async function seedIfNeeded() {
   const db = await getDb();
   await db.insert(settings).values([
@@ -90,12 +163,40 @@ async function seedIfNeeded() {
     { key: "theme", value: "mauve-froid" },
     { key: "account_name", value: "Maison Jiya" },
     { key: "backup_sheet_url", value: "https://docs.google.com/spreadsheets/d/1hQIwOKBBhhZIQN6AsmVwUCH_7T-WE8GlsCfrmb2H7Us/edit" },
-    { key: "backup_webhook_url", value: "" },
+    { key: "security_backup_webhook_url", value: "" },
   ]).onConflictDoNothing();
+
+  const [legacyWebhook, secureWebhook] = await Promise.all([
+    db.select({ value: settings.value }).from(settings).where(eq(settings.key, "backup_webhook_url")).limit(1),
+    db.select({ value: settings.value }).from(settings).where(eq(settings.key, "security_backup_webhook_url")).limit(1),
+  ]);
+  if (legacyWebhook[0]?.value && !secureWebhook[0]?.value) {
+    await db.insert(settings).values({ key: "security_backup_webhook_url", value: legacyWebhook[0].value }).onConflictDoUpdate({
+      target: settings.key,
+      set: { value: legacyWebhook[0].value, updatedAt: new Date().toISOString() },
+    });
+  }
+  if (legacyWebhook[0]) await db.delete(settings).where(eq(settings.key, "backup_webhook_url"));
+
+  const carrierSettings = await db.select({ key: settings.key, value: settings.value }).from(settings);
+  const configuredCarriers = parseCarrierNames(
+    carrierSettings.find((setting) => setting.key === "carrier_names")?.value,
+    carrierSettings.find((setting) => setting.key === "carrier_name")?.value,
+  );
+  if (!configuredCarriers.length) {
+    const carrierNames = ["ForceLog", "Sendit"];
+    const updatedAt = new Date().toISOString();
+    await db.batch([
+      db.insert(settings).values({ key: "carrier_names", value: JSON.stringify(carrierNames) }).onConflictDoUpdate({ target: settings.key, set: { value: JSON.stringify(carrierNames), updatedAt } }),
+      db.insert(settings).values({ key: "carrier_name", value: carrierNames[0] }).onConflictDoUpdate({ target: settings.key, set: { value: carrierNames[0], updatedAt } }),
+    ]);
+  }
 
   await db.update(orders).set({ status: "En attente" }).where(eq(orders.status, "Nouvelle"));
   await db.update(orders).set({ status: "Retour" }).where(eq(orders.status, "Retournée"));
   await db.update(orders).set({ status: "Annulée" }).where(eq(orders.status, "Refusée"));
+
+  await purgeExpiredTrash(await getRawDb());
 
 }
 
@@ -125,9 +226,14 @@ function hasValidOrigin(request: Request) {
 
 async function snapshot(access: AccessInfo) {
   await seedIfNeeded();
+  await createDailyBackup(await getRawDb());
   const db = await getDb();
-  const [orderRows, customerRows, purchaseRows, adRows, capitalRows, productRows, movementRows, settingRows, memberRows] = await Promise.all([
-    db.select({ id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, customerName: customers.name, phone: customers.phone, city: orders.city, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, source: orders.source, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, paidAt: orders.paidAt, createdAt: orders.createdAt, updatedAt: orders.updatedAt }).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).orderBy(desc(orders.createdAt)),
+  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, customerName: customers.name, phone: customers.phone, city: orders.city, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, source: orders.source, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
+  const [orderRows, trashRows, customerRows, purchaseRows, adRows, capitalRows, productRows, movementRows, settingRows, memberRows, historyRows, auditRows, backupRows] = await Promise.all([
+    db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
+    access.isOwner
+      ? db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNotNull(orders.deletedAt)).orderBy(desc(orders.deletedAt))
+      : Promise.resolve([]),
     db.select().from(customers).orderBy(desc(customers.createdAt)),
     db.select().from(purchases).orderBy(desc(purchases.createdAt)),
     db.select().from(adPerformance).orderBy(desc(adPerformance.performanceDate)),
@@ -138,11 +244,18 @@ async function snapshot(access: AccessInfo) {
     access.isOwner
       ? db.select({ id: users.id, username: users.username, displayName: users.displayName, role: users.role, isActive: users.isActive, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt))
       : Promise.resolve([]),
+    db.select().from(orderStatusHistory).orderBy(desc(orderStatusHistory.changedAt)).limit(1000),
+    access.isOwner ? db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(200) : Promise.resolve([]),
+    access.isOwner
+      ? db.select({ id: dailyBackups.id, backupDate: dailyBackups.backupDate, reason: dailyBackups.reason, recordCount: dailyBackups.recordCount, createdAt: dailyBackups.createdAt }).from(dailyBackups).orderBy(desc(dailyBackups.createdAt)).limit(90)
+      : Promise.resolve([]),
   ]);
   const publicSettings = settingRows.filter((row) => !row.key.startsWith("security_"));
   const backupConfigured = settingRows.some((row) => row.key === "security_backup_token_hash" && row.value.length === 64);
+  const secureWebhook = settingRows.find((row) => row.key === "security_backup_webhook_url")?.value || "";
   return {
     orders: orderRows,
+    trash: trashRows,
     customers: customerRows,
     purchases: purchaseRows,
     ads: adRows,
@@ -150,9 +263,14 @@ async function snapshot(access: AccessInfo) {
     products: productRows,
     stockMovements: movementRows,
     members: memberRows,
+    orderStatusHistory: historyRows,
+    auditLogs: auditRows,
+    backups: backupRows,
     settings: {
       ...Object.fromEntries(publicSettings.map((row) => [row.key, row.value])),
       backup_configured: backupConfigured ? "true" : "false",
+      backup_webhook_configured: secureWebhook ? "true" : "false",
+      ...(access.isOwner ? { backup_webhook_url: secureWebhook } : {}),
     },
     access,
   };
@@ -187,6 +305,9 @@ export async function POST(request: Request) {
     if (!access.canEdit) {
       return Response.json({ error: "Votre compte est en lecture seule." }, { status: 403 });
     }
+
+    let auditEntityId = textValue(payload.id) || textValue(payload.memberId) || null;
+    let auditEntityLabel = "";
 
     if (payload.action === "createMember") {
       if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut créer un partenaire." }, { status: 403 });
@@ -233,28 +354,48 @@ export async function POST(request: Request) {
       const selectedCarrier = requestedCarrier && (!carrierNames.length || carrierNames.includes(requestedCarrier))
         ? requestedCarrier
         : carrierNames[0] || "Non affecté";
-      await db.insert(orders).values({
+      const [createdOrder] = await db.insert(orders).values({
         orderRef: `MJ-${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`, customerId: customer.id, city, products: textValue(payload.products), quantity: numberValue(payload.quantity, 1), saleAmount: numberValue(payload.saleAmount), productCost: numberValue(payload.productCost), shippingCost: numberValue(payload.shippingCost), adCost: numberValue(payload.adCost), fees: numberValue(payload.fees), source: orderSource(payload.source), status: orderStatus(payload.status), paymentStatus: "À encaisser", carrier: selectedCarrier, trackingNumber: textValue(payload.trackingNumber), updatedAt: new Date().toISOString(),
-      });
+      }).returning();
+      if (!createdOrder) throw new Error("La commande n’a pas été créée.");
+      await db.insert(orderStatusHistory).values({ orderId: createdOrder.id, fromStatus: null, toStatus: createdOrder.status, changedByUserId: user.id, changedByName: user.displayName });
+      auditEntityId = String(createdOrder.id);
+      auditEntityLabel = createdOrder.orderRef;
     } else if (payload.action === "updateOrder") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
-      const [existingOrder] = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
+      const [existingOrder] = await db.select().from(orders).where(and(eq(orders.id, id), isNull(orders.deletedAt))).limit(1);
       if (!existingOrder) return Response.json({ error: "Commande introuvable." }, { status: 404 });
       const nextPaymentStatus = paymentStatus(payload.paymentStatus, existingOrder.paymentStatus);
+      const nextStatus = orderStatus(payload.status, existingOrder.status);
       const now = new Date().toISOString();
       const paidAt = nextPaymentStatus === "Encaissé"
         ? existingOrder.paymentStatus === "Encaissé" && existingOrder.paidAt ? existingOrder.paidAt : now
         : null;
-      await db.update(orders).set({ status: orderStatus(payload.status, existingOrder.status), paymentStatus: nextPaymentStatus, source: orderSource(payload.source, existingOrder.source), shippingCost: numberValue(payload.shippingCost), carrier: textValue(payload.carrier, "Non affecté"), trackingNumber: textValue(payload.trackingNumber), returnCost: numberValue(payload.returnCost), paidAt, updatedAt: now }).where(eq(orders.id, id));
+      const updateQuery = db.update(orders).set({ status: nextStatus, paymentStatus: nextPaymentStatus, source: orderSource(payload.source, existingOrder.source), shippingCost: numberValue(payload.shippingCost), carrier: textValue(payload.carrier, "Non affecté"), trackingNumber: textValue(payload.trackingNumber), returnCost: numberValue(payload.returnCost), paidAt, updatedAt: now }).where(and(eq(orders.id, id), isNull(orders.deletedAt)));
+      if (nextStatus !== existingOrder.status) {
+        await db.batch([
+          updateQuery,
+          db.insert(orderStatusHistory).values({ orderId: id, fromStatus: existingOrder.status, toStatus: nextStatus, changedByUserId: user.id, changedByName: user.displayName, changedAt: now }),
+        ]);
+      } else {
+        await updateQuery;
+      }
+      auditEntityLabel = existingOrder.orderRef;
     } else if (payload.action === "deleteOrder") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
-      const [existingOrder] = await db.select({ id: orders.id, customerId: orders.customerId }).from(orders).where(eq(orders.id, id)).limit(1);
+      const [existingOrder] = await db.select({ id: orders.id, orderRef: orders.orderRef }).from(orders).where(and(eq(orders.id, id), isNull(orders.deletedAt))).limit(1);
       if (!existingOrder) return Response.json({ error: "Commande introuvable." }, { status: 404 });
-      await db.delete(orders).where(eq(orders.id, id));
-      const [remainingCustomerOrder] = await db.select({ id: orders.id }).from(orders).where(eq(orders.customerId, existingOrder.customerId)).limit(1);
-      if (!remainingCustomerOrder) await db.delete(customers).where(eq(customers.id, existingOrder.customerId));
+      await db.update(orders).set({ deletedAt: new Date().toISOString(), deletedByUserId: user.id, updatedAt: new Date().toISOString() }).where(eq(orders.id, id));
+      auditEntityLabel = existingOrder.orderRef;
+    } else if (payload.action === "restoreOrder") {
+      const id = numberValue(payload.id);
+      if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
+      const [existingOrder] = await db.select({ id: orders.id, orderRef: orders.orderRef }).from(orders).where(and(eq(orders.id, id), isNotNull(orders.deletedAt))).limit(1);
+      if (!existingOrder) return Response.json({ error: "Commande absente de la corbeille." }, { status: 404 });
+      await db.update(orders).set({ deletedAt: null, deletedByUserId: null, updatedAt: new Date().toISOString() }).where(eq(orders.id, id));
+      auditEntityLabel = existingOrder.orderRef;
     } else if (payload.action === "updateCustomer") {
       const id = numberValue(payload.id);
       const name = textValue(payload.name);
@@ -460,10 +601,25 @@ export async function POST(request: Request) {
         return Response.json({ error: "Collez l’adresse Apps Script complète qui se termine par /exec." }, { status: 400 });
       }
       const updatedAt = new Date().toISOString();
-      await db.insert(settings).values({ key: "backup_webhook_url", value: webhookUrl }).onConflictDoUpdate({
+      await db.insert(settings).values({ key: "security_backup_webhook_url", value: webhookUrl }).onConflictDoUpdate({
         target: settings.key,
         set: { value: webhookUrl, updatedAt },
       });
+      auditEntityLabel = "Synchronisation instantanée";
+    } else if (payload.action === "createBackupNow") {
+      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut créer une sauvegarde complète." }, { status: 403 });
+      await createDailyBackup(await getRawDb(), "Manuelle", true);
+      auditEntityLabel = "Sauvegarde manuelle";
+    } else if (payload.action === "restoreBackup") {
+      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut restaurer une sauvegarde." }, { status: 403 });
+      const backupId = numberValue(payload.backupId);
+      if (!backupId) return Response.json({ error: "Sauvegarde invalide." }, { status: 400 });
+      const [backup] = await db.select({ id: dailyBackups.id, backupDate: dailyBackups.backupDate }).from(dailyBackups).where(eq(dailyBackups.id, backupId)).limit(1);
+      if (!backup) return Response.json({ error: "Sauvegarde introuvable." }, { status: 404 });
+      await createDailyBackup(await getRawDb(), "Avant restauration", true);
+      await restoreDailyBackup(await getRawDb(), backupId);
+      auditEntityId = String(backupId);
+      auditEntityLabel = backup.backupDate;
     } else if (payload.action === "updateCarriers") {
       if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut gérer les agences." }, { status: 403 });
       let requestedCarriers: unknown;
@@ -528,6 +684,24 @@ export async function POST(request: Request) {
       }
     } else {
       return Response.json({ error: "Action inconnue." }, { status: 400 });
+    }
+
+    if (!auditEntityLabel) {
+      auditEntityLabel = textValue(payload.orderRef)
+        || textValue(payload.customerName)
+        || textValue(payload.name)
+        || textValue(payload.item)
+        || textValue(payload.campaign)
+        || textValue(payload.label)
+        || textValue(payload.productCode)
+        || textValue(payload.displayName)
+        || textValue(payload.carrierName)
+        || textValue(payload.key);
+    }
+    await writeAudit(user, textValue(payload.action), auditEntityId, auditEntityLabel);
+
+    if (!["updateBackupWebhook", "updateBackupToken", "revokeBackupToken", "createBackupNow", "restoreBackup"].includes(textValue(payload.action))) {
+      await triggerGoogleSheetsSync();
     }
 
     const refreshedUser = await getAuthenticatedUser(request);

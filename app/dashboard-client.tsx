@@ -24,6 +24,8 @@ type Order = {
   carrier: string;
   trackingNumber: string;
   paidAt: string | null;
+  deletedAt: string | null;
+  deletedByUserId: number | null;
   createdAt: string;
   updatedAt: string | null;
 };
@@ -90,8 +92,36 @@ type Member = {
   isActive: boolean;
   createdAt: string;
 };
+type OrderStatusHistory = {
+  id: number;
+  orderId: number;
+  fromStatus: string | null;
+  toStatus: string;
+  changedByUserId: number | null;
+  changedByName: string;
+  changedAt: string;
+};
+type AuditLog = {
+  id: number;
+  userId: number | null;
+  username: string;
+  displayName: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  entityLabel: string;
+  createdAt: string;
+};
+type DailyBackup = {
+  id: number;
+  backupDate: string;
+  reason: string;
+  recordCount: number;
+  createdAt: string;
+};
 type Data = {
   orders: Order[];
+  trash: Order[];
   customers: Customer[];
   purchases: Purchase[];
   ads: Ad[];
@@ -99,6 +129,9 @@ type Data = {
   products: Product[];
   stockMovements: StockMovement[];
   members: Member[];
+  orderStatusHistory: OrderStatusHistory[];
+  auditLogs: AuditLog[];
+  backups: DailyBackup[];
   settings: Record<string, string>;
   access: {
     canEdit: boolean;
@@ -130,6 +163,7 @@ type EditableEntity =
 
 const emptyData: Data = {
   orders: [],
+  trash: [],
   customers: [],
   purchases: [],
   ads: [],
@@ -137,6 +171,9 @@ const emptyData: Data = {
   products: [],
   stockMovements: [],
   members: [],
+  orderStatusHistory: [],
+  auditLogs: [],
+  backups: [],
   settings: {},
   access: { canEdit: false, isOwner: false, canClaimOwnership: false, passwordConfigured: true, sessionExpiresAt: null, role: "viewer", username: "", displayName: "" },
 };
@@ -148,8 +185,16 @@ const dateLabel = (value: string) =>
     month: "short",
     year: "numeric",
   }).format(new Date(value));
+const dateTimeLabel = (value: string) =>
+  new Intl.DateTimeFormat("fr-MA", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 
-const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Publicités", "Capital", "Assistant IA", "Paramètres"];
+const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Publicités", "Capital", "Assistant IA", "Corbeille", "Paramètres"];
 const orderStatusOptions = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
 const orderSourceOptions = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Autre"];
 const productCategoryOptions = ["Montres", "Bijoux", "Wallets", "Électronique", "Autre"];
@@ -173,26 +218,6 @@ function createBackupToken() {
   let binary = "";
   bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function triggerGoogleSheetsSync(webhookUrl: string | undefined) {
-  if (!webhookUrl) return;
-  try {
-    const parsedUrl = new URL(webhookUrl);
-    if (
-      parsedUrl.protocol !== "https:"
-      || parsedUrl.hostname !== "script.google.com"
-      || !/^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(parsedUrl.pathname)
-    ) return;
-    void fetch(webhookUrl, {
-      method: "POST",
-      mode: "no-cors",
-      cache: "no-store",
-      keepalive: true,
-    }).catch(() => undefined);
-  } catch {
-    // La synchronisation périodique reste disponible si le webhook est indisponible.
-  }
 }
 
 function parseCarrierNames(settings: Record<string, string>) {
@@ -277,7 +302,6 @@ export default function DashboardClient() {
       throw new Error(message);
     }
     setData(body);
-    triggerGoogleSheetsSync(body.settings.backup_webhook_url);
     setModal(null);
     setSelectedOrder(null);
     setSelectedEntity(null);
@@ -292,7 +316,10 @@ export default function DashboardClient() {
       updateBackupToken: "Clé privée de sauvegarde créée",
       revokeBackupToken: "Sauvegarde Google Sheets désactivée",
       updateBackupWebhook: "Synchronisation instantanée connectée",
-      deleteOrder: "Commande supprimée",
+      createBackupNow: "Sauvegarde complète créée",
+      restoreBackup: "Sauvegarde restaurée avec succès",
+      deleteOrder: "Commande placée dans la corbeille pendant 90 jours",
+      restoreOrder: "Commande restaurée",
       updateProduct: "Produit mis à jour",
       deleteProduct: "Produit et historique de stock supprimés",
       updateStockMovement: "Mouvement de stock mis à jour",
@@ -379,7 +406,7 @@ export default function DashboardClient() {
   async function deleteOrder(order: Order) {
     if (!requireEditAccess()) return;
     const confirmed = window.confirm(
-      `Supprimer définitivement la commande ${order.orderRef} de ${order.customerName} ?\n\nCette action est irréversible.`,
+      `Placer la commande ${order.orderRef} de ${order.customerName} dans la corbeille ?\n\nVous pourrez la restaurer pendant 90 jours.`,
     );
     if (!confirmed) return;
     try {
@@ -534,7 +561,7 @@ export default function DashboardClient() {
         {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} moveStock={openStock} submit={submit} />}
       </section>
       {modal && <EntryModal kind={modal} carrierNames={carrierNames} close={() => setModal(null)} submit={submit} />}
-      {selectedOrder && <OrderModal order={selectedOrder} carrierNames={carrierNames} close={() => setSelectedOrder(null)} submit={submit} />}
+      {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} close={() => setSelectedOrder(null)} submit={submit} />}
       {selectedEntity && <EntityModal selection={selectedEntity} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
     </main>
@@ -689,7 +716,8 @@ function Page({
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
-  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || "https://docs.google.com/spreadsheets/d/1hQIwOKBBhhZIQN6AsmVwUCH_7T-WE8GlsCfrmb2H7Us/edit"} backupWebhookUrl={data.settings.backup_webhook_url || ""} access={data.access} members={data.members} submit={submit} />;
+  if (active === "Corbeille") return <TrashPage orders={data.trash} canRestore={data.access.isOwner} submit={submit} />;
+  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || "https://docs.google.com/spreadsheets/d/1hQIwOKBBhhZIQN6AsmVwUCH_7T-WE8GlsCfrmb2H7Us/edit"} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} submit={submit} />;
   const total = Math.max(1, data.orders.length);
   return (
     <>
@@ -779,7 +807,7 @@ function Page({
   );
 }
 
-function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, access, members, submit }: {
+function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, access, members, auditLogs, backups, submit }: {
   currentTheme: ThemeKey;
   accountName: string;
   accountEmail: string;
@@ -787,8 +815,11 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   backupConfigured: boolean;
   backupSheetUrl: string;
   backupWebhookUrl: string;
+  backupWebhookConfigured: boolean;
   access: Data["access"];
   members: Member[];
+  auditLogs: AuditLog[];
+  backups: DailyBackup[];
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
 }) {
   const [pendingTheme, setPendingTheme] = useState<ThemeKey | null>(null);
@@ -797,6 +828,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   const [savingMember, setSavingMember] = useState(false);
   const [savingBackup, setSavingBackup] = useState(false);
   const [savingWebhook, setSavingWebhook] = useState(false);
+  const [savingFullBackup, setSavingFullBackup] = useState(false);
   const [backupToken, setBackupToken] = useState("");
   const [copyState, setCopyState] = useState("");
   const selectedTheme = themeOptions.find((theme) => theme.key === currentTheme) || themeOptions[0];
@@ -882,6 +914,30 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
       // Le message d’erreur global est affiché par le tableau de bord.
     } finally {
       setSavingWebhook(false);
+    }
+  }
+
+  async function createFullBackup() {
+    if (savingFullBackup || !access.isOwner) return;
+    setSavingFullBackup(true);
+    try {
+      await submit("createBackupNow", {});
+    } finally {
+      setSavingFullBackup(false);
+    }
+  }
+
+  async function restoreFullBackup(backup: DailyBackup) {
+    if (savingFullBackup || !access.isOwner) return;
+    const confirmed = window.confirm(
+      `Restaurer la sauvegarde du ${dateLabel(backup.createdAt)} ?\n\nLes données commerciales actuelles seront remplacées par cette copie. Une sauvegarde de sécurité sera créée juste avant. Les comptes et mots de passe ne seront pas modifiés.`,
+    );
+    if (!confirmed) return;
+    setSavingFullBackup(true);
+    try {
+      await submit("restoreBackup", { backupId: String(backup.id) });
+    } finally {
+      setSavingFullBackup(false);
     }
   }
 
@@ -1030,8 +1086,8 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
 
           <form className="backup-key-card" onSubmit={(event) => void saveBackupWebhook(event)}>
             <span className="card-kicker">3 · Synchronisation instantanée</span>
-            <h3>{backupWebhookUrl ? "Connexion immédiate active" : "Connectez le Web App Apps Script"}</h3>
-            <p>Collez l’adresse de déploiement qui se termine par <strong>/exec</strong>. Après chaque enregistrement, le site demandera immédiatement la mise à jour du classeur.</p>
+            <h3>{backupWebhookConfigured ? "Connexion immédiate active" : "Connectez le Web App Apps Script"}</h3>
+            <p>L’adresse Apps Script est conservée côté serveur et n’est jamais envoyée aux comptes partenaires. Après chaque enregistrement, le serveur demande immédiatement la mise à jour du classeur.</p>
             <label>
               <span>URL du Web App Apps Script</span>
               <input
@@ -1045,7 +1101,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
               <small>Gardez cette adresse privée. Le déclencheur périodique reste actif si Google est momentanément indisponible.</small>
             </label>
             <button className="primary-button" type="submit" disabled={savingWebhook || !access.isOwner}>
-              {savingWebhook ? "Connexion…" : backupWebhookUrl ? "Mettre à jour la connexion" : "Activer la synchronisation immédiate"}
+              {savingWebhook ? "Connexion…" : backupWebhookConfigured ? "Mettre à jour la connexion" : "Activer la synchronisation immédiate"}
             </button>
             {!access.isOwner && <small>Seul l’administrateur peut connecter Apps Script.</small>}
           </form>
@@ -1055,6 +1111,58 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
           <strong>Données protégées</strong>
           <span>Les mots de passe, les clés de session et les codes de sécurité ne sont jamais exportés. Les partenaires apparaissent seulement avec leur nom, leur rôle et l’état du compte.</span>
         </div>
+      </section>
+
+      <section className="settings-panel continuity-panel" id="backups">
+        <div className="continuity-head">
+          <div>
+            <span className="card-kicker">Continuité des données</span>
+            <h2>Sauvegardes quotidiennes restaurables</h2>
+            <p>Une copie complète des données commerciales est créée chaque jour et conservée pendant 90 jours. Les comptes, mots de passe et clés privées restent séparés.</p>
+          </div>
+          <button className="primary-button" type="button" onClick={() => void createFullBackup()} disabled={savingFullBackup || !access.isOwner}>
+            {savingFullBackup ? "Préparation…" : "＋ Sauvegarder maintenant"}
+          </button>
+        </div>
+        {access.isOwner ? (
+          <div className="backup-history-list">
+            {backups.length ? backups.slice(0, 12).map((backup) => (
+              <article className="backup-history-row" key={backup.id}>
+                <span className="backup-history-icon" aria-hidden="true">↻</span>
+                <div>
+                  <strong>{dateTimeLabel(backup.createdAt)}</strong>
+                  <small>{backup.reason} · {backup.recordCount.toLocaleString("fr-MA")} enregistrements</small>
+                </div>
+                <button className="secondary-button" type="button" onClick={() => void restoreFullBackup(backup)} disabled={savingFullBackup}>Restaurer</button>
+              </article>
+            )) : <div className="empty-state"><strong>Première sauvegarde en préparation</strong><p>Elle apparaîtra ici après l’actualisation de la page.</p></div>}
+          </div>
+        ) : <p className="settings-readonly-note">Seul l’administrateur peut consulter et restaurer les sauvegardes.</p>}
+      </section>
+
+      <section className="settings-panel audit-panel" id="audit">
+        <div className="continuity-head">
+          <div>
+            <span className="card-kicker">Traçabilité</span>
+            <h2>Journal des actions</h2>
+            <p>Le compte utilisé, l’action et l’heure sont enregistrés automatiquement pour chaque modification.</p>
+          </div>
+          <span className="backup-status active">{auditLogs.length} actions récentes</span>
+        </div>
+        {access.isOwner ? (
+          <div className="audit-list">
+            {auditLogs.length ? auditLogs.slice(0, 30).map((entry) => (
+              <article className="audit-row" key={entry.id}>
+                <span className="audit-avatar">{entry.displayName.slice(0, 1).toUpperCase()}</span>
+                <div>
+                  <strong>{entry.displayName}</strong>
+                  <small>{entry.action} · {entry.entityType}{entry.entityLabel ? ` · ${entry.entityLabel}` : entry.entityId ? ` #${entry.entityId}` : ""}</small>
+                </div>
+                <time dateTime={entry.createdAt}>{dateTimeLabel(entry.createdAt)}</time>
+              </article>
+            )) : <div className="empty-state"><strong>Aucune action enregistrée</strong><p>Les prochaines modifications apparaîtront ici.</p></div>}
+          </div>
+        ) : <p className="settings-readonly-note">Le journal détaillé est réservé à l’administrateur.</p>}
       </section>
 
       <section className="settings-panel security-settings-panel" id="security">
@@ -1405,6 +1513,48 @@ function RecordActions({ label, onEdit, onDelete }: { label: string; onEdit: () 
         </button>
       </div>
     </details>
+  );
+}
+function TrashPage({ orders, canRestore, submit }: { orders: Order[]; canRestore: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  async function restore(order: Order) {
+    if (!canRestore) return;
+    if (!window.confirm(`Restaurer la commande ${order.orderRef} ?\n\nElle réapparaîtra dans Commandes et Colis.`)) return;
+    await submit("restoreOrder", { id: String(order.id) });
+  }
+
+  return (
+    <section className="panel page-panel trash-page">
+      <div className="section-toolbar">
+        <div>
+          <span className="card-kicker">Conservation 90 jours</span>
+          <h2>{orders.length} commande{orders.length > 1 ? "s" : ""} dans la corbeille</h2>
+          <p>Une commande supprimée peut être restaurée. Après 90 jours, elle est effacée automatiquement.</p>
+        </div>
+      </div>
+      {!canRestore ? (
+        <div className="empty-state"><strong>Accès administrateur requis</strong><p>Seul le compte principal peut consulter et restaurer la corbeille.</p></div>
+      ) : orders.length ? (
+        <div className="trash-list">
+          {orders.map((order) => {
+            const deletedAt = order.deletedAt ? new Date(order.deletedAt) : new Date();
+            const expiresAt = new Date(deletedAt.getTime() + 90 * 24 * 60 * 60 * 1000);
+            const daysLeft = Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+            return (
+              <article className="trash-row" key={order.id}>
+                <div>
+                  <strong>{order.orderRef} · {order.customerName}</strong>
+                  <small>{order.products} · {order.city} · supprimée le {dateLabel(deletedAt.toISOString())}</small>
+                </div>
+                <span className="trash-expiry">{daysLeft} jour{daysLeft > 1 ? "s" : ""} restant{daysLeft > 1 ? "s" : ""}</span>
+                <button className="secondary-button" type="button" onClick={() => void restore(order)}>↶ Restaurer</button>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty-state"><strong>La corbeille est vide</strong><p>Les commandes supprimées apparaîtront ici pendant 90 jours.</p></div>
+      )}
+    </section>
   );
 }
 function OrdersPage({ orders, onAdd, onEdit, onDelete }: { orders: Order[]; onAdd: () => void; onEdit: (o: Order) => void; onDelete: (o: Order) => void }) {
@@ -2277,7 +2427,7 @@ function EntryModal({ kind, carrierNames, close, submit }: { kind: Exclude<Modal
     </div>
   );
 }
-function OrderModal({ order, carrierNames, close, submit }: { order: Order; carrierNames: string[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function OrderModal({ order, history, carrierNames, close, submit }: { order: Order; history: OrderStatusHistory[]; carrierNames: string[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   const currentCarrier = order.carrier && order.carrier !== "Non affecté" ? order.carrier : "";
   const carrierOptions = Array.from(new Set([currentCarrier, ...carrierNames].filter(Boolean)));
@@ -2323,6 +2473,23 @@ function OrderModal({ order, carrierNames, close, submit }: { order: Order; carr
             {carrierOptions.length ? <Select label="Agence de livraison" name="carrier" options={carrierOptions} defaultValue={currentCarrier || carrierOptions[0]} /> : <Field label="Agence de livraison" name="carrier" defaultValue={currentCarrier} />}
             <Field label="Numéro de suivi" name="trackingNumber" defaultValue={order.trackingNumber} />
             <Field label="Coût retour (MAD)" name="returnCost" type="number" inputMode="decimal" min="0" defaultValue={String(order.returnCost)} />
+          </div>
+          <div className="status-history-panel">
+            <div className="status-history-head">
+              <span className="card-kicker">Historique des statuts</span>
+              <small>{history.length} changement{history.length > 1 ? "s" : ""}</small>
+            </div>
+            <div className="status-history-list">
+              {history.length ? history.map((entry) => (
+                <article className="status-history-row" key={entry.id}>
+                  <span className="status-history-dot" aria-hidden="true" />
+                  <div>
+                    <strong>{entry.fromStatus ? `${entry.fromStatus} → ${entry.toStatus}` : entry.toStatus}</strong>
+                    <small>{entry.changedByName} · {dateTimeLabel(entry.changedAt)}</small>
+                  </div>
+                </article>
+              )) : <small>Aucun changement de statut enregistré.</small>}
+            </div>
           </div>
           <div className="modal-actions">
             <button type="button" className="cancel-button" onClick={close}>

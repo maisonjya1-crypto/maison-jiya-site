@@ -70,8 +70,49 @@ export const orders = sqliteTable("orders", {
   carrier: text("carrier").notNull().default("Non affecté"),
   trackingNumber: text("tracking_number").notNull().default(""),
   paidAt: text("paid_at"),
+  deletedAt: text("deleted_at"),
+  deletedByUserId: integer("deleted_by_user_id"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at"),
+});
+
+export const orderStatusHistory = sqliteTable(
+  "order_status_history",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    orderId: integer("order_id").notNull(),
+    fromStatus: text("from_status"),
+    toStatus: text("to_status").notNull(),
+    changedByUserId: integer("changed_by_user_id"),
+    changedByName: text("changed_by_name").notNull(),
+    changedAt: text("changed_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("order_status_history_order_id_idx").on(table.orderId)],
+);
+
+export const auditLogs = sqliteTable(
+  "audit_logs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id"),
+    username: text("username").notNull(),
+    displayName: text("display_name").notNull(),
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id"),
+    entityLabel: text("entity_label").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("audit_logs_created_at_idx").on(table.createdAt)],
+);
+
+export const dailyBackups = sqliteTable("daily_backups", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  backupDate: text("backup_date").notNull().unique(),
+  reason: text("reason").notNull().default("Automatique"),
+  snapshotJson: text("snapshot_json").notNull(),
+  recordCount: integer("record_count").notNull().default(0),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 export const purchases = sqliteTable("purchases", {
