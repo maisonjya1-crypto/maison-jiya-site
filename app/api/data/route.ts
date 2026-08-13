@@ -50,6 +50,28 @@ function productCategory(value: unknown, fallback = "Autre") {
   return productCategories.includes(category) ? category : fallback;
 }
 
+function parseCarrierNames(rawValue: string | undefined, legacyValue = "") {
+  let parsed: unknown = [];
+  try {
+    parsed = JSON.parse(rawValue || "[]");
+  } catch {
+    parsed = [];
+  }
+  const source = Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
+  if (legacyValue && legacyValue !== "À configurer") source.push(legacyValue);
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const value of source) {
+    const name = value.trim().replace(/\s+/g, " ");
+    const key = name.toLocaleLowerCase("fr");
+    if (name.length >= 2 && name.length <= 80 && !seen.has(key)) {
+      seen.add(key);
+      result.push(name);
+    }
+  }
+  return result;
+}
+
 async function seedIfNeeded() {
   const db = await getDb();
   await db.insert(settings).values([
@@ -59,6 +81,7 @@ async function seedIfNeeded() {
     { key: "reserve_allocation", value: "15" },
     { key: "meta_status", value: "À connecter" },
     { key: "carrier_name", value: "À configurer" },
+    { key: "carrier_names", value: "[]" },
     { key: "theme", value: "mauve-froid" },
     { key: "account_name", value: "Maison Jiya" },
   ]).onConflictDoNothing();
@@ -179,10 +202,17 @@ export async function POST(request: Request) {
       let [customer] = await db.select().from(customers).where(eq(customers.phone, phone)).limit(1);
       if (!customer) [customer] = await db.insert(customers).values({ name, phone, city }).returning();
       else await db.update(customers).set({ name, city }).where(eq(customers.id, customer.id));
-      const [carrierSetting] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, "carrier_name")).limit(1);
-      const configuredCarrier = carrierSetting?.value && carrierSetting.value !== "À configurer" ? carrierSetting.value : "Non affecté";
+      const carrierSettings = await db.select({ key: settings.key, value: settings.value }).from(settings);
+      const carrierNames = parseCarrierNames(
+        carrierSettings.find((setting) => setting.key === "carrier_names")?.value,
+        carrierSettings.find((setting) => setting.key === "carrier_name")?.value,
+      );
+      const requestedCarrier = textValue(payload.carrier);
+      const selectedCarrier = requestedCarrier && (!carrierNames.length || carrierNames.includes(requestedCarrier))
+        ? requestedCarrier
+        : carrierNames[0] || "Non affecté";
       await db.insert(orders).values({
-        orderRef: `MJ-${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`, customerId: customer.id, city, products: textValue(payload.products), quantity: numberValue(payload.quantity, 1), saleAmount: numberValue(payload.saleAmount), productCost: numberValue(payload.productCost), shippingCost: numberValue(payload.shippingCost), adCost: numberValue(payload.adCost), fees: numberValue(payload.fees), source: orderSource(payload.source), status: orderStatus(payload.status), paymentStatus: "À encaisser", carrier: textValue(payload.carrier) || configuredCarrier, trackingNumber: textValue(payload.trackingNumber), updatedAt: new Date().toISOString(),
+        orderRef: `MJ-${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`, customerId: customer.id, city, products: textValue(payload.products), quantity: numberValue(payload.quantity, 1), saleAmount: numberValue(payload.saleAmount), productCost: numberValue(payload.productCost), shippingCost: numberValue(payload.shippingCost), adCost: numberValue(payload.adCost), fees: numberValue(payload.fees), source: orderSource(payload.source), status: orderStatus(payload.status), paymentStatus: "À encaisser", carrier: selectedCarrier, trackingNumber: textValue(payload.trackingNumber), updatedAt: new Date().toISOString(),
       });
     } else if (payload.action === "updateOrder") {
       const id = numberValue(payload.id);
@@ -368,25 +398,67 @@ export async function POST(request: Request) {
         db.insert(settings).values({ key: "account_email", value: accountEmail }).onConflictDoUpdate({ target: settings.key, set: { value: accountEmail, updatedAt } }),
         db.update(users).set({ username, displayName, updatedAt }).where(eq(users.id, user.id)),
       ]);
+    } else if (payload.action === "updateCarriers") {
+      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut gérer les agences." }, { status: 403 });
+      let requestedCarriers: unknown;
+      try {
+        requestedCarriers = JSON.parse(textValue(payload.carriers, "[]"));
+      } catch {
+        return Response.json({ error: "La liste des agences est invalide." }, { status: 400 });
+      }
+      if (!Array.isArray(requestedCarriers) || requestedCarriers.length > 30 || requestedCarriers.some((value) => typeof value !== "string")) {
+        return Response.json({ error: "Vous pouvez enregistrer jusqu’à 30 agences." }, { status: 400 });
+      }
+      const carrierNames = requestedCarriers.map((value) => value.trim().replace(/\s+/g, " "));
+      if (carrierNames.some((name) => name.length < 2 || name.length > 80 || name === "À configurer")) {
+        return Response.json({ error: "Chaque nom d’agence doit contenir entre 2 et 80 caractères." }, { status: 400 });
+      }
+      const normalizedCarrierNames = carrierNames.map((name) => name.toLocaleLowerCase("fr"));
+      if (new Set(normalizedCarrierNames).size !== normalizedCarrierNames.length) {
+        return Response.json({ error: "Cette agence existe déjà dans la liste." }, { status: 400 });
+      }
+      const updatedAt = new Date().toISOString();
+      const primaryCarrier = carrierNames[0] || "À configurer";
+      const carriersSettingQuery = db.insert(settings).values({ key: "carrier_names", value: JSON.stringify(carrierNames) }).onConflictDoUpdate({ target: settings.key, set: { value: JSON.stringify(carrierNames), updatedAt } });
+      const legacySettingQuery = db.insert(settings).values({ key: "carrier_name", value: primaryCarrier }).onConflictDoUpdate({ target: settings.key, set: { value: primaryCarrier, updatedAt } });
+      const renameFrom = textValue(payload.renameFrom);
+      const renameTo = textValue(payload.renameTo);
+      const shouldRename = Boolean(renameFrom && renameTo && renameFrom !== renameTo && carrierNames.includes(renameTo));
+      if (shouldRename && carrierNames.length) {
+        await db.batch([
+          carriersSettingQuery,
+          legacySettingQuery,
+          db.update(orders).set({ carrier: renameTo, updatedAt }).where(eq(orders.carrier, renameFrom)),
+          db.update(orders).set({ carrier: carrierNames[0], updatedAt }).where(eq(orders.carrier, "Non affecté")),
+          db.update(orders).set({ carrier: carrierNames[0], updatedAt }).where(eq(orders.carrier, "")),
+        ]);
+      } else if (carrierNames.length) {
+        await db.batch([
+          carriersSettingQuery,
+          legacySettingQuery,
+          db.update(orders).set({ carrier: carrierNames[0], updatedAt }).where(eq(orders.carrier, "Non affecté")),
+          db.update(orders).set({ carrier: carrierNames[0], updatedAt }).where(eq(orders.carrier, "")),
+        ]);
+      } else {
+        await db.batch([carriersSettingQuery, legacySettingQuery]);
+      }
     } else if (payload.action === "updateSetting") {
       const key = textValue(payload.key);
       if (!["theme", "carrier_name"].includes(key)) return Response.json({ error: "Réglage invalide." }, { status: 400 });
       const value = textValue(payload.value);
       if (key === "theme" && !themeOptions.includes(value)) return Response.json({ error: "Thème invalide." }, { status: 400 });
+      const updatedAt = new Date().toISOString();
       if (key === "carrier_name") {
         if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut modifier le transporteur." }, { status: 403 });
         if (value.length < 2 || value.length > 80 || value === "À configurer") return Response.json({ error: "Le nom de l’agence doit contenir entre 2 et 80 caractères." }, { status: 400 });
-      }
-      const updatedAt = new Date().toISOString();
-      const settingQuery = db.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value, updatedAt } });
-      if (key === "carrier_name") {
         await db.batch([
-          settingQuery,
+          db.insert(settings).values({ key: "carrier_name", value }).onConflictDoUpdate({ target: settings.key, set: { value, updatedAt } }),
+          db.insert(settings).values({ key: "carrier_names", value: JSON.stringify([value]) }).onConflictDoUpdate({ target: settings.key, set: { value: JSON.stringify([value]), updatedAt } }),
           db.update(orders).set({ carrier: value, updatedAt }).where(eq(orders.carrier, "Non affecté")),
           db.update(orders).set({ carrier: value, updatedAt }).where(eq(orders.carrier, "")),
         ]);
       } else {
-        await settingQuery;
+        await db.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value, updatedAt } });
       }
     } else {
       return Response.json({ error: "Action inconnue." }, { status: 400 });
