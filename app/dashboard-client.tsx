@@ -758,7 +758,7 @@ function Page({
 }) {
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} />;
-  if (active === "Colis") return <ShippingPage orders={data.orders} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
+  if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Achats") return <PurchasesPage purchases={data.purchases} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
@@ -1705,8 +1705,88 @@ function OrderTable({ orders, onEdit, onPrint, onDelete }: { orders: Order[]; on
     </>
   );
 }
-function ShippingPage({ orders, settings, onEdit, onPrint, onDelete }: { orders: Order[]; settings: Record<string, string>; onEdit: (o: Order) => void; onPrint: (o: Order) => void; onDelete: (o: Order) => void }) {
-  const carrierNames = parseCarrierNames(settings);
+function carrierTrackingPortal(carrier: string) {
+  const normalized = carrier.toLocaleLowerCase("fr").replace(/\s+/g, "");
+  if (normalized.includes("forcelog")) return { label: "Suivre sur ForceLog", url: "https://forcelog.ma/suivi-de-colis/" };
+  if (normalized.includes("sendit")) return { label: "Ouvrir l’espace Sendit", url: "https://app.sendit.ma/deliveries" };
+  return null;
+}
+
+function elapsedDays(from: string, to = new Date().toISOString()) {
+  const start = new Date(from).getTime();
+  const end = new Date(to).getTime();
+  return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, Math.floor((end - start) / 86_400_000)) : 0;
+}
+
+function ShippingPage({ orders, history, settings, onEdit, onPrint, onDelete }: { orders: Order[]; history: OrderStatusHistory[]; settings: Record<string, string>; onEdit: (o: Order) => void; onPrint: (o: Order) => void; onDelete: (o: Order) => void }) {
+  const carrierNames = useMemo(() => parseCarrierNames(settings), [settings]);
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Casablanca", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const [query, setQuery] = useState("");
+  const [carrierFilter, setCarrierFilter] = useState("Toutes");
+  const [statusFilter, setStatusFilter] = useState("Tous");
+  const [manifestCarrier, setManifestCarrier] = useState(carrierNames[0] || "");
+  const [manifestDate, setManifestDate] = useState(today);
+  const [manifestToPrint, setManifestToPrint] = useState<{ carrier: string; date: string; orders: Order[] } | null>(null);
+  const historyByOrder = useMemo(() => {
+    const grouped = new Map<number, OrderStatusHistory[]>();
+    history.forEach((entry) => grouped.set(entry.orderId, [...(grouped.get(entry.orderId) || []), entry]));
+    grouped.forEach((entries) => entries.sort((left, right) => new Date(right.changedAt).getTime() - new Date(left.changedAt).getTime()));
+    return grouped;
+  }, [history]);
+  useEffect(() => {
+    if (!carrierNames.includes(manifestCarrier)) setManifestCarrier(carrierNames[0] || "");
+  }, [carrierNames, manifestCarrier]);
+  useEffect(() => {
+    const clearManifest = () => setManifestToPrint(null);
+    window.addEventListener("afterprint", clearManifest);
+    return () => window.removeEventListener("afterprint", clearManifest);
+  }, []);
+
+  const carrierComparison = carrierNames.map((carrier) => {
+    const assigned = orders.filter((order) => order.carrier.toLocaleLowerCase("fr") === carrier.toLocaleLowerCase("fr"));
+    const delivered = assigned.filter((order) => order.status === "Livrée");
+    const returned = assigned.filter((order) => order.status === "Retour");
+    const completed = delivered.length + returned.length;
+    const deliveryDays = delivered.map((order) => {
+      const deliveredEntry = (historyByOrder.get(order.id) || []).find((entry) => entry.toStatus === "Livrée");
+      return elapsedDays(order.createdAt, deliveredEntry?.changedAt || order.updatedAt || order.createdAt);
+    });
+    return {
+      carrier,
+      assigned: assigned.length,
+      delivered: delivered.length,
+      returned: returned.length,
+      active: assigned.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status)).length,
+      successRate: completed ? (delivered.length / completed) * 100 : 0,
+      averageDelay: deliveryDays.length ? deliveryDays.reduce((sum, value) => sum + value, 0) / deliveryDays.length : null,
+      averageCost: assigned.length ? assigned.reduce((sum, order) => sum + order.shippingCost, 0) / assigned.length : 0,
+      completed,
+    };
+  });
+  const rankedCarriers = carrierComparison.filter((row) => row.completed > 0).sort((left, right) => right.successRate - left.successRate || (left.averageDelay ?? 999) - (right.averageDelay ?? 999));
+  const bestCarrier = rankedCarriers[0]?.carrier || "";
+
+  const trackingRows = orders.map((order) => {
+    const latestHistory = historyByOrder.get(order.id)?.[0];
+    const age = elapsedDays(latestHistory?.changedAt || order.updatedAt || order.createdAt);
+    const needsTrackingNumber = ["Expédiée", "En livraison", "Livrée"].includes(order.status) && !order.trackingNumber;
+    const delayed = (["Confirmée"].includes(order.status) && age >= 2) || (["Expédiée", "En livraison"].includes(order.status) && age >= 4);
+    return { order, age, needsTrackingNumber, delayed, alert: needsTrackingNumber || delayed };
+  }).filter(({ order }) => {
+    const normalizedQuery = query.trim().toLocaleLowerCase("fr");
+    const matchesQuery = !normalizedQuery || [order.orderRef, order.trackingNumber, order.customerName || "", order.city].some((value) => value.toLocaleLowerCase("fr").includes(normalizedQuery));
+    const matchesCarrier = carrierFilter === "Toutes" || order.carrier === carrierFilter;
+    const matchesStatus = statusFilter === "Tous" || order.status === statusFilter;
+    return matchesQuery && matchesCarrier && matchesStatus;
+  }).sort((left, right) => Number(right.alert) - Number(left.alert) || new Date(right.order.createdAt).getTime() - new Date(left.order.createdAt).getTime());
+  const alertCount = trackingRows.filter((row) => row.alert).length;
+  const manifestOrders = orders.filter((order) => order.carrier === manifestCarrier && ["Confirmée", "Expédiée", "En livraison"].includes(order.status));
+
+  function printManifest() {
+    if (!manifestCarrier || manifestOrders.length === 0) return;
+    setManifestToPrint({ carrier: manifestCarrier, date: manifestDate, orders: manifestOrders });
+    window.setTimeout(() => window.print(), 80);
+  }
   return (
     <>
       <section className="integration-banner">
@@ -1719,11 +1799,46 @@ function ShippingPage({ orders, settings, onEdit, onPrint, onDelete }: { orders:
         </div>
         <Status value={carrierNames.length ? "Configuré" : "À configurer"} />
       </section>
-      <section className="panel page-panel">
-        <PanelHead kicker="Paiement à la livraison" title="Suivi des colis" total={String(orders.length)} />
+      <section className="carrier-comparison-grid" aria-label="Comparaison des agences de livraison">
+        {carrierComparison.map((row) => (
+          <article className={`carrier-performance-card ${row.carrier === bestCarrier ? "best" : ""}`} key={row.carrier}>
+            <div className="carrier-performance-head">
+              <div><span>Agence</span><h2>{row.carrier}</h2></div>
+              {row.carrier === bestCarrier ? <strong>Meilleur taux</strong> : <small>{row.completed ? "Données disponibles" : "À mesurer"}</small>}
+            </div>
+            <div className="carrier-performance-stats">
+              <p><span>Taux livré</span><strong>{row.completed ? `${row.successRate.toFixed(1)} %` : "—"}</strong></p>
+              <p><span>Délai moyen</span><strong>{row.averageDelay === null ? "—" : `${row.averageDelay.toFixed(1)} j`}</strong></p>
+              <p><span>Coût moyen</span><strong>{row.assigned ? money(row.averageCost) : "—"}</strong></p>
+            </div>
+            <footer><span>{row.delivered} livré(s)</span><span>{row.returned} retour(s)</span><span>{row.active} en cours</span></footer>
+          </article>
+        ))}
+        {carrierComparison.length === 0 && <article className="panel carrier-empty-card"><strong>Ajoutez une agence dans Paramètres</strong><p>La comparaison commencera dès que des commandes lui seront affectées.</p></article>}
+      </section>
+      <section className="panel carrier-manifest-panel">
+        <div className="manifest-copy"><span className="card-kicker">Préparation agence</span><h2>Manifeste quotidien</h2><p>Le document regroupe les colis confirmés ou en cours pour l’agence choisie. Il peut être imprimé et remis au transporteur.</p></div>
+        <div className="manifest-controls">
+          <label><span>Agence</span><select value={manifestCarrier} onChange={(event) => setManifestCarrier(event.target.value)}>{carrierNames.map((carrier) => <option key={carrier}>{carrier}</option>)}</select></label>
+          <label><span>Date du manifeste</span><input type="date" value={manifestDate} onChange={(event) => setManifestDate(event.target.value)} /></label>
+          <button className="primary-button" type="button" disabled={!manifestCarrier || manifestOrders.length === 0} onClick={printManifest}>▣ Imprimer · {manifestOrders.length} colis</button>
+        </div>
+      </section>
+      <section className="panel page-panel shipping-tracking-panel">
+        <div className="shipping-tracking-head">
+          <div><span className="card-kicker">Paiement à la livraison</span><h2>Suivi opérationnel des colis</h2><p>Statuts du site, retards détectés et accès au portail officiel de l’agence.</p></div>
+          <span className={`tracking-alert-total ${alertCount ? "active" : ""}`}>{alertCount} alerte{alertCount === 1 ? "" : "s"}</span>
+        </div>
+        <div className="shipping-filters">
+          <label><span>Rechercher</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Commande, cliente ou suivi" /></label>
+          <label><span>Agence</span><select value={carrierFilter} onChange={(event) => setCarrierFilter(event.target.value)}><option>Toutes</option>{carrierNames.map((carrier) => <option key={carrier}>{carrier}</option>)}</select></label>
+          <label><span>Statut</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>Tous</option>{orderStatusOptions.map((status) => <option key={status}>{status}</option>)}</select></label>
+        </div>
         <div className="card-list">
-          {orders.map((o) => (
-            <article className="shipment-card" key={o.id} role="button" tabIndex={0} onClick={() => onEdit(o)} onKeyDown={(event) => {
+          {trackingRows.map(({ order: o, age, delayed, needsTrackingNumber }) => {
+            const portal = carrierTrackingPortal(o.carrier);
+            return (
+            <article className={`shipment-card ${delayed || needsTrackingNumber ? "needs-attention" : ""}`} key={o.id} role="button" tabIndex={0} onClick={() => onEdit(o)} onKeyDown={(event) => {
               if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
                 event.preventDefault();
                 onEdit(o);
@@ -1736,19 +1851,43 @@ function ShippingPage({ orders, settings, onEdit, onPrint, onDelete }: { orders:
               <div>
                 <strong>{o.trackingNumber || "Sans numéro"}</strong>
                 <small>{o.carrier}</small>
+                {portal && <a className="carrier-tracking-link" href={portal.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>{portal.label} ↗</a>}
               </div>
               <div>
                 <Status value={o.status} />
-                <small>{o.paymentStatus}</small>
+                <small>{o.paymentStatus} · statut depuis {age} j</small>
+                {needsTrackingNumber && <span className="shipment-alert">Numéro manquant</span>}
+                {delayed && <span className="shipment-alert">Délai à vérifier</span>}
               </div>
               <div className="shipment-actions">
                 <OrderActions order={o} onEdit={onEdit} onPrint={onPrint} onDelete={onDelete} />
               </div>
             </article>
-          ))}
+          );})}
+          {trackingRows.length === 0 && <EmptyState title="Aucun colis trouvé" text="Modifiez les filtres ou ajoutez une commande." />}
         </div>
+        <p className="tracking-source-note">Le statut affiché ici vient de Maison Jiya. Le bouton agence ouvre le service officiel ; une mise à jour automatique depuis ForceLog ou Sendit nécessitera leurs accès API.</p>
       </section>
+      {manifestToPrint && <CarrierManifestSheet manifest={manifestToPrint} />}
     </>
+  );
+}
+
+function CarrierManifestSheet({ manifest }: { manifest: { carrier: string; date: string; orders: Order[] } }) {
+  const total = manifest.orders.reduce((sum, order) => sum + order.saleAmount, 0);
+  return (
+    <section className="print-carrier-manifest" aria-label={`Manifeste ${manifest.carrier}`}>
+      <header className="manifest-print-header">
+        <div><strong>Maison Jiya</strong><span>Manifeste de remise des colis</span></div>
+        <div><small>Agence</small><strong>{manifest.carrier}</strong><span>{dateLabel(`${manifest.date}T12:00:00`)}</span></div>
+      </header>
+      <div className="manifest-print-summary"><p><span>Nombre de colis</span><strong>{manifest.orders.length}</strong></p><p><span>Montant COD total</span><strong>{money(total)}</strong></p></div>
+      <table>
+        <thead><tr><th>#</th><th>Commande</th><th>Cliente</th><th>Téléphone</th><th>Ville</th><th>Produit</th><th>Suivi</th><th>COD</th><th>Statut</th></tr></thead>
+        <tbody>{manifest.orders.map((order, index) => <tr key={order.id}><td>{index + 1}</td><td>{order.orderRef}</td><td>{order.customerName}</td><td>{order.phone}</td><td>{order.city}</td><td>{order.products} × {order.quantity}</td><td>{order.trackingNumber || "À compléter"}</td><td>{money(order.saleAmount)}</td><td>{order.status}</td></tr>)}</tbody>
+      </table>
+      <footer><div><span>Remis par Maison Jiya</span></div><div><span>Reçu par {manifest.carrier}</span></div></footer>
+    </section>
   );
 }
 function CustomersPage({ customers, orders, onEdit, onDelete }: { customers: Customer[]; orders: Order[]; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
