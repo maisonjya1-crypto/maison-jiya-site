@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1786554748586,
+      "tag": "0000_spotty_aqueduct",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786562402768,
+      "tag": "0001_serious_eternals",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786564935672,
+      "tag": "0002_robust_prowler",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1786570000000,
+      "tag": "0003_partner_accounts",
+      "breakpoints": true
+    }
+  ]
+}
