@@ -424,13 +424,18 @@ export default function DashboardClient() {
             </button>
           ))}
         </nav>
-        <div className="connection-card">
+        <button
+          type="button"
+          className="connection-card connection-card-button"
+          onClick={() => setActive("Paramètres")}
+          aria-label="Configurer le transporteur dans Paramètres"
+        >
           <span className="live-dot" />
           <div>
             <strong>Transporteur</strong>
-            <small>{data.settings.carrier_name || "À configurer"}</small>
+            <small>{data.settings.carrier_name && data.settings.carrier_name !== "À configurer" ? data.settings.carrier_name : "Configurer l’agence"}</small>
           </div>
-        </div>
+        </button>
         <div className="profile">
           <span className="avatar">{data.access.displayName.slice(0, 1).toUpperCase()}</span>
           <div>
@@ -481,8 +486,8 @@ export default function DashboardClient() {
         )}
         {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} moveStock={openStock} submit={submit} />}
       </section>
-      {modal && <EntryModal kind={modal} close={() => setModal(null)} submit={submit} />}
-      {selectedOrder && <OrderModal order={selectedOrder} close={() => setSelectedOrder(null)} submit={submit} />}
+      {modal && <EntryModal kind={modal} carrierName={data.settings.carrier_name === "À configurer" ? "" : data.settings.carrier_name || ""} close={() => setModal(null)} submit={submit} />}
+      {selectedOrder && <OrderModal order={selectedOrder} carrierName={data.settings.carrier_name === "À configurer" ? "" : data.settings.carrier_name || ""} close={() => setSelectedOrder(null)} submit={submit} />}
       {selectedEntity && <EntityModal selection={selectedEntity} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
     </main>
@@ -637,7 +642,7 @@ function Page({
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
-  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} access={data.access} members={data.members} submit={submit} />;
+  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carrierName={data.settings.carrier_name === "À configurer" ? "" : data.settings.carrier_name || ""} access={data.access} members={data.members} submit={submit} />;
   const total = Math.max(1, data.orders.length);
   return (
     <>
@@ -727,16 +732,18 @@ function Page({
   );
 }
 
-function SettingsPage({ currentTheme, accountName, accountEmail, access, members, submit }: {
+function SettingsPage({ currentTheme, accountName, accountEmail, carrierName, access, members, submit }: {
   currentTheme: ThemeKey;
   accountName: string;
   accountEmail: string;
+  carrierName: string;
   access: Data["access"];
   members: Member[];
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
 }) {
   const [pendingTheme, setPendingTheme] = useState<ThemeKey | null>(null);
   const [savingAccount, setSavingAccount] = useState(false);
+  const [savingCarrier, setSavingCarrier] = useState(false);
   const [savingMember, setSavingMember] = useState(false);
   const selectedTheme = themeOptions.find((theme) => theme.key === currentTheme) || themeOptions[0];
 
@@ -749,6 +756,23 @@ function SettingsPage({ currentTheme, accountName, accountEmail, access, members
       // Le message d’erreur global est affiché par le tableau de bord.
     } finally {
       setPendingTheme(null);
+    }
+  }
+
+  async function saveCarrier(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (savingCarrier || !access.isOwner) return;
+    const formData = new FormData(event.currentTarget);
+    setSavingCarrier(true);
+    try {
+      await submit("updateSetting", {
+        key: "carrier_name",
+        value: formData.get("carrierName") || "",
+      });
+    } catch {
+      // Le message d’erreur global est affiché par le tableau de bord.
+    } finally {
+      setSavingCarrier(false);
     }
   }
 
@@ -814,6 +838,28 @@ function SettingsPage({ currentTheme, accountName, accountEmail, access, members
           <strong>{selectedTheme.name}</strong>
           <small>{selectedTheme.mode}</small>
         </div>
+      </section>
+
+      <section className="settings-panel carrier-settings-panel" id="carrier">
+        <div className="carrier-settings-copy">
+          <span className="carrier-settings-icon" aria-hidden="true">T</span>
+          <div>
+            <span className="card-kicker">Livraison</span>
+            <h2>Transporteur</h2>
+            <p>Indiquez uniquement le nom de l’agence qui livre vos commandes. Aucun identifiant technique n’est demandé.</p>
+          </div>
+        </div>
+        <form className="carrier-settings-form" key={carrierName || "aucune-agence"} onSubmit={(event) => void saveCarrier(event)}>
+          <label>
+            <span>Nom de l’agence</span>
+            <input name="carrierName" type="text" minLength={2} maxLength={80} defaultValue={carrierName} required placeholder="Ex. Cathedis, Ozon Express…" disabled={!access.isOwner} />
+            <small>Ce nom sera proposé automatiquement dans chaque nouvelle commande.</small>
+          </label>
+          <button className="primary-button" type="submit" disabled={savingCarrier || !access.isOwner}>
+            {savingCarrier ? "Enregistrement…" : carrierName ? "Modifier l’agence" : "Enregistrer l’agence"}
+          </button>
+          {!access.isOwner && <p>Seul l’administrateur peut modifier cette agence.</p>}
+        </form>
       </section>
 
       <section className="settings-panel security-settings-panel" id="security">
@@ -1203,17 +1249,18 @@ function OrderTable({ orders, onEdit, onDelete }: { orders: Order[]; onEdit: (o:
   );
 }
 function ShippingPage({ orders, settings, onEdit, onDelete }: { orders: Order[]; settings: Record<string, string>; onEdit: (o: Order) => void; onDelete: (o: Order) => void }) {
+  const carrierName = settings.carrier_name && settings.carrier_name !== "À configurer" ? settings.carrier_name : "";
   return (
     <>
       <section className="integration-banner">
         <div>
           <span className="live-dot" />
           <div>
-            <strong>Connexion transporteur</strong>
-            <p>{settings.carrier_name || "Aucun transporteur sélectionné"} · Ajoutez le nom de votre transporteur pour préparer la synchronisation.</p>
+            <strong>Agence de livraison</strong>
+            <p>{carrierName || "Aucune agence configurée. Ajoutez simplement son nom dans Paramètres."}</p>
           </div>
         </div>
-        <Status value="À configurer" />
+        <Status value={carrierName ? "Configuré" : "À configurer"} />
       </section>
       <section className="panel page-panel">
         <PanelHead kicker="Paiement à la livraison" title="Suivi des colis" total={String(orders.length)} />
@@ -1863,11 +1910,11 @@ function MonthlyCapitalChart({
   );
 }
 function Status({ value }: { value: string }) {
-  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Entrée"].includes(value) ? "success" : ["Retour", "Annulée", "Refusée", "Retournée", "Remboursé", "Non encaissé"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente"].includes(value) ? "info" : "warning";
+  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée"].includes(value) ? "success" : ["Retour", "Annulée", "Refusée", "Retournée", "Remboursé", "Non encaissé"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente"].includes(value) ? "info" : "warning";
   return <span className={`status ${tone}`}>{value}</span>;
 }
 
-function EntryModal({ kind, close, submit }: { kind: Exclude<ModalName, null>; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function EntryModal({ kind, carrierName, close, submit }: { kind: Exclude<ModalName, null>; carrierName: string; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const labels = {
     order: "Nouvelle commande",
     purchase: "Nouvel achat",
@@ -1932,7 +1979,7 @@ function EntryModal({ kind, close, submit }: { kind: Exclude<ModalName, null>; c
                 <Field label="Frais de transport déduits (MAD)" name="shippingCost" type="number" inputMode="decimal" min="0" />
                 <Field label="Publicité attribuée (MAD)" name="adCost" type="number" inputMode="decimal" min="0" />
                 <Field label="Autres frais (MAD)" name="fees" type="number" inputMode="decimal" min="0" />
-                <Field label="Transporteur" name="carrier" />
+                <Field label="Transporteur" name="carrier" defaultValue={carrierName} />
                 <Field label="Numéro de suivi" name="trackingNumber" />
               </>
             )}
@@ -1978,7 +2025,7 @@ function EntryModal({ kind, close, submit }: { kind: Exclude<ModalName, null>; c
     </div>
   );
 }
-function OrderModal({ order, close, submit }: { order: Order; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function OrderModal({ order, carrierName, close, submit }: { order: Order; carrierName: string; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   return (
     <div
@@ -2019,7 +2066,7 @@ function OrderModal({ order, close, submit }: { order: Order; close: () => void;
             <Select label="Statut de la commande" name="status" defaultValue={order.status} options={orderStatusOptions} />
             <Select label="Encaissement" name="paymentStatus" defaultValue={order.paymentStatus} options={["À encaisser", "Encaissé", "Non encaissé", "Remboursé"]} />
             <Field label="Frais de transport déduits (MAD)" name="shippingCost" type="number" inputMode="decimal" min="0" defaultValue={String(order.shippingCost)} />
-            <Field label="Transporteur" name="carrier" defaultValue={order.carrier} />
+            <Field label="Transporteur" name="carrier" defaultValue={order.carrier && order.carrier !== "Non affecté" ? order.carrier : carrierName} />
             <Field label="Numéro de suivi" name="trackingNumber" defaultValue={order.trackingNumber} />
             <Field label="Coût retour (MAD)" name="returnCost" type="number" inputMode="decimal" min="0" defaultValue={String(order.returnCost)} />
           </div>
