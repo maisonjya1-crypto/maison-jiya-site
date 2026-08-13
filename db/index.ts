@@ -60,6 +60,8 @@ const schemaStatements = [
     ad_cost INTEGER DEFAULT 0 NOT NULL,
     fees INTEGER DEFAULT 0 NOT NULL,
     return_cost INTEGER DEFAULT 0 NOT NULL,
+    return_reason TEXT DEFAULT '' NOT NULL,
+    return_note TEXT DEFAULT '' NOT NULL,
     source TEXT DEFAULT 'Non renseignée' NOT NULL,
     status TEXT DEFAULT 'Nouvelle' NOT NULL,
     payment_status TEXT DEFAULT 'À encaisser' NOT NULL,
@@ -179,6 +181,8 @@ async function ensureOrderColumns(database: D1Database) {
   if (!columns.has("deleted_by_user_id")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN deleted_by_user_id INTEGER"));
   if (!columns.has("product_id")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN product_id INTEGER REFERENCES products(id)"));
   if (!columns.has("stock_deducted")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN stock_deducted INTEGER DEFAULT 0 NOT NULL"));
+  if (!columns.has("return_reason")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN return_reason TEXT DEFAULT '' NOT NULL"));
+  if (!columns.has("return_note")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN return_note TEXT DEFAULT '' NOT NULL"));
   if (statements.length) await database.batch(statements);
 }
 

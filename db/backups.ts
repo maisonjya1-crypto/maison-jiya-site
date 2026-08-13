@@ -31,7 +31,7 @@ const TABLES = {
 
 const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   customers: ["id", "name", "phone", "city", "created_at"],
-  orders: ["id", "order_ref", "customer_id", "product_id", "city", "products", "quantity", "sale_amount", "product_cost", "shipping_cost", "ad_cost", "fees", "return_cost", "source", "status", "payment_status", "carrier", "tracking_number", "stock_deducted", "paid_at", "deleted_at", "deleted_by_user_id", "created_at", "updated_at"],
+  orders: ["id", "order_ref", "customer_id", "product_id", "city", "products", "quantity", "sale_amount", "product_cost", "shipping_cost", "ad_cost", "fees", "return_cost", "return_reason", "return_note", "source", "status", "payment_status", "carrier", "tracking_number", "stock_deducted", "paid_at", "deleted_at", "deleted_by_user_id", "created_at", "updated_at"],
   products: ["id", "product_code", "name", "category", "purchase_price", "sale_price", "stock_quantity", "created_at"],
   stockMovements: ["id", "product_id", "order_id", "movement_type", "quantity", "note", "created_at"],
   purchases: ["id", "supplier", "item", "quantity", "unit_cost", "total_cost", "payment_status", "created_at"],
@@ -108,6 +108,7 @@ function insertStatement(database: D1Database, tableKey: keyof BusinessSnapshot[
   const table = TABLES[tableKey];
   const values = columns.map((column) => {
     if (column === "stock_deducted") return row[column] ?? 0;
+    if (column === "return_reason" || column === "return_note") return row[column] ?? "";
     return row[column] ?? null;
   });
   const placeholders = columns.map(() => "?").join(", ");
