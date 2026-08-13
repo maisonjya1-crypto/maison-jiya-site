@@ -185,3 +185,20 @@ export const stockMovements = sqliteTable(
     index("stock_movements_order_id_idx").on(table.orderId),
   ],
 );
+
+export const inventoryCounts = sqliteTable(
+  "inventory_counts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    countRef: text("count_ref").notNull().unique(),
+    productId: integer("product_id").notNull().references(() => products.id),
+    systemQuantity: integer("system_quantity").notNull(),
+    physicalQuantity: integer("physical_quantity").notNull(),
+    difference: integer("difference").notNull(),
+    note: text("note").notNull().default(""),
+    countedByUserId: integer("counted_by_user_id"),
+    countedByName: text("counted_by_name").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("inventory_counts_product_id_idx").on(table.productId)],
+);

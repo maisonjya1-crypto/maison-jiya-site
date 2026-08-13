@@ -57,6 +57,13 @@
       "when": 1786676400000,
       "tag": "0007_return_reasons_print_slip",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1786680000000,
+      "tag": "0008_inventory_profitability",
+      "breakpoints": true
     }
   ]
 }
