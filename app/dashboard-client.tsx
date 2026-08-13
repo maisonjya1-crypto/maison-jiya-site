@@ -19,6 +19,8 @@ type Order = {
   adCost: number;
   fees: number;
   returnCost: number;
+  returnReason: string;
+  returnNote: string;
   source: string;
   status: string;
   paymentStatus: string;
@@ -200,6 +202,7 @@ const dateTimeLabel = (value: string) =>
 
 const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Publicités", "Capital", "Assistant IA", "Corbeille", "Paramètres"];
 const orderStatusOptions = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
+const returnReasonOptions = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
 const orderSourceOptions = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Autre"];
 const productCategoryOptions = ["Montres", "Bijoux", "Wallets", "Électronique", "Autre"];
 const capitalMonthLabels = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
@@ -246,6 +249,7 @@ export default function DashboardClient() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [selectedEntity, setSelectedEntity] = useState<EditableEntity | null>(null);
   const [stockSelection, setStockSelection] = useState<StockSelection>(null);
+  const [printOrder, setPrintOrder] = useState<Order | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [authRequired, setAuthRequired] = useState(false);
@@ -280,6 +284,11 @@ export default function DashboardClient() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [loadData]);
+  useEffect(() => {
+    const clearPrintOrder = () => setPrintOrder(null);
+    window.addEventListener("afterprint", clearPrintOrder);
+    return () => window.removeEventListener("afterprint", clearPrintOrder);
+  }, []);
 
   async function logout() {
     await fetch("/api/auth", {
@@ -354,6 +363,11 @@ export default function DashboardClient() {
 
   function openOrder(order: Order) {
     if (requireEditAccess()) setSelectedOrder(order);
+  }
+
+  function printOrderSlip(order: Order) {
+    setPrintOrder(order);
+    window.setTimeout(() => window.print(), 80);
   }
 
   function openStock(selection: StockSelection) {
@@ -562,12 +576,13 @@ export default function DashboardClient() {
             <button onClick={() => void loadData()}>Réessayer</button>
           </div>
         )}
-        {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} moveStock={openStock} submit={submit} />}
+        {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} print={printOrderSlip} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} moveStock={openStock} submit={submit} />}
       </section>
       {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products} close={() => setModal(null)} submit={submit} />}
-      {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} close={() => setSelectedOrder(null)} submit={submit} />}
+      {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} close={() => setSelectedOrder(null)} print={() => printOrderSlip(selectedOrder)} submit={submit} />}
       {selectedEntity && <EntityModal selection={selectedEntity} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
+      {printOrder && <PrintOrderSheet order={printOrder} />}
     </main>
   );
 }
@@ -680,6 +695,7 @@ function Page({
   delivery,
   open,
   edit,
+  print,
   remove,
   editEntity,
   removeEntity,
@@ -706,22 +722,23 @@ function Page({
   delivery: { label: string; value: number; tone: string }[];
   open: (m: ModalName) => void;
   edit: (o: Order) => void;
+  print: (o: Order) => void;
   remove: (o: Order) => void;
   editEntity: (selection: EditableEntity) => void;
   removeEntity: (selection: EditableEntity) => void;
   moveStock: (selection: StockSelection) => void;
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
 }) {
-  if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onDelete={remove} />;
+  if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Produits") return <ProductsPage products={data.products} movements={data.stockMovements} onAdd={() => open("product")} onMove={moveStock} onEdit={editEntity} onDelete={removeEntity} />;
-  if (active === "Colis") return <ShippingPage orders={data.orders} settings={data.settings} onEdit={edit} onDelete={remove} />;
+  if (active === "Colis") return <ShippingPage orders={data.orders} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Achats") return <PurchasesPage purchases={data.purchases} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
   if (active === "Corbeille") return <TrashPage orders={data.trash} canRestore={data.access.isOwner} submit={submit} />;
-  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || "https://docs.google.com/spreadsheets/d/1hQIwOKBBhhZIQN6AsmVwUCH_7T-WE8GlsCfrmb2H7Us/edit"} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} submit={submit} />;
+  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} submit={submit} />;
   const total = Math.max(1, data.orders.length);
   return (
     <>
@@ -785,7 +802,7 @@ function Page({
       <section className="content-grid">
         <article className="panel orders-panel">
           <PanelHead kicker="Opérations" title="Commandes récentes" action="Voir tout →" onClick={() => setActive("Commandes")} />
-          <OrderTable orders={data.orders.slice(0, 5)} onEdit={edit} onDelete={remove} />
+          <OrderTable orders={data.orders.slice(0, 5)} onEdit={edit} onPrint={print} onDelete={remove} />
         </article>
         <article className="panel delivery-panel">
           <PanelHead kicker="Livraison" title="État des colis" total={String(data.orders.length)} />
@@ -1471,7 +1488,7 @@ function PanelHead({ kicker, title, action, onClick, total }: { kicker: string; 
     </div>
   );
 }
-function OrderActions({ order, onEdit, onDelete }: { order: Order; onEdit: (o: Order) => void; onDelete: (o: Order) => void }) {
+function OrderActions({ order, onEdit, onPrint, onDelete }: { order: Order; onEdit: (o: Order) => void; onPrint: (o: Order) => void; onDelete: (o: Order) => void }) {
   return (
     <details className="order-actions" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
       <summary aria-label={`Actions pour la commande ${order.orderRef}`} title="Actions">
@@ -1484,6 +1501,13 @@ function OrderActions({ order, onEdit, onDelete }: { order: Order; onEdit: (o: O
         }}>
           <span aria-hidden="true">✎</span>
           Modifier la commande
+        </button>
+        <button type="button" role="menuitem" onClick={(event) => {
+          event.currentTarget.closest("details")?.removeAttribute("open");
+          onPrint(order);
+        }}>
+          <span aria-hidden="true">▣</span>
+          Imprimer le bordereau
         </button>
         <button type="button" role="menuitem" className="danger" onClick={(event) => {
           event.currentTarget.closest("details")?.removeAttribute("open");
@@ -1561,7 +1585,7 @@ function TrashPage({ orders, canRestore, submit }: { orders: Order[]; canRestore
     </section>
   );
 }
-function OrdersPage({ orders, onAdd, onEdit, onDelete }: { orders: Order[]; onAdd: () => void; onEdit: (o: Order) => void; onDelete: (o: Order) => void }) {
+function OrdersPage({ orders, onAdd, onEdit, onPrint, onDelete }: { orders: Order[]; onAdd: () => void; onEdit: (o: Order) => void; onPrint: (o: Order) => void; onDelete: (o: Order) => void }) {
   return (
     <section className="panel page-panel">
       <div className="section-toolbar">
@@ -1573,11 +1597,11 @@ function OrdersPage({ orders, onAdd, onEdit, onDelete }: { orders: Order[]; onAd
           ＋ Saisir une commande
         </button>
       </div>
-      <OrderTable orders={orders} onEdit={onEdit} onDelete={onDelete} />
+      <OrderTable orders={orders} onEdit={onEdit} onPrint={onPrint} onDelete={onDelete} />
     </section>
   );
 }
-function OrderTable({ orders, onEdit, onDelete }: { orders: Order[]; onEdit: (o: Order) => void; onDelete: (o: Order) => void }) {
+function OrderTable({ orders, onEdit, onPrint, onDelete }: { orders: Order[]; onEdit: (o: Order) => void; onPrint: (o: Order) => void; onDelete: (o: Order) => void }) {
   return (
     <>
       <div className="desktop-order-table table-scroll">
@@ -1611,7 +1635,7 @@ function OrderTable({ orders, onEdit, onDelete }: { orders: Order[]; onEdit: (o:
                   <td className={gain >= 0 ? "money-positive" : "money-negative"}>{money(gain)}</td>
                   <td><Status value={o.status} /></td>
                   <td className="order-actions-cell">
-                    <OrderActions order={o} onEdit={onEdit} onDelete={onDelete} />
+                    <OrderActions order={o} onEdit={onEdit} onPrint={onPrint} onDelete={onDelete} />
                   </td>
                 </tr>
               );
@@ -1636,7 +1660,7 @@ function OrderTable({ orders, onEdit, onDelete }: { orders: Order[]; onEdit: (o:
                 </span>
                 <div className="mobile-order-status">
                   <Status value={o.status} />
-                  <OrderActions order={o} onEdit={onEdit} onDelete={onDelete} />
+                  <OrderActions order={o} onEdit={onEdit} onPrint={onPrint} onDelete={onDelete} />
                 </div>
               </div>
               <div className="mobile-order-client">
@@ -1654,7 +1678,7 @@ function OrderTable({ orders, onEdit, onDelete }: { orders: Order[]; onEdit: (o:
     </>
   );
 }
-function ShippingPage({ orders, settings, onEdit, onDelete }: { orders: Order[]; settings: Record<string, string>; onEdit: (o: Order) => void; onDelete: (o: Order) => void }) {
+function ShippingPage({ orders, settings, onEdit, onPrint, onDelete }: { orders: Order[]; settings: Record<string, string>; onEdit: (o: Order) => void; onPrint: (o: Order) => void; onDelete: (o: Order) => void }) {
   const carrierNames = parseCarrierNames(settings);
   return (
     <>
@@ -1691,7 +1715,7 @@ function ShippingPage({ orders, settings, onEdit, onDelete }: { orders: Order[];
                 <small>{o.paymentStatus}</small>
               </div>
               <div className="shipment-actions">
-                <OrderActions order={o} onEdit={onEdit} onDelete={onDelete} />
+                <OrderActions order={o} onEdit={onEdit} onPrint={onPrint} onDelete={onDelete} />
               </div>
             </article>
           ))}
@@ -2333,6 +2357,7 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
   const [selectedProductId, setSelectedProductId] = useState(products[0] ? String(products[0].id) : "");
   const [orderQuantity, setOrderQuantity] = useState("1");
   const [orderSaleAmount, setOrderSaleAmount] = useState(products[0] ? String(products[0].salePrice) : "");
+  const [selectedOrderStatus, setSelectedOrderStatus] = useState("En attente");
   const selectedProduct = products.find((product) => String(product.id) === selectedProductId) || null;
 
   function selectOrderProduct(productId: string) {
@@ -2407,7 +2432,27 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
                   </div>
                 )}
                 <Select label="Source de la commande *" name="source" options={orderSourceOptions} />
-                <Select label="Statut de la commande" name="status" options={orderStatusOptions} />
+                <label className="field">
+                  <span>Statut de la commande</span>
+                  <select name="status" value={selectedOrderStatus} onChange={(event) => setSelectedOrderStatus(event.target.value)}>
+                    {orderStatusOptions.map((status) => <option key={status}>{status}</option>)}
+                  </select>
+                </label>
+                {selectedOrderStatus === "Retour" && (
+                  <>
+                    <label className="field">
+                      <span>Motif du retour *</span>
+                      <select name="returnReason" defaultValue="" required>
+                        <option value="" disabled>Choisir un motif</option>
+                        {returnReasonOptions.map((reason) => <option key={reason}>{reason}</option>)}
+                      </select>
+                    </label>
+                    <label className="field return-note-field">
+                      <span>Détail du retour</span>
+                      <input name="returnNote" type="text" maxLength={240} placeholder="Précision utile, surtout si vous choisissez Autre" />
+                    </label>
+                  </>
+                )}
                 <label className="field"><span>Quantité *</span><input name="quantity" type="number" inputMode="numeric" min="1" value={orderQuantity} onChange={(event) => updateOrderQuantity(event.target.value)} required /></label>
                 <label className="field"><span>Vente totale (MAD) *</span><input name="saleAmount" type="number" inputMode="decimal" min="0" value={orderSaleAmount} onChange={(event) => setOrderSaleAmount(event.target.value)} required /></label>
                 {selectedProduct && (
@@ -2466,8 +2511,10 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
     </div>
   );
 }
-function OrderModal({ order, history, carrierNames, close, submit }: { order: Order; history: OrderStatusHistory[]; carrierNames: string[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function OrderModal({ order, history, carrierNames, close, print, submit }: { order: Order; history: OrderStatusHistory[]; carrierNames: string[]; close: () => void; print: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState(order.status);
   const currentCarrier = order.carrier && order.carrier !== "Non affecté" ? order.carrier : "";
   const carrierOptions = Array.from(new Set([currentCarrier, ...carrierNames].filter(Boolean)));
   return (
@@ -2494,19 +2541,41 @@ function OrderModal({ order, history, carrierNames, close, submit }: { order: Or
           onSubmit={async (e) => {
             e.preventDefault();
             setSaving(true);
+            setFormError("");
             try {
               await submit("updateOrder", {
                 id: String(order.id),
                 ...Object.fromEntries(new FormData(e.currentTarget)),
               });
-            } catch {
+            } catch (caught) {
+              setFormError(caught instanceof Error ? caught.message : "Mise à jour impossible.");
               setSaving(false);
             }
           }}
         >
           <div className="form-grid">
             <Select label="Source de la commande" name="source" defaultValue={order.source || "Non renseignée"} options={[...orderSourceOptions, "Non renseignée"]} />
-            <Select label="Statut de la commande" name="status" defaultValue={order.status} options={orderStatusOptions} />
+            <label className="field">
+              <span>Statut de la commande</span>
+              <select name="status" value={selectedStatus} onChange={(event) => setSelectedStatus(event.target.value)}>
+                {orderStatusOptions.map((status) => <option key={status}>{status}</option>)}
+              </select>
+            </label>
+            {selectedStatus === "Retour" && (
+              <>
+                <label className="field">
+                  <span>Motif du retour *</span>
+                  <select name="returnReason" defaultValue={order.returnReason || ""} required>
+                    <option value="" disabled>Choisir un motif</option>
+                    {returnReasonOptions.map((reason) => <option key={reason}>{reason}</option>)}
+                  </select>
+                </label>
+                <label className="field return-note-field">
+                  <span>Détail du retour</span>
+                  <input name="returnNote" type="text" maxLength={240} defaultValue={order.returnNote} placeholder="Précision utile, surtout si vous choisissez Autre" />
+                </label>
+              </>
+            )}
             <Select label="Encaissement" name="paymentStatus" defaultValue={order.paymentStatus} options={["À encaisser", "Encaissé", "Non encaissé", "Remboursé"]} />
             <Field label="Frais de transport déduits (MAD)" name="shippingCost" type="number" inputMode="decimal" min="0" defaultValue={String(order.shippingCost)} />
             {carrierOptions.length ? <Select label="Agence de livraison" name="carrier" options={carrierOptions} defaultValue={currentCarrier || carrierOptions[0]} /> : <Field label="Agence de livraison" name="carrier" defaultValue={currentCarrier} />}
@@ -2537,7 +2606,11 @@ function OrderModal({ order, history, carrierNames, close, submit }: { order: Or
               )) : <small>Aucun changement de statut enregistré.</small>}
             </div>
           </div>
+          {formError && <p className="form-error">{formError}</p>}
           <div className="modal-actions">
+            <button type="button" className="secondary-button print-order-button" onClick={print}>
+              ▣ Imprimer le bordereau
+            </button>
             <button type="button" className="cancel-button" onClick={close}>
               Annuler
             </button>
@@ -2548,6 +2621,59 @@ function OrderModal({ order, history, carrierNames, close, submit }: { order: Or
         </form>
       </section>
     </div>
+  );
+}
+function PrintOrderSheet({ order }: { order: Order }) {
+  return (
+    <section className="print-order-sheet" aria-label={`Bordereau de la commande ${order.orderRef}`}>
+      <header className="print-slip-header">
+        <div className="print-slip-brand">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/maison-jiya-logo.jpeg" alt="Maison Jiya" />
+          <div><strong>Maison Jiya</strong><span>L&apos;heure de briller</span></div>
+        </div>
+        <div className="print-slip-reference">
+          <small>Bordereau de commande</small>
+          <strong>{order.orderRef}</strong>
+          <span>{dateLabel(order.createdAt)}</span>
+        </div>
+      </header>
+      <div className="print-slip-highlight">
+        <span>Montant à encaisser</span>
+        <strong>{money(order.saleAmount)}</strong>
+        <small>Paiement à la livraison</small>
+      </div>
+      <div className="print-slip-grid">
+        <article>
+          <span>Destinataire</span>
+          <strong>{order.customerName || "Cliente"}</strong>
+          <p>{order.phone || "Téléphone non renseigné"}</p>
+          <p>{order.city}</p>
+        </article>
+        <article>
+          <span>Livraison</span>
+          <strong>{order.carrier || "Agence non affectée"}</strong>
+          <p>N° de suivi : {order.trackingNumber || "À compléter"}</p>
+          <p>Statut : {order.status}</p>
+        </article>
+      </div>
+      <div className="print-slip-product">
+        <div><span>Produit</span><strong>{order.products}</strong></div>
+        <div><span>Quantité</span><strong>{order.quantity}</strong></div>
+        <div><span>Source</span><strong>{order.source}</strong></div>
+      </div>
+      {order.status === "Retour" && order.returnReason && (
+        <div className="print-slip-return">
+          <span>Retour</span>
+          <strong>{order.returnReason}</strong>
+          {order.returnNote && <p>{order.returnNote}</p>}
+        </div>
+      )}
+      <footer className="print-slip-footer">
+        <div><span>Signature / cachet</span></div>
+        <p>Merci de vérifier le nom, le téléphone, la ville et le montant avant l&apos;expédition.</p>
+      </footer>
+    </section>
   );
 }
 function EntityModal({ selection, close, submit }: { selection: EditableEntity; close: () => void; submit: (action: string, values: Record<string, FormDataEntryValue>) => Promise<void> }) {

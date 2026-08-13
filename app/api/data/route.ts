@@ -29,6 +29,7 @@ const orderStatuses = ["En attente", "Confirmée", "Expédiée", "En livraison",
 const orderSources = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Autre", "Non renseignée"];
 const paymentStatuses = ["À encaisser", "Encaissé", "Non encaissé", "Remboursé"];
 const stockCommittedStatuses = new Set(["Confirmée", "Expédiée", "En livraison", "Livrée", "Retour"]);
+const returnReasons = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
 const productCategories = ["Montres", "Bijoux", "Wallets", "Électronique", "Autre"];
 const themeOptions = ["mauve-froid", "rose-poudre", "sombre-prune", "bleu-brume", "sable-chic"];
 
@@ -45,6 +46,11 @@ function orderSource(value: unknown, fallback = "Non renseignée") {
 function paymentStatus(value: unknown, fallback = "À encaisser") {
   const status = textValue(value, fallback);
   return paymentStatuses.includes(status) ? status : fallback;
+}
+
+function returnReason(value: unknown, fallback = "") {
+  const reason = textValue(value, fallback);
+  return returnReasons.includes(reason) ? reason : fallback;
 }
 
 function productCategory(value: unknown, fallback = "Autre") {
@@ -167,7 +173,7 @@ async function seedIfNeeded() {
     { key: "carrier_names", value: "[]" },
     { key: "theme", value: "mauve-froid" },
     { key: "account_name", value: "Maison Jiya" },
-    { key: "backup_sheet_url", value: "https://docs.google.com/spreadsheets/d/1hQIwOKBBhhZIQN6AsmVwUCH_7T-WE8GlsCfrmb2H7Us/edit" },
+    { key: "backup_sheet_url", value: "" },
     { key: "security_backup_webhook_url", value: "" },
   ]).onConflictDoNothing();
 
@@ -236,7 +242,7 @@ async function snapshot(access: AccessInfo) {
   await seedIfNeeded();
   await createDailyBackup(await getRawDb());
   const db = await getDb();
-  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, source: orders.source, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
+  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
   const [orderRows, trashRows, customerRows, purchaseRows, adRows, capitalRows, productRows, movementRows, settingRows, memberRows, historyRows, auditRows, backupRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
@@ -355,6 +361,10 @@ export async function POST(request: Request) {
       const [selectedProduct] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
       if (!selectedProduct) return Response.json({ error: "Le produit sélectionné n’existe plus dans le catalogue." }, { status: 404 });
       const selectedStatus = orderStatus(payload.status);
+      const selectedReturnReason = selectedStatus === "Retour" ? returnReason(payload.returnReason) : "";
+      const selectedReturnNote = selectedStatus === "Retour" ? textValue(payload.returnNote).slice(0, 240) : "";
+      if (selectedStatus === "Retour" && !selectedReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
+      if (selectedReturnReason === "Autre" && !selectedReturnNote) return Response.json({ error: "Précisez le motif du retour." }, { status: 400 });
       const shouldDeductStock = commitsStock(selectedStatus);
       if (shouldDeductStock && quantity > selectedProduct.stockQuantity) {
         return Response.json({ error: `Stock insuffisant pour confirmer : ${selectedProduct.stockQuantity} unité(s) disponible(s).` }, { status: 409 });
@@ -377,8 +387,8 @@ export async function POST(request: Request) {
       const saleAmount = numberValue(payload.saleAmount, selectedProduct.salePrice * quantity);
       const rawDb = await getRawDb();
       const statements = [
-        rawDb.prepare(`INSERT INTO orders (order_ref, customer_id, product_id, city, products, quantity, sale_amount, product_cost, shipping_cost, ad_cost, fees, return_cost, source, status, payment_status, carrier, tracking_number, stock_deducted, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'À encaisser', ?, ?, ?, ?)`).bind(orderRef, customer.id, productId, city, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, numberValue(payload.shippingCost), numberValue(payload.adCost), numberValue(payload.fees), orderSource(payload.source), selectedStatus, selectedCarrier, textValue(payload.trackingNumber), shouldDeductStock ? 1 : 0, now),
+        rawDb.prepare(`INSERT INTO orders (order_ref, customer_id, product_id, city, products, quantity, sale_amount, product_cost, shipping_cost, ad_cost, fees, return_cost, return_reason, return_note, source, status, payment_status, carrier, tracking_number, stock_deducted, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'À encaisser', ?, ?, ?, ?)`).bind(orderRef, customer.id, productId, city, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, numberValue(payload.shippingCost), numberValue(payload.adCost), numberValue(payload.fees), selectedReturnReason, selectedReturnNote, orderSource(payload.source), selectedStatus, selectedCarrier, textValue(payload.trackingNumber), shouldDeductStock ? 1 : 0, now),
         rawDb.prepare(`INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at)
           SELECT id, NULL, ?, ?, ?, ? FROM orders WHERE order_ref = ?`).bind(selectedStatus, user.id, user.displayName, now, orderRef),
       ];
@@ -401,6 +411,10 @@ export async function POST(request: Request) {
       if (!existingOrder) return Response.json({ error: "Commande introuvable." }, { status: 404 });
       const nextPaymentStatus = paymentStatus(payload.paymentStatus, existingOrder.paymentStatus);
       const nextStatus = orderStatus(payload.status, existingOrder.status);
+      const nextReturnReason = nextStatus === "Retour" ? returnReason(payload.returnReason, existingOrder.returnReason) : existingOrder.returnReason;
+      const nextReturnNote = nextStatus === "Retour" ? textValue(payload.returnNote, existingOrder.returnNote).slice(0, 240) : existingOrder.returnNote;
+      if (nextStatus === "Retour" && !nextReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
+      if (nextReturnReason === "Autre" && !nextReturnNote) return Response.json({ error: "Précisez le motif du retour." }, { status: 400 });
       const now = new Date().toISOString();
       const paidAt = nextPaymentStatus === "Encaissé"
         ? existingOrder.paymentStatus === "Encaissé" && existingOrder.paidAt ? existingOrder.paidAt : now
@@ -417,8 +431,8 @@ export async function POST(request: Request) {
       const nextStockDeducted = existingOrder.productId ? commitsStock(nextStatus) : existingOrder.stockDeducted;
       const rawDb = await getRawDb();
       const statements = [
-        rawDb.prepare(`UPDATE orders SET status = ?, payment_status = ?, source = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, return_cost = ?, paid_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
-          .bind(nextStatus, nextPaymentStatus, orderSource(payload.source, existingOrder.source), numberValue(payload.shippingCost), textValue(payload.carrier, "Non affecté"), textValue(payload.trackingNumber), numberValue(payload.returnCost), paidAt, nextStockDeducted ? 1 : 0, now, id),
+        rawDb.prepare(`UPDATE orders SET status = ?, payment_status = ?, source = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, return_cost = ?, return_reason = ?, return_note = ?, paid_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
+          .bind(nextStatus, nextPaymentStatus, orderSource(payload.source, existingOrder.source), numberValue(payload.shippingCost), textValue(payload.carrier, "Non affecté"), textValue(payload.trackingNumber), numberValue(payload.returnCost), nextReturnReason, nextReturnNote, paidAt, nextStockDeducted ? 1 : 0, now, id),
       ];
       if (nextStatus !== existingOrder.status) {
         statements.push(rawDb.prepare("INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at) VALUES (?, ?, ?, ?, ?, ?)").bind(id, existingOrder.status, nextStatus, user.id, user.displayName, now));

@@ -65,6 +65,8 @@ export const orders = sqliteTable("orders", {
   adCost: integer("ad_cost").notNull().default(0),
   fees: integer("fees").notNull().default(0),
   returnCost: integer("return_cost").notNull().default(0),
+  returnReason: text("return_reason").notNull().default(""),
+  returnNote: text("return_note").notNull().default(""),
   source: text("source").notNull().default("Non renseignée"),
   status: text("status").notNull().default("Nouvelle"),
   paymentStatus: text("payment_status").notNull().default("À encaisser"),
