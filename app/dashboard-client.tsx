@@ -175,6 +175,26 @@ function createBackupToken() {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+function triggerGoogleSheetsSync(webhookUrl: string | undefined) {
+  if (!webhookUrl) return;
+  try {
+    const parsedUrl = new URL(webhookUrl);
+    if (
+      parsedUrl.protocol !== "https:"
+      || parsedUrl.hostname !== "script.google.com"
+      || !/^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(parsedUrl.pathname)
+    ) return;
+    void fetch(webhookUrl, {
+      method: "POST",
+      mode: "no-cors",
+      cache: "no-store",
+      keepalive: true,
+    }).catch(() => undefined);
+  } catch {
+    // La synchronisation périodique reste disponible si le webhook est indisponible.
+  }
+}
+
 function parseCarrierNames(settings: Record<string, string>) {
   const candidates: string[] = [];
   try {
@@ -257,6 +277,7 @@ export default function DashboardClient() {
       throw new Error(message);
     }
     setData(body);
+    triggerGoogleSheetsSync(body.settings.backup_webhook_url);
     setModal(null);
     setSelectedOrder(null);
     setSelectedEntity(null);
@@ -270,6 +291,7 @@ export default function DashboardClient() {
       updateCarriers: "Liste des agences mise à jour",
       updateBackupToken: "Clé privée de sauvegarde créée",
       revokeBackupToken: "Sauvegarde Google Sheets désactivée",
+      updateBackupWebhook: "Synchronisation instantanée connectée",
       deleteOrder: "Commande supprimée",
       updateProduct: "Produit mis à jour",
       deleteProduct: "Produit et historique de stock supprimés",
@@ -667,7 +689,7 @@ function Page({
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
-  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || "https://docs.google.com/spreadsheets/d/1hQIwOKBBhhZIQN6AsmVwUCH_7T-WE8GlsCfrmb2H7Us/edit"} access={data.access} members={data.members} submit={submit} />;
+  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || "https://docs.google.com/spreadsheets/d/1hQIwOKBBhhZIQN6AsmVwUCH_7T-WE8GlsCfrmb2H7Us/edit"} backupWebhookUrl={data.settings.backup_webhook_url || ""} access={data.access} members={data.members} submit={submit} />;
   const total = Math.max(1, data.orders.length);
   return (
     <>
@@ -757,13 +779,14 @@ function Page({
   );
 }
 
-function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, access, members, submit }: {
+function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, access, members, submit }: {
   currentTheme: ThemeKey;
   accountName: string;
   accountEmail: string;
   carriers: string[];
   backupConfigured: boolean;
   backupSheetUrl: string;
+  backupWebhookUrl: string;
   access: Data["access"];
   members: Member[];
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
@@ -773,6 +796,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   const [savingCarrier, setSavingCarrier] = useState(false);
   const [savingMember, setSavingMember] = useState(false);
   const [savingBackup, setSavingBackup] = useState(false);
+  const [savingWebhook, setSavingWebhook] = useState(false);
   const [backupToken, setBackupToken] = useState("");
   const [copyState, setCopyState] = useState("");
   const selectedTheme = themeOptions.find((theme) => theme.key === currentTheme) || themeOptions[0];
@@ -844,6 +868,20 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
       setCopyState("");
     } finally {
       setSavingBackup(false);
+    }
+  }
+
+  async function saveBackupWebhook(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (savingWebhook || !access.isOwner) return;
+    const formData = new FormData(event.currentTarget);
+    setSavingWebhook(true);
+    try {
+      await submit("updateBackupWebhook", { url: formData.get("webhookUrl") || "" });
+    } catch {
+      // Le message d’erreur global est affiché par le tableau de bord.
+    } finally {
+      setSavingWebhook(false);
     }
   }
 
@@ -985,10 +1023,32 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
             <ol>
               <li><span>1</span><p><strong>Ouvrez le classeur</strong><small>Tous les onglets et le code de synchronisation sont déjà préparés.</small></p></li>
               <li><span>2</span><p><strong>Collez la clé dans Configuration!B6</strong><small>Gardez cette clé privée et ne la partagez pas avec vos partenaires.</small></p></li>
-              <li><span>3</span><p><strong>Suivez l’onglet Installation</strong><small>Autorisez Google une seule fois pour lancer la copie automatique chaque heure.</small></p></li>
+              <li><span>3</span><p><strong>Suivez l’onglet Installation</strong><small>Autorisez Google une seule fois. Le déclencheur périodique restera actif comme sauvegarde de secours.</small></p></li>
             </ol>
             <a className="primary-button backup-sheet-link" href={backupSheetUrl} target="_blank" rel="noreferrer">Ouvrir le Google Sheet ↗</a>
           </div>
+
+          <form className="backup-key-card" onSubmit={(event) => void saveBackupWebhook(event)}>
+            <span className="card-kicker">3 · Synchronisation instantanée</span>
+            <h3>{backupWebhookUrl ? "Connexion immédiate active" : "Connectez le Web App Apps Script"}</h3>
+            <p>Collez l’adresse de déploiement qui se termine par <strong>/exec</strong>. Après chaque enregistrement, le site demandera immédiatement la mise à jour du classeur.</p>
+            <label>
+              <span>URL du Web App Apps Script</span>
+              <input
+                name="webhookUrl"
+                type="url"
+                defaultValue={backupWebhookUrl}
+                placeholder="https://script.google.com/macros/s/…/exec"
+                required
+                disabled={!access.isOwner}
+              />
+              <small>Gardez cette adresse privée. Le déclencheur périodique reste actif si Google est momentanément indisponible.</small>
+            </label>
+            <button className="primary-button" type="submit" disabled={savingWebhook || !access.isOwner}>
+              {savingWebhook ? "Connexion…" : backupWebhookUrl ? "Mettre à jour la connexion" : "Activer la synchronisation immédiate"}
+            </button>
+            {!access.isOwner && <small>Seul l’administrateur peut connecter Apps Script.</small>}
+          </form>
         </div>
 
         <div className="backup-privacy-note">
