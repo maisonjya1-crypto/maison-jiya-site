@@ -1,7 +1,7 @@
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb, getRawDb } from "../../../db";
 import { createDailyBackup, purgeExpiredTrash, restoreDailyBackup } from "../../../db/backups";
-import { adPerformance, auditLogs, capitalLedger, customers, dailyBackups, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
+import { adPerformance, auditLogs, capitalLedger, customers, dailyBackups, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
 type ActionPayload = Record<string, unknown> & { action?: string };
@@ -134,6 +134,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   updateProduct: { action: "Modification", entityType: "Produit" },
   deleteProduct: { action: "Suppression", entityType: "Produit" },
   addStockMovement: { action: "Ajout", entityType: "Stock" },
+  countInventory: { action: "Inventaire", entityType: "Stock" },
   updateStockMovement: { action: "Modification", entityType: "Stock" },
   deleteStockMovement: { action: "Suppression", entityType: "Stock" },
   updateAccountSettings: { action: "Modification", entityType: "Compte" },
@@ -243,7 +244,7 @@ async function snapshot(access: AccessInfo) {
   await createDailyBackup(await getRawDb());
   const db = await getDb();
   const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
-  const [orderRows, trashRows, customerRows, purchaseRows, adRows, capitalRows, productRows, movementRows, settingRows, memberRows, historyRows, auditRows, backupRows] = await Promise.all([
+  const [orderRows, trashRows, customerRows, purchaseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
       ? db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNotNull(orders.deletedAt)).orderBy(desc(orders.deletedAt))
@@ -254,6 +255,7 @@ async function snapshot(access: AccessInfo) {
     db.select().from(capitalLedger).orderBy(desc(capitalLedger.entryDate)),
     db.select().from(products).orderBy(desc(products.createdAt)),
     db.select({ id: stockMovements.id, productId: stockMovements.productId, orderId: stockMovements.orderId, orderRef: orders.orderRef, productCode: products.productCode, productName: products.name, movementType: stockMovements.movementType, quantity: stockMovements.quantity, note: stockMovements.note, createdAt: stockMovements.createdAt }).from(stockMovements).leftJoin(products, eq(stockMovements.productId, products.id)).leftJoin(orders, eq(stockMovements.orderId, orders.id)).orderBy(desc(stockMovements.createdAt)),
+    db.select({ id: inventoryCounts.id, countRef: inventoryCounts.countRef, productId: inventoryCounts.productId, productCode: products.productCode, productName: products.name, systemQuantity: inventoryCounts.systemQuantity, physicalQuantity: inventoryCounts.physicalQuantity, difference: inventoryCounts.difference, note: inventoryCounts.note, countedByUserId: inventoryCounts.countedByUserId, countedByName: inventoryCounts.countedByName, createdAt: inventoryCounts.createdAt }).from(inventoryCounts).leftJoin(products, eq(inventoryCounts.productId, products.id)).orderBy(desc(inventoryCounts.createdAt)).limit(500),
     db.select().from(settings),
     access.isOwner
       ? db.select({ id: users.id, username: users.username, displayName: users.displayName, role: users.role, isActive: users.isActive, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt))
@@ -276,6 +278,7 @@ async function snapshot(access: AccessInfo) {
     capital: capitalRows,
     products: productRows,
     stockMovements: movementRows,
+    inventoryCounts: inventoryRows,
     members: memberRows,
     orderStatusHistory: historyRows,
     auditLogs: auditRows,
@@ -568,6 +571,8 @@ export async function POST(request: Request) {
       if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
       const [linkedOrder] = await db.select({ id: orders.id }).from(orders).where(eq(orders.productId, id)).limit(1);
       if (linkedOrder) return Response.json({ error: "Ce produit est lié à une commande et doit être conservé dans l’historique." }, { status: 409 });
+      const [linkedInventory] = await db.select({ id: inventoryCounts.id }).from(inventoryCounts).where(eq(inventoryCounts.productId, id)).limit(1);
+      if (linkedInventory) return Response.json({ error: "Ce produit possède un historique d’inventaire et doit être conservé." }, { status: 409 });
       await db.batch([
         db.delete(stockMovements).where(eq(stockMovements.productId, id)),
         db.delete(products).where(eq(products.id, id)),
@@ -585,6 +590,41 @@ export async function POST(request: Request) {
         db.insert(stockMovements).values({ productId, movementType, quantity, note: textValue(payload.note) }),
         db.update(products).set({ stockQuantity: sql`${products.stockQuantity} + ${delta}` }).where(eq(products.id, productId)),
       ]);
+    } else if (payload.action === "countInventory") {
+      const productId = numberValue(payload.productId);
+      const physicalQuantity = numberValue(payload.physicalQuantity);
+      const note = textValue(payload.note).slice(0, 240);
+      if (!productId) return Response.json({ error: "Produit d’inventaire invalide." }, { status: 400 });
+      const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
+      if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
+      const difference = physicalQuantity - product.stockQuantity;
+      const countRef = `INV-${Date.now().toString(36).slice(-6).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
+      const countValues = {
+        countRef,
+        productId,
+        systemQuantity: product.stockQuantity,
+        physicalQuantity,
+        difference,
+        note,
+        countedByUserId: user.id,
+        countedByName: user.displayName,
+      };
+      if (difference !== 0) {
+        await db.batch([
+          db.insert(inventoryCounts).values(countValues),
+          db.update(products).set({ stockQuantity: physicalQuantity }).where(eq(products.id, productId)),
+          db.insert(stockMovements).values({
+            productId,
+            movementType: difference > 0 ? "Inventaire +" : "Inventaire -",
+            quantity: Math.abs(difference),
+            note: `Inventaire ${countRef} · ${note || "Comptage physique"}`,
+          }),
+        ]);
+      } else {
+        await db.insert(inventoryCounts).values(countValues);
+      }
+      auditEntityId = countRef;
+      auditEntityLabel = `${product.productCode} · ${countRef}`;
     } else if (payload.action === "updateStockMovement") {
       const id = numberValue(payload.id);
       const quantity = numberValue(payload.quantity);
@@ -593,6 +633,7 @@ export async function POST(request: Request) {
       const [movement] = await db.select().from(stockMovements).where(eq(stockMovements.id, id)).limit(1);
       if (!movement) return Response.json({ error: "Mouvement de stock introuvable." }, { status: 404 });
       if (movement.orderId) return Response.json({ error: "Un mouvement créé automatiquement par une commande ne peut pas être modifié." }, { status: 409 });
+      if (!["Entrée", "Vente"].includes(movement.movementType)) return Response.json({ error: "Un ajustement d’inventaire ne peut pas être modifié." }, { status: 409 });
       const [product] = await db.select().from(products).where(eq(products.id, movement.productId)).limit(1);
       if (!product) return Response.json({ error: "Produit associé introuvable." }, { status: 404 });
       const oldDelta = movement.movementType === "Entrée" ? movement.quantity : -movement.quantity;
@@ -609,6 +650,7 @@ export async function POST(request: Request) {
       const [movement] = await db.select().from(stockMovements).where(eq(stockMovements.id, id)).limit(1);
       if (!movement) return Response.json({ error: "Mouvement de stock introuvable." }, { status: 404 });
       if (movement.orderId) return Response.json({ error: "Un mouvement créé automatiquement par une commande ne peut pas être supprimé." }, { status: 409 });
+      if (!["Entrée", "Vente"].includes(movement.movementType)) return Response.json({ error: "Un ajustement d’inventaire ne peut pas être supprimé." }, { status: 409 });
       const [product] = await db.select().from(products).where(eq(products.id, movement.productId)).limit(1);
       if (!product) return Response.json({ error: "Produit associé introuvable." }, { status: 404 });
       const oldDelta = movement.movementType === "Entrée" ? movement.quantity : -movement.quantity;

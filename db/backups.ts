@@ -9,6 +9,7 @@ type BusinessSnapshot = {
     orders: SnapshotRow[];
     products: SnapshotRow[];
     stockMovements: SnapshotRow[];
+    inventoryCounts?: SnapshotRow[];
     purchases: SnapshotRow[];
     ads: SnapshotRow[];
     capital: SnapshotRow[];
@@ -22,6 +23,7 @@ const TABLES = {
   orders: "orders",
   products: "products",
   stockMovements: "stock_movements",
+  inventoryCounts: "inventory_counts",
   purchases: "purchases",
   ads: "ad_performance",
   capital: "capital_ledger",
@@ -34,6 +36,7 @@ const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   orders: ["id", "order_ref", "customer_id", "product_id", "city", "products", "quantity", "sale_amount", "product_cost", "shipping_cost", "ad_cost", "fees", "return_cost", "return_reason", "return_note", "source", "status", "payment_status", "carrier", "tracking_number", "stock_deducted", "paid_at", "deleted_at", "deleted_by_user_id", "created_at", "updated_at"],
   products: ["id", "product_code", "name", "category", "purchase_price", "sale_price", "stock_quantity", "created_at"],
   stockMovements: ["id", "product_id", "order_id", "movement_type", "quantity", "note", "created_at"],
+  inventoryCounts: ["id", "count_ref", "product_id", "system_quantity", "physical_quantity", "difference", "note", "counted_by_user_id", "counted_by_name", "created_at"],
   purchases: ["id", "supplier", "item", "quantity", "unit_cost", "total_cost", "payment_status", "created_at"],
   ads: ["id", "platform", "campaign", "spend", "revenue", "order_count", "source", "performance_date", "created_at"],
   capital: ["id", "direction", "category", "label", "amount", "entry_date", "created_at"],
@@ -56,11 +59,12 @@ async function readRows(database: D1Database, table: string, where = "") {
 }
 
 async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
-  const [customers, orders, products, stockMovements, purchases, ads, capital, settings, orderStatusHistory] = await Promise.all([
+  const [customers, orders, products, stockMovements, inventoryCounts, purchases, ads, capital, settings, orderStatusHistory] = await Promise.all([
     readRows(database, TABLES.customers),
     readRows(database, TABLES.orders),
     readRows(database, TABLES.products),
     readRows(database, TABLES.stockMovements),
+    readRows(database, TABLES.inventoryCounts),
     readRows(database, TABLES.purchases),
     readRows(database, TABLES.ads),
     readRows(database, TABLES.capital),
@@ -70,12 +74,12 @@ async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
   return {
     version: 1,
     createdAt: new Date().toISOString(),
-    tables: { customers, orders, products, stockMovements, purchases, ads, capital, settings, orderStatusHistory },
+    tables: { customers, orders, products, stockMovements, inventoryCounts, purchases, ads, capital, settings, orderStatusHistory },
   };
 }
 
 function countRecords(snapshot: BusinessSnapshot) {
-  return Object.values(snapshot.tables).reduce((total, rows) => total + rows.length, 0);
+  return Object.values(snapshot.tables).reduce((total, rows) => total + (rows?.length || 0), 0);
 }
 
 export async function createDailyBackup(database: D1Database, reason = "Automatique", force = false) {
@@ -130,6 +134,7 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
 
   await database.batch([
     database.prepare("DELETE FROM stock_movements"),
+    database.prepare("DELETE FROM inventory_counts"),
     database.prepare("DELETE FROM order_status_history"),
     database.prepare("DELETE FROM orders"),
     database.prepare("DELETE FROM customers"),
@@ -141,10 +146,10 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
   ]);
 
   const insertionOrder: Array<keyof BusinessSnapshot["tables"]> = [
-    "settings", "customers", "products", "purchases", "ads", "capital", "orders", "stockMovements", "orderStatusHistory",
+    "settings", "customers", "products", "purchases", "ads", "capital", "orders", "stockMovements", "inventoryCounts", "orderStatusHistory",
   ];
   for (const tableKey of insertionOrder) {
-    await runBatches(database, snapshot.tables[tableKey].map((item) => insertStatement(database, tableKey, item)));
+    await runBatches(database, (snapshot.tables[tableKey] || []).map((item) => insertStatement(database, tableKey, item)));
   }
 }
 

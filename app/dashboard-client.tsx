@@ -90,6 +90,20 @@ type StockMovement = {
   note: string;
   createdAt: string;
 };
+type InventoryCount = {
+  id: number;
+  countRef: string;
+  productId: number;
+  productCode: string | null;
+  productName: string | null;
+  systemQuantity: number;
+  physicalQuantity: number;
+  difference: number;
+  note: string;
+  countedByUserId: number | null;
+  countedByName: string;
+  createdAt: string;
+};
 type Member = {
   id: number;
   username: string;
@@ -134,6 +148,7 @@ type Data = {
   capital: Capital[];
   products: Product[];
   stockMovements: StockMovement[];
+  inventoryCounts: InventoryCount[];
   members: Member[];
   orderStatusHistory: OrderStatusHistory[];
   auditLogs: AuditLog[];
@@ -152,6 +167,7 @@ type Data = {
 };
 type ModalName = "order" | "purchase" | "ad" | "capital" | "product" | null;
 type StockSelection = { product: Product; type: "Entrée" | "Vente" } | null;
+type InventorySelection = Product | null;
 type ThemeKey = "mauve-froid" | "rose-poudre" | "sombre-prune" | "bleu-brume" | "sable-chic";
 type CapitalFlow = {
   direction: "Entrée" | "Sortie";
@@ -176,6 +192,7 @@ const emptyData: Data = {
   capital: [],
   products: [],
   stockMovements: [],
+  inventoryCounts: [],
   members: [],
   orderStatusHistory: [],
   auditLogs: [],
@@ -249,6 +266,7 @@ export default function DashboardClient() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [selectedEntity, setSelectedEntity] = useState<EditableEntity | null>(null);
   const [stockSelection, setStockSelection] = useState<StockSelection>(null);
+  const [inventorySelection, setInventorySelection] = useState<InventorySelection>(null);
   const [printOrder, setPrintOrder] = useState<Order | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -319,6 +337,7 @@ export default function DashboardClient() {
     setSelectedOrder(null);
     setSelectedEntity(null);
     setStockSelection(null);
+    setInventorySelection(null);
     const messages: Record<string, string> = {
       createMember: "Compte partenaire créé",
       resetMemberPassword: "Mot de passe remplacé",
@@ -337,6 +356,7 @@ export default function DashboardClient() {
       deleteProduct: "Produit et historique de stock supprimés",
       updateStockMovement: "Mouvement de stock mis à jour",
       deleteStockMovement: "Mouvement de stock supprimé",
+      countInventory: "Inventaire enregistré et stock corrigé",
       updateCustomer: "Client mis à jour",
       deleteCustomer: "Client supprimé",
       updatePurchase: "Achat mis à jour",
@@ -372,6 +392,10 @@ export default function DashboardClient() {
 
   function openStock(selection: StockSelection) {
     if (requireEditAccess()) setStockSelection(selection);
+  }
+
+  function openInventory(product: Product) {
+    if (requireEditAccess()) setInventorySelection(product);
   }
 
   function openEntity(selection: EditableEntity) {
@@ -576,12 +600,13 @@ export default function DashboardClient() {
             <button onClick={() => void loadData()}>Réessayer</button>
           </div>
         )}
-        {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} print={printOrderSlip} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} moveStock={openStock} submit={submit} />}
+        {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} print={printOrderSlip} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} moveStock={openStock} countInventory={openInventory} submit={submit} />}
       </section>
       {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products} close={() => setModal(null)} submit={submit} />}
       {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} close={() => setSelectedOrder(null)} print={() => printOrderSlip(selectedOrder)} submit={submit} />}
       {selectedEntity && <EntityModal selection={selectedEntity} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
+      {inventorySelection && <InventoryCountModal product={inventorySelection} close={() => setInventorySelection(null)} submit={submit} />}
       {printOrder && <PrintOrderSheet order={printOrder} />}
     </main>
   );
@@ -700,6 +725,7 @@ function Page({
   editEntity,
   removeEntity,
   moveStock,
+  countInventory,
   submit,
 }: {
   active: string;
@@ -727,10 +753,11 @@ function Page({
   editEntity: (selection: EditableEntity) => void;
   removeEntity: (selection: EditableEntity) => void;
   moveStock: (selection: StockSelection) => void;
+  countInventory: (product: Product) => void;
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
 }) {
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
-  if (active === "Produits") return <ProductsPage products={data.products} movements={data.stockMovements} onAdd={() => open("product")} onMove={moveStock} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Achats") return <PurchasesPage purchases={data.purchases} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
@@ -1748,11 +1775,28 @@ function CustomersPage({ customers, orders, onEdit, onDelete }: { customers: Cus
     </section>
   );
 }
-function ProductsPage({ products, movements, onAdd, onMove, onEdit, onDelete }: { products: Product[]; movements: StockMovement[]; onAdd: () => void; onMove: (selection: StockSelection) => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+function ProductsPage({ products, orders, movements, inventoryCounts, onAdd, onMove, onCount, onEdit, onDelete }: { products: Product[]; orders: Order[]; movements: StockMovement[]; inventoryCounts: InventoryCount[]; onAdd: () => void; onMove: (selection: StockSelection) => void; onCount: (product: Product) => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
   const units = products.reduce((sum, product) => sum + product.stockQuantity, 0),
     purchaseValue = products.reduce((sum, product) => sum + product.stockQuantity * product.purchasePrice, 0),
     saleValue = products.reduce((sum, product) => sum + product.stockQuantity * product.salePrice, 0),
     lowStock = products.filter((product) => product.stockQuantity <= 5).length;
+  const profitability = products.map((product) => {
+    const productOrders = orders.filter((order) => order.productId === product.id);
+    const delivered = productOrders.filter((order) => order.status === "Livrée");
+    const revenue = delivered.reduce((sum, order) => sum + order.saleAmount, 0);
+    const operatingCosts = delivered.reduce((sum, order) => sum + order.productCost + order.shippingCost + order.adCost + order.fees, 0);
+    const returnCosts = productOrders.reduce((sum, order) => sum + order.returnCost, 0);
+    const costs = operatingCosts + returnCosts;
+    const profit = revenue - costs;
+    return {
+      product,
+      deliveredUnits: delivered.reduce((sum, order) => sum + order.quantity, 0),
+      revenue,
+      costs,
+      profit,
+      margin: revenue ? (profit / revenue) * 100 : 0,
+    };
+  }).sort((left, right) => right.profit - left.profit);
   return (
     <>
       <section className="kpi-grid stock-kpis">
@@ -1760,6 +1804,31 @@ function ProductsPage({ products, movements, onAdd, onMove, onEdit, onDelete }: 
         <Kpi label="Unités restantes" value={String(units)} detail="Stock disponible" />
         <Kpi label="Valeur d’achat" value={money(purchaseValue)} detail="Au prix d’achat" />
         <Kpi label="Valeur de vente" value={money(saleValue)} detail="Potentiel du stock" />
+      </section>
+      <section className="panel product-profit-panel">
+        <PanelHead kicker="Rentabilité" title="Bénéfice par produit" total={money(profitability.reduce((sum, row) => sum + row.profit, 0))} />
+        <p className="profitability-note">Calcul automatique sur les commandes livrées, selon les coûts saisis : produit, livraison, publicité, frais et retours.</p>
+        {products.length === 0 ? (
+          <EmptyState title="Aucune rentabilité à calculer" text="Ajoutez un produit puis rattachez-le à vos commandes." />
+        ) : (
+          <div className="table-scroll profitability-table">
+            <table>
+              <thead><tr><th>Produit</th><th>Unités livrées</th><th>CA livré</th><th>Coûts</th><th>Bénéfice net</th><th>Marge</th></tr></thead>
+              <tbody>
+                {profitability.map((row) => (
+                  <tr key={row.product.id}>
+                    <td><strong>{row.product.name}</strong><small>{row.product.productCode}</small></td>
+                    <td>{row.deliveredUnits}</td>
+                    <td>{money(row.revenue)}</td>
+                    <td>{money(row.costs)}</td>
+                    <td className={moneyTone(row.profit)}><strong>{money(row.profit)}</strong></td>
+                    <td><span className={`margin-chip ${row.margin < 0 ? "negative" : row.margin > 0 ? "positive" : "neutral"}`}>{row.margin.toFixed(1)} %</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
       <section className="panel page-panel products-panel">
         <div className="section-toolbar">
@@ -1787,6 +1856,7 @@ function ProductsPage({ products, movements, onAdd, onMove, onEdit, onDelete }: 
                           <div className="stock-actions">
                             <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Stock</button>
                             <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Sortie</button>
+                            <button className="inventory-button" onClick={() => onCount(product)}>≋ Inventaire</button>
                           </div>
                           <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />
                         </div>
@@ -1814,6 +1884,7 @@ function ProductsPage({ products, movements, onAdd, onMove, onEdit, onDelete }: 
                   <div className="stock-actions">
                     <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Ajouter du stock</button>
                     <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Sortie manuelle</button>
+                    <button className="inventory-button" onClick={() => onCount(product)}>≋ Faire l’inventaire</button>
                   </div>
                 </article>
               ))}
@@ -1835,11 +1906,37 @@ function ProductsPage({ products, movements, onAdd, onMove, onEdit, onDelete }: 
                     <td>{dateLabel(movement.createdAt)}</td>
                     <td><strong>{movement.productName}</strong><small>{movement.productCode}</small></td>
                     <td><Status value={movement.movementType} /></td>
-                    <td className={["Entrée", "Réintégration"].includes(movement.movementType) ? "money-positive" : "money-negative"}>{["Entrée", "Réintégration"].includes(movement.movementType) ? "+" : "−"}{movement.quantity}</td>
+                    <td className={["Entrée", "Réintégration", "Inventaire +"].includes(movement.movementType) ? "money-positive" : "money-negative"}>{["Entrée", "Réintégration", "Inventaire +"].includes(movement.movementType) ? "+" : "−"}{movement.quantity}</td>
                     <td>{movement.note || "—"}</td>
                     <td className="order-actions-cell">
-                      {movement.orderId ? <span className="automatic-movement">Automatique</span> : <RecordActions label="ce mouvement de stock" onEdit={() => onEdit({ kind: "movement", record: movement })} onDelete={() => onDelete({ kind: "movement", record: movement })} />}
+                      {movement.orderId || movement.movementType.startsWith("Inventaire") ? <span className="automatic-movement">{movement.orderId ? "Automatique" : "Inventaire"}</span> : <RecordActions label="ce mouvement de stock" onEdit={() => onEdit({ kind: "movement", record: movement })} onDelete={() => onDelete({ kind: "movement", record: movement })} />}
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      <section className="panel inventory-history-panel">
+        <PanelHead kicker="Contrôle physique" title="Historique des inventaires" total={String(inventoryCounts.length)} />
+        {inventoryCounts.length === 0 ? (
+          <EmptyState title="Aucun inventaire enregistré" text="Cliquez sur « Inventaire » près d’un produit pour comparer le stock physique au stock du site." />
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Date</th><th>Référence</th><th>Produit</th><th>Stock site</th><th>Stock physique</th><th>Écart</th><th>Compté par</th><th>Note</th></tr></thead>
+              <tbody>
+                {inventoryCounts.slice(0, 20).map((count) => (
+                  <tr key={count.id}>
+                    <td>{dateTimeLabel(count.createdAt)}</td>
+                    <td><strong>{count.countRef}</strong></td>
+                    <td><strong>{count.productName}</strong><small>{count.productCode}</small></td>
+                    <td>{count.systemQuantity}</td>
+                    <td>{count.physicalQuantity}</td>
+                    <td className={count.difference > 0 ? "money-positive" : count.difference < 0 ? "money-negative" : ""}><strong>{count.difference > 0 ? "+" : ""}{count.difference}</strong></td>
+                    <td>{count.countedByName}</td>
+                    <td>{count.note || "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -2829,6 +2926,60 @@ function StockMovementModal({ selection, close, submit }: { selection: Exclude<S
             <button className="primary-button" disabled={saving}>
               {saving ? "Enregistrement…" : selection.type === "Entrée" ? "Ajouter au stock" : "Confirmer la vente"}
             </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+function InventoryCountModal({ product, close, submit }: { product: Product; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [physicalQuantity, setPhysicalQuantity] = useState(String(product.stockQuantity));
+  const parsedPhysicalQuantity = Math.max(0, Math.round(Number(physicalQuantity) || 0));
+  const difference = parsedPhysicalQuantity - product.stockQuantity;
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+      <section className="modal compact inventory-modal" role="dialog" aria-modal="true" aria-labelledby="inventory-modal-title">
+        <div className="modal-head">
+          <div>
+            <span className="card-kicker">{product.productCode} · Contrôle de stock</span>
+            <h2 id="inventory-modal-title">Inventaire physique</h2>
+            <p>Comptez les articles réellement présents. Le stock du site sera aligné et chaque écart restera dans l’historique.</p>
+          </div>
+          <button type="button" onClick={close} aria-label="Fermer">×</button>
+        </div>
+        <form onSubmit={async (event) => {
+          event.preventDefault();
+          setSaving(true);
+          setFormError("");
+          try {
+            await submit("countInventory", {
+              productId: String(product.id),
+              ...Object.fromEntries(new FormData(event.currentTarget)),
+            });
+          } catch (caught) {
+            setFormError(caught instanceof Error ? caught.message : "Inventaire impossible.");
+            setSaving(false);
+          }
+        }}>
+          <div className="inventory-summary">
+            <div><span>Stock du site</span><strong>{product.stockQuantity}</strong></div>
+            <div><span>Stock physique</span><strong>{parsedPhysicalQuantity}</strong></div>
+            <div className={difference > 0 ? "positive" : difference < 0 ? "negative" : "neutral"}><span>Écart</span><strong>{difference > 0 ? "+" : ""}{difference}</strong></div>
+          </div>
+          <div className="form-grid">
+            <label className="field">
+              <span>Quantité physique comptée *</span>
+              <input name="physicalQuantity" type="number" inputMode="numeric" min="0" value={physicalQuantity} onChange={(event) => setPhysicalQuantity(event.target.value)} required />
+            </label>
+            <Field label="Note / explication de l’écart" name="note" />
+          </div>
+          <p className="inventory-warning">{difference === 0 ? "✓ Aucun écart : le contrôle sera quand même enregistré." : `Le site corrigera automatiquement le stock de ${product.stockQuantity} à ${parsedPhysicalQuantity} unité(s).`}</p>
+          {formError && <p className="form-error" role="alert">{formError}</p>}
+          <div className="modal-actions">
+            <button type="button" className="cancel-button" onClick={close}>Annuler</button>
+            <button className="primary-button" disabled={saving}>{saving ? "Enregistrement…" : "Valider l’inventaire"}</button>
           </div>
         </form>
       </section>

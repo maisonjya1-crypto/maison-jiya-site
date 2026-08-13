@@ -135,6 +135,20 @@ const schemaStatements = [
     FOREIGN KEY (order_id) REFERENCES orders(id)
   )`,
   `CREATE INDEX IF NOT EXISTS stock_movements_product_id_idx ON stock_movements (product_id)`,
+  `CREATE TABLE IF NOT EXISTS inventory_counts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    count_ref TEXT NOT NULL UNIQUE,
+    product_id INTEGER NOT NULL,
+    system_quantity INTEGER NOT NULL,
+    physical_quantity INTEGER NOT NULL,
+    difference INTEGER NOT NULL,
+    note TEXT DEFAULT '' NOT NULL,
+    counted_by_user_id INTEGER,
+    counted_by_name TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS inventory_counts_product_id_idx ON inventory_counts (product_id)`,
   `CREATE TRIGGER IF NOT EXISTS prevent_negative_product_stock
     BEFORE UPDATE OF stock_quantity ON products
     WHEN NEW.stock_quantity < 0
