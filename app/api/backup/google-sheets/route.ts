@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { adPerformance, capitalLedger, customers, orders, products, purchases, settings, stockMovements, users } from "../../../../db/schema";
 
@@ -105,7 +105,7 @@ export async function GET(request: Request) {
         paidAt: orders.paidAt,
         createdAt: orders.createdAt,
         updatedAt: orders.updatedAt,
-      }).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).orderBy(desc(orders.createdAt));
+      }).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt));
 
       const customerRows = await db.select().from(customers).orderBy(desc(customers.createdAt));
       const orderNumbers = new Map([...orderRows].reverse().map((row, index) => [row.id, index + 1]));

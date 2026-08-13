@@ -65,6 +65,8 @@ const schemaStatements = [
     carrier TEXT DEFAULT 'Non affecté' NOT NULL,
     tracking_number TEXT DEFAULT '' NOT NULL,
     paid_at TEXT,
+    deleted_at TEXT,
+    deleted_by_user_id INTEGER,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TEXT,
     FOREIGN KEY (customer_id) REFERENCES customers(id)
@@ -126,9 +128,61 @@ const schemaStatements = [
     FOREIGN KEY (product_id) REFERENCES products(id)
   )`,
   `CREATE INDEX IF NOT EXISTS stock_movements_product_id_idx ON stock_movements (product_id)`,
+  `CREATE TABLE IF NOT EXISTS order_status_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    order_id INTEGER NOT NULL,
+    from_status TEXT,
+    to_status TEXT NOT NULL,
+    changed_by_user_id INTEGER,
+    changed_by_name TEXT NOT NULL,
+    changed_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS order_status_history_order_id_idx ON order_status_history (order_id)`,
+  `CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    user_id INTEGER,
+    username TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT,
+    entity_label TEXT DEFAULT '' NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs (created_at)`,
+  `CREATE TABLE IF NOT EXISTS daily_backups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    backup_date TEXT NOT NULL UNIQUE,
+    reason TEXT DEFAULT 'Automatique' NOT NULL,
+    snapshot_json TEXT NOT NULL,
+    record_count INTEGER DEFAULT 0 NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+  )`,
 ];
 
-export async function getDb() {
+async function ensureOrderColumns(database: D1Database) {
+  const info = await database.prepare("PRAGMA table_info(orders)").all<{ name: string }>();
+  const columns = new Set(info.results.map((column) => column.name));
+  const statements: D1PreparedStatement[] = [];
+  if (!columns.has("deleted_at")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN deleted_at TEXT"));
+  if (!columns.has("deleted_by_user_id")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN deleted_by_user_id INTEGER"));
+  if (statements.length) await database.batch(statements);
+}
+
+async function initializeDatabase(database: D1Database) {
+  await database.batch(schemaStatements.map((statement) => database.prepare(statement)));
+  await ensureOrderColumns(database);
+  await database.prepare(`
+    INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_name, changed_at)
+    SELECT orders.id, NULL, orders.status, 'État initial', COALESCE(orders.updated_at, orders.created_at)
+    FROM orders
+    WHERE NOT EXISTS (
+      SELECT 1 FROM order_status_history WHERE order_status_history.order_id = orders.id
+    )
+  `).run();
+}
+
+export async function getRawDb() {
   const { env } = await import("cloudflare:workers");
   if (!env.DB) {
     throw new Error(
@@ -136,11 +190,7 @@ export async function getDb() {
     );
   }
 
-  if (!databaseReady) {
-    databaseReady = env.DB.batch(
-      schemaStatements.map((statement) => env.DB.prepare(statement)),
-    ).then(() => undefined);
-  }
+  if (!databaseReady) databaseReady = initializeDatabase(env.DB);
 
   try {
     await databaseReady;
@@ -149,5 +199,9 @@ export async function getDb() {
     throw error;
   }
 
-  return drizzle(env.DB, { schema });
+  return env.DB;
+}
+
+export async function getDb() {
+  return drizzle(await getRawDb(), { schema });
 }
