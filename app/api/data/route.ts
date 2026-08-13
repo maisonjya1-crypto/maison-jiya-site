@@ -179,8 +179,10 @@ export async function POST(request: Request) {
       let [customer] = await db.select().from(customers).where(eq(customers.phone, phone)).limit(1);
       if (!customer) [customer] = await db.insert(customers).values({ name, phone, city }).returning();
       else await db.update(customers).set({ name, city }).where(eq(customers.id, customer.id));
+      const [carrierSetting] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, "carrier_name")).limit(1);
+      const configuredCarrier = carrierSetting?.value && carrierSetting.value !== "À configurer" ? carrierSetting.value : "Non affecté";
       await db.insert(orders).values({
-        orderRef: `MJ-${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`, customerId: customer.id, city, products: textValue(payload.products), quantity: numberValue(payload.quantity, 1), saleAmount: numberValue(payload.saleAmount), productCost: numberValue(payload.productCost), shippingCost: numberValue(payload.shippingCost), adCost: numberValue(payload.adCost), fees: numberValue(payload.fees), source: orderSource(payload.source), status: orderStatus(payload.status), paymentStatus: "À encaisser", carrier: textValue(payload.carrier, "Non affecté"), trackingNumber: textValue(payload.trackingNumber), updatedAt: new Date().toISOString(),
+        orderRef: `MJ-${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`, customerId: customer.id, city, products: textValue(payload.products), quantity: numberValue(payload.quantity, 1), saleAmount: numberValue(payload.saleAmount), productCost: numberValue(payload.productCost), shippingCost: numberValue(payload.shippingCost), adCost: numberValue(payload.adCost), fees: numberValue(payload.fees), source: orderSource(payload.source), status: orderStatus(payload.status), paymentStatus: "À encaisser", carrier: textValue(payload.carrier) || configuredCarrier, trackingNumber: textValue(payload.trackingNumber), updatedAt: new Date().toISOString(),
       });
     } else if (payload.action === "updateOrder") {
       const id = numberValue(payload.id);
@@ -368,10 +370,24 @@ export async function POST(request: Request) {
       ]);
     } else if (payload.action === "updateSetting") {
       const key = textValue(payload.key);
-      if (key !== "theme") return Response.json({ error: "Réglage invalide." }, { status: 400 });
+      if (!["theme", "carrier_name"].includes(key)) return Response.json({ error: "Réglage invalide." }, { status: 400 });
       const value = textValue(payload.value);
       if (key === "theme" && !themeOptions.includes(value)) return Response.json({ error: "Thème invalide." }, { status: 400 });
-      await db.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: new Date().toISOString() } });
+      if (key === "carrier_name") {
+        if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut modifier le transporteur." }, { status: 403 });
+        if (value.length < 2 || value.length > 80 || value === "À configurer") return Response.json({ error: "Le nom de l’agence doit contenir entre 2 et 80 caractères." }, { status: 400 });
+      }
+      const updatedAt = new Date().toISOString();
+      const settingQuery = db.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value, updatedAt } });
+      if (key === "carrier_name") {
+        await db.batch([
+          settingQuery,
+          db.update(orders).set({ carrier: value, updatedAt }).where(eq(orders.carrier, "Non affecté")),
+          db.update(orders).set({ carrier: value, updatedAt }).where(eq(orders.carrier, "")),
+        ]);
+      } else {
+        await settingQuery;
+      }
     } else {
       return Response.json({ error: "Action inconnue." }, { status: 400 });
     }
