@@ -218,28 +218,58 @@ td small { display:block; margin-top:3px; color:#919893; font-size:8px; }.clicka
 @media(max-width:1050px){.auth-shell{grid-template-columns:1fr}.auth-card{padding-block:55px}.auth-showcase{display:none}.theme-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.account-settings-panel,.security-settings-panel{grid-template-columns:1fr}.account-settings-form{grid-template-columns:1fr 1fr}.member-list{grid-template-columns:1fr}}
 @media(max-width:720px){.auth-card{width:100%;padding:28px 19px 42px}.auth-brand{margin-bottom:38px}.auth-logo-frame{width:52px;height:52px}.auth-heading h1{font-size:31px}.auth-heading p{font-size:11px}.auth-form input{font-size:16px}.sidebar nav{grid-template-columns:repeat(9,minmax(66px,1fr));border-color:var(--sidebar-line);background:color-mix(in srgb,var(--sidebar) 96%,transparent);box-shadow:0 16px 45px color-mix(in srgb,var(--sidebar) 40%,transparent)}.nav-item.active{background:var(--sidebar-active)}.edit-access-strip{align-items:stretch;flex-direction:column;margin-top:0}.access-action{width:100%;min-height:42px}.settings-intro{align-items:flex-start;flex-direction:column;padding:22px}.current-theme-badge{width:100%}.settings-panel{padding:18px}.settings-panel-head{align-items:flex-start;flex-direction:column}.security-overview{align-items:flex-start}.password-fields,.member-create-grid{grid-template-columns:1fr}.member-create-grid label:nth-child(3){grid-column:auto}.unlocked-form{align-items:stretch;flex-direction:column}.unlocked-form>.secondary-button{width:100%;min-height:42px}.account-settings-form{grid-template-columns:1fr}.account-form-footer{align-items:stretch;flex-direction:column}.account-form-footer .primary-button{width:100%}.member-rights-form,.member-password-form{grid-template-columns:1fr}.member-rights-form .secondary-button,.member-password-form .secondary-button{grid-column:auto}.member-active-toggle{padding-top:0}.theme-grid{grid-template-columns:1fr}.theme-mini-preview{height:120px}}
 
-/* Configuration simple du transporteur */
+/* Gestion des agences de transport */
 .connection-card-button { width:100%; color:inherit; font:inherit; text-align:left; cursor:pointer; }
 .connection-card-button:hover { border-color:var(--brand-bg); background:var(--sidebar-hover); }
 .connection-card-button:focus-visible { outline:3px solid color-mix(in srgb,var(--brand-bg) 40%,transparent); outline-offset:3px; }
-.carrier-settings-panel { display:grid; grid-template-columns:minmax(250px,.85fr) minmax(360px,1.15fr); gap:24px; align-items:center; }
+.carrier-settings-panel { display:block; }
+.carrier-settings-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:22px; }
 .carrier-settings-copy { display:flex; align-items:flex-start; gap:15px; }
 .carrier-settings-copy>div { min-width:0; }
-.carrier-settings-icon { width:48px; height:48px; flex:0 0 auto; display:grid; place-items:center; border-radius:14px; color:#fff; background:var(--forest); font:700 18px Georgia,serif; box-shadow:0 9px 20px color-mix(in srgb,var(--forest) 20%,transparent); }
+.carrier-settings-icon,.carrier-agency-mark { flex:0 0 auto; display:grid; place-items:center; color:#fff; background:var(--forest); font:700 18px Georgia,serif; box-shadow:0 9px 20px color-mix(in srgb,var(--forest) 20%,transparent); }
+.carrier-settings-icon { width:48px; height:48px; border-radius:14px; }
 .carrier-settings-copy h2 { margin:2px 0 7px; font:500 21px Georgia,serif; }
-.carrier-settings-copy p { margin:0; color:var(--muted); font-size:9px; line-height:1.6; }
-.carrier-settings-form { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:11px; padding:18px; border:1px solid var(--line); border-radius:15px; background:var(--surface-soft); }
+.carrier-settings-copy p { max-width:700px; margin:0; color:var(--muted); font-size:10px; line-height:1.6; }
+.carrier-count { flex:0 0 auto; padding:8px 12px; border:1px solid var(--line); border-radius:999px; color:var(--forest); background:var(--surface-soft); font-size:9px; font-weight:800; }
+.carrier-management-grid { display:grid; grid-template-columns:minmax(270px,.72fr) minmax(360px,1.28fr); gap:18px; align-items:start; }
+.carrier-settings-form { display:flex; flex-direction:column; gap:12px; padding:18px; border:1px solid var(--line); border-radius:15px; background:var(--surface-soft); }
 .carrier-settings-form label { min-width:0; display:flex; flex-direction:column; gap:7px; }
-.carrier-settings-form label>span { color:var(--muted); font-size:9px; font-weight:700; }
-.carrier-settings-form input { width:100%; min-height:43px; padding:10px 11px; border:1px solid var(--line); border-radius:10px; color:var(--ink); background:var(--paper); outline:none; font-size:11px; }
-.carrier-settings-form input:focus { border-color:var(--forest); box-shadow:0 0 0 3px color-mix(in srgb,var(--forest) 13%,transparent); }
+.carrier-settings-form label>span,.carrier-agency-edit label>span { color:var(--muted); font-size:9px; font-weight:700; }
+.carrier-settings-form input,.carrier-agency-edit input { width:100%; min-height:43px; padding:10px 11px; border:1px solid var(--line); border-radius:10px; color:var(--ink); background:var(--paper); outline:none; font-size:11px; }
+.carrier-settings-form input:focus,.carrier-agency-edit input:focus { border-color:var(--forest); box-shadow:0 0 0 3px color-mix(in srgb,var(--forest) 13%,transparent); }
 .carrier-settings-form input:disabled { opacity:.62; cursor:not-allowed; }
 .carrier-settings-form label small,.carrier-settings-form>p { color:var(--muted); font-size:8px; line-height:1.45; }
-.carrier-settings-form>p { grid-column:1/-1; margin:0; }
-.carrier-settings-form .primary-button { min-height:43px; white-space:nowrap; }
+.carrier-settings-form>p { margin:0; }
+.carrier-settings-form .primary-button { width:100%; min-height:43px; }
+.carrier-agency-list { display:flex; flex-direction:column; gap:9px; min-width:0; }
+.carrier-agency-card { position:relative; display:flex; align-items:center; gap:12px; min-height:68px; padding:12px 13px; border:1px solid var(--line); border-radius:14px; background:var(--paper); }
+.carrier-agency-mark { width:38px; height:38px; border-radius:11px; font-size:14px; box-shadow:none; }
+.carrier-agency-card>div:not(.record-actions) { min-width:0; flex:1; display:flex; flex-direction:column; gap:4px; }
+.carrier-agency-card strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink); font-size:11px; }
+.carrier-agency-card small,.carrier-empty small { color:var(--muted); font-size:8px; }
+.carrier-empty { min-height:115px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:22px; border:1px dashed var(--line); border-radius:15px; text-align:center; background:var(--surface-soft); }
+.carrier-empty strong { color:var(--ink); font-size:11px; }
+.carrier-agency-edit { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:12px; padding:14px; border:1px solid var(--forest); border-radius:14px; background:var(--surface-soft); box-shadow:0 8px 24px color-mix(in srgb,var(--forest) 10%,transparent); }
+.carrier-agency-edit label { min-width:0; display:flex; flex-direction:column; gap:7px; }
+.carrier-agency-edit>div { display:flex; align-items:center; gap:7px; }
+.carrier-agency-edit .cancel-button,.carrier-agency-edit .primary-button { min-height:43px; white-space:nowrap; }
 
-@media(max-width:1050px){.carrier-settings-panel{grid-template-columns:1fr}}
-@media(max-width:720px){.carrier-settings-panel{padding:18px}.carrier-settings-form{grid-template-columns:1fr}.carrier-settings-form .primary-button{width:100%}.carrier-settings-copy{align-items:flex-start}}
+@media(max-width:1050px){
+  .carrier-management-grid { grid-template-columns:1fr; }
+}
+@media(max-width:720px){
+  .carrier-settings-panel { padding:18px; }
+  .carrier-settings-head { align-items:flex-start; }
+  .carrier-settings-copy { align-items:flex-start; }
+  .carrier-count { margin-top:2px; }
+  .carrier-agency-edit { grid-template-columns:1fr; }
+  .carrier-agency-edit>div { display:grid; grid-template-columns:1fr 1fr; }
+  .carrier-agency-edit .cancel-button,.carrier-agency-edit .primary-button { width:100%; }
+}
+@media(max-width:480px){
+  .carrier-settings-head { flex-direction:column; }
+  .carrier-count { align-self:flex-start; }
+}
 
 /* Actions des commandes */
 .order-actions-heading,.order-actions-cell { width:74px; text-align:right; }
