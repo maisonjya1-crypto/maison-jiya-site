@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -31,6 +31,17 @@ export const loginAttempts = sqliteTable("login_attempts", {
   windowStartedAt: text("window_started_at").notNull(),
   blockedUntil: text("blocked_until"),
 });
+
+export const aiUsage = sqliteTable(
+  "ai_usage",
+  {
+    userId: integer("user_id").notNull().references(() => users.id),
+    usageDate: text("usage_date").notNull(),
+    requestCount: integer("request_count").notNull().default(0),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.usageDate] })],
+);
 
 export const customers = sqliteTable("customers", {
   id: integer("id").primaryKey({ autoIncrement: true }),

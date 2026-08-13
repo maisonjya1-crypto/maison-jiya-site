@@ -30,6 +30,14 @@ const schemaStatements = [
     window_started_at TEXT NOT NULL,
     blocked_until TEXT
   )`,
+  `CREATE TABLE IF NOT EXISTS ai_usage (
+    user_id INTEGER NOT NULL,
+    usage_date TEXT NOT NULL,
+    request_count INTEGER DEFAULT 0 NOT NULL,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    PRIMARY KEY (user_id, usage_date),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`,
   `CREATE TABLE IF NOT EXISTS customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     name TEXT NOT NULL,
@@ -122,16 +130,15 @@ const schemaStatements = [
 
 export async function getDb() {
   const { env } = await import("cloudflare:workers");
-  const bindings = env as unknown as { DB?: D1Database };
-  if (!bindings.DB) {
+  if (!env.DB) {
     throw new Error(
       "Cloudflare D1 binding `DB` is unavailable. Configure the `DB` binding in wrangler.jsonc before using the database."
     );
   }
 
   if (!databaseReady) {
-    databaseReady = bindings.DB.batch(
-      schemaStatements.map((statement) => bindings.DB!.prepare(statement)),
+    databaseReady = env.DB.batch(
+      schemaStatements.map((statement) => env.DB.prepare(statement)),
     ).then(() => undefined);
   }
 
@@ -142,5 +149,5 @@ export async function getDb() {
     throw error;
   }
 
-  return drizzle(bindings.DB, { schema });
+  return drizzle(env.DB, { schema });
 }
