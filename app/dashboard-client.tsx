@@ -120,6 +120,13 @@ type CapitalFlow = {
   amount: number;
   date: string;
 };
+type EditableEntity =
+  | { kind: "product"; record: Product }
+  | { kind: "movement"; record: StockMovement }
+  | { kind: "customer"; record: Customer }
+  | { kind: "purchase"; record: Purchase }
+  | { kind: "ad"; record: Ad }
+  | { kind: "capital"; record: Capital };
 
 const emptyData: Data = {
   orders: [],
@@ -167,6 +174,7 @@ export default function DashboardClient() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<ModalName>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedEntity, setSelectedEntity] = useState<EditableEntity | null>(null);
   const [stockSelection, setStockSelection] = useState<StockSelection>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -230,6 +238,7 @@ export default function DashboardClient() {
     setData(body);
     setModal(null);
     setSelectedOrder(null);
+    setSelectedEntity(null);
     setStockSelection(null);
     const messages: Record<string, string> = {
       createMember: "Compte partenaire créé",
@@ -238,6 +247,18 @@ export default function DashboardClient() {
       updateAccountSettings: "Compte principal mis à jour",
       updateSetting: "Thème appliqué",
       deleteOrder: "Commande supprimée",
+      updateProduct: "Produit mis à jour",
+      deleteProduct: "Produit et historique de stock supprimés",
+      updateStockMovement: "Mouvement de stock mis à jour",
+      deleteStockMovement: "Mouvement de stock supprimé",
+      updateCustomer: "Client mis à jour",
+      deleteCustomer: "Client supprimé",
+      updatePurchase: "Achat mis à jour",
+      deletePurchase: "Achat supprimé",
+      updateAd: "Publicité mise à jour",
+      deleteAd: "Publicité supprimée",
+      updateCapital: "Mouvement de capital mis à jour",
+      deleteCapital: "Mouvement de capital supprimé",
     };
     setNotice(messages[action] || "Enregistré avec succès");
     setTimeout(() => setNotice(""), 2500);
@@ -260,6 +281,53 @@ export default function DashboardClient() {
 
   function openStock(selection: StockSelection) {
     if (requireEditAccess()) setStockSelection(selection);
+  }
+
+  function openEntity(selection: EditableEntity) {
+    if (requireEditAccess()) setSelectedEntity(selection);
+  }
+
+  async function deleteEntity(selection: EditableEntity) {
+    if (!requireEditAccess()) return;
+    let action = "";
+    let label = "";
+    let warning = "";
+    switch (selection.kind) {
+      case "product":
+        action = "deleteProduct";
+        label = `le produit ${selection.record.name}`;
+        warning = " Son historique de stock sera également supprimé.";
+        break;
+      case "movement":
+        action = "deleteStockMovement";
+        label = `ce mouvement de stock de ${selection.record.quantity} unité(s)`;
+        warning = " La quantité restante sera recalculée.";
+        break;
+      case "customer":
+        action = "deleteCustomer";
+        label = `le client ${selection.record.name}`;
+        warning = " La suppression sera refusée si ce client possède encore des commandes.";
+        break;
+      case "purchase":
+        action = "deletePurchase";
+        label = `l’achat ${selection.record.item}`;
+        break;
+      case "ad":
+        action = "deleteAd";
+        label = `la campagne ${selection.record.campaign}`;
+        break;
+      case "capital":
+        action = "deleteCapital";
+        label = `le mouvement ${selection.record.label}`;
+        break;
+    }
+    const confirmed = window.confirm(`Supprimer définitivement ${label} ?${warning}\n\nCette action est irréversible.`);
+    if (!confirmed) return;
+    try {
+      await submit(action, { id: String(selection.record.id) });
+    } catch {
+      // Le message d’erreur global est affiché par le tableau de bord.
+    }
   }
 
   async function deleteOrder(order: Order) {
@@ -411,10 +479,11 @@ export default function DashboardClient() {
             <button onClick={() => void loadData()}>Réessayer</button>
           </div>
         )}
-        {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} remove={deleteOrder} moveStock={openStock} submit={submit} />}
+        {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} moveStock={openStock} submit={submit} />}
       </section>
       {modal && <EntryModal kind={modal} close={() => setModal(null)} submit={submit} />}
       {selectedOrder && <OrderModal order={selectedOrder} close={() => setSelectedOrder(null)} submit={submit} />}
+      {selectedEntity && <EntityModal selection={selectedEntity} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
     </main>
   );
@@ -529,6 +598,8 @@ function Page({
   open,
   edit,
   remove,
+  editEntity,
+  removeEntity,
   moveStock,
   submit,
 }: {
@@ -553,16 +624,18 @@ function Page({
   open: (m: ModalName) => void;
   edit: (o: Order) => void;
   remove: (o: Order) => void;
+  editEntity: (selection: EditableEntity) => void;
+  removeEntity: (selection: EditableEntity) => void;
   moveStock: (selection: StockSelection) => void;
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
 }) {
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onDelete={remove} />;
-  if (active === "Produits") return <ProductsPage products={data.products} movements={data.stockMovements} onAdd={() => open("product")} onMove={moveStock} />;
-  if (active === "Colis") return <ShippingPage orders={data.orders} settings={data.settings} onEdit={edit} />;
-  if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} />;
-  if (active === "Achats") return <PurchasesPage purchases={data.purchases} onAdd={() => open("purchase")} />;
-  if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} onAdd={() => open("ad")} />;
-  if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} />;
+  if (active === "Produits") return <ProductsPage products={data.products} movements={data.stockMovements} onAdd={() => open("product")} onMove={moveStock} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Colis") return <ShippingPage orders={data.orders} settings={data.settings} onEdit={edit} onDelete={remove} />;
+  if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Achats") return <PurchasesPage purchases={data.purchases} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
   if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} access={data.access} members={data.members} submit={submit} />;
   const total = Math.max(1, data.orders.length);
@@ -628,7 +701,7 @@ function Page({
       <section className="content-grid">
         <article className="panel orders-panel">
           <PanelHead kicker="Opérations" title="Commandes récentes" action="Voir tout →" onClick={() => setActive("Commandes")} />
-          <OrderTable orders={data.orders.slice(0, 5)} onEdit={edit} />
+          <OrderTable orders={data.orders.slice(0, 5)} onEdit={edit} onDelete={remove} />
         </article>
         <article className="panel delivery-panel">
           <PanelHead kicker="Livraison" title="État des colis" total={String(data.orders.length)} />
@@ -1013,6 +1086,29 @@ function OrderActions({ order, onEdit, onDelete }: { order: Order; onEdit: (o: O
     </details>
   );
 }
+function RecordActions({ label, onEdit, onDelete }: { label: string; onEdit: () => void; onDelete: () => void }) {
+  return (
+    <details className="order-actions record-actions" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+      <summary aria-label={`Actions pour ${label}`} title="Actions">⋯</summary>
+      <div className="order-action-menu" role="menu">
+        <button type="button" role="menuitem" onClick={(event) => {
+          event.currentTarget.closest("details")?.removeAttribute("open");
+          onEdit();
+        }}>
+          <span aria-hidden="true">✎</span>
+          Modifier
+        </button>
+        <button type="button" role="menuitem" className="danger" onClick={(event) => {
+          event.currentTarget.closest("details")?.removeAttribute("open");
+          onDelete();
+        }}>
+          <span aria-hidden="true">⌫</span>
+          Supprimer
+        </button>
+      </div>
+    </details>
+  );
+}
 function OrdersPage({ orders, onAdd, onEdit, onDelete }: { orders: Order[]; onAdd: () => void; onEdit: (o: Order) => void; onDelete: (o: Order) => void }) {
   return (
     <section className="panel page-panel">
@@ -1106,7 +1202,7 @@ function OrderTable({ orders, onEdit, onDelete }: { orders: Order[]; onEdit: (o:
     </>
   );
 }
-function ShippingPage({ orders, settings, onEdit }: { orders: Order[]; settings: Record<string, string>; onEdit: (o: Order) => void }) {
+function ShippingPage({ orders, settings, onEdit, onDelete }: { orders: Order[]; settings: Record<string, string>; onEdit: (o: Order) => void; onDelete: (o: Order) => void }) {
   return (
     <>
       <section className="integration-banner">
@@ -1123,12 +1219,15 @@ function ShippingPage({ orders, settings, onEdit }: { orders: Order[]; settings:
         <PanelHead kicker="Paiement à la livraison" title="Suivi des colis" total={String(orders.length)} />
         <div className="card-list">
           {orders.map((o) => (
-            <button className="shipment-card" key={o.id} onClick={() => onEdit(o)}>
+            <article className="shipment-card" key={o.id} role="button" tabIndex={0} onClick={() => onEdit(o)} onKeyDown={(event) => {
+              if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault();
+                onEdit(o);
+              }
+            }}>
               <div>
                 <strong>{o.orderRef}</strong>
-                <small>
-                  {o.customerName} · {o.city} · {o.source}
-                </small>
+                <small>{o.customerName} · {o.city} · {o.source}</small>
               </div>
               <div>
                 <strong>{o.trackingNumber || "Sans numéro"}</strong>
@@ -1138,33 +1237,33 @@ function ShippingPage({ orders, settings, onEdit }: { orders: Order[]; settings:
                 <Status value={o.status} />
                 <small>{o.paymentStatus}</small>
               </div>
-            </button>
+              <div className="shipment-actions">
+                <OrderActions order={o} onEdit={onEdit} onDelete={onDelete} />
+              </div>
+            </article>
           ))}
         </div>
       </section>
     </>
   );
 }
-function CustomersPage({ customers, orders }: { customers: Customer[]; orders: Order[] }) {
+function CustomersPage({ customers, orders, onEdit, onDelete }: { customers: Customer[]; orders: Order[]; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
   return (
     <section className="panel page-panel">
       <PanelHead kicker="CRM" title="Fichier clients" total={String(customers.length)} />
       <div className="customer-grid">
         {customers.map((c) => {
           const own = orders.filter((o) => o.customerId === c.id),
-            spent = own.filter((o) => o.paymentStatus === "Encaissé").reduce((s, o) => s + o.saleAmount, 0);
+            spent = own.filter((o) => o.paymentStatus === "Encaissé").reduce((sum, o) => sum + o.saleAmount, 0);
           return (
             <article className="customer-card" key={c.id}>
               <span className="customer-avatar">{c.name.slice(0, 1)}</span>
               <div>
                 <strong>{c.name}</strong>
-                <p>
-                  {c.phone} · {c.city}
-                </p>
-                <small>
-                  {own.length} commande(s) · {money(spent)} encaissé
-                </small>
+                <p>{c.phone} · {c.city}</p>
+                <small>{own.length} commande(s) · {money(spent)} encaissé</small>
               </div>
+              <RecordActions label={`le client ${c.name}`} onEdit={() => onEdit({ kind: "customer", record: c })} onDelete={() => onDelete({ kind: "customer", record: c })} />
             </article>
           );
         })}
@@ -1172,11 +1271,11 @@ function CustomersPage({ customers, orders }: { customers: Customer[]; orders: O
     </section>
   );
 }
-function ProductsPage({ products, movements, onAdd, onMove }: { products: Product[]; movements: StockMovement[]; onAdd: () => void; onMove: (selection: StockSelection) => void }) {
-  const units = products.reduce((s, p) => s + p.stockQuantity, 0),
-    purchaseValue = products.reduce((s, p) => s + p.stockQuantity * p.purchasePrice, 0),
-    saleValue = products.reduce((s, p) => s + p.stockQuantity * p.salePrice, 0),
-    lowStock = products.filter((p) => p.stockQuantity <= 5).length;
+function ProductsPage({ products, movements, onAdd, onMove, onEdit, onDelete }: { products: Product[]; movements: StockMovement[]; onAdd: () => void; onMove: (selection: StockSelection) => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+  const units = products.reduce((sum, product) => sum + product.stockQuantity, 0),
+    purchaseValue = products.reduce((sum, product) => sum + product.stockQuantity * product.purchasePrice, 0),
+    saleValue = products.reduce((sum, product) => sum + product.stockQuantity * product.salePrice, 0),
+    lowStock = products.filter((product) => product.stockQuantity <= 5).length;
   return (
     <>
       <section className="kpi-grid stock-kpis">
@@ -1187,13 +1286,8 @@ function ProductsPage({ products, movements, onAdd, onMove }: { products: Produc
       </section>
       <section className="panel page-panel products-panel">
         <div className="section-toolbar">
-          <div>
-            <h2>Catalogue & stock</h2>
-            <p>Ajoutez un produit, une entrée de stock ou une vente.</p>
-          </div>
-          <button className="primary-button" onClick={onAdd}>
-            ＋ Ajouter un produit
-          </button>
+          <div><h2>Catalogue & stock</h2><p>Ajoutez un produit, une entrée de stock ou une vente.</p></div>
+          <button className="primary-button" onClick={onAdd}>＋ Ajouter un produit</button>
         </div>
         {products.length === 0 ? (
           <EmptyState title="Aucun produit" text="Ajoutez votre premier produit pour commencer le suivi du stock." />
@@ -1201,42 +1295,23 @@ function ProductsPage({ products, movements, onAdd, onMove }: { products: Produc
           <>
             <div className="desktop-product-table table-scroll">
               <table>
-                <thead>
-                  <tr>
-                    <th>ID produit</th>
-                    <th>Produit</th>
-                    <th>Catégorie</th>
-                    <th>Achat</th>
-                    <th>Vente</th>
-                    <th>Restant</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>ID produit</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Restant</th><th>Actions</th></tr></thead>
                 <tbody>
                   {products.map((product) => (
                     <tr key={product.id}>
-                      <td>
-                        <strong>{product.productCode}</strong>
-                      </td>
+                      <td><strong>{product.productCode}</strong></td>
                       <td>{product.name}</td>
-                      <td>
-                        <span className="category-chip">{product.category}</span>
-                      </td>
+                      <td><span className="category-chip">{product.category}</span></td>
                       <td>{money(product.purchasePrice)}</td>
+                      <td><strong>{money(product.salePrice)}</strong></td>
+                      <td><StockLevel quantity={product.stockQuantity} /></td>
                       <td>
-                        <strong>{money(product.salePrice)}</strong>
-                      </td>
-                      <td>
-                        <StockLevel quantity={product.stockQuantity} />
-                      </td>
-                      <td>
-                        <div className="stock-actions">
-                          <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>
-                            ＋ Stock
-                          </button>
-                          <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>
-                            − Vendre
-                          </button>
+                        <div className="entity-actions-row">
+                          <div className="stock-actions">
+                            <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Stock</button>
+                            <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Vendre</button>
+                          </div>
+                          <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />
                         </div>
                       </td>
                     </tr>
@@ -1248,29 +1323,20 @@ function ProductsPage({ products, movements, onAdd, onMove }: { products: Produc
               {products.map((product) => (
                 <article className="product-card" key={product.id}>
                   <div className="product-card-head">
-                    <div>
-                      <span>{product.productCode}</span>
-                      <h3>{product.name}</h3>
+                    <div><span>{product.productCode}</span><h3>{product.name}</h3></div>
+                    <div className="product-card-actions">
+                      <StockLevel quantity={product.stockQuantity} />
+                      <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />
                     </div>
-                    <StockLevel quantity={product.stockQuantity} />
                   </div>
                   <span className="category-chip">{product.category}</span>
                   <div className="product-prices">
-                    <p>
-                      Prix d’achat
-                      <strong>{money(product.purchasePrice)}</strong>
-                    </p>
-                    <p>
-                      Prix de vente<strong>{money(product.salePrice)}</strong>
-                    </p>
+                    <p>Prix d’achat<strong>{money(product.purchasePrice)}</strong></p>
+                    <p>Prix de vente<strong>{money(product.salePrice)}</strong></p>
                   </div>
                   <div className="stock-actions">
-                    <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>
-                      ＋ Ajouter du stock
-                    </button>
-                    <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>
-                      − Vendre
-                    </button>
+                    <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Ajouter du stock</button>
+                    <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Vendre</button>
                   </div>
                 </article>
               ))}
@@ -1285,31 +1351,18 @@ function ProductsPage({ products, movements, onAdd, onMove }: { products: Produc
         ) : (
           <div className="table-scroll">
             <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Produit</th>
-                  <th>Mouvement</th>
-                  <th>Quantité</th>
-                  <th>Note</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Date</th><th>Produit</th><th>Mouvement</th><th>Quantité</th><th>Note</th><th>Actions</th></tr></thead>
               <tbody>
-                {movements.slice(0, 12).map((m) => (
-                  <tr key={m.id}>
-                    <td>{dateLabel(m.createdAt)}</td>
-                    <td>
-                      <strong>{m.productName}</strong>
-                      <small>{m.productCode}</small>
+                {movements.slice(0, 12).map((movement) => (
+                  <tr key={movement.id}>
+                    <td>{dateLabel(movement.createdAt)}</td>
+                    <td><strong>{movement.productName}</strong><small>{movement.productCode}</small></td>
+                    <td><Status value={movement.movementType} /></td>
+                    <td className={movement.movementType === "Entrée" ? "money-positive" : "money-negative"}>{movement.movementType === "Entrée" ? "+" : "−"}{movement.quantity}</td>
+                    <td>{movement.note || "—"}</td>
+                    <td className="order-actions-cell">
+                      <RecordActions label="ce mouvement de stock" onEdit={() => onEdit({ kind: "movement", record: movement })} onDelete={() => onDelete({ kind: "movement", record: movement })} />
                     </td>
-                    <td>
-                      <Status value={m.movementType} />
-                    </td>
-                    <td className={m.movementType === "Entrée" ? "money-positive" : "money-negative"}>
-                      {m.movementType === "Entrée" ? "+" : "−"}
-                      {m.quantity}
-                    </td>
-                    <td>{m.note || "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1336,52 +1389,33 @@ function EmptyState({ title, text }: { title: string; text: string }) {
     </div>
   );
 }
-function PurchasesPage({ purchases, onAdd }: { purchases: Purchase[]; onAdd: () => void }) {
-  const total = purchases.reduce((s, p) => s + p.totalCost, 0);
+function PurchasesPage({ purchases, onAdd, onEdit, onDelete }: { purchases: Purchase[]; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+  const total = purchases.reduce((sum, purchase) => sum + purchase.totalCost, 0);
   return (
     <>
       <section className="kpi-grid three">
         <Kpi label="Total achats" value={money(total)} detail={`${purchases.length} opérations`} />
-        <Kpi label="Achats payés" value={money(purchases.filter((p) => p.paymentStatus === "Payé").reduce((s, p) => s + p.totalCost, 0))} detail="Sorties confirmées" />
-        <Kpi label="Reste à payer" value={money(purchases.filter((p) => p.paymentStatus !== "Payé").reduce((s, p) => s + p.totalCost, 0))} detail="À surveiller" danger />
+        <Kpi label="Achats payés" value={money(purchases.filter((purchase) => purchase.paymentStatus === "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail="Sorties confirmées" />
+        <Kpi label="Reste à payer" value={money(purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail="À surveiller" danger />
       </section>
       <section className="panel page-panel">
         <div className="section-toolbar">
-          <div>
-            <h2>Achats fournisseurs</h2>
-            <p>Stock, tissu, emballages et autres coûts.</p>
-          </div>
-          <button className="primary-button" onClick={onAdd}>
-            ＋ Ajouter un achat
-          </button>
+          <div><h2>Achats fournisseurs</h2><p>Stock, tissu, emballages et autres coûts.</p></div>
+          <button className="primary-button" onClick={onAdd}>＋ Ajouter un achat</button>
         </div>
         <div className="table-scroll">
           <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Fournisseur</th>
-                <th>Achat</th>
-                <th>Qté</th>
-                <th>Total</th>
-                <th>Paiement</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Date</th><th>Fournisseur</th><th>Achat</th><th>Qté</th><th>Total</th><th>Paiement</th><th>Actions</th></tr></thead>
             <tbody>
-              {purchases.map((p) => (
-                <tr key={p.id}>
-                  <td>{dateLabel(p.createdAt)}</td>
-                  <td>
-                    <strong>{p.supplier}</strong>
-                  </td>
-                  <td>{p.item}</td>
-                  <td>{p.quantity}</td>
-                  <td>
-                    <strong>{money(p.totalCost)}</strong>
-                  </td>
-                  <td>
-                    <Status value={p.paymentStatus} />
-                  </td>
+              {purchases.map((purchase) => (
+                <tr key={purchase.id}>
+                  <td>{dateLabel(purchase.createdAt)}</td>
+                  <td><strong>{purchase.supplier}</strong></td>
+                  <td>{purchase.item}</td>
+                  <td>{purchase.quantity}</td>
+                  <td><strong>{money(purchase.totalCost)}</strong></td>
+                  <td><Status value={purchase.paymentStatus} /></td>
+                  <td className="order-actions-cell"><RecordActions label={`l’achat ${purchase.item}`} onEdit={() => onEdit({ kind: "purchase", record: purchase })} onDelete={() => onDelete({ kind: "purchase", record: purchase })} /></td>
                 </tr>
               ))}
             </tbody>
@@ -1391,20 +1425,14 @@ function PurchasesPage({ purchases, onAdd }: { purchases: Purchase[]; onAdd: () 
     </>
   );
 }
-function AdsPage({ ads, settings, onAdd }: { ads: Ad[]; settings: Record<string, string>; onAdd: () => void }) {
-  const spend = ads.reduce((s, a) => s + a.spend, 0),
-    revenue = ads.reduce((s, a) => s + a.revenue, 0),
-    count = ads.reduce((s, a) => s + a.orderCount, 0);
+function AdsPage({ ads, settings, onAdd, onEdit, onDelete }: { ads: Ad[]; settings: Record<string, string>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+  const spend = ads.reduce((sum, ad) => sum + ad.spend, 0),
+    revenue = ads.reduce((sum, ad) => sum + ad.revenue, 0),
+    count = ads.reduce((sum, ad) => sum + ad.orderCount, 0);
   return (
     <>
       <section className="integration-banner">
-        <div>
-          <span className="meta-mark">M</span>
-          <div>
-            <strong>Meta Ads</strong>
-            <p>Saisie manuelle active. La connexion automatique nécessitera l’autorisation de votre compte Meta Ads.</p>
-          </div>
-        </div>
+        <div><span className="meta-mark">M</span><div><strong>Meta Ads</strong><p>Saisie manuelle active. La connexion automatique nécessitera l’autorisation de votre compte Meta Ads.</p></div></div>
         <Status value={settings.meta_status || "À connecter"} />
       </section>
       <section className="kpi-grid three">
@@ -1414,34 +1442,22 @@ function AdsPage({ ads, settings, onAdd }: { ads: Ad[]; settings: Record<string,
       </section>
       <section className="panel page-panel">
         <div className="section-toolbar">
-          <div>
-            <h2>Performance des campagnes</h2>
-            <p>Ces résultats sont manuels jusqu’à la connexion Meta.</p>
-          </div>
-          <button className="primary-button" onClick={onAdd}>
-            ＋ Saisir une campagne
-          </button>
+          <div><h2>Performance des campagnes</h2><p>Ces résultats sont manuels jusqu’à la connexion Meta.</p></div>
+          <button className="primary-button" onClick={onAdd}>＋ Saisir une campagne</button>
         </div>
         <div className="ad-grid">
-          {ads.map((a) => (
-            <article className="ad-card" key={a.id}>
-              <span>{a.platform}</span>
-              <h3>{a.campaign}</h3>
-              <div>
-                <p>
-                  Dépenses<strong>{money(a.spend)}</strong>
-                </p>
-                <p>
-                  CA attribué<strong>{money(a.revenue)}</strong>
-                </p>
-                <p>
-                  ROAS
-                  <strong>{a.spend ? (a.revenue / a.spend).toFixed(2) : "0"}×</strong>
-                </p>
+          {ads.map((ad) => (
+            <article className="ad-card" key={ad.id}>
+              <div className="ad-card-heading">
+                <div><span>{ad.platform}</span><h3>{ad.campaign}</h3></div>
+                <RecordActions label={`la campagne ${ad.campaign}`} onEdit={() => onEdit({ kind: "ad", record: ad })} onDelete={() => onDelete({ kind: "ad", record: ad })} />
               </div>
-              <small>
-                {a.source} · {dateLabel(a.performanceDate)}
-              </small>
+              <div>
+                <p>Dépenses<strong>{money(ad.spend)}</strong></p>
+                <p>CA attribué<strong>{money(ad.revenue)}</strong></p>
+                <p>ROAS<strong>{ad.spend ? (ad.revenue / ad.spend).toFixed(2) : "0"}×</strong></p>
+              </div>
+              <small>{ad.source} · {dateLabel(ad.performanceDate)}</small>
             </article>
           ))}
         </div>
@@ -1453,6 +1469,8 @@ function CapitalPage({
   data,
   metrics,
   onAdd,
+  onEdit,
+  onDelete,
 }: {
   data: Data;
   metrics: {
@@ -1462,6 +1480,8 @@ function CapitalPage({
     reinvest: number;
   };
   onAdd: () => void;
+  onEdit: (selection: EditableEntity) => void;
+  onDelete: (selection: EditableEntity) => void;
 }) {
   const currentYear = new Date().getFullYear();
   const distributableCapital = Math.max(0, metrics.cash);
@@ -1755,6 +1775,7 @@ function CapitalPage({
                   {r.direction === "Entrée" ? "+" : "−"}
                   {money(r.amount)}
                 </b>
+                <RecordActions label={`le mouvement ${r.label}`} onEdit={() => onEdit({ kind: "capital", record: r })} onDelete={() => onDelete({ kind: "capital", record: r })} />
               </article>
             ))}
           </div>
@@ -2009,6 +2030,98 @@ function OrderModal({ order, close, submit }: { order: Order; close: () => void;
             <button className="primary-button" disabled={saving}>
               {saving ? "Mise à jour…" : "Mettre à jour"}
             </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+function EntityModal({ selection, close, submit }: { selection: EditableEntity; close: () => void; submit: (action: string, values: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  const titles = {
+    product: "Modifier le produit",
+    movement: "Modifier le mouvement de stock",
+    customer: "Modifier le client",
+    purchase: "Modifier l’achat",
+    ad: "Modifier la publicité",
+    capital: "Modifier le mouvement de capital",
+  };
+  const actions = {
+    product: "updateProduct",
+    movement: "updateStockMovement",
+    customer: "updateCustomer",
+    purchase: "updatePurchase",
+    ad: "updateAd",
+    capital: "updateCapital",
+  };
+  async function handle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setFormError("");
+    try {
+      await submit(actions[selection.kind], {
+        id: String(selection.record.id),
+        ...Object.fromEntries(new FormData(event.currentTarget)),
+      });
+    } catch (caught) {
+      setFormError(caught instanceof Error ? caught.message : "Modification impossible.");
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+      <section className="modal compact" role="dialog" aria-modal="true" aria-labelledby="entity-modal-title">
+        <div className="modal-head">
+          <div><span className="card-kicker">Modification sécurisée</span><h2 id="entity-modal-title">{titles[selection.kind]}</h2><p>Les calculs du tableau de bord seront actualisés après l’enregistrement.</p></div>
+          <button type="button" onClick={close} aria-label="Fermer">×</button>
+        </div>
+        <form onSubmit={handle}>
+          <div className="form-grid">
+            {selection.kind === "product" && <>
+              <Field label="ID produit / SKU *" name="productCode" defaultValue={selection.record.productCode} required />
+              <Field label="Nom du produit *" name="name" defaultValue={selection.record.name} required />
+              <Select label="Catégorie *" name="category" defaultValue={selection.record.category} options={productCategoryOptions} />
+              <Field label="Prix d’achat (MAD) *" name="purchasePrice" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.purchasePrice)} required />
+              <Field label="Prix de vente (MAD) *" name="salePrice" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.salePrice)} required />
+            </>}
+            {selection.kind === "movement" && <>
+              <div className="movement-edit-note"><strong>{selection.record.productName || "Produit"}</strong><small>Le stock restant sera recalculé automatiquement.</small></div>
+              <Select label="Type de mouvement" name="movementType" defaultValue={selection.record.movementType} options={["Entrée", "Vente"]} />
+              <Field label="Quantité *" name="quantity" type="number" inputMode="numeric" min="1" defaultValue={String(selection.record.quantity)} required />
+              <Field label="Note" name="note" defaultValue={selection.record.note} />
+            </>}
+            {selection.kind === "customer" && <>
+              <Field label="Nom du client *" name="name" defaultValue={selection.record.name} autoComplete="name" required />
+              <Field label="Téléphone *" name="phone" type="tel" inputMode="tel" defaultValue={selection.record.phone} autoComplete="tel" required />
+              <Field label="Ville *" name="city" defaultValue={selection.record.city} autoComplete="address-level2" required />
+            </>}
+            {selection.kind === "purchase" && <>
+              <Field label="Fournisseur *" name="supplier" defaultValue={selection.record.supplier} required />
+              <Field label="Article / motif *" name="item" defaultValue={selection.record.item} required />
+              <Field label="Quantité *" name="quantity" type="number" inputMode="numeric" min="1" defaultValue={String(selection.record.quantity)} required />
+              <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.unitCost)} required />
+              <Select label="Paiement" name="paymentStatus" defaultValue={selection.record.paymentStatus} options={["Payé", "À payer"]} />
+            </>}
+            {selection.kind === "ad" && <>
+              <Field label="Campagne *" name="campaign" defaultValue={selection.record.campaign} required />
+              <Field label="Dépenses (MAD) *" name="spend" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.spend)} required />
+              <Field label="CA attribué (MAD) *" name="revenue" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.revenue)} required />
+              <Field label="Commandes *" name="orderCount" type="number" inputMode="numeric" min="0" defaultValue={String(selection.record.orderCount)} required />
+              <Field label="Date *" name="performanceDate" type="date" defaultValue={selection.record.performanceDate.slice(0, 10)} required />
+            </>}
+            {selection.kind === "capital" && <>
+              <Select label="Type" name="direction" defaultValue={selection.record.direction} options={["Entrée", "Sortie"]} />
+              <Field label="Source du capital *" name="category" defaultValue={selection.record.category} required />
+              <Field label="Libellé *" name="label" defaultValue={selection.record.label} required />
+              <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.amount)} required />
+              <Field label="Date *" name="entryDate" type="date" defaultValue={selection.record.entryDate.slice(0, 10)} required />
+            </>}
+          </div>
+          {formError && <p className="form-error" role="alert">{formError}</p>}
+          <div className="modal-actions">
+            <button type="button" className="cancel-button" onClick={close}>Annuler</button>
+            <button className="primary-button" disabled={saving}>{saving ? "Mise à jour…" : "Enregistrer les modifications"}</button>
           </div>
         </form>
       </section>

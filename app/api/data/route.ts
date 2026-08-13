@@ -199,14 +199,83 @@ export async function POST(request: Request) {
       const [existingOrder] = await db.select({ id: orders.id }).from(orders).where(eq(orders.id, id)).limit(1);
       if (!existingOrder) return Response.json({ error: "Commande introuvable." }, { status: 404 });
       await db.delete(orders).where(eq(orders.id, id));
+    } else if (payload.action === "updateCustomer") {
+      const id = numberValue(payload.id);
+      const name = textValue(payload.name);
+      const phone = textValue(payload.phone).replace(/\s/g, "");
+      const city = textValue(payload.city);
+      if (!id || !name || !phone || !city) return Response.json({ error: "Client invalide." }, { status: 400 });
+      const [customer] = await db.select({ id: customers.id }).from(customers).where(eq(customers.id, id)).limit(1);
+      if (!customer) return Response.json({ error: "Client introuvable." }, { status: 404 });
+      const [duplicatePhone] = await db.select({ id: customers.id }).from(customers).where(eq(customers.phone, phone)).limit(1);
+      if (duplicatePhone && duplicatePhone.id !== id) return Response.json({ error: "Ce numéro de téléphone appartient déjà à un autre client." }, { status: 409 });
+      await db.batch([
+        db.update(customers).set({ name, phone, city }).where(eq(customers.id, id)),
+        db.update(orders).set({ city, updatedAt: new Date().toISOString() }).where(eq(orders.customerId, id)),
+      ]);
+    } else if (payload.action === "deleteCustomer") {
+      const id = numberValue(payload.id);
+      if (!id) return Response.json({ error: "Client invalide." }, { status: 400 });
+      const [linkedOrder] = await db.select({ id: orders.id }).from(orders).where(eq(orders.customerId, id)).limit(1);
+      if (linkedOrder) return Response.json({ error: "Ce client possède encore des commandes. Supprimez d’abord ses commandes." }, { status: 409 });
+      const [customer] = await db.select({ id: customers.id }).from(customers).where(eq(customers.id, id)).limit(1);
+      if (!customer) return Response.json({ error: "Client introuvable." }, { status: 404 });
+      await db.delete(customers).where(eq(customers.id, id));
     } else if (payload.action === "addPurchase") {
       const quantity = numberValue(payload.quantity, 1);
       const unitCost = numberValue(payload.unitCost);
       await db.insert(purchases).values({ supplier: textValue(payload.supplier, "Fournisseur"), item: textValue(payload.item, "Achat"), quantity, unitCost, totalCost: quantity * unitCost, paymentStatus: textValue(payload.paymentStatus, "Payé") });
+    } else if (payload.action === "updatePurchase") {
+      const id = numberValue(payload.id);
+      const supplier = textValue(payload.supplier);
+      const item = textValue(payload.item);
+      const quantity = numberValue(payload.quantity);
+      const unitCost = numberValue(payload.unitCost);
+      const nextPaymentStatus = textValue(payload.paymentStatus, "Payé");
+      if (!id || !supplier || !item || quantity < 1 || !["Payé", "À payer"].includes(nextPaymentStatus)) return Response.json({ error: "Achat invalide." }, { status: 400 });
+      const [purchase] = await db.select({ id: purchases.id }).from(purchases).where(eq(purchases.id, id)).limit(1);
+      if (!purchase) return Response.json({ error: "Achat introuvable." }, { status: 404 });
+      await db.update(purchases).set({ supplier, item, quantity, unitCost, totalCost: quantity * unitCost, paymentStatus: nextPaymentStatus }).where(eq(purchases.id, id));
+    } else if (payload.action === "deletePurchase") {
+      const id = numberValue(payload.id);
+      if (!id) return Response.json({ error: "Achat invalide." }, { status: 400 });
+      const [purchase] = await db.select({ id: purchases.id }).from(purchases).where(eq(purchases.id, id)).limit(1);
+      if (!purchase) return Response.json({ error: "Achat introuvable." }, { status: 404 });
+      await db.delete(purchases).where(eq(purchases.id, id));
     } else if (payload.action === "addAd") {
       await db.insert(adPerformance).values({ platform: "Meta Ads", campaign: textValue(payload.campaign, "Campagne Meta"), spend: numberValue(payload.spend), revenue: numberValue(payload.revenue), orderCount: numberValue(payload.orderCount), source: "Saisie manuelle", performanceDate: textValue(payload.performanceDate, new Date().toISOString().slice(0, 10)) });
+    } else if (payload.action === "updateAd") {
+      const id = numberValue(payload.id);
+      const campaign = textValue(payload.campaign);
+      const performanceDate = textValue(payload.performanceDate);
+      if (!id || !campaign || !/^\d{4}-\d{2}-\d{2}$/.test(performanceDate)) return Response.json({ error: "Publicité invalide." }, { status: 400 });
+      const [ad] = await db.select({ id: adPerformance.id }).from(adPerformance).where(eq(adPerformance.id, id)).limit(1);
+      if (!ad) return Response.json({ error: "Publicité introuvable." }, { status: 404 });
+      await db.update(adPerformance).set({ campaign, spend: numberValue(payload.spend), revenue: numberValue(payload.revenue), orderCount: numberValue(payload.orderCount), performanceDate }).where(eq(adPerformance.id, id));
+    } else if (payload.action === "deleteAd") {
+      const id = numberValue(payload.id);
+      if (!id) return Response.json({ error: "Publicité invalide." }, { status: 400 });
+      const [ad] = await db.select({ id: adPerformance.id }).from(adPerformance).where(eq(adPerformance.id, id)).limit(1);
+      if (!ad) return Response.json({ error: "Publicité introuvable." }, { status: 404 });
+      await db.delete(adPerformance).where(eq(adPerformance.id, id));
     } else if (payload.action === "addCapital") {
       await db.insert(capitalLedger).values({ direction: textValue(payload.direction, "Entrée"), category: textValue(payload.category, "Ajustement"), label: textValue(payload.label, "Mouvement de capital"), amount: numberValue(payload.amount), entryDate: textValue(payload.entryDate, new Date().toISOString().slice(0, 10)) });
+    } else if (payload.action === "updateCapital") {
+      const id = numberValue(payload.id);
+      const direction = textValue(payload.direction);
+      const category = textValue(payload.category);
+      const label = textValue(payload.label);
+      const entryDate = textValue(payload.entryDate);
+      if (!id || !["Entrée", "Sortie"].includes(direction) || !category || !label || !/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) return Response.json({ error: "Mouvement de capital invalide." }, { status: 400 });
+      const [entry] = await db.select({ id: capitalLedger.id }).from(capitalLedger).where(eq(capitalLedger.id, id)).limit(1);
+      if (!entry) return Response.json({ error: "Mouvement de capital introuvable." }, { status: 404 });
+      await db.update(capitalLedger).set({ direction, category, label, amount: numberValue(payload.amount), entryDate }).where(eq(capitalLedger.id, id));
+    } else if (payload.action === "deleteCapital") {
+      const id = numberValue(payload.id);
+      if (!id) return Response.json({ error: "Mouvement de capital invalide." }, { status: 400 });
+      const [entry] = await db.select({ id: capitalLedger.id }).from(capitalLedger).where(eq(capitalLedger.id, id)).limit(1);
+      if (!entry) return Response.json({ error: "Mouvement de capital introuvable." }, { status: 404 });
+      await db.delete(capitalLedger).where(eq(capitalLedger.id, id));
     } else if (payload.action === "addProduct") {
       const productCode = textValue(payload.productCode).toUpperCase();
       const name = textValue(payload.name);
@@ -217,6 +286,25 @@ export async function POST(request: Request) {
       const [product] = await db.insert(products).values({ productCode, name, category: productCategory(payload.category), purchasePrice: numberValue(payload.purchasePrice), salePrice: numberValue(payload.salePrice), stockQuantity: initialQuantity }).returning();
       if (!product) throw new Error("Le produit n’a pas été créé.");
       if (initialQuantity > 0) await db.insert(stockMovements).values({ productId: product.id, movementType: "Entrée", quantity: initialQuantity, note: "Stock initial" });
+    } else if (payload.action === "updateProduct") {
+      const id = numberValue(payload.id);
+      const productCode = textValue(payload.productCode).toUpperCase();
+      const name = textValue(payload.name);
+      if (!id || !productCode || !name) return Response.json({ error: "Produit invalide." }, { status: 400 });
+      const [product] = await db.select({ id: products.id }).from(products).where(eq(products.id, id)).limit(1);
+      if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
+      const [duplicate] = await db.select({ id: products.id }).from(products).where(eq(products.productCode, productCode)).limit(1);
+      if (duplicate && duplicate.id !== id) return Response.json({ error: "Cet ID produit existe déjà." }, { status: 409 });
+      await db.update(products).set({ productCode, name, category: productCategory(payload.category), purchasePrice: numberValue(payload.purchasePrice), salePrice: numberValue(payload.salePrice) }).where(eq(products.id, id));
+    } else if (payload.action === "deleteProduct") {
+      const id = numberValue(payload.id);
+      if (!id) return Response.json({ error: "Produit invalide." }, { status: 400 });
+      const [product] = await db.select({ id: products.id }).from(products).where(eq(products.id, id)).limit(1);
+      if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
+      await db.batch([
+        db.delete(stockMovements).where(eq(stockMovements.productId, id)),
+        db.delete(products).where(eq(products.id, id)),
+      ]);
     } else if (payload.action === "addStockMovement") {
       const productId = numberValue(payload.productId);
       const quantity = numberValue(payload.quantity);
@@ -229,6 +317,37 @@ export async function POST(request: Request) {
       await db.batch([
         db.insert(stockMovements).values({ productId, movementType, quantity, note: textValue(payload.note) }),
         db.update(products).set({ stockQuantity: sql`${products.stockQuantity} + ${delta}` }).where(eq(products.id, productId)),
+      ]);
+    } else if (payload.action === "updateStockMovement") {
+      const id = numberValue(payload.id);
+      const quantity = numberValue(payload.quantity);
+      const movementType = textValue(payload.movementType);
+      if (!id || quantity < 1 || !["Entrée", "Vente"].includes(movementType)) return Response.json({ error: "Mouvement de stock invalide." }, { status: 400 });
+      const [movement] = await db.select().from(stockMovements).where(eq(stockMovements.id, id)).limit(1);
+      if (!movement) return Response.json({ error: "Mouvement de stock introuvable." }, { status: 404 });
+      const [product] = await db.select().from(products).where(eq(products.id, movement.productId)).limit(1);
+      if (!product) return Response.json({ error: "Produit associé introuvable." }, { status: 404 });
+      const oldDelta = movement.movementType === "Entrée" ? movement.quantity : -movement.quantity;
+      const nextDelta = movementType === "Entrée" ? quantity : -quantity;
+      const nextStock = product.stockQuantity - oldDelta + nextDelta;
+      if (nextStock < 0) return Response.json({ error: "Cette modification rendrait le stock négatif." }, { status: 409 });
+      await db.batch([
+        db.update(stockMovements).set({ movementType, quantity, note: textValue(payload.note) }).where(eq(stockMovements.id, id)),
+        db.update(products).set({ stockQuantity: nextStock }).where(eq(products.id, product.id)),
+      ]);
+    } else if (payload.action === "deleteStockMovement") {
+      const id = numberValue(payload.id);
+      if (!id) return Response.json({ error: "Mouvement de stock invalide." }, { status: 400 });
+      const [movement] = await db.select().from(stockMovements).where(eq(stockMovements.id, id)).limit(1);
+      if (!movement) return Response.json({ error: "Mouvement de stock introuvable." }, { status: 404 });
+      const [product] = await db.select().from(products).where(eq(products.id, movement.productId)).limit(1);
+      if (!product) return Response.json({ error: "Produit associé introuvable." }, { status: 404 });
+      const oldDelta = movement.movementType === "Entrée" ? movement.quantity : -movement.quantity;
+      const nextStock = product.stockQuantity - oldDelta;
+      if (nextStock < 0) return Response.json({ error: "Ce mouvement ne peut pas être supprimé car le stock deviendrait négatif." }, { status: 409 });
+      await db.batch([
+        db.delete(stockMovements).where(eq(stockMovements.id, id)),
+        db.update(products).set({ stockQuantity: nextStock }).where(eq(products.id, product.id)),
       ]);
     } else if (payload.action === "updateAccountSettings") {
       if (!access.isOwner) return Response.json({ error: "Seul le compte principal peut modifier ce profil." }, { status: 403 });
