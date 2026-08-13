@@ -50,6 +50,7 @@ const schemaStatements = [
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     order_ref TEXT NOT NULL,
     customer_id INTEGER NOT NULL,
+    product_id INTEGER,
     city TEXT NOT NULL,
     products TEXT NOT NULL,
     quantity INTEGER DEFAULT 1 NOT NULL,
@@ -64,12 +65,14 @@ const schemaStatements = [
     payment_status TEXT DEFAULT 'À encaisser' NOT NULL,
     carrier TEXT DEFAULT 'Non affecté' NOT NULL,
     tracking_number TEXT DEFAULT '' NOT NULL,
+    stock_deducted INTEGER DEFAULT 0 NOT NULL,
     paid_at TEXT,
     deleted_at TEXT,
     deleted_by_user_id INTEGER,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TEXT,
-    FOREIGN KEY (customer_id) REFERENCES customers(id)
+    FOREIGN KEY (customer_id) REFERENCES customers(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS orders_order_ref_unique ON orders (order_ref)`,
   `CREATE TABLE IF NOT EXISTS purchases (
@@ -121,13 +124,21 @@ const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS stock_movements (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     product_id INTEGER NOT NULL,
+    order_id INTEGER,
     movement_type TEXT NOT NULL,
     quantity INTEGER NOT NULL,
     note TEXT DEFAULT '' NOT NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    FOREIGN KEY (product_id) REFERENCES products(id)
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    FOREIGN KEY (order_id) REFERENCES orders(id)
   )`,
   `CREATE INDEX IF NOT EXISTS stock_movements_product_id_idx ON stock_movements (product_id)`,
+  `CREATE TRIGGER IF NOT EXISTS prevent_negative_product_stock
+    BEFORE UPDATE OF stock_quantity ON products
+    WHEN NEW.stock_quantity < 0
+    BEGIN
+      SELECT RAISE(ABORT, 'Stock insuffisant');
+    END`,
   `CREATE TABLE IF NOT EXISTS order_status_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     order_id INTEGER NOT NULL,
@@ -166,12 +177,24 @@ async function ensureOrderColumns(database: D1Database) {
   const statements: D1PreparedStatement[] = [];
   if (!columns.has("deleted_at")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN deleted_at TEXT"));
   if (!columns.has("deleted_by_user_id")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN deleted_by_user_id INTEGER"));
+  if (!columns.has("product_id")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN product_id INTEGER REFERENCES products(id)"));
+  if (!columns.has("stock_deducted")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN stock_deducted INTEGER DEFAULT 0 NOT NULL"));
   if (statements.length) await database.batch(statements);
+}
+
+async function ensureStockMovementColumns(database: D1Database) {
+  const info = await database.prepare("PRAGMA table_info(stock_movements)").all<{ name: string }>();
+  const columns = new Set(info.results.map((column) => column.name));
+  if (!columns.has("order_id")) {
+    await database.prepare("ALTER TABLE stock_movements ADD COLUMN order_id INTEGER REFERENCES orders(id)").run();
+  }
+  await database.prepare("CREATE INDEX IF NOT EXISTS stock_movements_order_id_idx ON stock_movements (order_id)").run();
 }
 
 async function initializeDatabase(database: D1Database) {
   await database.batch(schemaStatements.map((statement) => database.prepare(statement)));
   await ensureOrderColumns(database);
+  await ensureStockMovementColumns(database);
   await database.prepare(`
     INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_name, changed_at)
     SELECT orders.id, NULL, orders.status, 'État initial', COALESCE(orders.updated_at, orders.created_at)

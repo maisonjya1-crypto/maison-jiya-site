@@ -7,6 +7,7 @@ type Order = {
   id: number;
   orderRef: string;
   customerId: number;
+  productId: number | null;
   customerName: string | null;
   phone: string | null;
   city: string;
@@ -23,6 +24,7 @@ type Order = {
   paymentStatus: string;
   carrier: string;
   trackingNumber: string;
+  stockDeducted: boolean;
   paidAt: string | null;
   deletedAt: string | null;
   deletedByUserId: number | null;
@@ -77,6 +79,8 @@ type Product = {
 type StockMovement = {
   id: number;
   productId: number;
+  orderId: number | null;
+  orderRef: string | null;
   productCode: string | null;
   productName: string | null;
   movementType: string;
@@ -560,7 +564,7 @@ export default function DashboardClient() {
         )}
         {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} moveStock={openStock} submit={submit} />}
       </section>
-      {modal && <EntryModal kind={modal} carrierNames={carrierNames} close={() => setModal(null)} submit={submit} />}
+      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products} close={() => setModal(null)} submit={submit} />}
       {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} close={() => setSelectedOrder(null)} submit={submit} />}
       {selectedEntity && <EntityModal selection={selectedEntity} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
@@ -1735,7 +1739,7 @@ function ProductsPage({ products, movements, onAdd, onMove, onEdit, onDelete }: 
       </section>
       <section className="panel page-panel products-panel">
         <div className="section-toolbar">
-          <div><h2>Catalogue & stock</h2><p>Ajoutez un produit, une entrée de stock ou une vente.</p></div>
+          <div><h2>Catalogue & stock</h2><p>Les commandes confirmées déduisent le stock. Utilisez « Sortie » seulement pour une correction manuelle.</p></div>
           <button className="primary-button" onClick={onAdd}>＋ Ajouter un produit</button>
         </div>
         {products.length === 0 ? (
@@ -1758,7 +1762,7 @@ function ProductsPage({ products, movements, onAdd, onMove, onEdit, onDelete }: 
                         <div className="entity-actions-row">
                           <div className="stock-actions">
                             <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Stock</button>
-                            <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Vendre</button>
+                            <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Sortie</button>
                           </div>
                           <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />
                         </div>
@@ -1785,7 +1789,7 @@ function ProductsPage({ products, movements, onAdd, onMove, onEdit, onDelete }: 
                   </div>
                   <div className="stock-actions">
                     <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Ajouter du stock</button>
-                    <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Vendre</button>
+                    <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Sortie manuelle</button>
                   </div>
                 </article>
               ))}
@@ -1807,10 +1811,10 @@ function ProductsPage({ products, movements, onAdd, onMove, onEdit, onDelete }: 
                     <td>{dateLabel(movement.createdAt)}</td>
                     <td><strong>{movement.productName}</strong><small>{movement.productCode}</small></td>
                     <td><Status value={movement.movementType} /></td>
-                    <td className={movement.movementType === "Entrée" ? "money-positive" : "money-negative"}>{movement.movementType === "Entrée" ? "+" : "−"}{movement.quantity}</td>
+                    <td className={["Entrée", "Réintégration"].includes(movement.movementType) ? "money-positive" : "money-negative"}>{["Entrée", "Réintégration"].includes(movement.movementType) ? "+" : "−"}{movement.quantity}</td>
                     <td>{movement.note || "—"}</td>
                     <td className="order-actions-cell">
-                      <RecordActions label="ce mouvement de stock" onEdit={() => onEdit({ kind: "movement", record: movement })} onDelete={() => onDelete({ kind: "movement", record: movement })} />
+                      {movement.orderId ? <span className="automatic-movement">Automatique</span> : <RecordActions label="ce mouvement de stock" onEdit={() => onEdit({ kind: "movement", record: movement })} onDelete={() => onDelete({ kind: "movement", record: movement })} />}
                     </td>
                   </tr>
                 ))}
@@ -2312,11 +2316,11 @@ function MonthlyCapitalChart({
   );
 }
 function Status({ value }: { value: string }) {
-  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée"].includes(value) ? "success" : ["Retour", "Annulée", "Refusée", "Retournée", "Remboursé", "Non encaissé"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente"].includes(value) ? "info" : "warning";
+  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration"].includes(value) ? "success" : ["Retour", "Annulée", "Refusée", "Retournée", "Remboursé", "Non encaissé"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande"].includes(value) ? "info" : "warning";
   return <span className={`status ${tone}`}>{value}</span>;
 }
 
-function EntryModal({ kind, carrierNames, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; products: Product[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const labels = {
     order: "Nouvelle commande",
     purchase: "Nouvel achat",
@@ -2326,6 +2330,21 @@ function EntryModal({ kind, carrierNames, close, submit }: { kind: Exclude<Modal
   };
   const [saving, setSaving] = useState(false),
     [formError, setFormError] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState(products[0] ? String(products[0].id) : "");
+  const [orderQuantity, setOrderQuantity] = useState("1");
+  const [orderSaleAmount, setOrderSaleAmount] = useState(products[0] ? String(products[0].salePrice) : "");
+  const selectedProduct = products.find((product) => String(product.id) === selectedProductId) || null;
+
+  function selectOrderProduct(productId: string) {
+    const product = products.find((item) => String(item.id) === productId);
+    setSelectedProductId(productId);
+    if (product) setOrderSaleAmount(String(product.salePrice * Math.max(1, Number(orderQuantity) || 1)));
+  }
+
+  function updateOrderQuantity(quantity: string) {
+    setOrderQuantity(quantity);
+    if (selectedProduct) setOrderSaleAmount(String(selectedProduct.salePrice * Math.max(1, Number(quantity) || 1)));
+  }
   async function handle(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
@@ -2372,12 +2391,32 @@ function EntryModal({ kind, carrierNames, close, submit }: { kind: Exclude<Modal
                 <Field label="Nom de la cliente *" name="customerName" autoComplete="name" required />
                 <Field label="Téléphone *" name="phone" type="tel" inputMode="tel" autoComplete="tel" required />
                 <Field label="Ville *" name="city" autoComplete="address-level2" required />
-                <Field label="Produit(s) *" name="products" required />
+                {products.length ? (
+                  <label className="field order-product-select">
+                    <span>Produit du catalogue *</span>
+                    <select name="productId" value={selectedProductId} onChange={(event) => selectOrderProduct(event.target.value)} required>
+                      {products.map((product) => (
+                        <option key={product.id} value={product.id}>{product.productCode} · {product.name} · stock {product.stockQuantity}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <div className="order-product-empty" role="alert">
+                    <strong>Aucun produit disponible</strong>
+                    <small>Fermez cette fenêtre, ouvrez Produits et ajoutez d’abord votre produit au catalogue.</small>
+                  </div>
+                )}
                 <Select label="Source de la commande *" name="source" options={orderSourceOptions} />
                 <Select label="Statut de la commande" name="status" options={orderStatusOptions} />
-                <Field label="Quantité *" name="quantity" type="number" inputMode="numeric" defaultValue="1" min="1" required />
-                <Field label="Vente (MAD) *" name="saleAmount" type="number" inputMode="decimal" min="0" required />
-                <Field label="Coût produit (MAD)" name="productCost" type="number" inputMode="decimal" min="0" />
+                <label className="field"><span>Quantité *</span><input name="quantity" type="number" inputMode="numeric" min="1" value={orderQuantity} onChange={(event) => updateOrderQuantity(event.target.value)} required /></label>
+                <label className="field"><span>Vente totale (MAD) *</span><input name="saleAmount" type="number" inputMode="decimal" min="0" value={orderSaleAmount} onChange={(event) => setOrderSaleAmount(event.target.value)} required /></label>
+                {selectedProduct && (
+                  <div className="order-product-summary">
+                    <div><small>Stock disponible</small><strong>{selectedProduct.stockQuantity} unité{selectedProduct.stockQuantity === 1 ? "" : "s"}</strong></div>
+                    <div><small>Coût automatique</small><strong>{money(selectedProduct.purchasePrice * Math.max(1, Number(orderQuantity) || 1))}</strong></div>
+                    <p>Le stock sera déduit une seule fois dès que le statut devient « Confirmée ».</p>
+                  </div>
+                )}
                 <Field label="Frais de transport déduits (MAD)" name="shippingCost" type="number" inputMode="decimal" min="0" />
                 <Field label="Publicité attribuée (MAD)" name="adCost" type="number" inputMode="decimal" min="0" />
                 <Field label="Autres frais (MAD)" name="fees" type="number" inputMode="decimal" min="0" />
@@ -2418,7 +2457,7 @@ function EntryModal({ kind, carrierNames, close, submit }: { kind: Exclude<Modal
             <button type="button" className="cancel-button" onClick={close}>
               Annuler
             </button>
-            <button className="primary-button" disabled={saving}>
+            <button className="primary-button" disabled={saving || (kind === "order" && products.length === 0)}>
               {saving ? "Enregistrement…" : "Enregistrer"}
             </button>
           </div>
@@ -2473,6 +2512,13 @@ function OrderModal({ order, history, carrierNames, close, submit }: { order: Or
             {carrierOptions.length ? <Select label="Agence de livraison" name="carrier" options={carrierOptions} defaultValue={currentCarrier || carrierOptions[0]} /> : <Field label="Agence de livraison" name="carrier" defaultValue={currentCarrier} />}
             <Field label="Numéro de suivi" name="trackingNumber" defaultValue={order.trackingNumber} />
             <Field label="Coût retour (MAD)" name="returnCost" type="number" inputMode="decimal" min="0" defaultValue={String(order.returnCost)} />
+          </div>
+          <div className={`order-stock-state ${order.productId ? (order.stockDeducted ? "deducted" : "waiting") : "legacy"}`}>
+            <span aria-hidden="true">{order.productId ? (order.stockDeducted ? "✓" : "◷") : "!"}</span>
+            <div>
+              <strong>{order.productId ? (order.stockDeducted ? "Stock déjà déduit" : "Stock en attente") : "Commande historique non reliée"}</strong>
+              <small>{order.productId ? (order.stockDeducted ? `${order.quantity} unité(s) retirée(s) automatiquement.` : "La quantité sera retirée au passage au statut Confirmée.") : "Cette ancienne commande conserve son produit en texte et ne modifie pas automatiquement le stock."}</small>
+            </div>
           </div>
           <div className="status-history-panel">
             <div className="status-history-head">
@@ -2612,7 +2658,7 @@ function StockMovementModal({ selection, close, submit }: { selection: Exclude<S
             <span className="card-kicker">
               {selection.product.productCode} · {selection.product.category}
             </span>
-            <h2>{selection.type === "Entrée" ? "Ajouter du stock" : "Enregistrer une vente"}</h2>
+            <h2>{selection.type === "Entrée" ? "Ajouter du stock" : "Enregistrer une sortie manuelle"}</h2>
             <p>
               {selection.product.name} · {selection.product.stockQuantity} unité(s) restante(s)
             </p>
@@ -2642,7 +2688,7 @@ function StockMovementModal({ selection, close, submit }: { selection: Exclude<S
             <span className={selection.type === "Entrée" ? "movement-symbol in" : "movement-symbol out"}>{selection.type === "Entrée" ? "＋" : "−"}</span>
             <div>
               <strong>{selection.type}</strong>
-              <p>{selection.type === "Entrée" ? "La quantité sera ajoutée au stock restant." : "La quantité sera retirée du stock restant. La commande et l’encaissement restent gérés dans Commandes."}</p>
+              <p>{selection.type === "Entrée" ? "La quantité sera ajoutée au stock restant." : "À utiliser pour une perte, un article abîmé ou une correction. Les ventes sont retirées automatiquement quand une commande passe à Confirmée."}</p>
             </div>
           </div>
           <div className="form-grid">

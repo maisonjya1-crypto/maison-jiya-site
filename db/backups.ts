@@ -31,9 +31,9 @@ const TABLES = {
 
 const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   customers: ["id", "name", "phone", "city", "created_at"],
-  orders: ["id", "order_ref", "customer_id", "city", "products", "quantity", "sale_amount", "product_cost", "shipping_cost", "ad_cost", "fees", "return_cost", "source", "status", "payment_status", "carrier", "tracking_number", "paid_at", "deleted_at", "deleted_by_user_id", "created_at", "updated_at"],
+  orders: ["id", "order_ref", "customer_id", "product_id", "city", "products", "quantity", "sale_amount", "product_cost", "shipping_cost", "ad_cost", "fees", "return_cost", "source", "status", "payment_status", "carrier", "tracking_number", "stock_deducted", "paid_at", "deleted_at", "deleted_by_user_id", "created_at", "updated_at"],
   products: ["id", "product_code", "name", "category", "purchase_price", "sale_price", "stock_quantity", "created_at"],
-  stockMovements: ["id", "product_id", "movement_type", "quantity", "note", "created_at"],
+  stockMovements: ["id", "product_id", "order_id", "movement_type", "quantity", "note", "created_at"],
   purchases: ["id", "supplier", "item", "quantity", "unit_cost", "total_cost", "payment_status", "created_at"],
   ads: ["id", "platform", "campaign", "spend", "revenue", "order_count", "source", "performance_date", "created_at"],
   capital: ["id", "direction", "category", "label", "amount", "entry_date", "created_at"],
@@ -106,7 +106,10 @@ export async function createDailyBackup(database: D1Database, reason = "Automati
 function insertStatement(database: D1Database, tableKey: keyof BusinessSnapshot["tables"], row: SnapshotRow) {
   const columns = RESTORE_COLUMNS[tableKey];
   const table = TABLES[tableKey];
-  const values = columns.map((column) => row[column] ?? null);
+  const values = columns.map((column) => {
+    if (column === "stock_deducted") return row[column] ?? 0;
+    return row[column] ?? null;
+  });
   const placeholders = columns.map(() => "?").join(", ");
   return database.prepare(`INSERT INTO ${table} (${columns.join(", ")}) VALUES (${placeholders})`).bind(...values);
 }
@@ -152,6 +155,7 @@ export async function purgeExpiredTrash(database: D1Database) {
     const ids = expired.map((order) => order.id);
     const placeholders = ids.map(() => "?").join(", ");
     await database.batch([
+      database.prepare(`UPDATE stock_movements SET order_id = NULL WHERE order_id IN (${placeholders})`).bind(...ids),
       database.prepare(`DELETE FROM order_status_history WHERE order_id IN (${placeholders})`).bind(...ids),
       database.prepare(`DELETE FROM orders WHERE id IN (${placeholders})`).bind(...ids),
     ]);
