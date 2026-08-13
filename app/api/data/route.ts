@@ -183,8 +183,11 @@ async function seedIfNeeded() {
     carrierSettings.find((setting) => setting.key === "carrier_names")?.value,
     carrierSettings.find((setting) => setting.key === "carrier_name")?.value,
   );
-  if (!configuredCarriers.length) {
-    const carrierNames = ["ForceLog", "Sendit"];
+  const carrierNames = [...configuredCarriers];
+  for (const requestedCarrier of ["ForceLog", "Sendit"]) {
+    if (!carrierNames.some((carrier) => carrier.toLocaleLowerCase("fr") === requestedCarrier.toLocaleLowerCase("fr"))) carrierNames.push(requestedCarrier);
+  }
+  if (carrierNames.length !== configuredCarriers.length) {
     const updatedAt = new Date().toISOString();
     await db.batch([
       db.insert(settings).values({ key: "carrier_names", value: JSON.stringify(carrierNames) }).onConflictDoUpdate({ target: settings.key, set: { value: JSON.stringify(carrierNames), updatedAt } }),
