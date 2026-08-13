@@ -35,7 +35,7 @@ test("le bordereau est disponible depuis les commandes et les colis", async () =
   assert.match(dashboard, /window\.print\(\)/);
   assert.match(dashboard, /name="returnReason"/);
   assert.match(styles, /@media print/);
-  assert.match(styles, /@page \{ size:A5 portrait/);
+  assert.match(styles, /@page order-slip \{ size:A5 portrait/);
 });
 
 test("Google Sheets exporte aussi les motifs de retour", async () => {
