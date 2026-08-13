@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import AiPage from "./ai-page";
 
 type Order = {
   id: number;
@@ -141,7 +142,7 @@ const dateLabel = (value: string) =>
     year: "numeric",
   }).format(new Date(value));
 
-const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Publicités", "Capital", "Paramètres"];
+const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Publicités", "Capital", "Assistant IA", "Paramètres"];
 const orderStatusOptions = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
 const orderSourceOptions = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Autre"];
 const productCategoryOptions = ["Montres", "Bijoux", "Wallets", "Électronique", "Autre"];
@@ -364,7 +365,7 @@ export default function DashboardClient() {
             <p className="eyebrow">Pilotage Maison Jiya · MAD</p>
             <h1>{active}</h1>
           </div>
-          {active !== "Paramètres" && (
+          {!['Assistant IA', 'Paramètres'].includes(active) && (
             <div className="top-actions">
               <button className="period-button">Toutes les données</button>
               <button className="primary-button" onClick={() => openEntry(active === "Produits" ? "product" : active === "Achats" ? "purchase" : active === "Publicités" ? "ad" : active === "Capital" ? "capital" : "order")}>
@@ -490,7 +491,7 @@ function AuthPage({ configured, onAuthenticated }: { configured: boolean; onAuth
       <aside className="auth-showcase" aria-hidden="true">
         <span>MAISON JIYA · MAD</span>
         <h2>Toute votre activité, dans un espace simple et protégé.</h2>
-        <div className="auth-benefits"><i>Commandes</i><i>Stock</i><i>Capital</i><i>Partenaires</i></div>
+        <div className="auth-benefits"><i>Commandes</i><i>Stock</i><i>Capital</i><i>Assistant IA</i><i>Partenaires</i></div>
       </aside>
     </main>
   );
@@ -546,6 +547,7 @@ function Page({
   if (active === "Achats") return <PurchasesPage purchases={data.purchases} onAdd={() => open("purchase")} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} onAdd={() => open("ad")} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} />;
+  if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
   if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} access={data.access} members={data.members} submit={submit} />;
   const total = Math.max(1, data.orders.length);
   return (
