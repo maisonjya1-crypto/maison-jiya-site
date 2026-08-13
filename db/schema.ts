@@ -55,6 +55,7 @@ export const orders = sqliteTable("orders", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   orderRef: text("order_ref").notNull().unique(),
   customerId: integer("customer_id").notNull().references(() => customers.id),
+  productId: integer("product_id").references(() => products.id),
   city: text("city").notNull(),
   products: text("products").notNull(),
   quantity: integer("quantity").notNull().default(1),
@@ -69,6 +70,7 @@ export const orders = sqliteTable("orders", {
   paymentStatus: text("payment_status").notNull().default("À encaisser"),
   carrier: text("carrier").notNull().default("Non affecté"),
   trackingNumber: text("tracking_number").notNull().default(""),
+  stockDeducted: integer("stock_deducted", { mode: "boolean" }).notNull().default(false),
   paidAt: text("paid_at"),
   deletedAt: text("deleted_at"),
   deletedByUserId: integer("deleted_by_user_id"),
@@ -170,10 +172,14 @@ export const stockMovements = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     productId: integer("product_id").notNull().references(() => products.id),
+    orderId: integer("order_id").references(() => orders.id),
     movementType: text("movement_type").notNull(),
     quantity: integer("quantity").notNull(),
     note: text("note").notNull().default(""),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
-  (table) => [index("stock_movements_product_id_idx").on(table.productId)],
+  (table) => [
+    index("stock_movements_product_id_idx").on(table.productId),
+    index("stock_movements_order_id_idx").on(table.orderId),
+  ],
 );

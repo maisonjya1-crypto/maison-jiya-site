@@ -43,6 +43,13 @@
       "when": 1786669200000,
       "tag": "0005_secure_continuity",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1786672800000,
+      "tag": "0006_order_stock_automation",
+      "breakpoints": true
     }
   ]
 }

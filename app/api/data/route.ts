@@ -28,6 +28,7 @@ function numberValue(value: unknown, fallback = 0) {
 const orderStatuses = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
 const orderSources = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Autre", "Non renseignée"];
 const paymentStatuses = ["À encaisser", "Encaissé", "Non encaissé", "Remboursé"];
+const stockCommittedStatuses = new Set(["Confirmée", "Expédiée", "En livraison", "Livrée", "Retour"]);
 const productCategories = ["Montres", "Bijoux", "Wallets", "Électronique", "Autre"];
 const themeOptions = ["mauve-froid", "rose-poudre", "sombre-prune", "bleu-brume", "sable-chic"];
 
@@ -49,6 +50,10 @@ function paymentStatus(value: unknown, fallback = "À encaisser") {
 function productCategory(value: unknown, fallback = "Autre") {
   const category = textValue(value, fallback);
   return productCategories.includes(category) ? category : fallback;
+}
+
+function commitsStock(status: string) {
+  return stockCommittedStatuses.has(status);
 }
 
 async function sha256Hex(value: string) {
@@ -231,7 +236,7 @@ async function snapshot(access: AccessInfo) {
   await seedIfNeeded();
   await createDailyBackup(await getRawDb());
   const db = await getDb();
-  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, customerName: customers.name, phone: customers.phone, city: orders.city, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, source: orders.source, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
+  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, source: orders.source, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
   const [orderRows, trashRows, customerRows, purchaseRows, adRows, capitalRows, productRows, movementRows, settingRows, memberRows, historyRows, auditRows, backupRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
@@ -242,7 +247,7 @@ async function snapshot(access: AccessInfo) {
     db.select().from(adPerformance).orderBy(desc(adPerformance.performanceDate)),
     db.select().from(capitalLedger).orderBy(desc(capitalLedger.entryDate)),
     db.select().from(products).orderBy(desc(products.createdAt)),
-    db.select({ id: stockMovements.id, productId: stockMovements.productId, productCode: products.productCode, productName: products.name, movementType: stockMovements.movementType, quantity: stockMovements.quantity, note: stockMovements.note, createdAt: stockMovements.createdAt }).from(stockMovements).leftJoin(products, eq(stockMovements.productId, products.id)).orderBy(desc(stockMovements.createdAt)),
+    db.select({ id: stockMovements.id, productId: stockMovements.productId, orderId: stockMovements.orderId, orderRef: orders.orderRef, productCode: products.productCode, productName: products.name, movementType: stockMovements.movementType, quantity: stockMovements.quantity, note: stockMovements.note, createdAt: stockMovements.createdAt }).from(stockMovements).leftJoin(products, eq(stockMovements.productId, products.id)).leftJoin(orders, eq(stockMovements.orderId, orders.id)).orderBy(desc(stockMovements.createdAt)),
     db.select().from(settings),
     access.isOwner
       ? db.select({ id: users.id, username: users.username, displayName: users.displayName, role: users.role, isActive: users.isActive, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt))
@@ -344,7 +349,16 @@ export async function POST(request: Request) {
       const name = textValue(payload.customerName);
       const phone = textValue(payload.phone).replace(/\s/g, "");
       const city = textValue(payload.city);
-      if (!name || !phone || !city || !textValue(payload.products)) return Response.json({ error: "Cliente, téléphone, ville et produit sont obligatoires." }, { status: 400 });
+      const productId = numberValue(payload.productId);
+      const quantity = numberValue(payload.quantity, 1);
+      if (!name || !phone || !city || !productId || quantity < 1) return Response.json({ error: "Cliente, téléphone, ville, produit et quantité sont obligatoires." }, { status: 400 });
+      const [selectedProduct] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
+      if (!selectedProduct) return Response.json({ error: "Le produit sélectionné n’existe plus dans le catalogue." }, { status: 404 });
+      const selectedStatus = orderStatus(payload.status);
+      const shouldDeductStock = commitsStock(selectedStatus);
+      if (shouldDeductStock && quantity > selectedProduct.stockQuantity) {
+        return Response.json({ error: `Stock insuffisant pour confirmer : ${selectedProduct.stockQuantity} unité(s) disponible(s).` }, { status: 409 });
+      }
       let [customer] = await db.select().from(customers).where(eq(customers.phone, phone)).limit(1);
       if (!customer) [customer] = await db.insert(customers).values({ name, phone, city }).returning();
       else await db.update(customers).set({ name, city }).where(eq(customers.id, customer.id));
@@ -357,11 +371,27 @@ export async function POST(request: Request) {
       const selectedCarrier = requestedCarrier && (!carrierNames.length || carrierNames.includes(requestedCarrier))
         ? requestedCarrier
         : carrierNames[0] || "Non affecté";
-      const [createdOrder] = await db.insert(orders).values({
-        orderRef: `MJ-${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`, customerId: customer.id, city, products: textValue(payload.products), quantity: numberValue(payload.quantity, 1), saleAmount: numberValue(payload.saleAmount), productCost: numberValue(payload.productCost), shippingCost: numberValue(payload.shippingCost), adCost: numberValue(payload.adCost), fees: numberValue(payload.fees), source: orderSource(payload.source), status: orderStatus(payload.status), paymentStatus: "À encaisser", carrier: selectedCarrier, trackingNumber: textValue(payload.trackingNumber), updatedAt: new Date().toISOString(),
-      }).returning();
+      const orderRef = `MJ-${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
+      const now = new Date().toISOString();
+      const productLabel = `${selectedProduct.name} · ${selectedProduct.productCode}`;
+      const saleAmount = numberValue(payload.saleAmount, selectedProduct.salePrice * quantity);
+      const rawDb = await getRawDb();
+      const statements = [
+        rawDb.prepare(`INSERT INTO orders (order_ref, customer_id, product_id, city, products, quantity, sale_amount, product_cost, shipping_cost, ad_cost, fees, return_cost, source, status, payment_status, carrier, tracking_number, stock_deducted, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'À encaisser', ?, ?, ?, ?)`).bind(orderRef, customer.id, productId, city, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, numberValue(payload.shippingCost), numberValue(payload.adCost), numberValue(payload.fees), orderSource(payload.source), selectedStatus, selectedCarrier, textValue(payload.trackingNumber), shouldDeductStock ? 1 : 0, now),
+        rawDb.prepare(`INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at)
+          SELECT id, NULL, ?, ?, ?, ? FROM orders WHERE order_ref = ?`).bind(selectedStatus, user.id, user.displayName, now, orderRef),
+      ];
+      if (shouldDeductStock) {
+        statements.push(
+          rawDb.prepare("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?").bind(quantity, productId),
+          rawDb.prepare(`INSERT INTO stock_movements (product_id, order_id, movement_type, quantity, note, created_at)
+            SELECT ?, id, 'Commande', ?, ?, ? FROM orders WHERE order_ref = ?`).bind(productId, quantity, `Déduction automatique · ${orderRef}`, now, orderRef),
+        );
+      }
+      await rawDb.batch(statements);
+      const [createdOrder] = await db.select().from(orders).where(eq(orders.orderRef, orderRef)).limit(1);
       if (!createdOrder) throw new Error("La commande n’a pas été créée.");
-      await db.insert(orderStatusHistory).values({ orderId: createdOrder.id, fromStatus: null, toStatus: createdOrder.status, changedByUserId: user.id, changedByName: user.displayName });
       auditEntityId = String(createdOrder.id);
       auditEntityLabel = createdOrder.orderRef;
     } else if (payload.action === "updateOrder") {
@@ -375,15 +405,36 @@ export async function POST(request: Request) {
       const paidAt = nextPaymentStatus === "Encaissé"
         ? existingOrder.paymentStatus === "Encaissé" && existingOrder.paidAt ? existingOrder.paidAt : now
         : null;
-      const updateQuery = db.update(orders).set({ status: nextStatus, paymentStatus: nextPaymentStatus, source: orderSource(payload.source, existingOrder.source), shippingCost: numberValue(payload.shippingCost), carrier: textValue(payload.carrier, "Non affecté"), trackingNumber: textValue(payload.trackingNumber), returnCost: numberValue(payload.returnCost), paidAt, updatedAt: now }).where(and(eq(orders.id, id), isNull(orders.deletedAt)));
-      if (nextStatus !== existingOrder.status) {
-        await db.batch([
-          updateQuery,
-          db.insert(orderStatusHistory).values({ orderId: id, fromStatus: existingOrder.status, toStatus: nextStatus, changedByUserId: user.id, changedByName: user.displayName, changedAt: now }),
-        ]);
-      } else {
-        await updateQuery;
+      const shouldDeductStock = Boolean(existingOrder.productId && !existingOrder.stockDeducted && commitsStock(nextStatus));
+      const shouldRestoreStock = Boolean(existingOrder.productId && existingOrder.stockDeducted && !commitsStock(nextStatus));
+      if (shouldDeductStock) {
+        const [linkedProduct] = await db.select().from(products).where(eq(products.id, existingOrder.productId!)).limit(1);
+        if (!linkedProduct) return Response.json({ error: "Le produit associé à cette commande est introuvable." }, { status: 409 });
+        if (existingOrder.quantity > linkedProduct.stockQuantity) {
+          return Response.json({ error: `Stock insuffisant pour confirmer : ${linkedProduct.stockQuantity} unité(s) disponible(s).` }, { status: 409 });
+        }
       }
+      const nextStockDeducted = existingOrder.productId ? commitsStock(nextStatus) : existingOrder.stockDeducted;
+      const rawDb = await getRawDb();
+      const statements = [
+        rawDb.prepare(`UPDATE orders SET status = ?, payment_status = ?, source = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, return_cost = ?, paid_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
+          .bind(nextStatus, nextPaymentStatus, orderSource(payload.source, existingOrder.source), numberValue(payload.shippingCost), textValue(payload.carrier, "Non affecté"), textValue(payload.trackingNumber), numberValue(payload.returnCost), paidAt, nextStockDeducted ? 1 : 0, now, id),
+      ];
+      if (nextStatus !== existingOrder.status) {
+        statements.push(rawDb.prepare("INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at) VALUES (?, ?, ?, ?, ?, ?)").bind(id, existingOrder.status, nextStatus, user.id, user.displayName, now));
+      }
+      if (shouldDeductStock) {
+        statements.push(
+          rawDb.prepare("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?").bind(existingOrder.quantity, existingOrder.productId!),
+          rawDb.prepare("INSERT INTO stock_movements (product_id, order_id, movement_type, quantity, note, created_at) VALUES (?, ?, 'Commande', ?, ?, ?)").bind(existingOrder.productId!, id, existingOrder.quantity, `Déduction automatique · ${existingOrder.orderRef}`, now),
+        );
+      } else if (shouldRestoreStock) {
+        statements.push(
+          rawDb.prepare("UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?").bind(existingOrder.quantity, existingOrder.productId!),
+          rawDb.prepare("INSERT INTO stock_movements (product_id, order_id, movement_type, quantity, note, created_at) VALUES (?, ?, 'Réintégration', ?, ?, ?)").bind(existingOrder.productId!, id, existingOrder.quantity, `Réintégration automatique · ${existingOrder.orderRef}`, now),
+        );
+      }
+      await rawDb.batch(statements);
       auditEntityLabel = existingOrder.orderRef;
     } else if (payload.action === "deleteOrder") {
       const id = numberValue(payload.id);
@@ -501,6 +552,8 @@ export async function POST(request: Request) {
       if (!id) return Response.json({ error: "Produit invalide." }, { status: 400 });
       const [product] = await db.select({ id: products.id }).from(products).where(eq(products.id, id)).limit(1);
       if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
+      const [linkedOrder] = await db.select({ id: orders.id }).from(orders).where(eq(orders.productId, id)).limit(1);
+      if (linkedOrder) return Response.json({ error: "Ce produit est lié à une commande et doit être conservé dans l’historique." }, { status: 409 });
       await db.batch([
         db.delete(stockMovements).where(eq(stockMovements.productId, id)),
         db.delete(products).where(eq(products.id, id)),
@@ -525,6 +578,7 @@ export async function POST(request: Request) {
       if (!id || quantity < 1 || !["Entrée", "Vente"].includes(movementType)) return Response.json({ error: "Mouvement de stock invalide." }, { status: 400 });
       const [movement] = await db.select().from(stockMovements).where(eq(stockMovements.id, id)).limit(1);
       if (!movement) return Response.json({ error: "Mouvement de stock introuvable." }, { status: 404 });
+      if (movement.orderId) return Response.json({ error: "Un mouvement créé automatiquement par une commande ne peut pas être modifié." }, { status: 409 });
       const [product] = await db.select().from(products).where(eq(products.id, movement.productId)).limit(1);
       if (!product) return Response.json({ error: "Produit associé introuvable." }, { status: 404 });
       const oldDelta = movement.movementType === "Entrée" ? movement.quantity : -movement.quantity;
@@ -540,6 +594,7 @@ export async function POST(request: Request) {
       if (!id) return Response.json({ error: "Mouvement de stock invalide." }, { status: 400 });
       const [movement] = await db.select().from(stockMovements).where(eq(stockMovements.id, id)).limit(1);
       if (!movement) return Response.json({ error: "Mouvement de stock introuvable." }, { status: 404 });
+      if (movement.orderId) return Response.json({ error: "Un mouvement créé automatiquement par une commande ne peut pas être supprimé." }, { status: 409 });
       const [product] = await db.select().from(products).where(eq(products.id, movement.productId)).limit(1);
       if (!product) return Response.json({ error: "Produit associé introuvable." }, { status: 404 });
       const oldDelta = movement.movementType === "Entrée" ? movement.quantity : -movement.quantity;
@@ -713,6 +768,9 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Maison Jiya data POST failed", errorDetails(error));
     const errorMessage = error instanceof Error ? error.message : "";
+    if (errorMessage.includes("Stock insuffisant")) {
+      return Response.json({ error: "Stock insuffisant pour confirmer cette commande." }, { status: 409 });
+    }
     if (errorMessage.startsWith("Le nom d’utilisateur") || errorMessage.startsWith("Le mot de passe") || errorMessage === "Rôle invalide.") {
       return Response.json({ error: errorMessage }, { status: 400 });
     }
