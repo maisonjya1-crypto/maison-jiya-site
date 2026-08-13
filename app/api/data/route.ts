@@ -90,6 +90,7 @@ async function seedIfNeeded() {
     { key: "theme", value: "mauve-froid" },
     { key: "account_name", value: "Maison Jiya" },
     { key: "backup_sheet_url", value: "https://docs.google.com/spreadsheets/d/1hQIwOKBBhhZIQN6AsmVwUCH_7T-WE8GlsCfrmb2H7Us/edit" },
+    { key: "backup_webhook_url", value: "" },
   ]).onConflictDoNothing();
 
   await db.update(orders).set({ status: "En attente" }).where(eq(orders.status, "Nouvelle"));
@@ -436,6 +437,30 @@ export async function POST(request: Request) {
       await db.insert(settings).values({ key: "security_backup_token_hash", value: "" }).onConflictDoUpdate({
         target: settings.key,
         set: { value: "", updatedAt },
+      });
+    } else if (payload.action === "updateBackupWebhook") {
+      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut connecter la synchronisation instantanée." }, { status: 403 });
+      const webhookUrl = textValue(payload.url);
+      let parsedWebhookUrl: URL;
+      try {
+        parsedWebhookUrl = new URL(webhookUrl);
+      } catch {
+        return Response.json({ error: "L’adresse Apps Script est invalide." }, { status: 400 });
+      }
+      if (
+        webhookUrl.length > 500
+        || parsedWebhookUrl.protocol !== "https:"
+        || parsedWebhookUrl.hostname !== "script.google.com"
+        || !/^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(parsedWebhookUrl.pathname)
+        || parsedWebhookUrl.search
+        || parsedWebhookUrl.hash
+      ) {
+        return Response.json({ error: "Collez l’adresse Apps Script complète qui se termine par /exec." }, { status: 400 });
+      }
+      const updatedAt = new Date().toISOString();
+      await db.insert(settings).values({ key: "backup_webhook_url", value: webhookUrl }).onConflictDoUpdate({
+        target: settings.key,
+        set: { value: webhookUrl, updatedAt },
       });
     } else if (payload.action === "updateCarriers") {
       if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut gérer les agences." }, { status: 403 });
