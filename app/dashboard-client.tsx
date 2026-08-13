@@ -237,6 +237,7 @@ export default function DashboardClient() {
       updateMember: "Droits du partenaire mis à jour",
       updateAccountSettings: "Compte principal mis à jour",
       updateSetting: "Thème appliqué",
+      deleteOrder: "Commande supprimée",
     };
     setNotice(messages[action] || "Enregistré avec succès");
     setTimeout(() => setNotice(""), 2500);
@@ -259,6 +260,19 @@ export default function DashboardClient() {
 
   function openStock(selection: StockSelection) {
     if (requireEditAccess()) setStockSelection(selection);
+  }
+
+  async function deleteOrder(order: Order) {
+    if (!requireEditAccess()) return;
+    const confirmed = window.confirm(
+      `Supprimer définitivement la commande ${order.orderRef} de ${order.customerName} ?\n\nCette action est irréversible.`,
+    );
+    if (!confirmed) return;
+    try {
+      await submit("deleteOrder", { id: String(order.id) });
+    } catch {
+      // Le message d’erreur global est affiché par le tableau de bord.
+    }
   }
 
   const metrics = useMemo(() => {
@@ -397,7 +411,7 @@ export default function DashboardClient() {
             <button onClick={() => void loadData()}>Réessayer</button>
           </div>
         )}
-        {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} moveStock={openStock} submit={submit} />}
+        {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} remove={deleteOrder} moveStock={openStock} submit={submit} />}
       </section>
       {modal && <EntryModal kind={modal} close={() => setModal(null)} submit={submit} />}
       {selectedOrder && <OrderModal order={selectedOrder} close={() => setSelectedOrder(null)} submit={submit} />}
@@ -514,6 +528,7 @@ function Page({
   delivery,
   open,
   edit,
+  remove,
   moveStock,
   submit,
 }: {
@@ -537,10 +552,11 @@ function Page({
   delivery: { label: string; value: number; tone: string }[];
   open: (m: ModalName) => void;
   edit: (o: Order) => void;
+  remove: (o: Order) => void;
   moveStock: (selection: StockSelection) => void;
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
 }) {
-  if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} />;
+  if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onDelete={remove} />;
   if (active === "Produits") return <ProductsPage products={data.products} movements={data.stockMovements} onAdd={() => open("product")} onMove={moveStock} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} settings={data.settings} onEdit={edit} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} />;
@@ -972,23 +988,48 @@ function PanelHead({ kicker, title, action, onClick, total }: { kicker: string; 
     </div>
   );
 }
-function OrdersPage({ orders, onAdd, onEdit }: { orders: Order[]; onAdd: () => void; onEdit: (o: Order) => void }) {
+function OrderActions({ order, onEdit, onDelete }: { order: Order; onEdit: (o: Order) => void; onDelete: (o: Order) => void }) {
+  return (
+    <details className="order-actions" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+      <summary aria-label={`Actions pour la commande ${order.orderRef}`} title="Actions">
+        ⋯
+      </summary>
+      <div className="order-action-menu" role="menu">
+        <button type="button" role="menuitem" onClick={(event) => {
+          event.currentTarget.closest("details")?.removeAttribute("open");
+          onEdit(order);
+        }}>
+          <span aria-hidden="true">✎</span>
+          Modifier la commande
+        </button>
+        <button type="button" role="menuitem" className="danger" onClick={(event) => {
+          event.currentTarget.closest("details")?.removeAttribute("open");
+          onDelete(order);
+        }}>
+          <span aria-hidden="true">⌫</span>
+          Supprimer
+        </button>
+      </div>
+    </details>
+  );
+}
+function OrdersPage({ orders, onAdd, onEdit, onDelete }: { orders: Order[]; onAdd: () => void; onEdit: (o: Order) => void; onDelete: (o: Order) => void }) {
   return (
     <section className="panel page-panel">
       <div className="section-toolbar">
         <div>
           <h2>{orders.length} commandes</h2>
-          <p>Touchez une commande pour modifier son statut et son suivi.</p>
+          <p>Utilisez le menu ⋯ pour modifier ou supprimer une commande saisie par erreur.</p>
         </div>
         <button className="primary-button" onClick={onAdd}>
           ＋ Saisir une commande
         </button>
       </div>
-      <OrderTable orders={orders} onEdit={onEdit} />
+      <OrderTable orders={orders} onEdit={onEdit} onDelete={onDelete} />
     </section>
   );
 }
-function OrderTable({ orders, onEdit }: { orders: Order[]; onEdit: (o: Order) => void }) {
+function OrderTable({ orders, onEdit, onDelete }: { orders: Order[]; onEdit: (o: Order) => void; onDelete: (o: Order) => void }) {
   return (
     <>
       <div className="desktop-order-table table-scroll">
@@ -1001,6 +1042,7 @@ function OrderTable({ orders, onEdit }: { orders: Order[]; onEdit: (o: Order) =>
               <th>Vente</th>
               <th>Gain estimé</th>
               <th>Statut</th>
+              <th className="order-actions-heading">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1014,17 +1056,14 @@ function OrderTable({ orders, onEdit }: { orders: Order[]; onEdit: (o: Order) =>
                   </td>
                   <td>
                     {o.customerName}
-                    <small>
-                      {o.products} · {o.source}
-                    </small>
+                    <small>{o.products} · {o.source}</small>
                   </td>
                   <td>{o.city}</td>
-                  <td>
-                    <strong>{money(o.saleAmount)}</strong>
-                  </td>
+                  <td><strong>{money(o.saleAmount)}</strong></td>
                   <td className={gain >= 0 ? "money-positive" : "money-negative"}>{money(gain)}</td>
-                  <td>
-                    <Status value={o.status} />
+                  <td><Status value={o.status} /></td>
+                  <td className="order-actions-cell">
+                    <OrderActions order={o} onEdit={onEdit} onDelete={onDelete} />
                   </td>
                 </tr>
               );
@@ -1036,31 +1075,31 @@ function OrderTable({ orders, onEdit }: { orders: Order[]; onEdit: (o: Order) =>
         {orders.map((o) => {
           const gain = o.saleAmount - o.productCost - o.shippingCost - o.adCost - o.fees - o.returnCost;
           return (
-            <button key={o.id} className="mobile-order-card" onClick={() => onEdit(o)}>
+            <article key={o.id} className="mobile-order-card" role="button" tabIndex={0} aria-label={`Ouvrir la commande ${o.orderRef}`} onClick={() => onEdit(o)} onKeyDown={(event) => {
+              if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault();
+                onEdit(o);
+              }
+            }}>
               <div className="mobile-order-top">
                 <span>
                   <strong>{o.orderRef}</strong>
-                  <small>
-                    {dateLabel(o.createdAt)} · {o.source}
-                  </small>
+                  <small>{dateLabel(o.createdAt)} · {o.source}</small>
                 </span>
-                <Status value={o.status} />
+                <div className="mobile-order-status">
+                  <Status value={o.status} />
+                  <OrderActions order={o} onEdit={onEdit} onDelete={onDelete} />
+                </div>
               </div>
               <div className="mobile-order-client">
                 <strong>{o.customerName}</strong>
-                <small>
-                  {o.city} · {o.products}
-                </small>
+                <small>{o.city} · {o.products}</small>
               </div>
               <div className="mobile-order-money">
-                <span>
-                  Vente <strong>{money(o.saleAmount)}</strong>
-                </span>
-                <span>
-                  Gain <strong className={gain >= 0 ? "money-positive" : "money-negative"}>{money(gain)}</strong>
-                </span>
+                <span>Vente <strong>{money(o.saleAmount)}</strong></span>
+                <span>Gain <strong className={gain >= 0 ? "money-positive" : "money-negative"}>{money(gain)}</strong></span>
               </div>
-            </button>
+            </article>
           );
         })}
       </div>

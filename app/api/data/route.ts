@@ -193,6 +193,12 @@ export async function POST(request: Request) {
         ? existingOrder.paymentStatus === "Encaissé" && existingOrder.paidAt ? existingOrder.paidAt : now
         : null;
       await db.update(orders).set({ status: orderStatus(payload.status, existingOrder.status), paymentStatus: nextPaymentStatus, source: orderSource(payload.source, existingOrder.source), shippingCost: numberValue(payload.shippingCost), carrier: textValue(payload.carrier, "Non affecté"), trackingNumber: textValue(payload.trackingNumber), returnCost: numberValue(payload.returnCost), paidAt, updatedAt: now }).where(eq(orders.id, id));
+    } else if (payload.action === "deleteOrder") {
+      const id = numberValue(payload.id);
+      if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
+      const [existingOrder] = await db.select({ id: orders.id }).from(orders).where(eq(orders.id, id)).limit(1);
+      if (!existingOrder) return Response.json({ error: "Commande introuvable." }, { status: 404 });
+      await db.delete(orders).where(eq(orders.id, id));
     } else if (payload.action === "addPurchase") {
       const quantity = numberValue(payload.quantity, 1);
       const unitCost = numberValue(payload.unitCost);

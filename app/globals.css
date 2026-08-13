@@ -218,6 +218,28 @@ td small { display:block; margin-top:3px; color:#919893; font-size:8px; }.clicka
 @media(max-width:1050px){.auth-shell{grid-template-columns:1fr}.auth-card{padding-block:55px}.auth-showcase{display:none}.theme-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.account-settings-panel,.security-settings-panel{grid-template-columns:1fr}.account-settings-form{grid-template-columns:1fr 1fr}.member-list{grid-template-columns:1fr}}
 @media(max-width:720px){.auth-card{width:100%;padding:28px 19px 42px}.auth-brand{margin-bottom:38px}.auth-logo-frame{width:52px;height:52px}.auth-heading h1{font-size:31px}.auth-heading p{font-size:11px}.auth-form input{font-size:16px}.sidebar nav{grid-template-columns:repeat(9,minmax(66px,1fr));border-color:var(--sidebar-line);background:color-mix(in srgb,var(--sidebar) 96%,transparent);box-shadow:0 16px 45px color-mix(in srgb,var(--sidebar) 40%,transparent)}.nav-item.active{background:var(--sidebar-active)}.edit-access-strip{align-items:stretch;flex-direction:column;margin-top:0}.access-action{width:100%;min-height:42px}.settings-intro{align-items:flex-start;flex-direction:column;padding:22px}.current-theme-badge{width:100%}.settings-panel{padding:18px}.settings-panel-head{align-items:flex-start;flex-direction:column}.security-overview{align-items:flex-start}.password-fields,.member-create-grid{grid-template-columns:1fr}.member-create-grid label:nth-child(3){grid-column:auto}.unlocked-form{align-items:stretch;flex-direction:column}.unlocked-form>.secondary-button{width:100%;min-height:42px}.account-settings-form{grid-template-columns:1fr}.account-form-footer{align-items:stretch;flex-direction:column}.account-form-footer .primary-button{width:100%}.member-rights-form,.member-password-form{grid-template-columns:1fr}.member-rights-form .secondary-button,.member-password-form .secondary-button{grid-column:auto}.member-active-toggle{padding-top:0}.theme-grid{grid-template-columns:1fr}.theme-mini-preview{height:120px}}
 
+/* Actions des commandes */
+.order-actions-heading,.order-actions-cell { width:74px; text-align:right; }
+.order-actions { position:relative; display:inline-flex; justify-content:flex-end; }
+.order-actions summary { width:34px; height:34px; display:grid; place-items:center; border:1px solid var(--line); border-radius:10px; color:var(--ink); background:var(--paper); cursor:pointer; list-style:none; font-size:20px; font-weight:700; line-height:1; transition:.15s ease; }
+.order-actions summary::-webkit-details-marker { display:none; }
+.order-actions summary:hover,.order-actions[open] summary { border-color:var(--accent-border); color:var(--forest); background:var(--accent-soft); }
+.order-action-menu { position:absolute; z-index:30; top:calc(100% + 7px); right:0; width:190px; overflow:hidden; padding:6px; border:1px solid var(--line); border-radius:12px; background:var(--paper); box-shadow:0 16px 36px #17241d26; }
+.order-action-menu button { width:100%; min-height:38px; display:flex; align-items:center; gap:9px; padding:9px 10px; border:0; border-radius:8px; color:var(--ink); background:transparent; cursor:pointer; text-align:left; font-size:9px; font-weight:700; }
+.order-action-menu button:hover { background:var(--accent-soft); }
+.order-action-menu button span { width:18px; color:var(--forest); font-size:14px; text-align:center; }
+.order-action-menu button.danger { color:#a3473b; }
+.order-action-menu button.danger:hover { background:#fff0ed; }
+.order-action-menu button.danger span { color:#a3473b; }
+.mobile-order-status { display:flex; align-items:center; gap:8px; }
+.theme-sombre-prune .order-action-menu button.danger:hover { background:#3b2527; }
+@media(max-width:720px){
+  .mobile-order-card { position:relative; }
+  .mobile-order-status { align-items:flex-start; }
+  .order-action-menu { position:fixed; z-index:80; top:auto; right:14px; bottom:18px; left:14px; width:auto; padding:9px; border-radius:15px; box-shadow:0 22px 70px #0e17104d; }
+  .order-action-menu button { min-height:48px; font-size:11px; }
+}
+
 /* Assistant IA */
 .ai-page { display:flex; flex-direction:column; gap:14px; }
 .ai-intro { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:27px 29px; border-radius:20px; color:#fff; background:linear-gradient(125deg,var(--hero-start),var(--hero-mid) 62%,var(--hero-end)); box-shadow:0 14px 32px color-mix(in srgb,var(--hero-start) 24%,transparent); }
