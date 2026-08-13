@@ -11,7 +11,8 @@ export type AppUser = {
 
 export const SESSION_COOKIE = "mj_session";
 const SESSION_SECONDS = 12 * 60 * 60;
-const PASSWORD_ITERATIONS = 150_000;
+// Cloudflare Workers Web Crypto currently caps PBKDF2 at 100,000 iterations.
+const PASSWORD_ITERATIONS = 100_000;
 const MAX_ATTEMPTS = 5;
 const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 
