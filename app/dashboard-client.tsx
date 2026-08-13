@@ -168,6 +168,13 @@ function safeTheme(value: string | undefined): ThemeKey {
   return themeOptions.some((theme) => theme.key === value) ? (value as ThemeKey) : "mauve-froid";
 }
 
+function createBackupToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let binary = "";
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
 function parseCarrierNames(settings: Record<string, string>) {
   const candidates: string[] = [];
   try {
@@ -261,6 +268,8 @@ export default function DashboardClient() {
       updateAccountSettings: "Compte principal mis à jour",
       updateSetting: "Réglage appliqué",
       updateCarriers: "Liste des agences mise à jour",
+      updateBackupToken: "Clé privée de sauvegarde créée",
+      revokeBackupToken: "Sauvegarde Google Sheets désactivée",
       deleteOrder: "Commande supprimée",
       updateProduct: "Produit mis à jour",
       deleteProduct: "Produit et historique de stock supprimés",
@@ -658,7 +667,7 @@ function Page({
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
-  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} access={data.access} members={data.members} submit={submit} />;
+  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || "https://docs.google.com/spreadsheets/d/1hQIwOKBBhhZIQN6AsmVwUCH_7T-WE8GlsCfrmb2H7Us/edit"} access={data.access} members={data.members} submit={submit} />;
   const total = Math.max(1, data.orders.length);
   return (
     <>
@@ -748,11 +757,13 @@ function Page({
   );
 }
 
-function SettingsPage({ currentTheme, accountName, accountEmail, carriers, access, members, submit }: {
+function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, access, members, submit }: {
   currentTheme: ThemeKey;
   accountName: string;
   accountEmail: string;
   carriers: string[];
+  backupConfigured: boolean;
+  backupSheetUrl: string;
   access: Data["access"];
   members: Member[];
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
@@ -761,6 +772,9 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, acces
   const [savingAccount, setSavingAccount] = useState(false);
   const [savingCarrier, setSavingCarrier] = useState(false);
   const [savingMember, setSavingMember] = useState(false);
+  const [savingBackup, setSavingBackup] = useState(false);
+  const [backupToken, setBackupToken] = useState("");
+  const [copyState, setCopyState] = useState("");
   const selectedTheme = themeOptions.find((theme) => theme.key === currentTheme) || themeOptions[0];
 
   async function applyTheme(theme: ThemeKey) {
@@ -791,6 +805,45 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, acces
       // Le message d’erreur global est affiché par le tableau de bord.
     } finally {
       setSavingCarrier(false);
+    }
+  }
+
+  async function generateBackupToken() {
+    if (savingBackup || !access.isOwner) return;
+    if (backupConfigured && !window.confirm("Créer une nouvelle clé ?\n\nL’ancienne clé ne fonctionnera plus et devra être remplacée dans Google Sheets.")) return;
+    const token = createBackupToken();
+    setSavingBackup(true);
+    setCopyState("");
+    try {
+      await submit("updateBackupToken", { token });
+      setBackupToken(token);
+    } catch {
+      setBackupToken("");
+    } finally {
+      setSavingBackup(false);
+    }
+  }
+
+  async function copyBackupToken() {
+    if (!backupToken) return;
+    try {
+      await navigator.clipboard.writeText(backupToken);
+      setCopyState("Clé copiée");
+    } catch {
+      setCopyState("Sélectionnez puis copiez la clé");
+    }
+  }
+
+  async function revokeBackupToken() {
+    if (savingBackup || !access.isOwner || !backupConfigured) return;
+    if (!window.confirm("Désactiver la sauvegarde Google Sheets ?\n\nLe classeur gardera les données déjà copiées, mais les prochaines synchronisations seront bloquées.")) return;
+    setSavingBackup(true);
+    try {
+      await submit("revokeBackupToken", {});
+      setBackupToken("");
+      setCopyState("");
+    } finally {
+      setSavingBackup(false);
     }
   }
 
@@ -889,6 +942,58 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, acces
               <div className="carrier-empty"><strong>Aucune agence enregistrée</strong><small>Ajoutez votre première agence avec le formulaire.</small></div>
             )}
           </div>
+        </div>
+      </section>
+
+      <section className="settings-panel sheets-backup-panel" id="google-sheets">
+        <div className="sheets-backup-head">
+          <div className="sheets-backup-title">
+            <span className="sheets-backup-icon" aria-hidden="true">▦</span>
+            <div>
+              <span className="card-kicker">Sauvegarde indépendante</span>
+              <h2>Google Sheets automatique</h2>
+              <p>Les données sont copiées dans des onglets séparés et restent enregistrées dans le classeur, même si le site devient indisponible.</p>
+            </div>
+          </div>
+          <span className={`backup-status ${backupConfigured ? "active" : ""}`}>{backupConfigured ? "Clé active" : "À configurer"}</span>
+        </div>
+
+        <div className="sheets-backup-grid">
+          <div className="backup-key-card">
+            <span className="card-kicker">1 · Connexion sécurisée</span>
+            <h3>{backupConfigured ? "La sauvegarde est autorisée" : "Générez votre clé privée"}</h3>
+            <p>La clé n’est jamais stockée en clair dans le site. Elle est affichée uniquement au moment de sa création.</p>
+            {backupToken && (
+              <div className="backup-token-box">
+                <label><span>Votre nouvelle clé privée</span><input value={backupToken} readOnly onFocus={(event) => event.currentTarget.select()} /></label>
+                <button className="secondary-button" type="button" onClick={() => void copyBackupToken()}>{copyState || "Copier la clé"}</button>
+                <small>Collez maintenant cette clé dans l’onglet Configuration, cellule B6. Si vous la perdez, générez-en une nouvelle.</small>
+              </div>
+            )}
+            <div className="backup-actions">
+              <button className="primary-button" type="button" onClick={() => void generateBackupToken()} disabled={savingBackup || !access.isOwner}>
+                {savingBackup ? "Préparation…" : backupConfigured ? "Régénérer la clé" : "Générer la clé privée"}
+              </button>
+              {backupConfigured && <button className="danger-text-button" type="button" onClick={() => void revokeBackupToken()} disabled={savingBackup || !access.isOwner}>Désactiver</button>}
+            </div>
+            {!access.isOwner && <small>Seul l’administrateur peut gérer la clé de sauvegarde.</small>}
+          </div>
+
+          <div className="backup-steps-card">
+            <span className="card-kicker">2 · Classeur préparé</span>
+            <h3>Sauvegarde Maison Jiya</h3>
+            <ol>
+              <li><span>1</span><p><strong>Ouvrez le classeur</strong><small>Tous les onglets et le code de synchronisation sont déjà préparés.</small></p></li>
+              <li><span>2</span><p><strong>Collez la clé dans Configuration!B6</strong><small>Gardez cette clé privée et ne la partagez pas avec vos partenaires.</small></p></li>
+              <li><span>3</span><p><strong>Suivez l’onglet Installation</strong><small>Autorisez Google une seule fois pour lancer la copie automatique chaque heure.</small></p></li>
+            </ol>
+            <a className="primary-button backup-sheet-link" href={backupSheetUrl} target="_blank" rel="noreferrer">Ouvrir le Google Sheet ↗</a>
+          </div>
+        </div>
+
+        <div className="backup-privacy-note">
+          <strong>Données protégées</strong>
+          <span>Les mots de passe, les clés de session et les codes de sécurité ne sont jamais exportés. Les partenaires apparaissent seulement avec leur nom, leur rôle et l’état du compte.</span>
         </div>
       </section>
 

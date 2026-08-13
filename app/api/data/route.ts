@@ -50,6 +50,11 @@ function productCategory(value: unknown, fallback = "Autre") {
   return productCategories.includes(category) ? category : fallback;
 }
 
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function parseCarrierNames(rawValue: string | undefined, legacyValue = "") {
   let parsed: unknown = [];
   try {
@@ -84,6 +89,7 @@ async function seedIfNeeded() {
     { key: "carrier_names", value: "[]" },
     { key: "theme", value: "mauve-froid" },
     { key: "account_name", value: "Maison Jiya" },
+    { key: "backup_sheet_url", value: "https://docs.google.com/spreadsheets/d/1hQIwOKBBhhZIQN6AsmVwUCH_7T-WE8GlsCfrmb2H7Us/edit" },
   ]).onConflictDoNothing();
 
   await db.update(orders).set({ status: "En attente" }).where(eq(orders.status, "Nouvelle"));
@@ -133,7 +139,22 @@ async function snapshot(access: AccessInfo) {
       : Promise.resolve([]),
   ]);
   const publicSettings = settingRows.filter((row) => !row.key.startsWith("security_"));
-  return { orders: orderRows, customers: customerRows, purchases: purchaseRows, ads: adRows, capital: capitalRows, products: productRows, stockMovements: movementRows, members: memberRows, settings: Object.fromEntries(publicSettings.map((row) => [row.key, row.value])), access };
+  const backupConfigured = settingRows.some((row) => row.key === "security_backup_token_hash" && row.value.length === 64);
+  return {
+    orders: orderRows,
+    customers: customerRows,
+    purchases: purchaseRows,
+    ads: adRows,
+    capital: capitalRows,
+    products: productRows,
+    stockMovements: movementRows,
+    members: memberRows,
+    settings: {
+      ...Object.fromEntries(publicSettings.map((row) => [row.key, row.value])),
+      backup_configured: backupConfigured ? "true" : "false",
+    },
+    access,
+  };
 }
 
 export async function GET(request: Request) {
@@ -398,6 +419,24 @@ export async function POST(request: Request) {
         db.insert(settings).values({ key: "account_email", value: accountEmail }).onConflictDoUpdate({ target: settings.key, set: { value: accountEmail, updatedAt } }),
         db.update(users).set({ username, displayName, updatedAt }).where(eq(users.id, user.id)),
       ]);
+    } else if (payload.action === "updateBackupToken") {
+      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut configurer la sauvegarde." }, { status: 403 });
+      const token = textValue(payload.token);
+      if (token.length < 32 || token.length > 200 || !/^[A-Za-z0-9_-]+$/.test(token)) {
+        return Response.json({ error: "La clé privée de sauvegarde est invalide." }, { status: 400 });
+      }
+      const updatedAt = new Date().toISOString();
+      await db.insert(settings).values({ key: "security_backup_token_hash", value: await sha256Hex(token) }).onConflictDoUpdate({
+        target: settings.key,
+        set: { value: await sha256Hex(token), updatedAt },
+      });
+    } else if (payload.action === "revokeBackupToken") {
+      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut désactiver la sauvegarde." }, { status: 403 });
+      const updatedAt = new Date().toISOString();
+      await db.insert(settings).values({ key: "security_backup_token_hash", value: "" }).onConflictDoUpdate({
+        target: settings.key,
+        set: { value: "", updatedAt },
+      });
     } else if (payload.action === "updateCarriers") {
       if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut gérer les agences." }, { status: 403 });
       let requestedCarriers: unknown;
