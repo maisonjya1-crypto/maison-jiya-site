@@ -250,9 +250,11 @@ export async function POST(request: Request) {
     } else if (payload.action === "deleteOrder") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
-      const [existingOrder] = await db.select({ id: orders.id }).from(orders).where(eq(orders.id, id)).limit(1);
+      const [existingOrder] = await db.select({ id: orders.id, customerId: orders.customerId }).from(orders).where(eq(orders.id, id)).limit(1);
       if (!existingOrder) return Response.json({ error: "Commande introuvable." }, { status: 404 });
       await db.delete(orders).where(eq(orders.id, id));
+      const [remainingCustomerOrder] = await db.select({ id: orders.id }).from(orders).where(eq(orders.customerId, existingOrder.customerId)).limit(1);
+      if (!remainingCustomerOrder) await db.delete(customers).where(eq(customers.id, existingOrder.customerId));
     } else if (payload.action === "updateCustomer") {
       const id = numberValue(payload.id);
       const name = textValue(payload.name);

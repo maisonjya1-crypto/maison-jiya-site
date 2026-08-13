@@ -107,17 +107,20 @@ export async function GET(request: Request) {
         updatedAt: orders.updatedAt,
       }).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).orderBy(desc(orders.createdAt));
 
+      const customerRows = await db.select().from(customers).orderBy(desc(customers.createdAt));
+      const orderNumbers = new Map([...orderRows].reverse().map((row, index) => [row.id, index + 1]));
+      const customerNumbers = new Map([...customerRows].reverse().map((customer, index) => [customer.id, index + 1]));
+
       if (dataset === "orders") return csvResponse(
-        ["ID", "Référence commande", "ID client", "Cliente", "Téléphone", "Ville", "Produits", "Quantité", "Prix de vente (MAD)", "Coût produit (MAD)", "Frais livraison (MAD)", "Coût publicité (MAD)", "Autres frais (MAD)", "Coût retour (MAD)", "Source", "Statut", "Paiement", "Agence", "Numéro de suivi", "Date encaissée", "Créée le", "Modifiée le"],
-        orderRows.map((row) => [row.id, row.orderRef, row.customerId, row.customerName, row.phone, row.city, row.products, row.quantity, row.saleAmount, row.productCost, row.shippingCost, row.adCost, row.fees, row.returnCost, row.source, row.status, row.paymentStatus, row.carrier, row.trackingNumber, row.paidAt, row.createdAt, row.updatedAt]),
+        ["N° commande", "Référence commande", "N° client", "Cliente", "Téléphone", "Ville", "Produits", "Quantité", "Prix de vente (MAD)", "Coût produit (MAD)", "Frais livraison (MAD)", "Coût publicité (MAD)", "Autres frais (MAD)", "Coût retour (MAD)", "Source", "Statut", "Paiement", "Agence", "Numéro de suivi", "Date encaissée", "Créée le", "Modifiée le", "ID technique commande", "ID technique client"],
+        orderRows.map((row) => [orderNumbers.get(row.id), row.orderRef, customerNumbers.get(row.customerId), row.customerName, row.phone, row.city, row.products, row.quantity, row.saleAmount, row.productCost, row.shippingCost, row.adCost, row.fees, row.returnCost, row.source, row.status, row.paymentStatus, row.carrier, row.trackingNumber, row.paidAt, row.createdAt, row.updatedAt, row.id, row.customerId]),
       );
 
       if (dataset === "shipments") return csvResponse(
-        ["ID commande", "Référence commande", "Cliente", "Téléphone", "Ville", "Produits", "Quantité", "Statut commande", "Paiement", "Agence", "Numéro de suivi", "Frais livraison (MAD)", "Créé le", "Modifié le"],
-        orderRows.map((row) => [row.id, row.orderRef, row.customerName, row.phone, row.city, row.products, row.quantity, row.status, row.paymentStatus, row.carrier, row.trackingNumber, row.shippingCost, row.createdAt, row.updatedAt]),
+        ["N° commande", "Référence commande", "Cliente", "Téléphone", "Ville", "Produits", "Quantité", "Statut commande", "Paiement", "Agence", "Numéro de suivi", "Frais livraison (MAD)", "Créé le", "Modifié le", "ID technique commande"],
+        orderRows.map((row) => [orderNumbers.get(row.id), row.orderRef, row.customerName, row.phone, row.city, row.products, row.quantity, row.status, row.paymentStatus, row.carrier, row.trackingNumber, row.shippingCost, row.createdAt, row.updatedAt, row.id]),
       );
 
-      const customerRows = await db.select().from(customers).orderBy(desc(customers.createdAt));
       const totals = new Map<number, { count: number; amount: number }>();
       for (const order of orderRows) {
         const current = totals.get(order.customerId) || { count: 0, amount: 0 };
@@ -126,8 +129,8 @@ export async function GET(request: Request) {
         totals.set(order.customerId, current);
       }
       return csvResponse(
-        ["ID", "Nom", "Téléphone", "Ville", "Nombre de commandes", "Total commandé (MAD)", "Créé le"],
-        customerRows.map((customer) => [customer.id, customer.name, customer.phone, customer.city, totals.get(customer.id)?.count || 0, totals.get(customer.id)?.amount || 0, customer.createdAt]),
+        ["N° client", "Nom", "Téléphone", "Ville", "Nombre de commandes", "Total commandé (MAD)", "Créé le", "ID technique client"],
+        customerRows.map((customer) => [customerNumbers.get(customer.id), customer.name, customer.phone, customer.city, totals.get(customer.id)?.count || 0, totals.get(customer.id)?.amount || 0, customer.createdAt, customer.id]),
       );
     }
 
