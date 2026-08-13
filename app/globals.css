@@ -240,6 +240,32 @@ td small { display:block; margin-top:3px; color:#919893; font-size:8px; }.clicka
   .order-action-menu button { min-height:48px; font-size:11px; }
 }
 
+/* Actions générales : modifier et supprimer */
+.entity-actions-row { display:flex; align-items:center; justify-content:flex-end; gap:8px; }
+.product-card-actions { display:flex; align-items:flex-start; gap:8px; }
+.shipment-card { grid-template-columns:1.3fr 1fr .8fr auto; cursor:default; }
+.shipment-actions { display:flex; justify-content:flex-end; }
+.customer-card>div { min-width:0; flex:1; }
+.customer-card>.record-actions { flex:0 0 auto; }
+.ad-card-heading { display:flex!important; align-items:flex-start; justify-content:space-between; gap:10px; padding:0 0 10px!important; border:0!important; }
+.ad-card-heading>div { min-width:0; }
+.ad-card-heading span { color:#516f5f; font:600 8px var(--font-geist-mono),monospace; text-transform:uppercase; }
+.ad-card-heading h3 { min-height:0; margin:8px 0 0; }
+.ledger-list article>.record-actions { flex:0 0 auto; }
+.movement-edit-note { grid-column:1/-1; padding:12px 13px; border:1px solid var(--accent-border); border-radius:10px; color:var(--muted); background:var(--accent-soft); }
+.movement-edit-note strong,.movement-edit-note small { display:block; }
+.movement-edit-note strong { color:var(--ink); font-size:10px; }
+.movement-edit-note small { margin-top:4px; font-size:8px; line-height:1.5; }
+
+@media(max-width:720px){
+  .shipment-card { grid-template-columns:1fr auto; gap:10px 12px; }
+  .shipment-card>div:nth-child(2),.shipment-card>div:nth-child(3) { grid-column:1/-1; text-align:left; }
+  .shipment-card>.shipment-actions { grid-column:2; grid-row:1; align-self:start; }
+  .product-card-actions { width:100%; justify-content:space-between; }
+  .entity-actions-row { justify-content:space-between; }
+  .customer-card { align-items:flex-start; }
+}
+
 /* Assistant IA */
 .ai-page { display:flex; flex-direction:column; gap:14px; }
 .ai-intro { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:27px 29px; border-radius:20px; color:#fff; background:linear-gradient(125deg,var(--hero-start),var(--hero-mid) 62%,var(--hero-end)); box-shadow:0 14px 32px color-mix(in srgb,var(--hero-start) 24%,transparent); }
