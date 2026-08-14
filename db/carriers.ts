@@ -1,5 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb, getRawDb } from "./index";
+import { moroccanPhoneHelp, normalizeMoroccanPhone } from "./phone";
 import { customers, orders } from "./schema";
 
 type CarrierSecrets = {
@@ -204,6 +205,8 @@ async function createSenditParcel(input: {
   products: string;
   saleAmount: number;
 }, publicKey: string, privateKey: string) {
+  const phone = normalizeMoroccanPhone(input.phone);
+  if (!phone) throw new Error(moroccanPhoneHelp);
   const token = await senditToken(publicKey, privateKey);
   const authHeaders = { "accept": "application/json", "authorization": `Bearer ${token}` };
   const districtsResponse = await fetch(`${SENDIT_API_BASE}/districts?querystring=${encodeURIComponent(input.city)}&pickup-district=46`, {
@@ -221,7 +224,7 @@ async function createSenditParcel(input: {
       name: input.customerName,
       amount: String(input.saleAmount),
       address: input.address,
-      phone: input.phone,
+      phone,
       comment: `Commande ${input.orderRef}`,
       reference: input.orderRef,
       allow_open: 1,
@@ -249,13 +252,15 @@ async function createForceLogParcel(input: {
   products: string;
   saleAmount: number;
 }, apiKey: string) {
+  const phone = normalizeMoroccanPhone(input.phone);
+  if (!phone) throw new Error(moroccanPhoneHelp);
   const response = await fetch(`${FORCELOG_API_BASE}/Parcels/AddParcel`, {
     method: "POST",
     headers: { "content-type": "application/json", "accept": "application/json", "X-API-Key": apiKey },
     body: JSON.stringify({
       ORDER_NUM: input.orderRef.slice(0, 20),
       RECEIVER: input.customerName.slice(0, 50),
-      PHONE: input.phone.slice(0, 14),
+      PHONE: phone,
       CITY: input.city.slice(0, 50),
       ADDRESS: input.address.slice(0, 100),
       COMMENT: `Commande ${input.orderRef}`,
