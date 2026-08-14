@@ -1,7 +1,7 @@
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb, getRawDb } from "../../../db";
 import { createDailyBackup, purgeExpiredTrash, restoreDailyBackup } from "../../../db/backups";
-import { dispatchConfirmedOrder, getCarrierRuntimeStatus } from "../../../db/carriers";
+import { dispatchAuthorizedOrder, getCarrierRuntimeStatus, syncCarrierOperations } from "../../../db/carriers";
 import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
@@ -244,7 +244,7 @@ async function snapshot(access: AccessInfo) {
   await seedIfNeeded();
   await createDailyBackup(await getRawDb());
   const db = await getDb();
-  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
+  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
   const [orderRows, trashRows, customerRows, purchaseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
@@ -334,7 +334,6 @@ export async function POST(request: Request) {
 
     let auditEntityId = textValue(payload.id) || textValue(payload.memberId) || null;
     let auditEntityLabel = "";
-    let dispatchOrderId = 0;
     let integrationMessage = "";
 
     if (payload.action === "createMember") {
@@ -419,7 +418,7 @@ export async function POST(request: Request) {
       if (!createdOrder) throw new Error("La commande n’a pas été créée.");
       auditEntityId = String(createdOrder.id);
       auditEntityLabel = createdOrder.orderRef;
-      if (selectedStatus === "Confirmée" && !createdOrder.trackingNumber) dispatchOrderId = createdOrder.id;
+      if (selectedStatus === "Confirmée" && !createdOrder.trackingNumber) integrationMessage = "Commande confirmée. Aucun colis n’a été envoyé : ouvrez la commande puis autorisez l’agence choisie.";
     } else if (payload.action === "updateOrder") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
@@ -450,7 +449,7 @@ export async function POST(request: Request) {
       const rawDb = await getRawDb();
       const statements = [
         rawDb.prepare(`UPDATE orders SET status = ?, payment_status = ?, source = ?, address = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, return_cost = ?, return_reason = ?, return_note = ?, paid_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
-          .bind(nextStatus, nextPaymentStatus, orderSource(payload.source, existingOrder.source), nextAddress, numberValue(payload.shippingCost), textValue(payload.carrier, "Non affecté"), textValue(payload.trackingNumber), numberValue(payload.returnCost), nextReturnReason, nextReturnNote, paidAt, nextStockDeducted ? 1 : 0, now, id),
+          .bind(nextStatus, nextPaymentStatus, orderSource(payload.source, existingOrder.source), nextAddress, numberValue(payload.shippingCost), textValue(payload.carrier, "Non affecté"), textValue(payload.trackingNumber, existingOrder.trackingNumber), numberValue(payload.returnCost), nextReturnReason, nextReturnNote, paidAt, nextStockDeducted ? 1 : 0, now, id),
       ];
       if (nextStatus !== existingOrder.status) {
         statements.push(rawDb.prepare("INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at) VALUES (?, ?, ?, ?, ?, ?)").bind(id, existingOrder.status, nextStatus, user.id, user.displayName, now));
@@ -468,7 +467,25 @@ export async function POST(request: Request) {
       }
       await rawDb.batch(statements);
       auditEntityLabel = existingOrder.orderRef;
-      if (nextStatus === "Confirmée" && !textValue(payload.trackingNumber)) dispatchOrderId = id;
+      if (nextStatus === "Confirmée" && !textValue(payload.trackingNumber, existingOrder.trackingNumber)) integrationMessage = "Commande confirmée. Aucun colis n’a été envoyé : vérifiez l’agence puis cliquez sur « Autoriser et créer le colis ».";
+    } else if (payload.action === "authorizeCarrierDispatch") {
+      const id = numberValue(payload.id);
+      const carrier = textValue(payload.carrier);
+      if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
+      const address = textValue(payload.address).slice(0, 300);
+      if (address) {
+        await db.update(orders).set({ address, carrier, shippingCost: numberValue(payload.shippingCost), updatedAt: new Date().toISOString() }).where(and(eq(orders.id, id), isNull(orders.deletedAt)));
+      }
+      const dispatch = await dispatchAuthorizedOrder(id, carrier);
+      if (!dispatch.success) return Response.json({ error: dispatch.message }, { status: 409 });
+      integrationMessage = dispatch.message;
+      auditEntityId = String(id);
+      auditEntityLabel = `${carrier} · autorisation manuelle`;
+    } else if (payload.action === "syncCarriersNow") {
+      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut lancer une synchronisation complète." }, { status: 403 });
+      const updated = await syncCarrierOperations();
+      integrationMessage = updated ? `${updated} commande(s) mise(s) à jour depuis les agences.` : "Suivi vérifié : aucune nouvelle facturation pour le moment.";
+      auditEntityLabel = "Sendit et ForceLog";
     } else if (payload.action === "deleteOrder") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
@@ -829,11 +846,6 @@ export async function POST(request: Request) {
         || textValue(payload.key);
     }
     await writeAudit(user, textValue(payload.action), auditEntityId, auditEntityLabel);
-
-    if (dispatchOrderId) {
-      const dispatch = await dispatchConfirmedOrder(dispatchOrderId);
-      integrationMessage = dispatch.message;
-    }
 
     if (!["updateBackupWebhook", "updateBackupToken", "revokeBackupToken", "createBackupNow", "restoreBackup"].includes(textValue(payload.action))) {
       await triggerGoogleSheetsSync();

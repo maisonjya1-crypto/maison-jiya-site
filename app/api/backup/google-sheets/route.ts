@@ -105,6 +105,9 @@ export async function GET(request: Request) {
         paymentStatus: orders.paymentStatus,
         carrier: orders.carrier,
         trackingNumber: orders.trackingNumber,
+        carrierDispatchState: orders.carrierDispatchState,
+        carrierAuthorizedAt: orders.carrierAuthorizedAt,
+        carrierInvoiceCode: orders.carrierInvoiceCode,
         paidAt: orders.paidAt,
         createdAt: orders.createdAt,
         updatedAt: orders.updatedAt,
@@ -115,13 +118,13 @@ export async function GET(request: Request) {
       const customerNumbers = new Map([...customerRows].reverse().map((customer, index) => [customer.id, index + 1]));
 
       if (dataset === "orders") return csvResponse(
-        ["N° commande", "Référence commande", "N° client", "Cliente", "Téléphone", "Ville", "Adresse", "Produits", "Quantité", "Prix de vente (MAD)", "Coût produit (MAD)", "Frais livraison (MAD)", "Coût publicité (MAD)", "Autres frais (MAD)", "Coût retour (MAD)", "Motif du retour", "Détail du retour", "Source", "Statut", "Paiement", "Agence", "Numéro de suivi", "Date encaissée", "Créée le", "Modifiée le", "ID technique commande", "ID technique client"],
-        orderRows.map((row) => [orderNumbers.get(row.id), row.orderRef, customerNumbers.get(row.customerId), row.customerName, row.phone, row.city, row.address, row.products, row.quantity, row.saleAmount, row.productCost, row.shippingCost, row.adCost, row.fees, row.returnCost, row.returnReason, row.returnNote, row.source, row.status, row.paymentStatus, row.carrier, row.trackingNumber, row.paidAt, row.createdAt, row.updatedAt, row.id, row.customerId]),
+        ["N° commande", "Référence commande", "N° client", "Cliente", "Téléphone", "Ville", "Adresse", "Produits", "Quantité", "Prix de vente (MAD)", "Coût produit (MAD)", "Frais livraison (MAD)", "Coût publicité (MAD)", "Autres frais (MAD)", "Coût retour (MAD)", "Motif du retour", "Détail du retour", "Source", "Statut", "Paiement", "Agence", "Numéro de suivi", "État création agence", "Autorisé le", "Facture agence", "Date encaissée", "Créée le", "Modifiée le", "ID technique commande", "ID technique client"],
+        orderRows.map((row) => [orderNumbers.get(row.id), row.orderRef, customerNumbers.get(row.customerId), row.customerName, row.phone, row.city, row.address, row.products, row.quantity, row.saleAmount, row.productCost, row.shippingCost, row.adCost, row.fees, row.returnCost, row.returnReason, row.returnNote, row.source, row.status, row.paymentStatus, row.carrier, row.trackingNumber, row.carrierDispatchState, row.carrierAuthorizedAt, row.carrierInvoiceCode, row.paidAt, row.createdAt, row.updatedAt, row.id, row.customerId]),
       );
 
       if (dataset === "shipments") return csvResponse(
-        ["N° commande", "Référence commande", "Cliente", "Téléphone", "Ville", "Adresse", "Produits", "Quantité", "Statut commande", "Motif du retour", "Détail du retour", "Paiement", "Agence", "Numéro de suivi", "Frais livraison (MAD)", "Créé le", "Modifié le", "ID technique commande"],
-        orderRows.map((row) => [orderNumbers.get(row.id), row.orderRef, row.customerName, row.phone, row.city, row.address, row.products, row.quantity, row.status, row.returnReason, row.returnNote, row.paymentStatus, row.carrier, row.trackingNumber, row.shippingCost, row.createdAt, row.updatedAt, row.id]),
+        ["N° commande", "Référence commande", "Cliente", "Téléphone", "Ville", "Adresse", "Produits", "Quantité", "Statut commande", "Motif du retour", "Détail du retour", "Paiement", "Agence", "Numéro de suivi", "État création agence", "Autorisé le", "Facture agence", "Frais livraison (MAD)", "Créé le", "Modifié le", "ID technique commande"],
+        orderRows.map((row) => [orderNumbers.get(row.id), row.orderRef, row.customerName, row.phone, row.city, row.address, row.products, row.quantity, row.status, row.returnReason, row.returnNote, row.paymentStatus, row.carrier, row.trackingNumber, row.carrierDispatchState, row.carrierAuthorizedAt, row.carrierInvoiceCode, row.shippingCost, row.createdAt, row.updatedAt, row.id]),
       );
 
       const totals = new Map<number, { count: number; amount: number }>();

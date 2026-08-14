@@ -27,6 +27,9 @@ type Order = {
   paymentStatus: string;
   carrier: string;
   trackingNumber: string;
+  carrierDispatchState: string;
+  carrierAuthorizedAt: string | null;
+  carrierInvoiceCode: string;
   stockDeducted: boolean;
   paidAt: string | null;
   deletedAt: string | null;
@@ -176,6 +179,8 @@ type CapitalFlow = {
   amount: number;
   date: string;
 };
+type CarrierQuote = { available: boolean; carrier: "Sendit" | "ForceLog"; error?: string; fee: number | null };
+type CarrierQuoteResult = { pickupCity: "Casablanca"; quotes: CarrierQuote[]; recommendedCarrier: "Sendit" | "ForceLog" | null };
 type EditableEntity =
   | { kind: "product"; record: Product }
   | { kind: "movement"; record: StockMovement }
@@ -366,6 +371,8 @@ export default function DashboardClient() {
       deleteAd: "Publicité supprimée",
       updateCapital: "Mouvement de capital mis à jour",
       deleteCapital: "Mouvement de capital supprimé",
+      authorizeCarrierDispatch: "Colis créé chez l’agence sélectionnée",
+      syncCarriersNow: "Suivi des agences actualisé",
     };
     setNotice(body.message || messages[action] || "Enregistré avec succès");
     setTimeout(() => setNotice(""), 2500);
@@ -1095,7 +1102,8 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
             <div><span className="carrier-api-logo">S</span><div><strong>Sendit automatique</strong><small>{senditApiConfigured ? "Création des colis prête" : "Clés API à ajouter dans Cloudflare"}</small></div></div>
             <span className={`backup-status ${senditApiConfigured && senditWebhookConfigured ? "active" : ""}`}>{senditApiConfigured && senditWebhookConfigured ? "Connecté" : "À terminer"}</span>
             <ul>
-              <li className={senditApiConfigured ? "done" : ""}>Envoi automatique dès le statut « Confirmée »</li>
+              <li className={senditApiConfigured ? "done" : ""}>Tarif comparé depuis Casablanca avant votre choix</li>
+              <li className={senditApiConfigured ? "done" : ""}>Création uniquement après « Autoriser et créer le colis »</li>
               <li className={senditWebhookConfigured ? "done" : ""}>Statuts reçus automatiquement et signature vérifiée</li>
             </ul>
             <label><span>URL à mettre dans le webhook Sendit</span><input readOnly value="https://maison-jiya-site.maisonjya1.workers.dev/api/integrations/sendit/webhook" onFocus={(event) => event.currentTarget.select()} /></label>
@@ -1105,13 +1113,17 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
             <div><span className="carrier-api-logo">F</span><div><strong>ForceLog automatique</strong><small>{forceLogApiConfigured ? "Création des colis prête" : "Clé API à ajouter dans Cloudflare"}</small></div></div>
             <span className={`backup-status ${forceLogApiConfigured ? "active" : ""}`}>{forceLogApiConfigured ? "Connecté" : "À terminer"}</span>
             <ul>
-              <li className={forceLogApiConfigured ? "done" : ""}>Envoi automatique dès le statut « Confirmée »</li>
-              <li>Suivi ForceLog disponible avec le numéro retourné par l’agence</li>
+              <li className={forceLogApiConfigured ? "done" : ""}>Tarif comparé depuis Casablanca avant votre choix</li>
+              <li className={forceLogApiConfigured ? "done" : ""}>Création uniquement après votre autorisation</li>
+              <li>Suivi et paiement vérifiés automatiquement toutes les 30 minutes</li>
             </ul>
             <small>La clé reste chiffrée dans Cloudflare et n’apparaît jamais dans le site ni dans Google Sheets.</small>
           </article>
         </div>
-        {carrierLastSyncAt && <p className="carrier-sync-stamp">Dernier événement agence reçu : {dateTimeLabel(carrierLastSyncAt)}</p>}
+        <div className="carrier-sync-actions">
+          {carrierLastSyncAt && <p className="carrier-sync-stamp">Dernier événement agence reçu : {dateTimeLabel(carrierLastSyncAt)}</p>}
+          {access.isOwner && <button type="button" className="secondary-button" onClick={() => void submit("syncCarriersNow", {})}>Actualiser suivi et facturation</button>}
+        </div>
       </section>
 
       <section className="settings-panel sheets-backup-panel" id="google-sheets">
@@ -2606,6 +2618,79 @@ function Status({ value }: { value: string }) {
   return <span className={`status ${tone}`}>{value}</span>;
 }
 
+function CarrierQuoteChooser({ city, defaultCarrier = "", defaultFee = 0, locked = false }: { city: string; defaultCarrier?: string; defaultFee?: number; locked?: boolean }) {
+  const [result, setResult] = useState<CarrierQuoteResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [selectedCarrier, setSelectedCarrier] = useState(defaultCarrier);
+  const [selectedFee, setSelectedFee] = useState(defaultFee);
+  const [manuallySelected, setManuallySelected] = useState(false);
+
+  useEffect(() => {
+    const cleanCity = city.trim();
+    if (cleanCity.length < 2 || locked) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const response = await fetch(`/api/integrations/carriers/quote?city=${encodeURIComponent(cleanCity)}`, { signal: controller.signal });
+        const body = (await response.json()) as CarrierQuoteResult & { error?: string };
+        if (!response.ok) throw new Error(body.error || "Tarifs indisponibles.");
+        setResult(body);
+        if (!manuallySelected && body.recommendedCarrier) {
+          const recommended = body.quotes.find((quote) => quote.carrier === body.recommendedCarrier);
+          setSelectedCarrier(body.recommendedCarrier);
+          if (recommended?.fee !== null && recommended?.fee !== undefined) setSelectedFee(recommended.fee);
+        }
+      } catch (caught) {
+        if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : "Tarifs indisponibles.");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }, 450);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [city, locked, manuallySelected]);
+
+  function choose(quote: CarrierQuote) {
+    if (!quote.available || quote.fee === null || locked) return;
+    setManuallySelected(true);
+    setSelectedCarrier(quote.carrier);
+    setSelectedFee(quote.fee);
+  }
+
+  return (
+    <section className="carrier-quote-chooser">
+      <input type="hidden" name="carrier" value={selectedCarrier || defaultCarrier || "Non affecté"} />
+      <input type="hidden" name="shippingCost" value={String(selectedFee)} />
+      <div className="carrier-quote-head">
+        <div><strong>Comparer les agences</strong><small>Départ : Casablanca · aucune création de colis à cette étape</small></div>
+        <span>{loading ? "Comparaison…" : result?.recommendedCarrier ? `${result.recommendedCarrier} recommandée` : "Saisissez la ville"}</span>
+      </div>
+      {result && (
+        <div className="carrier-quote-grid">
+          {result.quotes.map((quote) => {
+            const recommended = result.recommendedCarrier === quote.carrier;
+            const selected = selectedCarrier === quote.carrier;
+            return (
+              <button className={`${selected ? "selected" : ""} ${recommended ? "recommended" : ""}`} key={quote.carrier} type="button" onClick={() => choose(quote)} disabled={!quote.available || locked}>
+                <span>{quote.carrier}{recommended ? " · moins chère" : ""}</span>
+                <strong>{quote.fee === null ? "Indisponible" : money(quote.fee)}</strong>
+                {quote.error && <small>{quote.error}</small>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {error && <small className="carrier-quote-error">{error}</small>}
+      {!result && !error && <small>Les tarifs Sendit et ForceLog apparaîtront automatiquement après la ville.</small>}
+    </section>
+  );
+}
+
 function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; products: Product[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const labels = {
     order: "Nouvelle commande",
@@ -2620,6 +2705,7 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
   const [orderQuantity, setOrderQuantity] = useState("1");
   const [orderSaleAmount, setOrderSaleAmount] = useState(products[0] ? String(products[0].salePrice) : "");
   const [selectedOrderStatus, setSelectedOrderStatus] = useState("En attente");
+  const [orderCity, setOrderCity] = useState("");
   const selectedProduct = products.find((product) => String(product.id) === selectedProductId) || null;
 
   function selectOrderProduct(productId: string) {
@@ -2677,7 +2763,7 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
               <>
                 <Field label="Nom de la cliente *" name="customerName" autoComplete="name" required />
                 <Field label="Téléphone *" name="phone" type="tel" inputMode="tel" autoComplete="tel" required />
-                <Field label="Ville *" name="city" autoComplete="address-level2" required />
+                <label className="field"><span>Ville *</span><input name="city" autoComplete="address-level2" value={orderCity} onChange={(event) => setOrderCity(event.target.value)} required /></label>
                 <Field label="Adresse de livraison *" name="address" autoComplete="street-address" required />
                 {products.length ? (
                   <label className="field order-product-select">
@@ -2725,11 +2811,10 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
                     <p>Le stock sera déduit une seule fois dès que le statut devient « Confirmée ».</p>
                   </div>
                 )}
-                <Field label="Frais de transport déduits (MAD)" name="shippingCost" type="number" inputMode="decimal" min="0" />
                 <Field label="Publicité attribuée (MAD)" name="adCost" type="number" inputMode="decimal" min="0" />
                 <Field label="Autres frais (MAD)" name="fees" type="number" inputMode="decimal" min="0" />
-                {carrierNames.length ? <Select label="Agence de livraison" name="carrier" options={carrierNames} defaultValue={carrierNames[0]} /> : <Field label="Agence de livraison" name="carrier" />}
-                <Field label="Numéro de suivi" name="trackingNumber" />
+                <CarrierQuoteChooser city={orderCity} defaultCarrier={carrierNames.find((carrier) => ["Sendit", "ForceLog"].includes(carrier)) || carrierNames[0]} />
+                <div className="order-carrier-safety-note"><strong>Validation en deux étapes</strong><small>Enregistrer cette commande ne crée aucun colis. Vous l’autoriserez ensuite depuis la commande confirmée.</small></div>
               </>
             )}
             {kind === "purchase" && (
@@ -2779,7 +2864,6 @@ function OrderModal({ order, history, carrierNames, close, print, submit }: { or
   const [formError, setFormError] = useState("");
   const [selectedStatus, setSelectedStatus] = useState(order.status);
   const currentCarrier = order.carrier && order.carrier !== "Non affecté" ? order.carrier : "";
-  const carrierOptions = Array.from(new Set([currentCarrier, ...carrierNames].filter(Boolean)));
   return (
     <div
       className="modal-backdrop"
@@ -2841,10 +2925,15 @@ function OrderModal({ order, history, carrierNames, close, print, submit }: { or
             )}
             <Select label="Encaissement" name="paymentStatus" defaultValue={order.paymentStatus} options={["À encaisser", "Encaissé", "Non encaissé", "Remboursé"]} />
             <Field label="Adresse de livraison *" name="address" defaultValue={order.address} autoComplete="street-address" required />
-            <Field label="Frais de transport déduits (MAD)" name="shippingCost" type="number" inputMode="decimal" min="0" defaultValue={String(order.shippingCost)} />
-            {carrierOptions.length ? <Select label="Agence de livraison" name="carrier" options={carrierOptions} defaultValue={currentCarrier || carrierOptions[0]} /> : <Field label="Agence de livraison" name="carrier" defaultValue={currentCarrier} />}
-            <Field label="Numéro de suivi" name="trackingNumber" defaultValue={order.trackingNumber} />
             <Field label="Coût retour (MAD)" name="returnCost" type="number" inputMode="decimal" min="0" defaultValue={String(order.returnCost)} />
+            <CarrierQuoteChooser city={order.city} defaultCarrier={currentCarrier || carrierNames[0]} defaultFee={order.shippingCost} locked={Boolean(order.trackingNumber)} />
+          </div>
+          <div className={`carrier-authorization-state ${order.trackingNumber ? "created" : order.status === "Confirmée" ? "ready" : "waiting"}`}>
+            <span aria-hidden="true">{order.trackingNumber ? "✓" : order.status === "Confirmée" ? "🔒" : "◷"}</span>
+            <div>
+              <strong>{order.trackingNumber ? `Colis créé · ${order.trackingNumber}` : order.status === "Confirmée" ? "En attente de votre autorisation" : "Confirmez d’abord la commande"}</strong>
+              <small>{order.trackingNumber ? `${order.carrier} suit maintenant ce colis. L’encaissement sera ajouté au capital après facturation payée.` : order.status === "Confirmée" ? "Vérifiez l’agence et son tarif, puis autorisez la création réelle du colis." : "Aucune donnée n’est envoyée à Sendit ou ForceLog avant la confirmation et votre autorisation."}</small>
+            </div>
           </div>
           <div className={`order-stock-state ${order.productId ? (order.stockDeducted ? "deducted" : "waiting") : "legacy"}`}>
             <span aria-hidden="true">{order.productId ? (order.stockDeducted ? "✓" : "◷") : "!"}</span>
@@ -2878,6 +2967,27 @@ function OrderModal({ order, history, carrierNames, close, print, submit }: { or
             <button type="button" className="cancel-button" onClick={close}>
               Annuler
             </button>
+            {!order.trackingNumber && order.status === "Confirmée" && (
+              <button
+                type="button"
+                className="carrier-authorize-button"
+                disabled={saving}
+                onClick={async (event) => {
+                  const form = event.currentTarget.form;
+                  if (!form) return;
+                  setSaving(true);
+                  setFormError("");
+                  try {
+                    await submit("authorizeCarrierDispatch", { id: String(order.id), ...Object.fromEntries(new FormData(form)) });
+                  } catch (caught) {
+                    setFormError(caught instanceof Error ? caught.message : "Création du colis impossible.");
+                    setSaving(false);
+                  }
+                }}
+              >
+                {saving ? "Création chez l’agence…" : "Autoriser et créer le colis"}
+              </button>
+            )}
             <button className="primary-button" disabled={saving}>
               {saving ? "Mise à jour…" : "Mettre à jour"}
             </button>
