@@ -2762,7 +2762,7 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
             {kind === "order" && (
               <>
                 <Field label="Nom de la cliente *" name="customerName" autoComplete="name" required />
-                <Field label="Téléphone *" name="phone" type="tel" inputMode="tel" autoComplete="tel" required />
+                <Field label="Téléphone *" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="06 12 34 56 78" maxLength={18} required />
                 <label className="field"><span>Ville *</span><input name="city" autoComplete="address-level2" value={orderCity} onChange={(event) => setOrderCity(event.target.value)} required /></label>
                 <Field label="Adresse de livraison *" name="address" autoComplete="street-address" required />
                 {products.length ? (
@@ -2924,6 +2924,7 @@ function OrderModal({ order, history, carrierNames, close, print, submit }: { or
               </>
             )}
             <Select label="Encaissement" name="paymentStatus" defaultValue={order.paymentStatus} options={["À encaisser", "Encaissé", "Non encaissé", "Remboursé"]} />
+            <Field label="Téléphone de livraison *" name="phone" type="tel" inputMode="tel" defaultValue={order.phone || ""} autoComplete="tel" placeholder="06 12 34 56 78" maxLength={18} required />
             <Field label="Adresse de livraison *" name="address" defaultValue={order.address} autoComplete="street-address" required />
             <Field label="Coût retour (MAD)" name="returnCost" type="number" inputMode="decimal" min="0" defaultValue={String(order.returnCost)} />
             <CarrierQuoteChooser city={order.city} defaultCarrier={currentCarrier || carrierNames[0]} defaultFee={order.shippingCost} locked={Boolean(order.trackingNumber)} />
@@ -3107,7 +3108,7 @@ function EntityModal({ selection, close, submit }: { selection: EditableEntity; 
             </>}
             {selection.kind === "customer" && <>
               <Field label="Nom du client *" name="name" defaultValue={selection.record.name} autoComplete="name" required />
-              <Field label="Téléphone *" name="phone" type="tel" inputMode="tel" defaultValue={selection.record.phone} autoComplete="tel" required />
+              <Field label="Téléphone *" name="phone" type="tel" inputMode="tel" defaultValue={selection.record.phone} autoComplete="tel" placeholder="06 12 34 56 78" maxLength={18} required />
               <Field label="Ville *" name="city" defaultValue={selection.record.city} autoComplete="address-level2" required />
             </>}
             {selection.kind === "purchase" && <>
@@ -3263,7 +3264,7 @@ function InventoryCountModal({ product, close, submit }: { product: Product; clo
     </div>
   );
 }
-function Field({ label, ...props }: { label: string; name: string; type?: string; required?: boolean; defaultValue?: string; inputMode?: "tel" | "numeric" | "decimal"; autoComplete?: string; min?: string }) {
+function Field({ label, ...props }: { label: string; name: string; type?: string; required?: boolean; defaultValue?: string; inputMode?: "tel" | "numeric" | "decimal"; autoComplete?: string; min?: string; placeholder?: string; maxLength?: number }) {
   return (
     <label className="field">
       <span>{label}</span>

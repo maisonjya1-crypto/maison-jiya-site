@@ -2,6 +2,7 @@ import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb, getRawDb } from "../../../db";
 import { createDailyBackup, purgeExpiredTrash, restoreDailyBackup } from "../../../db/backups";
 import { dispatchAuthorizedOrder, getCarrierRuntimeStatus, syncCarrierOperations } from "../../../db/carriers";
+import { moroccanPhoneHelp, normalizeMoroccanPhone } from "../../../db/phone";
 import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
@@ -366,12 +367,13 @@ export async function POST(request: Request) {
       await db.update(users).set({ role, isActive, updatedAt: new Date().toISOString() }).where(eq(users.id, memberId));
     } else if (payload.action === "addOrder") {
       const name = textValue(payload.customerName);
-      const phone = textValue(payload.phone).replace(/\s/g, "");
+      const phone = normalizeMoroccanPhone(textValue(payload.phone));
       const city = textValue(payload.city);
       const address = textValue(payload.address).slice(0, 300);
       const productId = numberValue(payload.productId);
       const quantity = numberValue(payload.quantity, 1);
-      if (!name || !phone || !city || !address || !productId || quantity < 1) return Response.json({ error: "Cliente, téléphone, ville, adresse, produit et quantité sont obligatoires." }, { status: 400 });
+      if (!phone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
+      if (!name || !city || !address || !productId || quantity < 1) return Response.json({ error: "Cliente, téléphone, ville, adresse, produit et quantité sont obligatoires." }, { status: 400 });
       const [selectedProduct] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
       if (!selectedProduct) return Response.json({ error: "Le produit sélectionné n’existe plus dans le catalogue." }, { status: 404 });
       const selectedStatus = orderStatus(payload.status);
@@ -427,7 +429,11 @@ export async function POST(request: Request) {
       const nextPaymentStatus = paymentStatus(payload.paymentStatus, existingOrder.paymentStatus);
       const nextStatus = orderStatus(payload.status, existingOrder.status);
       const nextAddress = textValue(payload.address, existingOrder.address).slice(0, 300);
+      const nextPhone = normalizeMoroccanPhone(textValue(payload.phone));
       if (!nextAddress) return Response.json({ error: "L’adresse de livraison est obligatoire." }, { status: 400 });
+      if (!nextPhone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
+      const [duplicatePhone] = await db.select({ id: customers.id }).from(customers).where(eq(customers.phone, nextPhone)).limit(1);
+      if (duplicatePhone && duplicatePhone.id !== existingOrder.customerId) return Response.json({ error: "Ce numéro appartient déjà à un autre client." }, { status: 409 });
       const nextReturnReason = nextStatus === "Retour" ? returnReason(payload.returnReason, existingOrder.returnReason) : existingOrder.returnReason;
       const nextReturnNote = nextStatus === "Retour" ? textValue(payload.returnNote, existingOrder.returnNote).slice(0, 240) : existingOrder.returnNote;
       if (nextStatus === "Retour" && !nextReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
@@ -448,6 +454,7 @@ export async function POST(request: Request) {
       const nextStockDeducted = existingOrder.productId ? commitsStock(nextStatus) : existingOrder.stockDeducted;
       const rawDb = await getRawDb();
       const statements = [
+        rawDb.prepare("UPDATE customers SET phone = ? WHERE id = ?").bind(nextPhone, existingOrder.customerId),
         rawDb.prepare(`UPDATE orders SET status = ?, payment_status = ?, source = ?, address = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, return_cost = ?, return_reason = ?, return_note = ?, paid_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
           .bind(nextStatus, nextPaymentStatus, orderSource(payload.source, existingOrder.source), nextAddress, numberValue(payload.shippingCost), textValue(payload.carrier, "Non affecté"), textValue(payload.trackingNumber, existingOrder.trackingNumber), numberValue(payload.returnCost), nextReturnReason, nextReturnNote, paidAt, nextStockDeducted ? 1 : 0, now, id),
       ];
@@ -473,9 +480,17 @@ export async function POST(request: Request) {
       const carrier = textValue(payload.carrier);
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
       const address = textValue(payload.address).slice(0, 300);
-      if (address) {
-        await db.update(orders).set({ address, carrier, shippingCost: numberValue(payload.shippingCost), updatedAt: new Date().toISOString() }).where(and(eq(orders.id, id), isNull(orders.deletedAt)));
-      }
+      const phone = normalizeMoroccanPhone(textValue(payload.phone));
+      if (!address) return Response.json({ error: "L’adresse de livraison est obligatoire." }, { status: 400 });
+      if (!phone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
+      const [orderToDispatch] = await db.select({ customerId: orders.customerId }).from(orders).where(and(eq(orders.id, id), isNull(orders.deletedAt))).limit(1);
+      if (!orderToDispatch) return Response.json({ error: "Commande introuvable." }, { status: 404 });
+      const [duplicatePhone] = await db.select({ id: customers.id }).from(customers).where(eq(customers.phone, phone)).limit(1);
+      if (duplicatePhone && duplicatePhone.id !== orderToDispatch.customerId) return Response.json({ error: "Ce numéro appartient déjà à un autre client." }, { status: 409 });
+      await db.batch([
+        db.update(customers).set({ phone }).where(eq(customers.id, orderToDispatch.customerId)),
+        db.update(orders).set({ address, carrier, shippingCost: numberValue(payload.shippingCost), updatedAt: new Date().toISOString() }).where(and(eq(orders.id, id), isNull(orders.deletedAt))),
+      ]);
       const dispatch = await dispatchAuthorizedOrder(id, carrier);
       if (!dispatch.success) return Response.json({ error: dispatch.message }, { status: 409 });
       integrationMessage = dispatch.message;
@@ -503,9 +518,10 @@ export async function POST(request: Request) {
     } else if (payload.action === "updateCustomer") {
       const id = numberValue(payload.id);
       const name = textValue(payload.name);
-      const phone = textValue(payload.phone).replace(/\s/g, "");
+      const phone = normalizeMoroccanPhone(textValue(payload.phone));
       const city = textValue(payload.city);
-      if (!id || !name || !phone || !city) return Response.json({ error: "Client invalide." }, { status: 400 });
+      if (!phone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
+      if (!id || !name || !city) return Response.json({ error: "Client invalide." }, { status: 400 });
       const [customer] = await db.select({ id: customers.id }).from(customers).where(eq(customers.id, id)).limit(1);
       if (!customer) return Response.json({ error: "Client introuvable." }, { status: 404 });
       const [duplicatePhone] = await db.select({ id: customers.id }).from(customers).where(eq(customers.phone, phone)).limit(1);
