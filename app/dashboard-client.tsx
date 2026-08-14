@@ -11,6 +11,7 @@ type Order = {
   customerName: string | null;
   phone: string | null;
   city: string;
+  address: string;
   products: string;
   quantity: number;
   saleAmount: number;
@@ -326,7 +327,7 @@ export default function DashboardClient() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action, ...values }),
     });
-    const body = (await response.json()) as Data & { error?: string };
+    const body = (await response.json()) as Data & { error?: string; message?: string };
     if (!response.ok) {
       const message = body.error || "Enregistrement impossible";
       setError(message);
@@ -366,7 +367,7 @@ export default function DashboardClient() {
       updateCapital: "Mouvement de capital mis à jour",
       deleteCapital: "Mouvement de capital supprimé",
     };
-    setNotice(messages[action] || "Enregistré avec succès");
+    setNotice(body.message || messages[action] || "Enregistré avec succès");
     setTimeout(() => setNotice(""), 2500);
   }
 
@@ -765,7 +766,7 @@ function Page({
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
   if (active === "Corbeille") return <TrashPage orders={data.trash} canRestore={data.access.isOwner} submit={submit} />;
-  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} submit={submit} />;
+  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} submit={submit} />;
   const total = Math.max(1, data.orders.length);
   return (
     <>
@@ -855,7 +856,7 @@ function Page({
   );
 }
 
-function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, access, members, auditLogs, backups, submit }: {
+function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, senditApiConfigured, senditWebhookConfigured, forceLogApiConfigured, carrierLastSyncAt, access, members, auditLogs, backups, submit }: {
   currentTheme: ThemeKey;
   accountName: string;
   accountEmail: string;
@@ -864,6 +865,10 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   backupSheetUrl: string;
   backupWebhookUrl: string;
   backupWebhookConfigured: boolean;
+  senditApiConfigured: boolean;
+  senditWebhookConfigured: boolean;
+  forceLogApiConfigured: boolean;
+  carrierLastSyncAt: string;
   access: Data["access"];
   members: Member[];
   auditLogs: AuditLog[];
@@ -1085,6 +1090,28 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
             )}
           </div>
         </div>
+        <div className="carrier-api-grid">
+          <article className={`carrier-api-card ${senditApiConfigured && senditWebhookConfigured ? "active" : ""}`}>
+            <div><span className="carrier-api-logo">S</span><div><strong>Sendit automatique</strong><small>{senditApiConfigured ? "Création des colis prête" : "Clés API à ajouter dans Cloudflare"}</small></div></div>
+            <span className={`backup-status ${senditApiConfigured && senditWebhookConfigured ? "active" : ""}`}>{senditApiConfigured && senditWebhookConfigured ? "Connecté" : "À terminer"}</span>
+            <ul>
+              <li className={senditApiConfigured ? "done" : ""}>Envoi automatique dès le statut « Confirmée »</li>
+              <li className={senditWebhookConfigured ? "done" : ""}>Statuts reçus automatiquement et signature vérifiée</li>
+            </ul>
+            <label><span>URL à mettre dans le webhook Sendit</span><input readOnly value="https://maison-jiya-site.maisonjya1.workers.dev/api/integrations/sendit/webhook" onFocus={(event) => event.currentTarget.select()} /></label>
+            <small>Événement : Mise à jour du statut du colis. Choisissez la même clé API que celle utilisée pour l’intégration.</small>
+          </article>
+          <article className={`carrier-api-card ${forceLogApiConfigured ? "active" : ""}`}>
+            <div><span className="carrier-api-logo">F</span><div><strong>ForceLog automatique</strong><small>{forceLogApiConfigured ? "Création des colis prête" : "Clé API à ajouter dans Cloudflare"}</small></div></div>
+            <span className={`backup-status ${forceLogApiConfigured ? "active" : ""}`}>{forceLogApiConfigured ? "Connecté" : "À terminer"}</span>
+            <ul>
+              <li className={forceLogApiConfigured ? "done" : ""}>Envoi automatique dès le statut « Confirmée »</li>
+              <li>Suivi ForceLog disponible avec le numéro retourné par l’agence</li>
+            </ul>
+            <small>La clé reste chiffrée dans Cloudflare et n’apparaît jamais dans le site ni dans Google Sheets.</small>
+          </article>
+        </div>
+        {carrierLastSyncAt && <p className="carrier-sync-stamp">Dernier événement agence reçu : {dateTimeLabel(carrierLastSyncAt)}</p>}
       </section>
 
       <section className="settings-panel sheets-backup-panel" id="google-sheets">
@@ -1571,6 +1598,7 @@ function RecordActions({ label, onEdit, onDelete }: { label: string; onEdit: () 
   );
 }
 function TrashPage({ orders, canRestore, submit }: { orders: Order[]; canRestore: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  const [renderedAt] = useState(() => Date.now());
   async function restore(order: Order) {
     if (!canRestore) return;
     if (!window.confirm(`Restaurer la commande ${order.orderRef} ?\n\nElle réapparaîtra dans Commandes et Colis.`)) return;
@@ -1593,7 +1621,7 @@ function TrashPage({ orders, canRestore, submit }: { orders: Order[]; canRestore
           {orders.map((order) => {
             const deletedAt = order.deletedAt ? new Date(order.deletedAt) : new Date();
             const expiresAt = new Date(deletedAt.getTime() + 90 * 24 * 60 * 60 * 1000);
-            const daysLeft = Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+            const daysLeft = Math.max(0, Math.ceil((expiresAt.getTime() - renderedAt) / (24 * 60 * 60 * 1000)));
             return (
               <article className="trash-row" key={order.id}>
                 <div>
@@ -1725,6 +1753,7 @@ function ShippingPage({ orders, history, settings, onEdit, onPrint, onDelete }: 
   const [carrierFilter, setCarrierFilter] = useState("Toutes");
   const [statusFilter, setStatusFilter] = useState("Tous");
   const [manifestCarrier, setManifestCarrier] = useState(carrierNames[0] || "");
+  const effectiveManifestCarrier = carrierNames.includes(manifestCarrier) ? manifestCarrier : carrierNames[0] || "";
   const [manifestDate, setManifestDate] = useState(today);
   const [manifestToPrint, setManifestToPrint] = useState<{ carrier: string; date: string; orders: Order[] } | null>(null);
   const historyByOrder = useMemo(() => {
@@ -1733,9 +1762,6 @@ function ShippingPage({ orders, history, settings, onEdit, onPrint, onDelete }: 
     grouped.forEach((entries) => entries.sort((left, right) => new Date(right.changedAt).getTime() - new Date(left.changedAt).getTime()));
     return grouped;
   }, [history]);
-  useEffect(() => {
-    if (!carrierNames.includes(manifestCarrier)) setManifestCarrier(carrierNames[0] || "");
-  }, [carrierNames, manifestCarrier]);
   useEffect(() => {
     const clearManifest = () => setManifestToPrint(null);
     window.addEventListener("afterprint", clearManifest);
@@ -1780,11 +1806,11 @@ function ShippingPage({ orders, history, settings, onEdit, onPrint, onDelete }: 
     return matchesQuery && matchesCarrier && matchesStatus;
   }).sort((left, right) => Number(right.alert) - Number(left.alert) || new Date(right.order.createdAt).getTime() - new Date(left.order.createdAt).getTime());
   const alertCount = trackingRows.filter((row) => row.alert).length;
-  const manifestOrders = orders.filter((order) => order.carrier === manifestCarrier && ["Confirmée", "Expédiée", "En livraison"].includes(order.status));
+  const manifestOrders = orders.filter((order) => order.carrier === effectiveManifestCarrier && ["Confirmée", "Expédiée", "En livraison"].includes(order.status));
 
   function printManifest() {
-    if (!manifestCarrier || manifestOrders.length === 0) return;
-    setManifestToPrint({ carrier: manifestCarrier, date: manifestDate, orders: manifestOrders });
+    if (!effectiveManifestCarrier || manifestOrders.length === 0) return;
+    setManifestToPrint({ carrier: effectiveManifestCarrier, date: manifestDate, orders: manifestOrders });
     window.setTimeout(() => window.print(), 80);
   }
   return (
@@ -1819,9 +1845,9 @@ function ShippingPage({ orders, history, settings, onEdit, onPrint, onDelete }: 
       <section className="panel carrier-manifest-panel">
         <div className="manifest-copy"><span className="card-kicker">Préparation agence</span><h2>Manifeste quotidien</h2><p>Le document regroupe les colis confirmés ou en cours pour l’agence choisie. Il peut être imprimé et remis au transporteur.</p></div>
         <div className="manifest-controls">
-          <label><span>Agence</span><select value={manifestCarrier} onChange={(event) => setManifestCarrier(event.target.value)}>{carrierNames.map((carrier) => <option key={carrier}>{carrier}</option>)}</select></label>
+          <label><span>Agence</span><select value={effectiveManifestCarrier} onChange={(event) => setManifestCarrier(event.target.value)}>{carrierNames.map((carrier) => <option key={carrier}>{carrier}</option>)}</select></label>
           <label><span>Date du manifeste</span><input type="date" value={manifestDate} onChange={(event) => setManifestDate(event.target.value)} /></label>
-          <button className="primary-button" type="button" disabled={!manifestCarrier || manifestOrders.length === 0} onClick={printManifest}>▣ Imprimer · {manifestOrders.length} colis</button>
+          <button className="primary-button" type="button" disabled={!effectiveManifestCarrier || manifestOrders.length === 0} onClick={printManifest}>▣ Imprimer · {manifestOrders.length} colis</button>
         </div>
       </section>
       <section className="panel page-panel shipping-tracking-panel">
@@ -1866,7 +1892,7 @@ function ShippingPage({ orders, history, settings, onEdit, onPrint, onDelete }: 
           );})}
           {trackingRows.length === 0 && <EmptyState title="Aucun colis trouvé" text="Modifiez les filtres ou ajoutez une commande." />}
         </div>
-        <p className="tracking-source-note">Le statut affiché ici vient de Maison Jiya. Le bouton agence ouvre le service officiel ; une mise à jour automatique depuis ForceLog ou Sendit nécessitera leurs accès API.</p>
+        <p className="tracking-source-note">Sendit met à jour automatiquement les statuts dès que son webhook sécurisé est connecté. Les commandes confirmées sont envoyées automatiquement à Sendit ou ForceLog lorsque leurs clés Cloudflare sont actives.</p>
       </section>
       {manifestToPrint && <CarrierManifestSheet manifest={manifestToPrint} />}
     </>
@@ -2652,6 +2678,7 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
                 <Field label="Nom de la cliente *" name="customerName" autoComplete="name" required />
                 <Field label="Téléphone *" name="phone" type="tel" inputMode="tel" autoComplete="tel" required />
                 <Field label="Ville *" name="city" autoComplete="address-level2" required />
+                <Field label="Adresse de livraison *" name="address" autoComplete="street-address" required />
                 {products.length ? (
                   <label className="field order-product-select">
                     <span>Produit du catalogue *</span>
@@ -2813,6 +2840,7 @@ function OrderModal({ order, history, carrierNames, close, print, submit }: { or
               </>
             )}
             <Select label="Encaissement" name="paymentStatus" defaultValue={order.paymentStatus} options={["À encaisser", "Encaissé", "Non encaissé", "Remboursé"]} />
+            <Field label="Adresse de livraison *" name="address" defaultValue={order.address} autoComplete="street-address" required />
             <Field label="Frais de transport déduits (MAD)" name="shippingCost" type="number" inputMode="decimal" min="0" defaultValue={String(order.shippingCost)} />
             {carrierOptions.length ? <Select label="Agence de livraison" name="carrier" options={carrierOptions} defaultValue={currentCarrier || carrierOptions[0]} /> : <Field label="Agence de livraison" name="carrier" defaultValue={currentCarrier} />}
             <Field label="Numéro de suivi" name="trackingNumber" defaultValue={order.trackingNumber} />

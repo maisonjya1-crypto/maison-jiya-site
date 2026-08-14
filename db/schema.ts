@@ -57,6 +57,7 @@ export const orders = sqliteTable("orders", {
   customerId: integer("customer_id").notNull().references(() => customers.id),
   productId: integer("product_id").references(() => products.id),
   city: text("city").notNull(),
+  address: text("address").notNull().default(""),
   products: text("products").notNull(),
   quantity: integer("quantity").notNull().default(1),
   saleAmount: integer("sale_amount").notNull(),
@@ -92,6 +93,29 @@ export const orderStatusHistory = sqliteTable(
     changedAt: text("changed_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [index("order_status_history_order_id_idx").on(table.orderId)],
+);
+
+export const carrierEvents = sqliteTable(
+  "carrier_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    provider: text("provider").notNull(),
+    eventType: text("event_type").notNull(),
+    externalCode: text("external_code").notNull(),
+    externalStatus: text("external_status").notNull(),
+    payloadHash: text("payload_hash").notNull().unique(),
+    message: text("message").notNull().default(""),
+    proofImage: text("proof_image").notNull().default(""),
+    occurredAt: text("occurred_at"),
+    orderId: integer("order_id"),
+    processed: integer("processed", { mode: "boolean" }).notNull().default(false),
+    errorMessage: text("error_message").notNull().default(""),
+    receivedAt: text("received_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("carrier_events_external_code_idx").on(table.externalCode),
+    index("carrier_events_order_id_idx").on(table.orderId),
+  ],
 );
 
 export const auditLogs = sqliteTable(

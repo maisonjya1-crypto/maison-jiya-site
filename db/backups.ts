@@ -15,6 +15,7 @@ type BusinessSnapshot = {
     capital: SnapshotRow[];
     settings: SnapshotRow[];
     orderStatusHistory: SnapshotRow[];
+    carrierEvents?: SnapshotRow[];
   };
 };
 
@@ -29,11 +30,12 @@ const TABLES = {
   capital: "capital_ledger",
   settings: "settings",
   orderStatusHistory: "order_status_history",
+  carrierEvents: "carrier_events",
 } as const;
 
 const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   customers: ["id", "name", "phone", "city", "created_at"],
-  orders: ["id", "order_ref", "customer_id", "product_id", "city", "products", "quantity", "sale_amount", "product_cost", "shipping_cost", "ad_cost", "fees", "return_cost", "return_reason", "return_note", "source", "status", "payment_status", "carrier", "tracking_number", "stock_deducted", "paid_at", "deleted_at", "deleted_by_user_id", "created_at", "updated_at"],
+  orders: ["id", "order_ref", "customer_id", "product_id", "city", "address", "products", "quantity", "sale_amount", "product_cost", "shipping_cost", "ad_cost", "fees", "return_cost", "return_reason", "return_note", "source", "status", "payment_status", "carrier", "tracking_number", "stock_deducted", "paid_at", "deleted_at", "deleted_by_user_id", "created_at", "updated_at"],
   products: ["id", "product_code", "name", "category", "purchase_price", "sale_price", "stock_quantity", "created_at"],
   stockMovements: ["id", "product_id", "order_id", "movement_type", "quantity", "note", "created_at"],
   inventoryCounts: ["id", "count_ref", "product_id", "system_quantity", "physical_quantity", "difference", "note", "counted_by_user_id", "counted_by_name", "created_at"],
@@ -42,6 +44,7 @@ const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   capital: ["id", "direction", "category", "label", "amount", "entry_date", "created_at"],
   settings: ["key", "value", "updated_at"],
   orderStatusHistory: ["id", "order_id", "from_status", "to_status", "changed_by_user_id", "changed_by_name", "changed_at"],
+  carrierEvents: ["id", "provider", "event_type", "external_code", "external_status", "payload_hash", "message", "proof_image", "occurred_at", "order_id", "processed", "error_message", "received_at"],
 };
 
 function casablancaDate(value = new Date()) {
@@ -59,7 +62,7 @@ async function readRows(database: D1Database, table: string, where = "") {
 }
 
 async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
-  const [customers, orders, products, stockMovements, inventoryCounts, purchases, ads, capital, settings, orderStatusHistory] = await Promise.all([
+  const [customers, orders, products, stockMovements, inventoryCounts, purchases, ads, capital, settings, orderStatusHistory, carrierEvents] = await Promise.all([
     readRows(database, TABLES.customers),
     readRows(database, TABLES.orders),
     readRows(database, TABLES.products),
@@ -70,11 +73,12 @@ async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
     readRows(database, TABLES.capital),
     readRows(database, TABLES.settings, " WHERE key NOT LIKE 'security_%' AND key <> 'backup_webhook_url'"),
     readRows(database, TABLES.orderStatusHistory),
+    readRows(database, TABLES.carrierEvents),
   ]);
   return {
     version: 1,
     createdAt: new Date().toISOString(),
-    tables: { customers, orders, products, stockMovements, inventoryCounts, purchases, ads, capital, settings, orderStatusHistory },
+    tables: { customers, orders, products, stockMovements, inventoryCounts, purchases, ads, capital, settings, orderStatusHistory, carrierEvents },
   };
 }
 
@@ -112,7 +116,8 @@ function insertStatement(database: D1Database, tableKey: keyof BusinessSnapshot[
   const table = TABLES[tableKey];
   const values = columns.map((column) => {
     if (column === "stock_deducted") return row[column] ?? 0;
-    if (column === "return_reason" || column === "return_note") return row[column] ?? "";
+    if (["return_reason", "return_note", "address", "message", "proof_image", "error_message"].includes(column)) return row[column] ?? "";
+    if (column === "processed") return row[column] ?? 0;
     return row[column] ?? null;
   });
   const placeholders = columns.map(() => "?").join(", ");
@@ -136,6 +141,7 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
     database.prepare("DELETE FROM stock_movements"),
     database.prepare("DELETE FROM inventory_counts"),
     database.prepare("DELETE FROM order_status_history"),
+    database.prepare("DELETE FROM carrier_events"),
     database.prepare("DELETE FROM orders"),
     database.prepare("DELETE FROM customers"),
     database.prepare("DELETE FROM purchases"),
@@ -146,7 +152,7 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
   ]);
 
   const insertionOrder: Array<keyof BusinessSnapshot["tables"]> = [
-    "settings", "customers", "products", "purchases", "ads", "capital", "orders", "stockMovements", "inventoryCounts", "orderStatusHistory",
+    "settings", "customers", "products", "purchases", "ads", "capital", "orders", "stockMovements", "inventoryCounts", "orderStatusHistory", "carrierEvents",
   ];
   for (const tableKey of insertionOrder) {
     await runBatches(database, (snapshot.tables[tableKey] || []).map((item) => insertStatement(database, tableKey, item)));
@@ -163,6 +169,7 @@ export async function purgeExpiredTrash(database: D1Database) {
     await database.batch([
       database.prepare(`UPDATE stock_movements SET order_id = NULL WHERE order_id IN (${placeholders})`).bind(...ids),
       database.prepare(`DELETE FROM order_status_history WHERE order_id IN (${placeholders})`).bind(...ids),
+      database.prepare(`UPDATE carrier_events SET order_id = NULL WHERE order_id IN (${placeholders})`).bind(...ids),
       database.prepare(`DELETE FROM orders WHERE id IN (${placeholders})`).bind(...ids),
     ]);
     await database.prepare("DELETE FROM customers WHERE NOT EXISTS (SELECT 1 FROM orders WHERE orders.customer_id = customers.id)").run();
