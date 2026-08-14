@@ -1,7 +1,8 @@
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb, getRawDb } from "../../../db";
 import { createDailyBackup, purgeExpiredTrash, restoreDailyBackup } from "../../../db/backups";
-import { adPerformance, auditLogs, capitalLedger, customers, dailyBackups, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
+import { dispatchConfirmedOrder, getCarrierRuntimeStatus } from "../../../db/carriers";
+import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
 type ActionPayload = Record<string, unknown> & { action?: string };
@@ -243,7 +244,7 @@ async function snapshot(access: AccessInfo) {
   await seedIfNeeded();
   await createDailyBackup(await getRawDb());
   const db = await getDb();
-  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
+  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
   const [orderRows, trashRows, customerRows, purchaseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
@@ -269,6 +270,10 @@ async function snapshot(access: AccessInfo) {
   const publicSettings = settingRows.filter((row) => !row.key.startsWith("security_"));
   const backupConfigured = settingRows.some((row) => row.key === "security_backup_token_hash" && row.value.length === 64);
   const secureWebhook = settingRows.find((row) => row.key === "security_backup_webhook_url")?.value || "";
+  const [carrierRuntime, lastCarrierEvent] = await Promise.all([
+    getCarrierRuntimeStatus(),
+    db.select({ receivedAt: carrierEvents.receivedAt }).from(carrierEvents).orderBy(desc(carrierEvents.receivedAt)).limit(1),
+  ]);
   return {
     orders: orderRows,
     trash: trashRows,
@@ -287,6 +292,10 @@ async function snapshot(access: AccessInfo) {
       ...Object.fromEntries(publicSettings.map((row) => [row.key, row.value])),
       backup_configured: backupConfigured ? "true" : "false",
       backup_webhook_configured: secureWebhook ? "true" : "false",
+      sendit_api_configured: carrierRuntime.senditApiConfigured ? "true" : "false",
+      sendit_webhook_configured: carrierRuntime.senditWebhookConfigured ? "true" : "false",
+      forcelog_api_configured: carrierRuntime.forceLogApiConfigured ? "true" : "false",
+      carrier_last_sync_at: lastCarrierEvent[0]?.receivedAt || "",
       ...(access.isOwner ? { backup_webhook_url: secureWebhook } : {}),
     },
     access,
@@ -325,6 +334,8 @@ export async function POST(request: Request) {
 
     let auditEntityId = textValue(payload.id) || textValue(payload.memberId) || null;
     let auditEntityLabel = "";
+    let dispatchOrderId = 0;
+    let integrationMessage = "";
 
     if (payload.action === "createMember") {
       if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut créer un partenaire." }, { status: 403 });
@@ -358,9 +369,10 @@ export async function POST(request: Request) {
       const name = textValue(payload.customerName);
       const phone = textValue(payload.phone).replace(/\s/g, "");
       const city = textValue(payload.city);
+      const address = textValue(payload.address).slice(0, 300);
       const productId = numberValue(payload.productId);
       const quantity = numberValue(payload.quantity, 1);
-      if (!name || !phone || !city || !productId || quantity < 1) return Response.json({ error: "Cliente, téléphone, ville, produit et quantité sont obligatoires." }, { status: 400 });
+      if (!name || !phone || !city || !address || !productId || quantity < 1) return Response.json({ error: "Cliente, téléphone, ville, adresse, produit et quantité sont obligatoires." }, { status: 400 });
       const [selectedProduct] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
       if (!selectedProduct) return Response.json({ error: "Le produit sélectionné n’existe plus dans le catalogue." }, { status: 404 });
       const selectedStatus = orderStatus(payload.status);
@@ -390,8 +402,8 @@ export async function POST(request: Request) {
       const saleAmount = numberValue(payload.saleAmount, selectedProduct.salePrice * quantity);
       const rawDb = await getRawDb();
       const statements = [
-        rawDb.prepare(`INSERT INTO orders (order_ref, customer_id, product_id, city, products, quantity, sale_amount, product_cost, shipping_cost, ad_cost, fees, return_cost, return_reason, return_note, source, status, payment_status, carrier, tracking_number, stock_deducted, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'À encaisser', ?, ?, ?, ?)`).bind(orderRef, customer.id, productId, city, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, numberValue(payload.shippingCost), numberValue(payload.adCost), numberValue(payload.fees), selectedReturnReason, selectedReturnNote, orderSource(payload.source), selectedStatus, selectedCarrier, textValue(payload.trackingNumber), shouldDeductStock ? 1 : 0, now),
+        rawDb.prepare(`INSERT INTO orders (order_ref, customer_id, product_id, city, address, products, quantity, sale_amount, product_cost, shipping_cost, ad_cost, fees, return_cost, return_reason, return_note, source, status, payment_status, carrier, tracking_number, stock_deducted, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'À encaisser', ?, ?, ?, ?)`).bind(orderRef, customer.id, productId, city, address, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, numberValue(payload.shippingCost), numberValue(payload.adCost), numberValue(payload.fees), selectedReturnReason, selectedReturnNote, orderSource(payload.source), selectedStatus, selectedCarrier, textValue(payload.trackingNumber), shouldDeductStock ? 1 : 0, now),
         rawDb.prepare(`INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at)
           SELECT id, NULL, ?, ?, ?, ? FROM orders WHERE order_ref = ?`).bind(selectedStatus, user.id, user.displayName, now, orderRef),
       ];
@@ -407,6 +419,7 @@ export async function POST(request: Request) {
       if (!createdOrder) throw new Error("La commande n’a pas été créée.");
       auditEntityId = String(createdOrder.id);
       auditEntityLabel = createdOrder.orderRef;
+      if (selectedStatus === "Confirmée" && !createdOrder.trackingNumber) dispatchOrderId = createdOrder.id;
     } else if (payload.action === "updateOrder") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
@@ -414,6 +427,8 @@ export async function POST(request: Request) {
       if (!existingOrder) return Response.json({ error: "Commande introuvable." }, { status: 404 });
       const nextPaymentStatus = paymentStatus(payload.paymentStatus, existingOrder.paymentStatus);
       const nextStatus = orderStatus(payload.status, existingOrder.status);
+      const nextAddress = textValue(payload.address, existingOrder.address).slice(0, 300);
+      if (!nextAddress) return Response.json({ error: "L’adresse de livraison est obligatoire." }, { status: 400 });
       const nextReturnReason = nextStatus === "Retour" ? returnReason(payload.returnReason, existingOrder.returnReason) : existingOrder.returnReason;
       const nextReturnNote = nextStatus === "Retour" ? textValue(payload.returnNote, existingOrder.returnNote).slice(0, 240) : existingOrder.returnNote;
       if (nextStatus === "Retour" && !nextReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
@@ -434,8 +449,8 @@ export async function POST(request: Request) {
       const nextStockDeducted = existingOrder.productId ? commitsStock(nextStatus) : existingOrder.stockDeducted;
       const rawDb = await getRawDb();
       const statements = [
-        rawDb.prepare(`UPDATE orders SET status = ?, payment_status = ?, source = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, return_cost = ?, return_reason = ?, return_note = ?, paid_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
-          .bind(nextStatus, nextPaymentStatus, orderSource(payload.source, existingOrder.source), numberValue(payload.shippingCost), textValue(payload.carrier, "Non affecté"), textValue(payload.trackingNumber), numberValue(payload.returnCost), nextReturnReason, nextReturnNote, paidAt, nextStockDeducted ? 1 : 0, now, id),
+        rawDb.prepare(`UPDATE orders SET status = ?, payment_status = ?, source = ?, address = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, return_cost = ?, return_reason = ?, return_note = ?, paid_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
+          .bind(nextStatus, nextPaymentStatus, orderSource(payload.source, existingOrder.source), nextAddress, numberValue(payload.shippingCost), textValue(payload.carrier, "Non affecté"), textValue(payload.trackingNumber), numberValue(payload.returnCost), nextReturnReason, nextReturnNote, paidAt, nextStockDeducted ? 1 : 0, now, id),
       ];
       if (nextStatus !== existingOrder.status) {
         statements.push(rawDb.prepare("INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at) VALUES (?, ?, ?, ?, ?, ?)").bind(id, existingOrder.status, nextStatus, user.id, user.displayName, now));
@@ -453,6 +468,7 @@ export async function POST(request: Request) {
       }
       await rawDb.batch(statements);
       auditEntityLabel = existingOrder.orderRef;
+      if (nextStatus === "Confirmée" && !textValue(payload.trackingNumber)) dispatchOrderId = id;
     } else if (payload.action === "deleteOrder") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
@@ -814,13 +830,19 @@ export async function POST(request: Request) {
     }
     await writeAudit(user, textValue(payload.action), auditEntityId, auditEntityLabel);
 
+    if (dispatchOrderId) {
+      const dispatch = await dispatchConfirmedOrder(dispatchOrderId);
+      integrationMessage = dispatch.message;
+    }
+
     if (!["updateBackupWebhook", "updateBackupToken", "revokeBackupToken", "createBackupNow", "restoreBackup"].includes(textValue(payload.action))) {
       await triggerGoogleSheetsSync();
     }
 
     const refreshedUser = await getAuthenticatedUser(request);
     if (!refreshedUser) return Response.json({ error: "Votre session a expiré." }, { status: 401 });
-    return Response.json(await snapshot(await securityAccess(request, refreshedUser)));
+    const responseData = await snapshot(await securityAccess(request, refreshedUser));
+    return Response.json(integrationMessage ? { ...responseData, message: integrationMessage } : responseData);
   } catch (error) {
     console.error("Maison Jiya data POST failed", errorDetails(error));
     const errorMessage = error instanceof Error ? error.message : "";

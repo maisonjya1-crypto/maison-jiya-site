@@ -52,6 +52,7 @@ const schemaStatements = [
     customer_id INTEGER NOT NULL,
     product_id INTEGER,
     city TEXT NOT NULL,
+    address TEXT DEFAULT '' NOT NULL,
     products TEXT NOT NULL,
     quantity INTEGER DEFAULT 1 NOT NULL,
     sale_amount INTEGER NOT NULL,
@@ -165,6 +166,23 @@ const schemaStatements = [
     changed_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS order_status_history_order_id_idx ON order_status_history (order_id)`,
+  `CREATE TABLE IF NOT EXISTS carrier_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    provider TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    external_code TEXT NOT NULL,
+    external_status TEXT NOT NULL,
+    payload_hash TEXT NOT NULL UNIQUE,
+    message TEXT DEFAULT '' NOT NULL,
+    proof_image TEXT DEFAULT '' NOT NULL,
+    occurred_at TEXT,
+    order_id INTEGER,
+    processed INTEGER DEFAULT 0 NOT NULL,
+    error_message TEXT DEFAULT '' NOT NULL,
+    received_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS carrier_events_external_code_idx ON carrier_events (external_code)`,
+  `CREATE INDEX IF NOT EXISTS carrier_events_order_id_idx ON carrier_events (order_id)`,
   `CREATE TABLE IF NOT EXISTS audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     user_id INTEGER,
@@ -197,6 +215,7 @@ async function ensureOrderColumns(database: D1Database) {
   if (!columns.has("stock_deducted")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN stock_deducted INTEGER DEFAULT 0 NOT NULL"));
   if (!columns.has("return_reason")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN return_reason TEXT DEFAULT '' NOT NULL"));
   if (!columns.has("return_note")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN return_note TEXT DEFAULT '' NOT NULL"));
+  if (!columns.has("address")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN address TEXT DEFAULT '' NOT NULL"));
   if (statements.length) await database.batch(statements);
 }
 

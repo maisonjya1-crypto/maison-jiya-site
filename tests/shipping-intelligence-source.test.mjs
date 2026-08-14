@@ -21,7 +21,7 @@ test("le suivi interne signale les retards et les numéros manquants", async () 
   assert.match(dashboard, /Numéro manquant/);
   assert.match(dashboard, /Suivre sur ForceLog/);
   assert.match(dashboard, /Ouvrir l’espace Sendit/);
-  assert.match(dashboard, /nécessitera leurs accès API/);
+  assert.match(dashboard, /webhook sécurisé est connecté/);
 });
 
 test("un manifeste quotidien imprimable est généré par agence", async () => {

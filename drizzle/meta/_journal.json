@@ -64,6 +64,13 @@
       "when": 1786680000000,
       "tag": "0008_inventory_profitability",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1786683600000,
+      "tag": "0009_carrier_automation",
+      "breakpoints": true
     }
   ]
 }
