@@ -35,3 +35,32 @@ test("un manifeste quotidien imprimable est généré par agence", async () => {
   assert.match(styles, /@page carrier-manifest/);
   assert.match(styles, /\.print-carrier-manifest/);
 });
+
+test("la création transporteur exige une autorisation explicite", async () => {
+  const [dashboard, api, carriers] = await Promise.all([
+    read("app/dashboard-client.tsx"),
+    read("app/api/data/route.ts"),
+    read("db/carriers.ts"),
+  ]);
+  assert.match(dashboard, /Autoriser et créer le colis/);
+  assert.match(dashboard, /aucun colis/i);
+  assert.match(api, /authorizeCarrierDispatch/);
+  assert.doesNotMatch(api, /dispatchConfirmedOrder/);
+  assert.match(carriers, /carrier_dispatch_state = 'Création en cours'/);
+  assert.match(carriers, /créée après autorisation/);
+});
+
+test("les tarifs Casablanca sont comparés et la facturation alimente l'encaissement", async () => {
+  const [dashboard, carriers, worker, config] = await Promise.all([
+    read("app/dashboard-client.tsx"),
+    read("db/carriers.ts"),
+    read("worker/index.ts"),
+    read("wrangler.jsonc"),
+  ]);
+  assert.match(dashboard, /Comparer les agences/);
+  assert.match(carriers, /pickup-district=46/);
+  assert.match(carriers, /D_FEES_SAME_CITY/);
+  assert.match(carriers, /payment_status = \?/);
+  assert.match(worker, /syncCarrierOperations/);
+  assert.match(config, /\*\/30 \* \* \* \*/);
+});

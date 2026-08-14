@@ -2,6 +2,7 @@
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 import { runDailyMaintenance } from "../db/backups";
+import { syncCarrierOperations } from "../db/carriers";
 import { getRawDb } from "../db";
 
 interface Env extends CloudflareEnv {
@@ -38,7 +39,11 @@ const worker = {
 
     return handler.fetch(request, env, ctx);
   },
-  async scheduled(_controller: ScheduledController, _env: Env, ctx: ExecutionContext) {
+  async scheduled(controller: ScheduledController, _env: Env, ctx: ExecutionContext) {
+    if (controller.cron === "*/30 * * * *") {
+      ctx.waitUntil(syncCarrierOperations());
+      return;
+    }
     ctx.waitUntil(getRawDb().then((database) => runDailyMaintenance(database)));
   },
 };

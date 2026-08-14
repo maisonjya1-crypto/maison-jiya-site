@@ -68,6 +68,9 @@ const schemaStatements = [
     payment_status TEXT DEFAULT 'À encaisser' NOT NULL,
     carrier TEXT DEFAULT 'Non affecté' NOT NULL,
     tracking_number TEXT DEFAULT '' NOT NULL,
+    carrier_dispatch_state TEXT DEFAULT 'À autoriser' NOT NULL,
+    carrier_authorized_at TEXT,
+    carrier_invoice_code TEXT DEFAULT '' NOT NULL,
     stock_deducted INTEGER DEFAULT 0 NOT NULL,
     paid_at TEXT,
     deleted_at TEXT,
@@ -216,6 +219,9 @@ async function ensureOrderColumns(database: D1Database) {
   if (!columns.has("return_reason")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN return_reason TEXT DEFAULT '' NOT NULL"));
   if (!columns.has("return_note")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN return_note TEXT DEFAULT '' NOT NULL"));
   if (!columns.has("address")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN address TEXT DEFAULT '' NOT NULL"));
+  if (!columns.has("carrier_dispatch_state")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN carrier_dispatch_state TEXT DEFAULT 'À autoriser' NOT NULL"));
+  if (!columns.has("carrier_authorized_at")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN carrier_authorized_at TEXT"));
+  if (!columns.has("carrier_invoice_code")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN carrier_invoice_code TEXT DEFAULT '' NOT NULL"));
   if (statements.length) await database.batch(statements);
 }
 

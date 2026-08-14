@@ -71,6 +71,13 @@
       "when": 1786683600000,
       "tag": "0009_carrier_automation",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1786687200000,
+      "tag": "0010_carrier_authorization",
+      "breakpoints": true
     }
   ]
 }
