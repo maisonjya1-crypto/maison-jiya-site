@@ -29,13 +29,18 @@ function numberValue(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : fallback;
 }
 
+function moneyValue(value: unknown, fallback = 0) {
+  const parsed = typeof value === "string" ? Number(value.trim().replace(/\s/g, "").replace(",", ".")) : Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed * 100) / 100) : fallback;
+}
+
 const orderStatuses = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
 const orderSources = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre", "Non renseignée"];
 const fulfillmentTypes = ["Livraison", "Magasin physique"];
 const paymentStatuses = ["À encaisser", "Encaissé", "Non encaissé", "Remboursé"];
 const stockCommittedStatuses = new Set(["Confirmée", "Expédiée", "En livraison", "Livrée", "Retour"]);
 const returnReasons = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
-const productCategories = ["Montres", "Bijoux", "Wallets", "Électronique", "Autre"];
+const productCategories = ["Montres", "Bijoux", "Wallets", "Électronique", "Boîtes", "Autre"];
 const themeOptions = ["mauve-froid", "rose-poudre", "sombre-prune", "bleu-brume", "sable-chic"];
 
 function orderStatus(value: unknown, fallback = "En attente") {
@@ -65,7 +70,14 @@ function returnReason(value: unknown, fallback = "") {
 
 function productCategory(value: unknown, fallback = "Autre") {
   const category = textValue(value, fallback);
-  return productCategories.includes(category) ? category : fallback;
+  if (productCategories.includes(category)) return category;
+  const normalized = category.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z]/g, "").toLocaleLowerCase("fr");
+  if (["electronique", "electroniques"].includes(normalized)) return "Électronique";
+  if (["montre", "montres"].includes(normalized)) return "Montres";
+  if (["bijou", "bijoux"].includes(normalized)) return "Bijoux";
+  if (["wallet", "wallets", "portefeuille", "portefeuilles"].includes(normalized)) return "Wallets";
+  if (["boite", "boites"].includes(normalized)) return "Boîtes";
+  return fallback;
 }
 
 function commitsStock(status: string) {
@@ -127,6 +139,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   updateMember: { action: "Modification", entityType: "Partenaire" },
   addOrder: { action: "Ajout", entityType: "Commande" },
   importOrders: { action: "Importation", entityType: "Commandes" },
+  importProducts: { action: "Importation", entityType: "Produits" },
   updateOrder: { action: "Modification", entityType: "Commande" },
   deleteOrder: { action: "Mise à la corbeille", entityType: "Commande" },
   restoreOrder: { action: "Restauration", entityType: "Commande" },
@@ -740,6 +753,80 @@ export async function POST(request: Request) {
       if (!entry) return Response.json({ error: "Mouvement de capital introuvable." }, { status: 404 });
       if (entry.isAutomatic) return Response.json({ error: "Une affectation automatique liée à une commande ne peut pas être supprimée manuellement." }, { status: 409 });
       await db.delete(capitalLedger).where(eq(capitalLedger.id, id));
+    } else if (payload.action === "importProducts") {
+      let parsedRows: unknown;
+      try {
+        parsedRows = JSON.parse(textValue(payload.rows, "[]"));
+      } catch {
+        return Response.json({ error: "Le fichier de produits est invalide." }, { status: 400 });
+      }
+      if (!Array.isArray(parsedRows) || !parsedRows.length || parsedRows.length > 300) {
+        return Response.json({ error: "Importez entre 1 et 300 produits à la fois." }, { status: 400 });
+      }
+      const normalizedRows = parsedRows.map((raw, index) => {
+        const row = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+        const productCode = textValue(row.productCode).toUpperCase().slice(0, 80);
+        const name = textValue(row.name).slice(0, 160);
+        const purchasePrice = moneyValue(row.purchasePrice);
+        const salePrice = moneyValue(row.salePrice);
+        const minimumSalePrice = moneyValue(row.minimumSalePrice, salePrice);
+        const stockQuantity = numberValue(row.stockRemaining ?? row.initialQuantity);
+        if (!productCode || !name) throw new Error(`Ligne ${index + 2} : ID produit et nom obligatoires.`);
+        if (!purchasePrice && !salePrice) throw new Error(`Ligne ${index + 2} : prix d’achat ou prix de vente manquant.`);
+        return { productCode, name, category: productCategory(row.category), purchasePrice, salePrice, minimumSalePrice, stockQuantity };
+      });
+      const uploadCodes = new Set<string>();
+      for (let index = 0; index < normalizedRows.length; index += 1) {
+        const code = normalizedRows[index].productCode;
+        if (uploadCodes.has(code)) throw new Error(`Ligne ${index + 2} : l’ID produit ${code} apparaît plusieurs fois dans le fichier.`);
+        uploadCodes.add(code);
+      }
+      const catalog = await db.select().from(products);
+      const existingByCode = new Map(catalog.map((product) => [product.productCode.toLocaleUpperCase("fr"), product]));
+      const updateExisting = textValue(payload.conflictMode) === "update";
+      let createdCount = 0;
+      let updatedCount = 0;
+      let skippedCount = 0;
+      for (const row of normalizedRows) {
+        const existing = existingByCode.get(row.productCode);
+        if (existing && !updateExisting) {
+          skippedCount += 1;
+          continue;
+        }
+        if (existing) {
+          const stockDifference = row.stockQuantity - existing.stockQuantity;
+          const updateQuery = db.update(products).set({
+            name: row.name,
+            category: row.category,
+            purchasePrice: row.purchasePrice,
+            salePrice: row.salePrice,
+            minimumSalePrice: row.minimumSalePrice,
+            stockQuantity: row.stockQuantity,
+          }).where(eq(products.id, existing.id));
+          if (stockDifference) {
+            await db.batch([
+              updateQuery,
+              db.insert(stockMovements).values({
+                productId: existing.id,
+                movementType: stockDifference > 0 ? "Entrée" : "Vente",
+                quantity: Math.abs(stockDifference),
+                note: "Ajustement depuis import Google Sheets",
+              }),
+            ]);
+          } else await updateQuery;
+          updatedCount += 1;
+          continue;
+        }
+        const [product] = await db.insert(products).values(row).returning();
+        if (!product) throw new Error(`Ligne ${createdCount + 2} : création du produit impossible.`);
+        if (row.stockQuantity > 0) {
+          await db.insert(stockMovements).values({ productId: product.id, movementType: "Entrée", quantity: row.stockQuantity, note: "Stock importé depuis Google Sheets" });
+        }
+        existingByCode.set(row.productCode, product);
+        createdCount += 1;
+      }
+      integrationMessage = `${createdCount} produit(s) créé(s)${updatedCount ? ` · ${updatedCount} mis à jour` : ""}${skippedCount ? ` · ${skippedCount} déjà présent(s), ignoré(s)` : ""}.`;
+      auditEntityLabel = `${createdCount} créé(s), ${updatedCount} mis à jour, ${skippedCount} ignoré(s)`;
     } else if (payload.action === "addProduct") {
       const productCode = textValue(payload.productCode).toUpperCase();
       const name = textValue(payload.name);
@@ -747,7 +834,8 @@ export async function POST(request: Request) {
       const [duplicate] = await db.select({ id: products.id }).from(products).where(eq(products.productCode, productCode)).limit(1);
       if (duplicate) return Response.json({ error: "Cet ID produit existe déjà." }, { status: 409 });
       const initialQuantity = numberValue(payload.initialQuantity);
-      const [product] = await db.insert(products).values({ productCode, name, category: productCategory(payload.category), purchasePrice: numberValue(payload.purchasePrice), salePrice: numberValue(payload.salePrice), stockQuantity: initialQuantity }).returning();
+      const salePrice = moneyValue(payload.salePrice);
+      const [product] = await db.insert(products).values({ productCode, name, category: productCategory(payload.category), purchasePrice: moneyValue(payload.purchasePrice), salePrice, minimumSalePrice: moneyValue(payload.minimumSalePrice, salePrice), stockQuantity: initialQuantity }).returning();
       if (!product) throw new Error("Le produit n’a pas été créé.");
       if (initialQuantity > 0) await db.insert(stockMovements).values({ productId: product.id, movementType: "Entrée", quantity: initialQuantity, note: "Stock initial" });
     } else if (payload.action === "updateProduct") {
@@ -759,7 +847,8 @@ export async function POST(request: Request) {
       if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
       const [duplicate] = await db.select({ id: products.id }).from(products).where(eq(products.productCode, productCode)).limit(1);
       if (duplicate && duplicate.id !== id) return Response.json({ error: "Cet ID produit existe déjà." }, { status: 409 });
-      await db.update(products).set({ productCode, name, category: productCategory(payload.category), purchasePrice: numberValue(payload.purchasePrice), salePrice: numberValue(payload.salePrice) }).where(eq(products.id, id));
+      const salePrice = moneyValue(payload.salePrice);
+      await db.update(products).set({ productCode, name, category: productCategory(payload.category), purchasePrice: moneyValue(payload.purchasePrice), salePrice, minimumSalePrice: moneyValue(payload.minimumSalePrice, salePrice) }).where(eq(products.id, id));
     } else if (payload.action === "deleteProduct") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Produit invalide." }, { status: 400 });

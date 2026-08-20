@@ -1,0 +1,1 @@
+ALTER TABLE `products` ADD `minimum_sale_price` integer DEFAULT 0 NOT NULL;

@@ -133,6 +133,7 @@ const schemaStatements = [
     category TEXT NOT NULL,
     purchase_price INTEGER NOT NULL,
     sale_price INTEGER NOT NULL,
+    minimum_sale_price INTEGER DEFAULT 0 NOT NULL,
     stock_quantity INTEGER DEFAULT 0 NOT NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
   )`,
@@ -269,12 +270,21 @@ async function ensureAdPerformanceColumns(database: D1Database) {
   if (statements.length) await database.batch(statements);
 }
 
+async function ensureProductColumns(database: D1Database) {
+  const info = await database.prepare("PRAGMA table_info(products)").all<{ name: string }>();
+  const columns = new Set(info.results.map((column) => column.name));
+  if (!columns.has("minimum_sale_price")) {
+    await database.prepare("ALTER TABLE products ADD COLUMN minimum_sale_price INTEGER DEFAULT 0 NOT NULL").run();
+  }
+}
+
 async function initializeDatabase(database: D1Database) {
   await database.batch(schemaStatements.map((statement) => database.prepare(statement)));
   await ensureOrderColumns(database);
   await ensureStockMovementColumns(database);
   await ensureCapitalColumns(database);
   await ensureAdPerformanceColumns(database);
+  await ensureProductColumns(database);
   await database.prepare(`
     INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_name, changed_at)
     SELECT orders.id, NULL, orders.status, 'État initial', COALESCE(orders.updated_at, orders.created_at)
