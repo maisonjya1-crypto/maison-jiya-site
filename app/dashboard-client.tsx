@@ -60,9 +60,13 @@ type Ad = {
   id: number;
   platform: string;
   campaign: string;
+  externalId: string;
   spend: number;
   revenue: number;
   orderCount: number;
+  nativeSpendCents: number;
+  nativeRevenueCents: number;
+  nativeCurrency: string;
   source: string;
   performanceDate: string;
 };
@@ -2321,18 +2325,90 @@ function PurchasesPage({ purchases, onAdd, onEdit, onDelete }: { purchases: Purc
     </>
   );
 }
+type AdSummary = {
+  key: string;
+  record: Ad;
+  platform: string;
+  campaign: string;
+  externalId: string;
+  spend: number;
+  revenue: number;
+  orderCount: number;
+  nativeSpendCents: number;
+  nativeCurrency: string;
+  source: string;
+  firstDate: string;
+  lastDate: string;
+  rowCount: number;
+};
+
+function summarizeAds(ads: Ad[]) {
+  const grouped = new Map<string, AdSummary>();
+  for (const ad of ads) {
+    const isMeta = ad.source === "Meta API";
+    const key = isMeta ? `meta:${ad.externalId || ad.campaign}:${ad.platform}` : `manual:${ad.id}`;
+    const current = grouped.get(key);
+    if (current) {
+      current.spend += ad.spend;
+      current.revenue += ad.revenue;
+      current.orderCount += ad.orderCount;
+      current.nativeSpendCents += ad.nativeSpendCents;
+      current.firstDate = ad.performanceDate < current.firstDate ? ad.performanceDate : current.firstDate;
+      current.lastDate = ad.performanceDate > current.lastDate ? ad.performanceDate : current.lastDate;
+      current.rowCount += 1;
+      continue;
+    }
+    grouped.set(key, {
+      key,
+      record: ad,
+      platform: ad.platform,
+      campaign: ad.campaign,
+      externalId: ad.externalId,
+      spend: ad.spend,
+      revenue: ad.revenue,
+      orderCount: ad.orderCount,
+      nativeSpendCents: ad.nativeSpendCents,
+      nativeCurrency: ad.nativeCurrency,
+      source: ad.source,
+      firstDate: ad.performanceDate,
+      lastDate: ad.performanceDate,
+      rowCount: 1,
+    });
+  }
+  return [...grouped.values()].sort((left, right) => right.lastDate.localeCompare(left.lastDate) || right.spend - left.spend);
+}
+
+function nativeMoney(cents: number, currency: string) {
+  return `${(cents / 100).toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+}
+
 function AdsPage({ ads, settings, access, submit, onAdd, onEdit, onDelete }: { ads: Ad[]; settings: Record<string, string>; access: Data["access"]; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
   const spend = ads.reduce((sum, ad) => sum + ad.spend, 0),
     revenue = ads.reduce((sum, ad) => sum + ad.revenue, 0),
     count = ads.reduce((sum, ad) => sum + ad.orderCount, 0);
+  const summaries = summarizeAds(ads);
+  const metaConfigured = settings.meta_api_configured === "true";
+  const metaStatus = metaConfigured ? settings.meta_status || "À connecter" : settings.meta_last_sync_at ? "À reconnecter" : "À connecter";
+  const metaMessage = metaConfigured
+    ? `Synchronisation API prête${settings.meta_last_sync_at ? ` · dernière mise à jour ${dateTimeLabel(settings.meta_last_sync_at)}` : ""}.`
+    : settings.meta_last_sync_at
+      ? "Les dernières données sont conservées, mais cette version Cloudflare ne reçoit pas les trois secrets Meta."
+      : "Ajoutez les trois secrets Meta dans Cloudflare pour activer la synchronisation.";
+  const syncPeriod = settings.meta_sync_since && settings.meta_sync_until
+    ? `${dateLabel(settings.meta_sync_since)} → ${dateLabel(settings.meta_sync_until)}`
+    : "Période synchronisée depuis Meta";
   return (
     <>
       <section className="integration-banner">
-        <div><span className="meta-mark">M</span><div><strong>Meta Ads</strong><p>{settings.meta_api_configured === "true" ? `Synchronisation API prête${settings.meta_last_sync_at ? ` · dernière mise à jour ${dateTimeLabel(settings.meta_last_sync_at)}` : ""}.` : "La saisie manuelle reste disponible. Ajoutez les trois secrets Meta dans Cloudflare pour activer la synchronisation."}</p>{settings.meta_currency && settings.meta_fx_rate && <small>Devise Meta : {settings.meta_currency} · 1 {settings.meta_currency} = {Number(settings.meta_fx_rate).toFixed(4)} MAD · <a href="https://www.exchangerate-api.com" target="_blank" rel="noreferrer">Taux du jour</a></small>}{settings.meta_last_native_spend && settings.meta_last_converted_spend && settings.meta_currency && <small className="meta-conversion-summary">Dernière conversion : {Number(settings.meta_last_native_spend).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} {settings.meta_currency} → {money(Number(settings.meta_last_converted_spend))}</small>}{settings.meta_last_error && <small className="meta-sync-error">{settings.meta_last_error}</small>}</div></div>
-        <div className="meta-sync-actions"><Status value={settings.meta_status || "À connecter"} />{access.isOwner && <button type="button" className="secondary-button" disabled={settings.meta_api_configured !== "true"} onClick={() => void submit("syncMetaNow", {})}>↻ Synchroniser Meta</button>}</div>
+        <div><span className="meta-mark">M</span><div><strong>Meta Ads</strong><p>{metaMessage}</p>{settings.meta_currency && settings.meta_fx_rate && <small>Devise Meta : {settings.meta_currency} · 1 {settings.meta_currency} = {Number(settings.meta_fx_rate).toFixed(4)} MAD · <a href="https://www.exchangerate-api.com" target="_blank" rel="noreferrer">Taux du jour</a></small>}{settings.meta_last_native_spend && settings.meta_last_converted_spend && settings.meta_currency && <small className="meta-conversion-summary">Dernière conversion : {Number(settings.meta_last_native_spend).toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {settings.meta_currency} → {money(Number(settings.meta_last_converted_spend))}</small>}{settings.meta_last_error && <small className="meta-sync-error">{settings.meta_last_error}</small>}</div></div>
+        <div className="meta-sync-actions"><Status value={metaStatus} />{access.isOwner && <button type="button" className="secondary-button" onClick={() => void submit("syncMetaNow", {})}>↻ Recalculer depuis Meta</button>}</div>
+      </section>
+      <section className="meta-spend-explainer" aria-label="Comprendre les dépenses Meta">
+        <strong>Le texte « 10$/j » dans le nom d’une campagne indique son nom ou son budget, pas la dépense réellement facturée.</strong>
+        <p>Après synchronisation, chaque carte affiche le montant exact reçu de Meta dans la devise du compte, puis sa conversion en MAD.</p>
       </section>
       <section className="kpi-grid three">
-        <Kpi label="Dépenses" value={money(spend)} detail="Toutes les données converties en MAD" />
+        <Kpi label="Dépenses réelles" value={money(spend)} detail={`${syncPeriod} · converties en MAD`} />
         <Kpi label="CA attribué" value={money(revenue)} detail={`${count} commandes`} />
         <Kpi label="ROAS" value={`${spend ? (revenue / spend).toFixed(2) : "0.00"}×`} detail="CA attribué ÷ dépenses" />
       </section>
@@ -2342,18 +2418,19 @@ function AdsPage({ ads, settings, access, submit, onAdd, onEdit, onDelete }: { a
           <button className="primary-button" onClick={onAdd}>＋ Saisir une campagne</button>
         </div>
         <div className="ad-grid">
-          {ads.map((ad) => (
-            <article className="ad-card" key={ad.id}>
+          {summaries.map((ad) => (
+            <article className="ad-card" key={ad.key}>
               <div className="ad-card-heading">
                 <div><span>{ad.platform}</span><h3>{ad.campaign}</h3></div>
-                <RecordActions label={`la campagne ${ad.campaign}`} onEdit={() => onEdit({ kind: "ad", record: ad })} onDelete={() => onDelete({ kind: "ad", record: ad })} />
+                {ad.source !== "Meta API" && <RecordActions label={`la campagne ${ad.campaign}`} onEdit={() => onEdit({ kind: "ad", record: ad.record })} onDelete={() => onDelete({ kind: "ad", record: ad.record })} />}
               </div>
               <div>
-                <p>Dépenses<strong>{money(ad.spend)}</strong></p>
+                <p>Dépense réelle<strong>{money(ad.spend)}</strong></p>
                 <p>CA attribué<strong>{money(ad.revenue)}</strong></p>
                 <p>ROAS<strong>{ad.spend ? (ad.revenue / ad.spend).toFixed(2) : "0"}×</strong></p>
               </div>
-              <small>{ad.source} · {dateLabel(ad.performanceDate)}</small>
+              {ad.source === "Meta API" && settings.meta_import_revision === "2" && <small className="ad-native-conversion">Reçu de Meta : {nativeMoney(ad.nativeSpendCents, ad.nativeCurrency)} → {money(ad.spend)}</small>}
+              <small>{ad.source} · {ad.firstDate === ad.lastDate ? dateLabel(ad.lastDate) : `${dateLabel(ad.firstDate)} → ${dateLabel(ad.lastDate)}`}{ad.rowCount > 1 ? ` · ${ad.rowCount} jours` : ""}{ad.externalId ? ` · ID ${ad.externalId}` : ""}</small>
             </article>
           ))}
         </div>

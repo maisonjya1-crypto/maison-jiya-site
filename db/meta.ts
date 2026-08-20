@@ -1,9 +1,9 @@
-import { and, eq, inArray } from "drizzle-orm";
-import { getDb } from ".";
-import { adPerformance, settings } from "./schema";
+import { getDb, getRawDb } from ".";
+import { settings } from "./schema";
 
 type MetaAction = { action_type?: string; value?: string };
 type MetaInsight = {
+  campaign_id?: string;
   campaign_name?: string;
   publisher_platform?: string;
   spend?: string;
@@ -23,6 +23,15 @@ type MetaAdAccountResponse = {
 type ExchangeRateResponse = {
   result?: string;
   rates?: Record<string, number>;
+};
+type AggregatedMetaInsight = {
+  externalId: string;
+  campaign: string;
+  platform: string;
+  performanceDate: string;
+  nativeSpend: number;
+  nativeRevenue: number;
+  orderCount: number;
 };
 
 function actionTotal(actions: MetaAction[] | undefined, accepted: string[]) {
@@ -91,17 +100,14 @@ export async function syncMetaAds(days = 31) {
   }
   if (!/^v\d+\.\d+$/.test(apiVersion) || !/^(act_)?\d+$/.test(rawAccount)) {
     await updateMetaSetting("meta_status", "Configuration invalide");
-    return { configured: true, imported: 0, message: "La version API ou l’identifiant du compte publicitaire est invalide." };
+    return { configured: true, imported: 0, failed: true, message: "La version API ou l’identifiant du compte publicitaire est invalide." };
   }
 
   const accountId = rawAccount.startsWith("act_") ? rawAccount : `act_${rawAccount}`;
   const since = new Date(Date.now() - Math.max(1, Math.min(days, 90)) * 86_400_000).toISOString().slice(0, 10);
   const until = new Date().toISOString().slice(0, 10);
-  let imported = 0;
   let pageCount = 0;
-  let nativeSpendTotal = 0;
-  let convertedSpendTotal = 0;
-  const db = await getDb();
+  const aggregated = new Map<string, AggregatedMetaInsight>();
 
   try {
     const accountParams = new URLSearchParams({ access_token: accessToken, fields: "currency" });
@@ -117,53 +123,88 @@ export async function syncMetaAds(days = 31) {
     const params = new URLSearchParams({
       access_token: accessToken,
       level: "campaign",
-      fields: "campaign_name,spend,actions,action_values,date_start",
+      fields: "campaign_id,campaign_name,spend,actions,action_values,date_start",
       breakdowns: "publisher_platform",
       time_increment: "1",
       time_range: JSON.stringify({ since, until }),
       limit: "250",
     });
     let nextUrl: string | undefined = `https://graph.facebook.com/${apiVersion}/${accountId}/insights?${params.toString()}`;
-    while (nextUrl && pageCount < 12) {
+    while (nextUrl && pageCount < 50) {
       const response = await fetch(nextUrl, { signal: AbortSignal.timeout(15_000), headers: { accept: "application/json" } });
       const contentType = response.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) throw new Error(`Réponse Meta inattendue (${response.status}).`);
       const body = await response.json() as MetaInsightsResponse;
       if (!response.ok || body.error) throw new Error(body.error?.message || `Meta a répondu ${response.status}.`);
       for (const row of body.data || []) {
+        const externalId = (row.campaign_id || "").trim().slice(0, 80);
         const campaign = (row.campaign_name || "Campagne Meta").slice(0, 160);
         const platform = (row.publisher_platform || "Meta").replace(/^./, (letter) => letter.toUpperCase()).slice(0, 60);
         const performanceDate = /^\d{4}-\d{2}-\d{2}$/.test(row.date_start || "") ? row.date_start! : until;
         const nativeSpend = Math.max(0, Number(row.spend) || 0);
-        const spend = Math.max(0, Math.round(nativeSpend * fx.rate));
-        const revenue = Math.max(0, Math.round(actionTotal(row.action_values, ["purchase", "omni_purchase", "offsite_conversion.fb_pixel_purchase"]) * fx.rate));
+        const nativeRevenue = Math.max(0, actionTotal(row.action_values, ["purchase", "omni_purchase", "offsite_conversion.fb_pixel_purchase"]));
         const orderCount = Math.max(0, Math.round(actionTotal(row.actions, ["purchase", "omni_purchase", "offsite_conversion.fb_pixel_purchase"])));
-        nativeSpendTotal += nativeSpend;
-        convertedSpendTotal += spend;
-        const existingRows = await db.select({ id: adPerformance.id }).from(adPerformance).where(and(
-          eq(adPerformance.campaign, campaign),
-          eq(adPerformance.platform, platform),
-          eq(adPerformance.performanceDate, performanceDate),
-          eq(adPerformance.source, "Meta API"),
-        ));
-        if (existingRows.length) {
-          await db.update(adPerformance).set({ spend, revenue, orderCount }).where(eq(adPerformance.id, existingRows[0].id));
-          if (existingRows.length > 1) await db.delete(adPerformance).where(inArray(adPerformance.id, existingRows.slice(1).map((entry) => entry.id)));
+        const key = `${externalId || `name:${campaign}`}\u001f${platform}\u001f${performanceDate}`;
+        const current = aggregated.get(key);
+        if (current) {
+          current.nativeSpend += nativeSpend;
+          current.nativeRevenue += nativeRevenue;
+          current.orderCount += orderCount;
         } else {
-          await db.insert(adPerformance).values({ platform, campaign, spend, revenue, orderCount, source: "Meta API", performanceDate });
+          aggregated.set(key, { externalId, campaign, platform, performanceDate, nativeSpend, nativeRevenue, orderCount });
         }
-        imported += 1;
       }
       nextUrl = body.paging?.next;
       pageCount += 1;
     }
+
+    if (nextUrl) throw new Error("Meta a renvoyé trop de pages. Réduisez la période puis réessayez.");
+
+    const importedRows = [...aggregated.values()].map((row) => ({
+      ...row,
+      spend: Math.max(0, Math.round(row.nativeSpend * fx.rate)),
+      revenue: Math.max(0, Math.round(row.nativeRevenue * fx.rate)),
+      nativeSpendCents: Math.max(0, Math.round(row.nativeSpend * 100)),
+      nativeRevenueCents: Math.max(0, Math.round(row.nativeRevenue * 100)),
+    }));
+    const database = await getRawDb();
+    await database.prepare("DELETE FROM ad_performance WHERE source = ?1 AND performance_date >= ?2 AND performance_date <= ?3")
+      .bind("Meta API", since, until)
+      .run();
+    for (let offset = 0; offset < importedRows.length; offset += 50) {
+      const chunk = importedRows.slice(offset, offset + 50);
+      await database.batch(chunk.map((row) => database.prepare(`
+        INSERT INTO ad_performance (
+          platform, campaign, external_id, spend, revenue, order_count,
+          native_spend_cents, native_revenue_cents, native_currency, source, performance_date
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'Meta API', ?10)
+      `).bind(
+        row.platform,
+        row.campaign,
+        row.externalId,
+        row.spend,
+        row.revenue,
+        row.orderCount,
+        row.nativeSpendCents,
+        row.nativeRevenueCents,
+        accountCurrency,
+        row.performanceDate,
+      )));
+    }
+
+    const nativeSpendTotal = importedRows.reduce((sum, row) => sum + row.nativeSpend, 0);
+    const convertedSpendTotal = importedRows.reduce((sum, row) => sum + row.spend, 0);
+    const imported = importedRows.length;
     await updateMetaSetting("meta_status", "Connecté");
     await updateMetaSetting("meta_last_sync_at", new Date().toISOString());
     await updateMetaSetting("meta_last_error", "");
     await updateMetaSetting("meta_last_native_spend", nativeSpendTotal.toFixed(2));
     await updateMetaSetting("meta_last_converted_spend", String(Math.round(convertedSpendTotal)));
+    await updateMetaSetting("meta_import_revision", "2");
+    await updateMetaSetting("meta_sync_since", since);
+    await updateMetaSetting("meta_sync_until", until);
     const conversion = accountCurrency === "MAD" ? "devise MAD" : `1 ${accountCurrency} = ${fx.rate.toFixed(4)} MAD`;
-    return { configured: true, imported, failed: false, message: `${imported} ligne(s) Meta Ads synchronisée(s) · ${conversion}.` };
+    return { configured: true, imported, failed: false, message: `${imported} ligne(s) Meta reconstruites sans doublon · ${conversion}.` };
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 240) : "Synchronisation Meta impossible.";
     await updateMetaSetting("meta_status", "Erreur de synchronisation");

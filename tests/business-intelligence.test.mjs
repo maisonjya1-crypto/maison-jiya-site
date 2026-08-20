@@ -48,8 +48,9 @@ test("Meta Ads détecte la devise du compte et convertit dépenses et revenus en
   assert.match(meta, /fields: "currency"/);
   assert.match(meta, /open\.er-api\.com\/v6\/latest/);
   assert.match(meta, /nativeSpend \* fx\.rate/);
-  assert.match(meta, /actionTotal\(row\.action_values.*\* fx\.rate/);
-  assert.match(dashboard, /Toutes les données converties en MAD/);
+  assert.match(meta, /actionTotal\(row\.action_values/);
+  assert.match(meta, /row\.nativeRevenue \* fx\.rate/);
+  assert.match(dashboard, /converties en MAD/);
 });
 
 test("réinvestissement, salaire et fonds d’urgence sont des écritures liées aux commandes", () => {
