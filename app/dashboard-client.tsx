@@ -2178,6 +2178,10 @@ function ImportProductsPanel({ products, canEdit, submit }: { products: Product[
 }
 
 function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, submit, onAdd, onMove, onCount, onEdit, onDelete }: { products: Product[]; orders: Order[]; movements: StockMovement[]; inventoryCounts: InventoryCount[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onMove: (selection: StockSelection) => void; onCount: (product: Product) => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+  const [profitSearch, setProfitSearch] = useState("");
+  const [profitCategory, setProfitCategory] = useState("");
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogCategory, setCatalogCategory] = useState("");
   const units = products.reduce((sum, product) => sum + product.stockQuantity, 0),
     purchaseValue = products.reduce((sum, product) => sum + product.stockQuantity * product.purchasePrice, 0),
     saleValue = products.reduce((sum, product) => sum + product.stockQuantity * product.salePrice, 0),
@@ -2199,6 +2203,16 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
       margin: revenue ? (profit / revenue) * 100 : 0,
     };
   }).sort((left, right) => right.profit - left.profit);
+  const productCategories = Array.from(new Set(products.map((product) => product.category).filter(Boolean)))
+    .sort((left, right) => left.localeCompare(right, "fr", { sensitivity: "base" }));
+  const productMatches = (product: Product, search: string, category: string) => {
+    const query = search.trim().toLocaleLowerCase("fr");
+    const searchable = `${product.name} ${product.productCode}`.toLocaleLowerCase("fr");
+    return (!category || product.category === category) && (!query || searchable.includes(query));
+  };
+  const filteredProfitability = profitability.filter((row) => productMatches(row.product, profitSearch, profitCategory));
+  const filteredProducts = products.filter((product) => productMatches(product, catalogSearch, catalogCategory));
+  const filteredProfit = filteredProfitability.reduce((sum, row) => sum + row.profit, 0);
   return (
     <>
       <section className="kpi-grid stock-kpis">
@@ -2208,121 +2222,143 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
         <Kpi label="Valeur de vente" value={money(saleValue)} detail="Potentiel du stock" />
       </section>
       <ImportProductsPanel products={products} canEdit={canEdit} submit={submit} />
-      <section className="panel product-profit-panel">
-        <PanelHead kicker="Rentabilité" title="Bénéfice par produit" total={money(profitability.reduce((sum, row) => sum + row.profit, 0))} />
-        <p className="profitability-note">Calcul automatique sur les commandes livrées, selon les coûts saisis : produit, livraison, publicité, frais et retours.</p>
-        {products.length === 0 ? (
-          <EmptyState title="Aucune rentabilité à calculer" text="Ajoutez un produit puis rattachez-le à vos commandes." />
-        ) : (
-          <div className="table-scroll profitability-table">
-            <table>
-              <thead><tr><th>Produit</th><th>Unités livrées</th><th>CA livré</th><th>Coûts</th><th>Bénéfice net</th><th>Marge</th></tr></thead>
-              <tbody>
-                {profitability.map((row) => (
-                  <tr key={row.product.id}>
-                    <td><strong>{row.product.name}</strong><small>{row.product.productCode}</small></td>
-                    <td>{row.deliveredUnits}</td>
-                    <td>{money(row.revenue)}</td>
-                    <td>{money(row.costs)}</td>
-                    <td className={moneyTone(row.profit)}><strong>{money(row.profit)}</strong></td>
-                    <td><span className={`margin-chip ${row.margin < 0 ? "negative" : row.margin > 0 ? "positive" : "neutral"}`}>{row.margin.toFixed(1)} %</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-      <section className="panel page-panel products-panel">
-        <div className="section-toolbar">
-          <div><h2>Catalogue & stock</h2><p>Les commandes confirmées déduisent le stock. Utilisez « Sortie » seulement pour une correction manuelle.</p></div>
-          <button className="primary-button" onClick={onAdd}>＋ Ajouter un produit</button>
-        </div>
-        {products.length === 0 ? (
-          <EmptyState title="Aucun produit" text="Ajoutez votre premier produit pour commencer le suivi du stock." />
-        ) : (
-          <>
-            <div className="desktop-product-table table-scroll">
+      <details className="panel product-disclosure product-profit-panel">
+        <summary className="product-disclosure-summary">
+          <div><span className="card-kicker">Rentabilité</span><h2>Bénéfice par produit</h2><p>Cliquez pour rechercher, filtrer et afficher les bénéfices.</p></div>
+          <div className="product-disclosure-meta"><strong>{money(filteredProfit)}</strong><span className="product-disclosure-toggle" aria-hidden="true">⌄</span></div>
+        </summary>
+        <div className="product-disclosure-body">
+          <ProductFilterBar search={profitSearch} category={profitCategory} categories={productCategories} resultCount={filteredProfitability.length} totalCount={products.length} onSearch={setProfitSearch} onCategory={setProfitCategory} />
+          <p className="profitability-note">Calcul automatique sur les commandes livrées, selon les coûts saisis : produit, livraison, publicité, frais et retours.</p>
+          {products.length === 0 ? (
+            <EmptyState title="Aucune rentabilité à calculer" text="Ajoutez un produit puis rattachez-le à vos commandes." />
+          ) : filteredProfitability.length === 0 ? (
+            <EmptyState title="Aucun produit trouvé" text="Modifiez la recherche ou choisissez une autre catégorie." />
+          ) : (
+            <div className="table-scroll profitability-table">
               <table>
-                <thead><tr><th>ID produit</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Minimum</th><th>Restant</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Produit</th><th>Unités livrées</th><th>CA livré</th><th>Coûts</th><th>Bénéfice net</th><th>Marge</th></tr></thead>
                 <tbody>
-                  {products.map((product) => (
-                    <tr key={product.id}>
-                      <td><strong>{product.productCode}</strong></td>
-                      <td>{product.name}</td>
-                      <td><span className="category-chip">{product.category}</span></td>
-                      <td>{money(product.purchasePrice)}</td>
-                      <td><strong>{money(product.salePrice)}</strong></td>
-                      <td>{money(product.minimumSalePrice || product.salePrice)}</td>
-                      <td><StockLevel quantity={product.stockQuantity} /></td>
-                      <td>
-                        <div className="entity-actions-row">
-                          <div className="stock-actions">
-                            <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Stock</button>
-                            <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Sortie</button>
-                            <button className="inventory-button" onClick={() => onCount(product)}>≋ Inventaire</button>
+                  {filteredProfitability.map((row) => (
+                    <tr key={row.product.id}>
+                      <td><strong>{row.product.name}</strong><small>{row.product.productCode}</small></td>
+                      <td>{row.deliveredUnits}</td>
+                      <td>{money(row.revenue)}</td>
+                      <td>{money(row.costs)}</td>
+                      <td className={moneyTone(row.profit)}><strong>{money(row.profit)}</strong></td>
+                      <td><span className={`margin-chip ${row.margin < 0 ? "negative" : row.margin > 0 ? "positive" : "neutral"}`}>{row.margin.toFixed(1)} %</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </details>
+      <details className="panel product-disclosure product-catalog-panel">
+        <summary className="product-disclosure-summary">
+          <div><span className="card-kicker">Produits</span><h2>Catalogue & stock</h2><p>Cliquez pour rechercher, filtrer ou gérer les produits.</p></div>
+          <div className="product-disclosure-meta"><strong>{filteredProducts.length} / {products.length}</strong><span className="product-disclosure-toggle" aria-hidden="true">⌄</span></div>
+        </summary>
+        <div className="product-disclosure-body">
+          <div className="product-catalog-actions">
+            <p>Les commandes confirmées déduisent le stock. Utilisez « Sortie » seulement pour une correction manuelle.</p>
+            <button className="primary-button" onClick={onAdd}>＋ Ajouter un produit</button>
+          </div>
+          <ProductFilterBar search={catalogSearch} category={catalogCategory} categories={productCategories} resultCount={filteredProducts.length} totalCount={products.length} onSearch={setCatalogSearch} onCategory={setCatalogCategory} />
+          {products.length === 0 ? (
+            <EmptyState title="Aucun produit" text="Ajoutez votre premier produit pour commencer le suivi du stock." />
+          ) : filteredProducts.length === 0 ? (
+            <EmptyState title="Aucun produit trouvé" text="Modifiez la recherche ou choisissez une autre catégorie." />
+          ) : (
+            <>
+              <div className="desktop-product-table table-scroll">
+                <table>
+                  <thead><tr><th>ID produit</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Minimum</th><th>Restant</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    {filteredProducts.map((product) => (
+                      <tr key={product.id}>
+                        <td><strong>{product.productCode}</strong></td>
+                        <td>{product.name}</td>
+                        <td><span className="category-chip">{product.category}</span></td>
+                        <td>{money(product.purchasePrice)}</td>
+                        <td><strong>{money(product.salePrice)}</strong></td>
+                        <td>{money(product.minimumSalePrice || product.salePrice)}</td>
+                        <td><StockLevel quantity={product.stockQuantity} /></td>
+                        <td>
+                          <div className="entity-actions-row">
+                            <div className="stock-actions">
+                              <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Stock</button>
+                              <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Sortie</button>
+                              <button className="inventory-button" onClick={() => onCount(product)}>≋ Inventaire</button>
+                            </div>
+                            <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />
                           </div>
-                          <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />
-                        </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mobile-product-list">
+                {filteredProducts.map((product) => (
+                  <article className="product-card" key={product.id}>
+                    <div className="product-card-head">
+                      <div><span>{product.productCode}</span><h3>{product.name}</h3></div>
+                      <div className="product-card-actions">
+                        <StockLevel quantity={product.stockQuantity} />
+                        <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />
+                      </div>
+                    </div>
+                    <span className="category-chip">{product.category}</span>
+                    <div className="product-prices">
+                      <p>Prix d’achat<strong>{money(product.purchasePrice)}</strong></p>
+                      <p>Prix de vente<strong>{money(product.salePrice)}</strong></p>
+                      <p>Prix minimum<strong>{money(product.minimumSalePrice || product.salePrice)}</strong></p>
+                    </div>
+                    <div className="stock-actions">
+                      <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Ajouter du stock</button>
+                      <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Sortie manuelle</button>
+                      <button className="inventory-button" onClick={() => onCount(product)}>≋ Faire l’inventaire</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </details>
+      <details className="panel product-disclosure stock-history">
+        <summary className="product-disclosure-summary">
+          <div><span className="card-kicker">Historique</span><h2>Derniers mouvements</h2><p>Cliquez pour afficher les entrées, sorties et inventaires récents.</p></div>
+          <div className="product-disclosure-meta"><strong>{movements.length}</strong><span className="product-disclosure-toggle" aria-hidden="true">⌄</span></div>
+        </summary>
+        <div className="product-disclosure-body">
+          {movements.length === 0 ? (
+            <EmptyState title="Aucun mouvement" text="Les entrées et les ventes apparaîtront ici." />
+          ) : (
+            <div className="table-scroll">
+              <table>
+                <thead><tr><th>Date</th><th>Produit</th><th>Mouvement</th><th>Quantité</th><th>Note</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {movements.slice(0, 12).map((movement) => (
+                    <tr key={movement.id}>
+                      <td>{dateLabel(movement.createdAt)}</td>
+                      <td><strong>{movement.productName}</strong><small>{movement.productCode}</small></td>
+                      <td><Status value={movement.movementType} /></td>
+                      <td className={["Entrée", "Réintégration", "Inventaire +"].includes(movement.movementType) ? "money-positive" : "money-negative"}>{["Entrée", "Réintégration", "Inventaire +"].includes(movement.movementType) ? "+" : "−"}{movement.quantity}</td>
+                      <td>{movement.note || "—"}</td>
+                      <td className="order-actions-cell">
+                        {movement.orderId || movement.movementType.startsWith("Inventaire") ? <span className="automatic-movement">{movement.orderId ? "Automatique" : "Inventaire"}</span> : <RecordActions label="ce mouvement de stock" onEdit={() => onEdit({ kind: "movement", record: movement })} onDelete={() => onDelete({ kind: "movement", record: movement })} />}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <div className="mobile-product-list">
-              {products.map((product) => (
-                <article className="product-card" key={product.id}>
-                  <div className="product-card-head">
-                    <div><span>{product.productCode}</span><h3>{product.name}</h3></div>
-                    <div className="product-card-actions">
-                      <StockLevel quantity={product.stockQuantity} />
-                      <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />
-                    </div>
-                  </div>
-                  <span className="category-chip">{product.category}</span>
-                  <div className="product-prices">
-                    <p>Prix d’achat<strong>{money(product.purchasePrice)}</strong></p>
-                    <p>Prix de vente<strong>{money(product.salePrice)}</strong></p>
-                    <p>Prix minimum<strong>{money(product.minimumSalePrice || product.salePrice)}</strong></p>
-                  </div>
-                  <div className="stock-actions">
-                    <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Ajouter du stock</button>
-                    <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Sortie manuelle</button>
-                    <button className="inventory-button" onClick={() => onCount(product)}>≋ Faire l’inventaire</button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </>
-        )}
-      </section>
-      <section className="panel stock-history">
-        <PanelHead kicker="Historique" title="Derniers mouvements" total={String(movements.length)} />
-        {movements.length === 0 ? (
-          <EmptyState title="Aucun mouvement" text="Les entrées et les ventes apparaîtront ici." />
-        ) : (
-          <div className="table-scroll">
-            <table>
-              <thead><tr><th>Date</th><th>Produit</th><th>Mouvement</th><th>Quantité</th><th>Note</th><th>Actions</th></tr></thead>
-              <tbody>
-                {movements.slice(0, 12).map((movement) => (
-                  <tr key={movement.id}>
-                    <td>{dateLabel(movement.createdAt)}</td>
-                    <td><strong>{movement.productName}</strong><small>{movement.productCode}</small></td>
-                    <td><Status value={movement.movementType} /></td>
-                    <td className={["Entrée", "Réintégration", "Inventaire +"].includes(movement.movementType) ? "money-positive" : "money-negative"}>{["Entrée", "Réintégration", "Inventaire +"].includes(movement.movementType) ? "+" : "−"}{movement.quantity}</td>
-                    <td>{movement.note || "—"}</td>
-                    <td className="order-actions-cell">
-                      {movement.orderId || movement.movementType.startsWith("Inventaire") ? <span className="automatic-movement">{movement.orderId ? "Automatique" : "Inventaire"}</span> : <RecordActions label="ce mouvement de stock" onEdit={() => onEdit({ kind: "movement", record: movement })} onDelete={() => onDelete({ kind: "movement", record: movement })} />}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+          )}
+        </div>
+      </details>
       <section className="panel inventory-history-panel">
         <PanelHead kicker="Contrôle physique" title="Historique des inventaires" total={String(inventoryCounts.length)} />
         {inventoryCounts.length === 0 ? (
@@ -2350,6 +2386,26 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
         )}
       </section>
     </>
+  );
+}
+function ProductFilterBar({ search, category, categories, resultCount, totalCount, onSearch, onCategory }: { search: string; category: string; categories: string[]; resultCount: number; totalCount: number; onSearch: (value: string) => void; onCategory: (value: string) => void }) {
+  const filtered = Boolean(search.trim() || category);
+  return (
+    <div className="product-filter-bar">
+      <label className="product-search-field">
+        <span>Rechercher</span>
+        <input type="search" value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Nom ou ID du produit…" />
+      </label>
+      <label className="product-category-filter">
+        <span>Catégorie</span>
+        <select value={category} onChange={(event) => onCategory(event.target.value)}>
+          <option value="">Toutes les catégories</option>
+          {categories.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      </label>
+      <div className="product-filter-result" aria-live="polite"><strong>{resultCount}</strong><span>sur {totalCount} produit{totalCount === 1 ? "" : "s"}</span></div>
+      {filtered ? <button type="button" className="product-filter-reset" onClick={() => { onSearch(""); onCategory(""); }}>Effacer les filtres</button> : null}
+    </div>
   );
 }
 function StockLevel({ quantity }: { quantity: number }) {
