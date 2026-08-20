@@ -64,6 +64,7 @@ const schemaStatements = [
     return_reason TEXT DEFAULT '' NOT NULL,
     return_note TEXT DEFAULT '' NOT NULL,
     source TEXT DEFAULT 'Non renseignée' NOT NULL,
+    campaign TEXT DEFAULT '' NOT NULL,
     fulfillment_type TEXT DEFAULT 'Livraison' NOT NULL,
     status TEXT DEFAULT 'Nouvelle' NOT NULL,
     payment_status TEXT DEFAULT 'À encaisser' NOT NULL,
@@ -109,6 +110,10 @@ const schemaStatements = [
     category TEXT NOT NULL,
     label TEXT NOT NULL,
     amount INTEGER NOT NULL,
+    account TEXT DEFAULT 'Banque' NOT NULL,
+    order_id INTEGER,
+    is_automatic INTEGER DEFAULT 0 NOT NULL,
+    auto_key TEXT UNIQUE,
     entry_date TEXT NOT NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
   )`,
@@ -219,6 +224,7 @@ async function ensureOrderColumns(database: D1Database) {
   if (!columns.has("stock_deducted")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN stock_deducted INTEGER DEFAULT 0 NOT NULL"));
   if (!columns.has("return_reason")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN return_reason TEXT DEFAULT '' NOT NULL"));
   if (!columns.has("return_note")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN return_note TEXT DEFAULT '' NOT NULL"));
+  if (!columns.has("campaign")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN campaign TEXT DEFAULT '' NOT NULL"));
   if (!columns.has("fulfillment_type")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN fulfillment_type TEXT DEFAULT 'Livraison' NOT NULL"));
   if (!columns.has("address")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN address TEXT DEFAULT '' NOT NULL"));
   if (!columns.has("carrier_dispatch_state")) statements.push(database.prepare("ALTER TABLE orders ADD COLUMN carrier_dispatch_state TEXT DEFAULT 'À autoriser' NOT NULL"));
@@ -236,10 +242,23 @@ async function ensureStockMovementColumns(database: D1Database) {
   await database.prepare("CREATE INDEX IF NOT EXISTS stock_movements_order_id_idx ON stock_movements (order_id)").run();
 }
 
+async function ensureCapitalColumns(database: D1Database) {
+  const info = await database.prepare("PRAGMA table_info(capital_ledger)").all<{ name: string }>();
+  const columns = new Set(info.results.map((column) => column.name));
+  const statements: D1PreparedStatement[] = [];
+  if (!columns.has("account")) statements.push(database.prepare("ALTER TABLE capital_ledger ADD COLUMN account TEXT DEFAULT 'Banque' NOT NULL"));
+  if (!columns.has("order_id")) statements.push(database.prepare("ALTER TABLE capital_ledger ADD COLUMN order_id INTEGER"));
+  if (!columns.has("is_automatic")) statements.push(database.prepare("ALTER TABLE capital_ledger ADD COLUMN is_automatic INTEGER DEFAULT 0 NOT NULL"));
+  if (!columns.has("auto_key")) statements.push(database.prepare("ALTER TABLE capital_ledger ADD COLUMN auto_key TEXT"));
+  if (statements.length) await database.batch(statements);
+  await database.prepare("CREATE UNIQUE INDEX IF NOT EXISTS capital_ledger_auto_key_unique ON capital_ledger (auto_key)").run();
+}
+
 async function initializeDatabase(database: D1Database) {
   await database.batch(schemaStatements.map((statement) => database.prepare(statement)));
   await ensureOrderColumns(database);
   await ensureStockMovementColumns(database);
+  await ensureCapitalColumns(database);
   await database.prepare(`
     INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_name, changed_at)
     SELECT orders.id, NULL, orders.status, 'État initial', COALESCE(orders.updated_at, orders.created_at)

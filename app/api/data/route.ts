@@ -3,6 +3,8 @@ import { getDb, getRawDb } from "../../../db";
 import { createDailyBackup, purgeExpiredTrash, restoreDailyBackup } from "../../../db/backups";
 import { dispatchAuthorizedOrder, getCarrierRuntimeStatus, syncCarrierOperations } from "../../../db/carriers";
 import { moroccanPhoneHelp, normalizeMoroccanPhone } from "../../../db/phone";
+import { getMetaRuntimeStatus, syncMetaAds } from "../../../db/meta";
+import { reconcileOrderAllocations } from "../../../db/allocations";
 import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
@@ -124,6 +126,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   resetMemberPassword: { action: "Mot de passe remplacé", entityType: "Partenaire" },
   updateMember: { action: "Modification", entityType: "Partenaire" },
   addOrder: { action: "Ajout", entityType: "Commande" },
+  importOrders: { action: "Importation", entityType: "Commandes" },
   updateOrder: { action: "Modification", entityType: "Commande" },
   deleteOrder: { action: "Mise à la corbeille", entityType: "Commande" },
   restoreOrder: { action: "Restauration", entityType: "Commande" },
@@ -152,6 +155,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   createBackupNow: { action: "Création", entityType: "Sauvegarde" },
   restoreBackup: { action: "Restauration", entityType: "Sauvegarde" },
   updateCarriers: { action: "Modification", entityType: "Transporteurs" },
+  syncMetaNow: { action: "Synchronisation", entityType: "Meta Ads" },
   updateSetting: { action: "Modification", entityType: "Paramètre" },
 };
 
@@ -249,9 +253,10 @@ function hasValidOrigin(request: Request) {
 
 async function snapshot(access: AccessInfo) {
   await seedIfNeeded();
+  await reconcileOrderAllocations();
   await createDailyBackup(await getRawDb());
   const db = await getDb();
-  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
+  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, campaign: orders.campaign, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
   const [orderRows, trashRows, customerRows, purchaseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
@@ -277,9 +282,10 @@ async function snapshot(access: AccessInfo) {
   const publicSettings = settingRows.filter((row) => !row.key.startsWith("security_"));
   const backupConfigured = settingRows.some((row) => row.key === "security_backup_token_hash" && row.value.length === 64);
   const secureWebhook = settingRows.find((row) => row.key === "security_backup_webhook_url")?.value || "";
-  const [carrierRuntime, lastCarrierEvent] = await Promise.all([
+  const [carrierRuntime, lastCarrierEvent, metaRuntimeConfigured] = await Promise.all([
     getCarrierRuntimeStatus(),
     db.select({ receivedAt: carrierEvents.receivedAt }).from(carrierEvents).orderBy(desc(carrierEvents.receivedAt)).limit(1),
+    getMetaRuntimeStatus(),
   ]);
   return {
     orders: orderRows,
@@ -302,6 +308,7 @@ async function snapshot(access: AccessInfo) {
       sendit_api_configured: carrierRuntime.senditApiConfigured ? "true" : "false",
       sendit_webhook_configured: carrierRuntime.senditWebhookConfigured ? "true" : "false",
       forcelog_api_configured: carrierRuntime.forceLogApiConfigured ? "true" : "false",
+      meta_api_configured: metaRuntimeConfigured ? "true" : "false",
       carrier_last_sync_at: lastCarrierEvent[0]?.receivedAt || "",
       ...(access.isOwner ? { backup_webhook_url: secureWebhook } : {}),
     },
@@ -371,6 +378,85 @@ export async function POST(request: Request) {
       if (!memberId || !["admin", "editor", "viewer"].includes(role)) return Response.json({ error: "Compte partenaire invalide." }, { status: 400 });
       if (memberId === user.id && (!isActive || role !== "admin")) return Response.json({ error: "Le compte principal ne peut pas retirer ses propres droits administrateur." }, { status: 400 });
       await db.update(users).set({ role, isActive, updatedAt: new Date().toISOString() }).where(eq(users.id, memberId));
+    } else if (payload.action === "importOrders") {
+      let parsedRows: unknown;
+      try {
+        parsedRows = JSON.parse(textValue(payload.rows, "[]"));
+      } catch {
+        return Response.json({ error: "Le fichier importé est invalide." }, { status: 400 });
+      }
+      if (!Array.isArray(parsedRows) || !parsedRows.length || parsedRows.length > 200) {
+        return Response.json({ error: "Importez entre 1 et 200 commandes à la fois." }, { status: 400 });
+      }
+      const catalog = await db.select().from(products);
+      const byCode = new Map(catalog.map((product) => [product.productCode.toLocaleUpperCase("fr"), product]));
+      const normalizedRows = parsedRows.map((raw, index) => {
+        const row = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+        const productCode = textValue(row.productCode).toLocaleUpperCase("fr");
+        const product = byCode.get(productCode);
+        const selectedFulfillment = fulfillmentType(row.fulfillmentType);
+        const isStoreSale = selectedFulfillment === "Magasin physique";
+        const phone = normalizeMoroccanPhone(textValue(row.phone));
+        const quantity = numberValue(row.quantity, 1);
+        const status = isStoreSale ? "Livrée" : orderStatus(row.status, "En attente");
+        const city = textValue(row.city, isStoreSale ? "Casablanca" : "");
+        const address = isStoreSale ? "Magasin Maison Jiya" : textValue(row.address).slice(0, 300);
+        if (!product) throw new Error(`Ligne ${index + 2} : produit ${productCode || "non renseigné"} introuvable.`);
+        if (!phone) throw new Error(`Ligne ${index + 2} : téléphone marocain invalide.`);
+        if (!textValue(row.customerName) || !city || quantity < 1 || (!isStoreSale && !address)) throw new Error(`Ligne ${index + 2} : informations obligatoires manquantes.`);
+        return { row, product, phone, quantity, status, city, address, selectedFulfillment, isStoreSale };
+      });
+      const committedByProduct = new Map<number, number>();
+      normalizedRows.filter((row) => commitsStock(row.status)).forEach((row) => committedByProduct.set(row.product.id, (committedByProduct.get(row.product.id) || 0) + row.quantity));
+      for (const [productId, required] of committedByProduct) {
+        const product = catalog.find((item) => item.id === productId)!;
+        if (required > product.stockQuantity) return Response.json({ error: `Stock insuffisant pour ${product.productCode} : ${required} demandée(s), ${product.stockQuantity} disponible(s).` }, { status: 409 });
+      }
+      let imported = 0;
+      for (const item of normalizedRows) {
+        const { row, product, phone, quantity, status, city, address, selectedFulfillment, isStoreSale } = item;
+        const customerName = textValue(row.customerName);
+        let [customer] = await db.select().from(customers).where(eq(customers.phone, phone)).limit(1);
+        if (!customer) [customer] = await db.insert(customers).values({ name: customerName, phone, city }).returning();
+        else await db.update(customers).set({ name: customerName, city }).where(eq(customers.id, customer.id));
+        const now = new Date().toISOString();
+        const orderRef = `MJ-I${Date.now().toString(36).slice(-4).toUpperCase()}${crypto.randomUUID().slice(0, 3).toUpperCase()}`;
+        const shouldDeduct = commitsStock(status);
+        const [created] = await db.insert(orders).values({
+          orderRef,
+          customerId: customer.id,
+          productId: product.id,
+          city,
+          address,
+          products: `${product.name} · ${product.productCode}`,
+          quantity,
+          saleAmount: numberValue(row.saleAmount, product.salePrice * quantity),
+          productCost: product.purchasePrice * quantity,
+          shippingCost: isStoreSale ? 0 : numberValue(row.shippingCost),
+          adCost: numberValue(row.adCost),
+          fees: numberValue(row.fees),
+          source: isStoreSale ? "Magasin physique" : orderSource(row.source),
+          campaign: isStoreSale ? "" : textValue(row.campaign).slice(0, 120),
+          fulfillmentType: selectedFulfillment,
+          status,
+          paymentStatus: isStoreSale ? "Encaissé" : paymentStatus(row.paymentStatus, "À encaisser"),
+          carrier: isStoreSale ? "Magasin physique" : textValue(row.carrier, "Non affecté"),
+          carrierDispatchState: isStoreSale ? "Non requis" : "À autoriser",
+          stockDeducted: shouldDeduct,
+          paidAt: isStoreSale ? now : null,
+          updatedAt: now,
+        }).returning();
+        await db.insert(orderStatusHistory).values({ orderId: created.id, toStatus: status, changedByUserId: user.id, changedByName: `${user.displayName} · import`, changedAt: now });
+        if (shouldDeduct) {
+          await db.batch([
+            db.update(products).set({ stockQuantity: sql`${products.stockQuantity} - ${quantity}` }).where(eq(products.id, product.id)),
+            db.insert(stockMovements).values({ productId: product.id, orderId: created.id, movementType: "Commande", quantity, note: `Déduction automatique · import ${orderRef}`, createdAt: now }),
+          ]);
+        }
+        imported += 1;
+      }
+      integrationMessage = `${imported} commande(s) importée(s). Stock, clients et historique ont été actualisés.`;
+      auditEntityLabel = `${imported} commande(s)`;
     } else if (payload.action === "addOrder") {
       const selectedFulfillmentType = fulfillmentType(payload.fulfillmentType);
       const isStoreSale = selectedFulfillmentType === "Magasin physique";
@@ -413,14 +499,16 @@ export async function POST(request: Request) {
       const saleAmount = numberValue(payload.saleAmount, selectedProduct.salePrice * quantity);
       const selectedPaymentStatus = isStoreSale ? "Encaissé" : "À encaisser";
       const selectedSource = isStoreSale ? "Magasin physique" : orderSource(payload.source);
+      const requestedCampaign = textValue(payload.campaign).slice(0, 120);
+      const selectedCampaign = isStoreSale || requestedCampaign === "Aucune campagne" ? "" : requestedCampaign;
       const selectedShippingCost = isStoreSale ? 0 : numberValue(payload.shippingCost);
       const selectedTrackingNumber = isStoreSale ? "" : textValue(payload.trackingNumber);
       const selectedDispatchState = isStoreSale ? "Non requis" : "À autoriser";
       const selectedPaidAt = isStoreSale ? now : null;
       const rawDb = await getRawDb();
       const statements = [
-        rawDb.prepare(`INSERT INTO orders (order_ref, customer_id, product_id, city, address, products, quantity, sale_amount, product_cost, shipping_cost, ad_cost, fees, return_cost, return_reason, return_note, source, fulfillment_type, status, payment_status, carrier, tracking_number, carrier_dispatch_state, stock_deducted, paid_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(orderRef, customer.id, productId, city, address, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, selectedShippingCost, numberValue(payload.adCost), numberValue(payload.fees), selectedReturnReason, selectedReturnNote, selectedSource, selectedFulfillmentType, selectedStatus, selectedPaymentStatus, selectedCarrier, selectedTrackingNumber, selectedDispatchState, shouldDeductStock ? 1 : 0, selectedPaidAt, now),
+        rawDb.prepare(`INSERT INTO orders (order_ref, customer_id, product_id, city, address, products, quantity, sale_amount, product_cost, shipping_cost, ad_cost, fees, return_cost, return_reason, return_note, source, campaign, fulfillment_type, status, payment_status, carrier, tracking_number, carrier_dispatch_state, stock_deducted, paid_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(orderRef, customer.id, productId, city, address, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, selectedShippingCost, numberValue(payload.adCost), numberValue(payload.fees), selectedReturnReason, selectedReturnNote, selectedSource, selectedCampaign, selectedFulfillmentType, selectedStatus, selectedPaymentStatus, selectedCarrier, selectedTrackingNumber, selectedDispatchState, shouldDeductStock ? 1 : 0, selectedPaidAt, now),
         rawDb.prepare(`INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at)
           SELECT id, NULL, ?, ?, ?, ? FROM orders WHERE order_ref = ?`).bind(selectedStatus, user.id, user.displayName, now, orderRef),
       ];
@@ -475,6 +563,8 @@ export async function POST(request: Request) {
       }
       const nextStockDeducted = existingOrder.productId ? commitsStock(nextStatus) : existingOrder.stockDeducted;
       const nextSource = isStoreSale ? "Magasin physique" : orderSource(payload.source, existingOrder.source);
+      const requestedNextCampaign = textValue(payload.campaign, existingOrder.campaign).slice(0, 120);
+      const nextCampaign = isStoreSale || requestedNextCampaign === "Aucune campagne" ? "" : requestedNextCampaign;
       const nextCarrier = isStoreSale ? "Magasin physique" : textValue(payload.carrier, existingOrder.fulfillmentType === "Magasin physique" ? "Non affecté" : existingOrder.carrier || "Non affecté");
       const nextTrackingNumber = isStoreSale ? "" : textValue(payload.trackingNumber, existingOrder.trackingNumber);
       const nextDispatchState = isStoreSale ? "Non requis" : existingOrder.fulfillmentType === "Magasin physique" ? "À autoriser" : existingOrder.carrierDispatchState;
@@ -483,8 +573,8 @@ export async function POST(request: Request) {
       const rawDb = await getRawDb();
       const statements = [
         rawDb.prepare("UPDATE customers SET phone = ? WHERE id = ?").bind(nextPhone, existingOrder.customerId),
-        rawDb.prepare(`UPDATE orders SET fulfillment_type = ?, status = ?, payment_status = ?, source = ?, address = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, carrier_dispatch_state = ?, carrier_authorized_at = ?, carrier_invoice_code = ?, return_cost = ?, return_reason = ?, return_note = ?, paid_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
-          .bind(nextFulfillmentType, nextStatus, nextPaymentStatus, nextSource, nextAddress, isStoreSale ? 0 : numberValue(payload.shippingCost), nextCarrier, nextTrackingNumber, nextDispatchState, nextCarrierAuthorizedAt, nextCarrierInvoiceCode, numberValue(payload.returnCost), nextReturnReason, nextReturnNote, paidAt, nextStockDeducted ? 1 : 0, now, id),
+        rawDb.prepare(`UPDATE orders SET fulfillment_type = ?, status = ?, payment_status = ?, source = ?, campaign = ?, address = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, carrier_dispatch_state = ?, carrier_authorized_at = ?, carrier_invoice_code = ?, return_cost = ?, return_reason = ?, return_note = ?, paid_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
+          .bind(nextFulfillmentType, nextStatus, nextPaymentStatus, nextSource, nextCampaign, nextAddress, isStoreSale ? 0 : numberValue(payload.shippingCost), nextCarrier, nextTrackingNumber, nextDispatchState, nextCarrierAuthorizedAt, nextCarrierInvoiceCode, numberValue(payload.returnCost), nextReturnReason, nextReturnNote, paidAt, nextStockDeducted ? 1 : 0, now, id),
       ];
       if (nextStatus !== existingOrder.status) {
         statements.push(rawDb.prepare("INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at) VALUES (?, ?, ?, ?, ?, ?)").bind(id, existingOrder.status, nextStatus, user.id, user.displayName, now));
@@ -531,6 +621,13 @@ export async function POST(request: Request) {
       const updated = await syncCarrierOperations();
       integrationMessage = updated ? `${updated} commande(s) mise(s) à jour depuis les agences.` : "Suivi vérifié : aucune nouvelle facturation pour le moment.";
       auditEntityLabel = "Sendit et ForceLog";
+    } else if (payload.action === "syncMetaNow") {
+      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut synchroniser Meta Ads." }, { status: 403 });
+      const result = await syncMetaAds();
+      if (!result.configured) return Response.json({ error: result.message }, { status: 409 });
+      if (!result.imported && result.message !== "0 ligne(s) Meta Ads synchronisée(s).") return Response.json({ error: result.message }, { status: 502 });
+      integrationMessage = result.message;
+      auditEntityLabel = "Meta Ads";
     } else if (payload.action === "deleteOrder") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
@@ -614,14 +711,16 @@ export async function POST(request: Request) {
       const label = textValue(payload.label);
       const entryDate = textValue(payload.entryDate);
       if (!id || !["Entrée", "Sortie"].includes(direction) || !category || !label || !/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) return Response.json({ error: "Mouvement de capital invalide." }, { status: 400 });
-      const [entry] = await db.select({ id: capitalLedger.id }).from(capitalLedger).where(eq(capitalLedger.id, id)).limit(1);
+      const [entry] = await db.select({ id: capitalLedger.id, isAutomatic: capitalLedger.isAutomatic }).from(capitalLedger).where(eq(capitalLedger.id, id)).limit(1);
       if (!entry) return Response.json({ error: "Mouvement de capital introuvable." }, { status: 404 });
+      if (entry.isAutomatic) return Response.json({ error: "Une affectation automatique liée à une commande ne peut pas être modifiée manuellement." }, { status: 409 });
       await db.update(capitalLedger).set({ direction, category, label, amount: numberValue(payload.amount), entryDate }).where(eq(capitalLedger.id, id));
     } else if (payload.action === "deleteCapital") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Mouvement de capital invalide." }, { status: 400 });
-      const [entry] = await db.select({ id: capitalLedger.id }).from(capitalLedger).where(eq(capitalLedger.id, id)).limit(1);
+      const [entry] = await db.select({ id: capitalLedger.id, isAutomatic: capitalLedger.isAutomatic }).from(capitalLedger).where(eq(capitalLedger.id, id)).limit(1);
       if (!entry) return Response.json({ error: "Mouvement de capital introuvable." }, { status: 404 });
+      if (entry.isAutomatic) return Response.json({ error: "Une affectation automatique liée à une commande ne peut pas être supprimée manuellement." }, { status: 409 });
       await db.delete(capitalLedger).where(eq(capitalLedger.id, id));
     } else if (payload.action === "addProduct") {
       const productCode = textValue(payload.productCode).toUpperCase();
@@ -910,6 +1009,7 @@ export async function POST(request: Request) {
     if (errorMessage.startsWith("Le nom d’utilisateur") || errorMessage.startsWith("Le mot de passe") || errorMessage === "Rôle invalide.") {
       return Response.json({ error: errorMessage }, { status: 400 });
     }
+    if (errorMessage.startsWith("Ligne ")) return Response.json({ error: errorMessage }, { status: 400 });
     return Response.json({ error: "L’enregistrement n’a pas abouti. Vérifiez les champs puis réessayez." }, { status: 500 });
   }
 }
