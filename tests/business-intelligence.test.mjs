@@ -47,7 +47,7 @@ test("Meta Ads utilise uniquement des secrets serveur et une version API configu
 test("Meta Ads détecte la devise du compte et convertit dépenses et revenus en MAD", () => {
   assert.match(meta, /fields: "currency"/);
   assert.match(meta, /open\.er-api\.com\/v6\/latest/);
-  assert.match(meta, /Number\(row\.spend\).*\* fx\.rate/);
+  assert.match(meta, /nativeSpend \* fx\.rate/);
   assert.match(meta, /actionTotal\(row\.action_values.*\* fx\.rate/);
   assert.match(dashboard, /Toutes les données converties en MAD/);
 });

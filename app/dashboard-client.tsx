@@ -370,6 +370,7 @@ export default function DashboardClient() {
       restoreBackup: "Sauvegarde restaurée avec succès",
       deleteOrder: "Commande placée dans la corbeille pendant 90 jours",
       restoreOrder: "Commande restaurée",
+      deleteOrderPermanently: "Commande supprimée définitivement",
       updateProduct: "Produit mis à jour",
       deleteProduct: "Produit et historique de stock supprimés",
       updateStockMovement: "Mouvement de stock mis à jour",
@@ -1242,57 +1243,66 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
         </div>
       </section>
 
-      <section className="settings-panel continuity-panel" id="backups">
-        <div className="continuity-head">
+      <details className="settings-panel settings-disclosure continuity-panel" id="backups">
+        <summary className="settings-disclosure-summary">
           <div>
             <span className="card-kicker">Continuité des données</span>
             <h2>Sauvegardes quotidiennes restaurables</h2>
+            <p>{backups.length} sauvegarde{backups.length === 1 ? "" : "s"} disponible{backups.length === 1 ? "" : "s"} · cliquez pour afficher</p>
+          </div>
+          <span className="settings-disclosure-toggle" aria-hidden="true">⌄</span>
+        </summary>
+        <div className="settings-disclosure-body">
+          <div className="settings-disclosure-actions">
             <p>Une copie complète des données commerciales est créée chaque jour et conservée pendant 90 jours. Les comptes, mots de passe et clés privées restent séparés.</p>
+            <button className="primary-button" type="button" onClick={() => void createFullBackup()} disabled={savingFullBackup || !access.isOwner}>
+              {savingFullBackup ? "Préparation…" : "＋ Sauvegarder maintenant"}
+            </button>
           </div>
-          <button className="primary-button" type="button" onClick={() => void createFullBackup()} disabled={savingFullBackup || !access.isOwner}>
-            {savingFullBackup ? "Préparation…" : "＋ Sauvegarder maintenant"}
-          </button>
+          {access.isOwner ? (
+            <div className="backup-history-list">
+              {backups.length ? backups.slice(0, 12).map((backup) => (
+                <article className="backup-history-row" key={backup.id}>
+                  <span className="backup-history-icon" aria-hidden="true">↻</span>
+                  <div>
+                    <strong>{dateTimeLabel(backup.createdAt)}</strong>
+                    <small>{backup.reason} · {backup.recordCount.toLocaleString("fr-MA")} enregistrements</small>
+                  </div>
+                  <button className="secondary-button" type="button" onClick={() => void restoreFullBackup(backup)} disabled={savingFullBackup}>Restaurer</button>
+                </article>
+              )) : <div className="empty-state"><strong>Première sauvegarde en préparation</strong><p>Elle apparaîtra ici après l’actualisation de la page.</p></div>}
+            </div>
+          ) : <p className="settings-readonly-note">Seul l’administrateur peut consulter et restaurer les sauvegardes.</p>}
         </div>
-        {access.isOwner ? (
-          <div className="backup-history-list">
-            {backups.length ? backups.slice(0, 12).map((backup) => (
-              <article className="backup-history-row" key={backup.id}>
-                <span className="backup-history-icon" aria-hidden="true">↻</span>
-                <div>
-                  <strong>{dateTimeLabel(backup.createdAt)}</strong>
-                  <small>{backup.reason} · {backup.recordCount.toLocaleString("fr-MA")} enregistrements</small>
-                </div>
-                <button className="secondary-button" type="button" onClick={() => void restoreFullBackup(backup)} disabled={savingFullBackup}>Restaurer</button>
-              </article>
-            )) : <div className="empty-state"><strong>Première sauvegarde en préparation</strong><p>Elle apparaîtra ici après l’actualisation de la page.</p></div>}
-          </div>
-        ) : <p className="settings-readonly-note">Seul l’administrateur peut consulter et restaurer les sauvegardes.</p>}
-      </section>
+      </details>
 
-      <section className="settings-panel audit-panel" id="audit">
-        <div className="continuity-head">
+      <details className="settings-panel settings-disclosure audit-panel" id="audit">
+        <summary className="settings-disclosure-summary">
           <div>
             <span className="card-kicker">Traçabilité</span>
             <h2>Journal des actions</h2>
-            <p>Le compte utilisé, l’action et l’heure sont enregistrés automatiquement pour chaque modification.</p>
+            <p>{auditLogs.length} action{auditLogs.length === 1 ? "" : "s"} récente{auditLogs.length === 1 ? "" : "s"} · cliquez pour afficher</p>
           </div>
-          <span className="backup-status active">{auditLogs.length} actions récentes</span>
-        </div>
-        {access.isOwner ? (
-          <div className="audit-list">
-            {auditLogs.length ? auditLogs.slice(0, 30).map((entry) => (
-              <article className="audit-row" key={entry.id}>
-                <span className="audit-avatar">{entry.displayName.slice(0, 1).toUpperCase()}</span>
-                <div>
-                  <strong>{entry.displayName}</strong>
-                  <small>{entry.action} · {entry.entityType}{entry.entityLabel ? ` · ${entry.entityLabel}` : entry.entityId ? ` #${entry.entityId}` : ""}</small>
-                </div>
-                <time dateTime={entry.createdAt}>{dateTimeLabel(entry.createdAt)}</time>
-              </article>
-            )) : <div className="empty-state"><strong>Aucune action enregistrée</strong><p>Les prochaines modifications apparaîtront ici.</p></div>}
+          <span className="settings-disclosure-toggle" aria-hidden="true">⌄</span>
+        </summary>
+        <div className="settings-disclosure-body">
+          <p className="settings-disclosure-description">Le compte utilisé, l’action et l’heure sont enregistrés automatiquement pour chaque modification.</p>
+          {access.isOwner ? (
+            <div className="audit-list">
+              {auditLogs.length ? auditLogs.slice(0, 30).map((entry) => (
+                <article className="audit-row" key={entry.id}>
+                  <span className="audit-avatar">{entry.displayName.slice(0, 1).toUpperCase()}</span>
+                  <div>
+                    <strong>{entry.displayName}</strong>
+                    <small>{entry.action} · {entry.entityType}{entry.entityLabel ? ` · ${entry.entityLabel}` : entry.entityId ? ` #${entry.entityId}` : ""}</small>
+                  </div>
+                  <time dateTime={entry.createdAt}>{dateTimeLabel(entry.createdAt)}</time>
+                </article>
+              )) : <div className="empty-state"><strong>Aucune action enregistrée</strong><p>Les prochaines modifications apparaîtront ici.</p></div>}
+            </div>
+          ) : <p className="settings-readonly-note">Le journal détaillé est réservé à l’administrateur.</p>}
           </div>
-        ) : <p className="settings-readonly-note">Le journal détaillé est réservé à l’administrateur.</p>}
-      </section>
+      </details>
 
       <section className="settings-panel security-settings-panel" id="security">
         <div className="security-overview">
@@ -1724,6 +1734,14 @@ function TrashPage({ orders, canRestore, submit }: { orders: Order[]; canRestore
     if (!window.confirm(`Restaurer la commande ${order.orderRef} ?\n\nElle réapparaîtra dans Commandes et Colis.`)) return;
     await submit("restoreOrder", { id: String(order.id) });
   }
+  async function removePermanently(order: Order) {
+    if (!canRestore) return;
+    const confirmed = window.confirm(
+      `Supprimer définitivement la commande ${order.orderRef} ?\n\nElle quittera la Corbeille avec son historique de statuts. Une sauvegarde de sécurité sera créée juste avant.`,
+    );
+    if (!confirmed) return;
+    await submit("deleteOrderPermanently", { id: String(order.id) });
+  }
 
   return (
     <section className="panel page-panel trash-page">
@@ -1749,7 +1767,25 @@ function TrashPage({ orders, canRestore, submit }: { orders: Order[]; canRestore
                   <small>{order.products} · {order.city} · supprimée le {dateLabel(deletedAt.toISOString())}</small>
                 </div>
                 <span className="trash-expiry">{daysLeft} jour{daysLeft > 1 ? "s" : ""} restant{daysLeft > 1 ? "s" : ""}</span>
-                <button className="secondary-button" type="button" onClick={() => void restore(order)}>↶ Restaurer</button>
+                <details className="order-actions trash-actions" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                  <summary aria-label={`Actions pour la commande supprimée ${order.orderRef}`} title="Actions">⋯</summary>
+                  <div className="order-action-menu" role="menu">
+                    <button type="button" role="menuitem" onClick={(event) => {
+                      event.currentTarget.closest("details")?.removeAttribute("open");
+                      void restore(order);
+                    }}>
+                      <span aria-hidden="true">↶</span>
+                      Restaurer
+                    </button>
+                    <button type="button" role="menuitem" className="danger" onClick={(event) => {
+                      event.currentTarget.closest("details")?.removeAttribute("open");
+                      void removePermanently(order);
+                    }}>
+                      <span aria-hidden="true">⌫</span>
+                      Supprimer définitivement
+                    </button>
+                  </div>
+                </details>
               </article>
             );
           })}
@@ -2292,7 +2328,7 @@ function AdsPage({ ads, settings, access, submit, onAdd, onEdit, onDelete }: { a
   return (
     <>
       <section className="integration-banner">
-        <div><span className="meta-mark">M</span><div><strong>Meta Ads</strong><p>{settings.meta_api_configured === "true" ? `Synchronisation API prête${settings.meta_last_sync_at ? ` · dernière mise à jour ${dateTimeLabel(settings.meta_last_sync_at)}` : ""}.` : "La saisie manuelle reste disponible. Ajoutez les trois secrets Meta dans Cloudflare pour activer la synchronisation."}</p>{settings.meta_currency && settings.meta_fx_rate && <small>Devise Meta : {settings.meta_currency} · 1 {settings.meta_currency} = {Number(settings.meta_fx_rate).toFixed(4)} MAD · <a href="https://www.exchangerate-api.com" target="_blank" rel="noreferrer">Taux par ExchangeRate-API</a></small>}{settings.meta_last_error && <small className="meta-sync-error">{settings.meta_last_error}</small>}</div></div>
+        <div><span className="meta-mark">M</span><div><strong>Meta Ads</strong><p>{settings.meta_api_configured === "true" ? `Synchronisation API prête${settings.meta_last_sync_at ? ` · dernière mise à jour ${dateTimeLabel(settings.meta_last_sync_at)}` : ""}.` : "La saisie manuelle reste disponible. Ajoutez les trois secrets Meta dans Cloudflare pour activer la synchronisation."}</p>{settings.meta_currency && settings.meta_fx_rate && <small>Devise Meta : {settings.meta_currency} · 1 {settings.meta_currency} = {Number(settings.meta_fx_rate).toFixed(4)} MAD · <a href="https://www.exchangerate-api.com" target="_blank" rel="noreferrer">Taux du jour</a></small>}{settings.meta_last_native_spend && settings.meta_last_converted_spend && settings.meta_currency && <small className="meta-conversion-summary">Dernière conversion : {Number(settings.meta_last_native_spend).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} {settings.meta_currency} → {money(Number(settings.meta_last_converted_spend))}</small>}{settings.meta_last_error && <small className="meta-sync-error">{settings.meta_last_error}</small>}</div></div>
         <div className="meta-sync-actions"><Status value={settings.meta_status || "À connecter"} />{access.isOwner && <button type="button" className="secondary-button" disabled={settings.meta_api_configured !== "true"} onClick={() => void submit("syncMetaNow", {})}>↻ Synchroniser Meta</button>}</div>
       </section>
       <section className="kpi-grid three">
@@ -2787,6 +2823,47 @@ function Status({ value }: { value: string }) {
   return <span className={`status ${tone}`}>{value}</span>;
 }
 
+function ProductPricingFields({ initialPurchasePrice = 0, initialSalePrice = 0 }: { initialPurchasePrice?: number; initialSalePrice?: number }) {
+  const [purchasePrice, setPurchasePrice] = useState(initialPurchasePrice ? String(initialPurchasePrice) : "");
+  const [salePrice, setSalePrice] = useState(initialSalePrice ? String(initialSalePrice) : "");
+  const [packagingCost, setPackagingCost] = useState("0");
+  const [adCost, setAdCost] = useState("0");
+  const [deliveryCost, setDeliveryCost] = useState("0");
+  const [otherCost, setOtherCost] = useState("0");
+  const [targetProfit, setTargetProfit] = useState("50");
+  const amount = (value: string) => Math.max(0, Number(value) || 0);
+  const totalCost = amount(purchasePrice) + amount(packagingCost) + amount(adCost) + amount(deliveryCost) + amount(otherCost);
+  const suggestedPrice = Math.ceil(totalCost + amount(targetProfit));
+  const actualProfit = amount(salePrice) - totalCost;
+  const actualMargin = amount(salePrice) ? (actualProfit / amount(salePrice)) * 100 : 0;
+
+  return (
+    <>
+      <label className="field"><span>Prix d’achat (MAD) *</span><input name="purchasePrice" type="number" inputMode="decimal" min="0" step="1" value={purchasePrice} onChange={(event) => setPurchasePrice(event.target.value)} required /></label>
+      <label className="field"><span>Prix de vente (MAD) *</span><input name="salePrice" type="number" inputMode="decimal" min="0" step="1" value={salePrice} onChange={(event) => setSalePrice(event.target.value)} required /></label>
+      <section className="product-pricing-calculator" aria-label="Calculateur du prix de vente">
+        <div className="product-pricing-head">
+          <div><strong>Ajuster le prix de vente</strong><small>Indiquez les coûts estimés pour une seule vente. Seul le prix de vente final sera enregistré.</small></div>
+          <span>Calcul en MAD</span>
+        </div>
+        <div className="product-pricing-inputs">
+          <label><span>Emballage</span><input type="number" inputMode="decimal" min="0" step="1" value={packagingCost} onChange={(event) => setPackagingCost(event.target.value)} /></label>
+          <label><span>Publicité / vente</span><input type="number" inputMode="decimal" min="0" step="1" value={adCost} onChange={(event) => setAdCost(event.target.value)} /></label>
+          <label><span>Livraison à votre charge</span><input type="number" inputMode="decimal" min="0" step="1" value={deliveryCost} onChange={(event) => setDeliveryCost(event.target.value)} /></label>
+          <label><span>Autres coûts</span><input type="number" inputMode="decimal" min="0" step="1" value={otherCost} onChange={(event) => setOtherCost(event.target.value)} /></label>
+          <label><span>Bénéfice souhaité</span><input type="number" inputMode="decimal" min="0" step="1" value={targetProfit} onChange={(event) => setTargetProfit(event.target.value)} /></label>
+        </div>
+        <div className="product-pricing-results">
+          <div><span>Coût total estimé</span><strong>{money(totalCost)}</strong></div>
+          <div><span>Prix conseillé</span><strong>{money(suggestedPrice)}</strong></div>
+          <div><span>Bénéfice avec votre prix</span><strong className={moneyTone(actualProfit)}>{money(actualProfit)}</strong><small>Marge {actualMargin.toFixed(1)} %</small></div>
+          <button type="button" onClick={() => setSalePrice(String(suggestedPrice))} disabled={!suggestedPrice}>Utiliser le prix conseillé</button>
+        </div>
+      </section>
+    </>
+  );
+}
+
 function CarrierQuoteChooser({ city, defaultCarrier = "", defaultFee = 0, locked = false }: { city: string; defaultCarrier?: string; defaultFee?: number; locked?: boolean }) {
   const [result, setResult] = useState<CarrierQuoteResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -2936,8 +3013,7 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
                 <Field label="Nom du produit *" name="name" required />
                 <Select label="Catégorie *" name="category" options={productCategoryOptions} />
                 <Field label="Quantité initiale *" name="initialQuantity" type="number" inputMode="numeric" defaultValue="0" min="0" required />
-                <Field label="Prix d’achat (MAD) *" name="purchasePrice" type="number" inputMode="decimal" min="0" required />
-                <Field label="Prix de vente (MAD) *" name="salePrice" type="number" inputMode="decimal" min="0" required />
+                <ProductPricingFields />
               </>
             )}
             {kind === "order" && (
@@ -3316,8 +3392,7 @@ function EntityModal({ selection, close, submit }: { selection: EditableEntity; 
               <Field label="ID produit / SKU *" name="productCode" defaultValue={selection.record.productCode} required />
               <Field label="Nom du produit *" name="name" defaultValue={selection.record.name} required />
               <Select label="Catégorie *" name="category" defaultValue={selection.record.category} options={productCategoryOptions} />
-              <Field label="Prix d’achat (MAD) *" name="purchasePrice" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.purchasePrice)} required />
-              <Field label="Prix de vente (MAD) *" name="salePrice" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.salePrice)} required />
+              <ProductPricingFields initialPurchasePrice={selection.record.purchasePrice} initialSalePrice={selection.record.salePrice} />
             </>}
             {selection.kind === "movement" && <>
               <div className="movement-edit-note"><strong>{selection.record.productName || "Produit"}</strong><small>Le stock restant sera recalculé automatiquement.</small></div>

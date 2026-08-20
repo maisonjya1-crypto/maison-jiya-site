@@ -130,6 +130,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   updateOrder: { action: "Modification", entityType: "Commande" },
   deleteOrder: { action: "Mise à la corbeille", entityType: "Commande" },
   restoreOrder: { action: "Restauration", entityType: "Commande" },
+  deleteOrderPermanently: { action: "Suppression définitive", entityType: "Commande" },
   updateCustomer: { action: "Modification", entityType: "Client" },
   deleteCustomer: { action: "Suppression", entityType: "Client" },
   addPurchase: { action: "Ajout", entityType: "Achat" },
@@ -641,6 +642,23 @@ export async function POST(request: Request) {
       const [existingOrder] = await db.select({ id: orders.id, orderRef: orders.orderRef }).from(orders).where(and(eq(orders.id, id), isNotNull(orders.deletedAt))).limit(1);
       if (!existingOrder) return Response.json({ error: "Commande absente de la corbeille." }, { status: 404 });
       await db.update(orders).set({ deletedAt: null, deletedByUserId: null, updatedAt: new Date().toISOString() }).where(eq(orders.id, id));
+      auditEntityLabel = existingOrder.orderRef;
+    } else if (payload.action === "deleteOrderPermanently") {
+      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut supprimer définitivement une commande." }, { status: 403 });
+      const id = numberValue(payload.id);
+      if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
+      const [existingOrder] = await db.select({ id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId }).from(orders).where(and(eq(orders.id, id), isNotNull(orders.deletedAt))).limit(1);
+      if (!existingOrder) return Response.json({ error: "Cette commande n’est pas dans la corbeille." }, { status: 404 });
+      const database = await getRawDb();
+      await createDailyBackup(database, `Avant suppression ${existingOrder.orderRef}`, true);
+      await database.batch([
+        database.prepare("UPDATE stock_movements SET order_id = NULL WHERE order_id = ?").bind(id),
+        database.prepare("DELETE FROM order_status_history WHERE order_id = ?").bind(id),
+        database.prepare("UPDATE carrier_events SET order_id = NULL WHERE order_id = ?").bind(id),
+        database.prepare("DELETE FROM capital_ledger WHERE order_id = ? AND is_automatic = 1").bind(id),
+        database.prepare("DELETE FROM orders WHERE id = ? AND deleted_at IS NOT NULL").bind(id),
+      ]);
+      await database.prepare("DELETE FROM customers WHERE id = ? AND NOT EXISTS (SELECT 1 FROM orders WHERE orders.customer_id = customers.id)").bind(existingOrder.customerId).run();
       auditEntityLabel = existingOrder.orderRef;
     } else if (payload.action === "updateCustomer") {
       const id = numberValue(payload.id);

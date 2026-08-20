@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from ".";
 import { adPerformance, settings } from "./schema";
 
@@ -99,6 +99,8 @@ export async function syncMetaAds(days = 31) {
   const until = new Date().toISOString().slice(0, 10);
   let imported = 0;
   let pageCount = 0;
+  let nativeSpendTotal = 0;
+  let convertedSpendTotal = 0;
   const db = await getDb();
 
   try {
@@ -132,17 +134,21 @@ export async function syncMetaAds(days = 31) {
         const campaign = (row.campaign_name || "Campagne Meta").slice(0, 160);
         const platform = (row.publisher_platform || "Meta").replace(/^./, (letter) => letter.toUpperCase()).slice(0, 60);
         const performanceDate = /^\d{4}-\d{2}-\d{2}$/.test(row.date_start || "") ? row.date_start! : until;
-        const spend = Math.max(0, Math.round((Number(row.spend) || 0) * fx.rate));
+        const nativeSpend = Math.max(0, Number(row.spend) || 0);
+        const spend = Math.max(0, Math.round(nativeSpend * fx.rate));
         const revenue = Math.max(0, Math.round(actionTotal(row.action_values, ["purchase", "omni_purchase", "offsite_conversion.fb_pixel_purchase"]) * fx.rate));
         const orderCount = Math.max(0, Math.round(actionTotal(row.actions, ["purchase", "omni_purchase", "offsite_conversion.fb_pixel_purchase"])));
-        const [existing] = await db.select({ id: adPerformance.id }).from(adPerformance).where(and(
+        nativeSpendTotal += nativeSpend;
+        convertedSpendTotal += spend;
+        const existingRows = await db.select({ id: adPerformance.id }).from(adPerformance).where(and(
           eq(adPerformance.campaign, campaign),
           eq(adPerformance.platform, platform),
           eq(adPerformance.performanceDate, performanceDate),
           eq(adPerformance.source, "Meta API"),
-        )).limit(1);
-        if (existing) {
-          await db.update(adPerformance).set({ spend, revenue, orderCount }).where(eq(adPerformance.id, existing.id));
+        ));
+        if (existingRows.length) {
+          await db.update(adPerformance).set({ spend, revenue, orderCount }).where(eq(adPerformance.id, existingRows[0].id));
+          if (existingRows.length > 1) await db.delete(adPerformance).where(inArray(adPerformance.id, existingRows.slice(1).map((entry) => entry.id)));
         } else {
           await db.insert(adPerformance).values({ platform, campaign, spend, revenue, orderCount, source: "Meta API", performanceDate });
         }
@@ -154,6 +160,8 @@ export async function syncMetaAds(days = 31) {
     await updateMetaSetting("meta_status", "Connecté");
     await updateMetaSetting("meta_last_sync_at", new Date().toISOString());
     await updateMetaSetting("meta_last_error", "");
+    await updateMetaSetting("meta_last_native_spend", nativeSpendTotal.toFixed(2));
+    await updateMetaSetting("meta_last_converted_spend", String(Math.round(convertedSpendTotal)));
     const conversion = accountCurrency === "MAD" ? "devise MAD" : `1 ${accountCurrency} = ${fx.rate.toFixed(4)} MAD`;
     return { configured: true, imported, failed: false, message: `${imported} ligne(s) Meta Ads synchronisée(s) · ${conversion}.` };
   } catch (error) {
