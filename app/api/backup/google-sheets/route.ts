@@ -161,8 +161,8 @@ export async function GET(request: Request) {
     if (dataset === "ads") {
       const rows = await db.select().from(adPerformance).orderBy(desc(adPerformance.performanceDate));
       return csvResponse(
-        ["ID", "Plateforme", "Campagne", "Dépense (MAD)", "Chiffre d’affaires (MAD)", "Nombre de commandes", "ROAS", "Source", "Date de performance", "Créé le"],
-        rows.map((row) => [row.id, row.platform, row.campaign, row.spend, row.revenue, row.orderCount, row.spend ? Number((row.revenue / row.spend).toFixed(2)) : 0, row.source, row.performanceDate, row.createdAt]),
+        ["ID", "Plateforme", "Campagne", "ID campagne Meta", "Dépense native", "Devise native", "Dépense (MAD)", "Chiffre d’affaires (MAD)", "Nombre de commandes", "ROAS", "Source", "Date de performance", "Créé le"],
+        rows.map((row) => [row.id, row.platform, row.campaign, row.externalId, row.nativeSpendCents / 100, row.nativeCurrency, row.spend, row.revenue, row.orderCount, row.spend ? Number((row.revenue / row.spend).toFixed(2)) : 0, row.source, row.performanceDate, row.createdAt]),
       );
     }
 

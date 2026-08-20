@@ -97,9 +97,13 @@ const schemaStatements = [
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     platform TEXT DEFAULT 'Meta Ads' NOT NULL,
     campaign TEXT NOT NULL,
+    external_id TEXT DEFAULT '' NOT NULL,
     spend INTEGER NOT NULL,
     revenue INTEGER NOT NULL,
     order_count INTEGER NOT NULL,
+    native_spend_cents INTEGER DEFAULT 0 NOT NULL,
+    native_revenue_cents INTEGER DEFAULT 0 NOT NULL,
+    native_currency TEXT DEFAULT 'MAD' NOT NULL,
     source TEXT DEFAULT 'Manuel' NOT NULL,
     performance_date TEXT NOT NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
@@ -254,11 +258,23 @@ async function ensureCapitalColumns(database: D1Database) {
   await database.prepare("CREATE UNIQUE INDEX IF NOT EXISTS capital_ledger_auto_key_unique ON capital_ledger (auto_key)").run();
 }
 
+async function ensureAdPerformanceColumns(database: D1Database) {
+  const info = await database.prepare("PRAGMA table_info(ad_performance)").all<{ name: string }>();
+  const columns = new Set(info.results.map((column) => column.name));
+  const statements: D1PreparedStatement[] = [];
+  if (!columns.has("external_id")) statements.push(database.prepare("ALTER TABLE ad_performance ADD COLUMN external_id TEXT DEFAULT '' NOT NULL"));
+  if (!columns.has("native_spend_cents")) statements.push(database.prepare("ALTER TABLE ad_performance ADD COLUMN native_spend_cents INTEGER DEFAULT 0 NOT NULL"));
+  if (!columns.has("native_revenue_cents")) statements.push(database.prepare("ALTER TABLE ad_performance ADD COLUMN native_revenue_cents INTEGER DEFAULT 0 NOT NULL"));
+  if (!columns.has("native_currency")) statements.push(database.prepare("ALTER TABLE ad_performance ADD COLUMN native_currency TEXT DEFAULT 'MAD' NOT NULL"));
+  if (statements.length) await database.batch(statements);
+}
+
 async function initializeDatabase(database: D1Database) {
   await database.batch(schemaStatements.map((statement) => database.prepare(statement)));
   await ensureOrderColumns(database);
   await ensureStockMovementColumns(database);
   await ensureCapitalColumns(database);
+  await ensureAdPerformanceColumns(database);
   await database.prepare(`
     INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_name, changed_at)
     SELECT orders.id, NULL, orders.status, 'État initial', COALESCE(orders.updated_at, orders.created_at)
