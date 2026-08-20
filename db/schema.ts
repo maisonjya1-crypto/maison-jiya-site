@@ -202,6 +202,7 @@ export const products = sqliteTable("products", {
   category: text("category").notNull(),
   purchasePrice: integer("purchase_price").notNull(),
   salePrice: integer("sale_price").notNull(),
+  minimumSalePrice: integer("minimum_sale_price").notNull().default(0),
   stockQuantity: integer("stock_quantity").notNull().default(0),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

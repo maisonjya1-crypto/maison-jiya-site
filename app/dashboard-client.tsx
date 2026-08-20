@@ -89,6 +89,7 @@ type Product = {
   category: string;
   purchasePrice: number;
   salePrice: number;
+  minimumSalePrice: number;
   stockQuantity: number;
   createdAt: string;
 };
@@ -216,7 +217,7 @@ const emptyData: Data = {
   settings: {},
   access: { canEdit: false, isOwner: false, canClaimOwnership: false, passwordConfigured: true, sessionExpiresAt: null, role: "viewer", username: "", displayName: "" },
 };
-const money = (value: number) => `${Math.round(value).toLocaleString("fr-MA")} MAD`;
+const money = (value: number) => `${Number(value).toLocaleString("fr-MA", { minimumFractionDigits: Number.isInteger(value) ? 0 : 1, maximumFractionDigits: 2 })} MAD`;
 const moneyTone = (value: number) => (value > 0 ? "money-positive" : value < 0 ? "money-negative" : "");
 const dateLabel = (value: string) =>
   new Intl.DateTimeFormat("fr-MA", {
@@ -238,7 +239,7 @@ const orderStatusOptions = ["En attente", "Confirmée", "Expédiée", "En livrai
 const returnReasonOptions = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
 const orderSourceOptions = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre"];
 const fulfillmentTypeOptions = ["Livraison", "Magasin physique"];
-const productCategoryOptions = ["Montres", "Bijoux", "Wallets", "Électronique", "Autre"];
+const productCategoryOptions = ["Montres", "Bijoux", "Wallets", "Électronique", "Boîtes", "Autre"];
 const capitalMonthLabels = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 const capitalMonthShort = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
 const capitalChartColors = ["var(--forest)", "var(--terracotta)", "var(--gold)", "#557ea4", "#8b6f9f", "#c47c8d", "#b68658", "#77869b"];
@@ -809,7 +810,7 @@ function Page({
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
 }) {
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
-  if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Achats") return <PurchasesPage purchases={data.purchases} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
@@ -1458,7 +1459,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
 }
 
 const importColumns = ["productCode", "customerName", "phone", "city", "address", "quantity", "saleAmount", "source", "fulfillmentType", "status", "paymentStatus", "campaign", "carrier", "shippingCost", "adCost", "fees"];
-function parseDelimitedOrders(text: string) {
+function parseDelimitedTable(text: string, aliases: Record<string, string>) {
   const firstLine = text.split(/\r?\n/, 1)[0] || "";
   const delimiter = firstLine.includes("\t") ? "\t" : firstLine.includes(";") ? ";" : ",";
   const rows: string[][] = [];
@@ -1478,16 +1479,33 @@ function parseDelimitedOrders(text: string) {
   row.push(current.trim());
   if (row.some(Boolean)) rows.push(row);
   if (rows.length < 2) return [];
-  const aliases: Record<string, string> = {
+  const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toLocaleLowerCase("fr");
+  const headers = rows[0].map((header) => aliases[normalize(header)] || header.trim());
+  return rows.slice(1).map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] || ""])));
+}
+
+function parseDelimitedOrders(text: string) {
+  return parseDelimitedTable(text, {
     idproduit: "productCode", produit: "productCode", productcode: "productCode", client: "customerName", nomclient: "customerName", customername: "customerName",
     telephone: "phone", phone: "phone", ville: "city", city: "city", adresse: "address", address: "address", quantite: "quantity", quantity: "quantity",
     prixvente: "saleAmount", montant: "saleAmount", saleamount: "saleAmount", source: "source", mode: "fulfillmentType", modedevente: "fulfillmentType", fulfillmenttype: "fulfillmentType",
     statut: "status", status: "status", paiement: "paymentStatus", paymentstatus: "paymentStatus", campagne: "campaign", campaign: "campaign", agence: "carrier", carrier: "carrier",
     livraison: "shippingCost", shippingcost: "shippingCost", publicite: "adCost", adcost: "adCost", frais: "fees", fees: "fees",
-  };
-  const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toLocaleLowerCase("fr");
-  const headers = rows[0].map((header) => aliases[normalize(header)] || header.trim());
-  return rows.slice(1).map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] || ""])));
+  });
+}
+
+function parseDelimitedProducts(text: string) {
+  const rows = parseDelimitedTable(text, {
+    idproduct: "productCode", idproduit: "productCode", productcode: "productCode", sku: "productCode", reference: "productCode",
+    nomduproduit: "name", nomproduit: "name", produit: "name", name: "name",
+    categorie: "category", category: "category",
+    prixdachatdh: "purchasePrice", prixachat: "purchasePrice", purchaseprice: "purchasePrice", coutdachat: "purchasePrice",
+    prixdeventedh: "salePrice", prixvente: "salePrice", saleprice: "salePrice",
+    prixdeventeminimumdh: "minimumSalePrice", prixminimum: "minimumSalePrice", minimumsaleprice: "minimumSalePrice",
+    quantitestockinitial: "initialQuantity", quantiteinitiale: "initialQuantity", stockinitial: "initialQuantity", initialquantity: "initialQuantity",
+    stockrestant: "stockRemaining", quantiterestante: "stockRemaining", stockremaining: "stockRemaining",
+  });
+  return rows.filter((row) => String(row.productCode || "").trim() || String(row.name || "").trim());
 }
 
 function ImportOrdersPanel({ products, canEdit, submit }: { products: Product[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
@@ -2101,7 +2119,65 @@ function CustomersPage({ customers, orders, onEdit, onDelete }: { customers: Cus
     </section>
   );
 }
-function ProductsPage({ products, orders, movements, inventoryCounts, onAdd, onMove, onCount, onEdit, onDelete }: { products: Product[]; orders: Order[]; movements: StockMovement[]; inventoryCounts: InventoryCount[]; onAdd: () => void; onMove: (selection: StockSelection) => void; onCount: (product: Product) => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+function ImportProductsPanel({ products, canEdit, submit }: { products: Product[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  const [content, setContent] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [conflictMode, setConflictMode] = useState<"skip" | "update">("skip");
+  const [saving, setSaving] = useState(false);
+  const parsed = useMemo(() => parseDelimitedProducts(content), [content]);
+  const existingCodes = useMemo(() => new Set(products.map((product) => product.productCode.toLocaleUpperCase("fr"))), [products]);
+  const existingCount = parsed.filter((row) => existingCodes.has(String(row.productCode || "").trim().toLocaleUpperCase("fr"))).length;
+  const newCount = parsed.length - existingCount;
+
+  async function importRows() {
+    if (!parsed.length || !canEdit || saving) return;
+    if (conflictMode === "update" && existingCount && !window.confirm(`Mettre à jour ${existingCount} produit(s) déjà présent(s), y compris leur stock restant ?`)) return;
+    setSaving(true);
+    try {
+      await submit("importProducts", { rows: JSON.stringify(parsed), conflictMode });
+      setContent("");
+      setFileName("");
+      setConflictMode("skip");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <section className="panel product-import-panel">
+      <div className="product-import-head">
+        <div><span className="card-kicker">Importation en masse</span><h2>Google Sheets ou CSV</h2><p>Chargez votre fichier : le site reconnaît automatiquement vos intitulés de colonnes et ignore les lignes vides.</p></div>
+        <label className={`product-import-file ${!canEdit ? "disabled" : ""}`}>
+          <input type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" disabled={!canEdit || saving} onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            setFileName(file.name);
+            void file.text().then(setContent);
+          }} />
+          <span>{fileName ? "Changer de fichier" : "＋ Choisir le fichier CSV"}</span>
+        </label>
+      </div>
+      {parsed.length ? (
+        <div className="product-import-preview">
+          <div className="product-import-summary">
+            <strong>{parsed.length} produit{parsed.length === 1 ? "" : "s"} reconnu{parsed.length === 1 ? "" : "s"}</strong>
+            <span>{newCount} nouveau{newCount === 1 ? "" : "x"} · {existingCount} déjà présent{existingCount === 1 ? "" : "s"}</span>
+            <small>Le stock importé correspond à « Stock restant ». Les ventes et bénéfices historiques du fichier ne créent pas de fausses commandes.</small>
+          </div>
+          <div className="table-scroll product-import-table">
+            <table><thead><tr><th>ID</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Minimum</th><th>Stock restant</th></tr></thead><tbody>
+              {parsed.slice(0, 5).map((row, index) => <tr key={`${row.productCode}-${index}`}><td><strong>{row.productCode}</strong></td><td>{row.name}</td><td>{row.category}</td><td>{row.purchasePrice || "0"} MAD</td><td>{row.salePrice || "0"} MAD</td><td>{row.minimumSalePrice || row.salePrice || "0"} MAD</td><td>{row.stockRemaining || row.initialQuantity || "0"}</td></tr>)}
+            </tbody></table>
+          </div>
+          <div className="product-import-actions">
+            <label><span>Si un ID existe déjà</span><select value={conflictMode} onChange={(event) => setConflictMode(event.target.value === "update" ? "update" : "skip")} disabled={saving}><option value="skip">Le conserver sans modification</option><option value="update">Mettre à jour informations et stock</option></select></label>
+            <button type="button" className="primary-button" disabled={!canEdit || saving} onClick={() => void importRows()}>{saving ? "Importation…" : `Importer ${parsed.length} produits`}</button>
+          </div>
+        </div>
+      ) : <p className="product-import-empty">Aucun fichier chargé. Votre fichier « Products Database.csv » sera accepté directement.</p>}
+    </section>
+  );
+}
+
+function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, submit, onAdd, onMove, onCount, onEdit, onDelete }: { products: Product[]; orders: Order[]; movements: StockMovement[]; inventoryCounts: InventoryCount[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onMove: (selection: StockSelection) => void; onCount: (product: Product) => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
   const units = products.reduce((sum, product) => sum + product.stockQuantity, 0),
     purchaseValue = products.reduce((sum, product) => sum + product.stockQuantity * product.purchasePrice, 0),
     saleValue = products.reduce((sum, product) => sum + product.stockQuantity * product.salePrice, 0),
@@ -2131,6 +2207,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, onAdd, onM
         <Kpi label="Valeur d’achat" value={money(purchaseValue)} detail="Au prix d’achat" />
         <Kpi label="Valeur de vente" value={money(saleValue)} detail="Potentiel du stock" />
       </section>
+      <ImportProductsPanel products={products} canEdit={canEdit} submit={submit} />
       <section className="panel product-profit-panel">
         <PanelHead kicker="Rentabilité" title="Bénéfice par produit" total={money(profitability.reduce((sum, row) => sum + row.profit, 0))} />
         <p className="profitability-note">Calcul automatique sur les commandes livrées, selon les coûts saisis : produit, livraison, publicité, frais et retours.</p>
@@ -2167,7 +2244,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, onAdd, onM
           <>
             <div className="desktop-product-table table-scroll">
               <table>
-                <thead><tr><th>ID produit</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Restant</th><th>Actions</th></tr></thead>
+                <thead><tr><th>ID produit</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Minimum</th><th>Restant</th><th>Actions</th></tr></thead>
                 <tbody>
                   {products.map((product) => (
                     <tr key={product.id}>
@@ -2176,6 +2253,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, onAdd, onM
                       <td><span className="category-chip">{product.category}</span></td>
                       <td>{money(product.purchasePrice)}</td>
                       <td><strong>{money(product.salePrice)}</strong></td>
+                      <td>{money(product.minimumSalePrice || product.salePrice)}</td>
                       <td><StockLevel quantity={product.stockQuantity} /></td>
                       <td>
                         <div className="entity-actions-row">
@@ -2206,6 +2284,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, onAdd, onM
                   <div className="product-prices">
                     <p>Prix d’achat<strong>{money(product.purchasePrice)}</strong></p>
                     <p>Prix de vente<strong>{money(product.salePrice)}</strong></p>
+                    <p>Prix minimum<strong>{money(product.minimumSalePrice || product.salePrice)}</strong></p>
                   </div>
                   <div className="stock-actions">
                     <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Ajouter du stock</button>
@@ -2900,7 +2979,7 @@ function Status({ value }: { value: string }) {
   return <span className={`status ${tone}`}>{value}</span>;
 }
 
-function ProductPricingFields({ initialPurchasePrice = 0, initialSalePrice = 0 }: { initialPurchasePrice?: number; initialSalePrice?: number }) {
+function ProductPricingFields({ initialPurchasePrice = 0, initialSalePrice = 0, initialMinimumSalePrice = 0 }: { initialPurchasePrice?: number; initialSalePrice?: number; initialMinimumSalePrice?: number }) {
   const [purchasePrice, setPurchasePrice] = useState(initialPurchasePrice ? String(initialPurchasePrice) : "");
   const [salePrice, setSalePrice] = useState(initialSalePrice ? String(initialSalePrice) : "");
   const [packagingCost, setPackagingCost] = useState("0");
@@ -2916,8 +2995,9 @@ function ProductPricingFields({ initialPurchasePrice = 0, initialSalePrice = 0 }
 
   return (
     <>
-      <label className="field"><span>Prix d’achat (MAD) *</span><input name="purchasePrice" type="number" inputMode="decimal" min="0" step="1" value={purchasePrice} onChange={(event) => setPurchasePrice(event.target.value)} required /></label>
-      <label className="field"><span>Prix de vente (MAD) *</span><input name="salePrice" type="number" inputMode="decimal" min="0" step="1" value={salePrice} onChange={(event) => setSalePrice(event.target.value)} required /></label>
+      <label className="field"><span>Prix d’achat (MAD) *</span><input name="purchasePrice" type="number" inputMode="decimal" min="0" step="0.01" value={purchasePrice} onChange={(event) => setPurchasePrice(event.target.value)} required /></label>
+      <label className="field"><span>Prix de vente (MAD) *</span><input name="salePrice" type="number" inputMode="decimal" min="0" step="0.01" value={salePrice} onChange={(event) => setSalePrice(event.target.value)} required /></label>
+      <label className="field"><span>Prix de vente minimum (MAD)</span><input name="minimumSalePrice" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={initialMinimumSalePrice || initialSalePrice || ""} placeholder="Même prix si vide" /></label>
       <section className="product-pricing-calculator" aria-label="Calculateur du prix de vente">
         <div className="product-pricing-head">
           <div><strong>Ajuster le prix de vente</strong><small>Indiquez les coûts estimés pour une seule vente. Seul le prix de vente final sera enregistré.</small></div>
@@ -3469,7 +3549,7 @@ function EntityModal({ selection, close, submit }: { selection: EditableEntity; 
               <Field label="ID produit / SKU *" name="productCode" defaultValue={selection.record.productCode} required />
               <Field label="Nom du produit *" name="name" defaultValue={selection.record.name} required />
               <Select label="Catégorie *" name="category" defaultValue={selection.record.category} options={productCategoryOptions} />
-              <ProductPricingFields initialPurchasePrice={selection.record.purchasePrice} initialSalePrice={selection.record.salePrice} />
+              <ProductPricingFields initialPurchasePrice={selection.record.purchasePrice} initialSalePrice={selection.record.salePrice} initialMinimumSalePrice={selection.record.minimumSalePrice} />
             </>}
             {selection.kind === "movement" && <>
               <div className="movement-edit-note"><strong>{selection.record.productName || "Produit"}</strong><small>Le stock restant sera recalculé automatiquement.</small></div>
