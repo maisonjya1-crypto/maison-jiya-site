@@ -360,12 +360,14 @@ export async function dispatchAuthorizedOrder(orderId: number, requestedCarrier:
     products: orders.products,
     saleAmount: orders.saleAmount,
     shippingCost: orders.shippingCost,
+    fulfillmentType: orders.fulfillmentType,
     status: orders.status,
     carrier: orders.carrier,
     trackingNumber: orders.trackingNumber,
     carrierDispatchState: orders.carrierDispatchState,
   }).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(and(eq(orders.id, orderId), isNull(orders.deletedAt))).limit(1);
   if (!order) return { attempted: false, success: false, message: "Commande introuvable." };
+  if (order.fulfillmentType === "Magasin physique") return { attempted: false, success: false, message: "Cette vente a été remise en magasin : aucun colis ne doit être créé." };
   if (order.status !== "Confirmée") return { attempted: false, success: false, message: "Passez d’abord la commande au statut « Confirmée »." };
   if (order.trackingNumber || order.carrierDispatchState === "Créé") return { attempted: false, success: true, trackingNumber: order.trackingNumber, message: `Ce colis est déjà créé · suivi ${order.trackingNumber}.` };
   const selectedCarrier = requestedCarrier.trim() || order.carrier;

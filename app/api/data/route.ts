@@ -28,7 +28,8 @@ function numberValue(value: unknown, fallback = 0) {
 }
 
 const orderStatuses = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
-const orderSources = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Autre", "Non renseignée"];
+const orderSources = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre", "Non renseignée"];
+const fulfillmentTypes = ["Livraison", "Magasin physique"];
 const paymentStatuses = ["À encaisser", "Encaissé", "Non encaissé", "Remboursé"];
 const stockCommittedStatuses = new Set(["Confirmée", "Expédiée", "En livraison", "Livrée", "Retour"]);
 const returnReasons = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
@@ -43,6 +44,11 @@ function orderStatus(value: unknown, fallback = "En attente") {
 function orderSource(value: unknown, fallback = "Non renseignée") {
   const source = textValue(value, fallback);
   return orderSources.includes(source) ? source : fallback;
+}
+
+function fulfillmentType(value: unknown, fallback = "Livraison") {
+  const type = textValue(value, fallback);
+  return fulfillmentTypes.includes(type) ? type : fallback;
 }
 
 function paymentStatus(value: unknown, fallback = "À encaisser") {
@@ -245,7 +251,7 @@ async function snapshot(access: AccessInfo) {
   await seedIfNeeded();
   await createDailyBackup(await getRawDb());
   const db = await getDb();
-  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
+  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
   const [orderRows, trashRows, customerRows, purchaseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
@@ -366,17 +372,19 @@ export async function POST(request: Request) {
       if (memberId === user.id && (!isActive || role !== "admin")) return Response.json({ error: "Le compte principal ne peut pas retirer ses propres droits administrateur." }, { status: 400 });
       await db.update(users).set({ role, isActive, updatedAt: new Date().toISOString() }).where(eq(users.id, memberId));
     } else if (payload.action === "addOrder") {
+      const selectedFulfillmentType = fulfillmentType(payload.fulfillmentType);
+      const isStoreSale = selectedFulfillmentType === "Magasin physique";
       const name = textValue(payload.customerName);
       const phone = normalizeMoroccanPhone(textValue(payload.phone));
-      const city = textValue(payload.city);
-      const address = textValue(payload.address).slice(0, 300);
+      const city = textValue(payload.city, isStoreSale ? "Casablanca" : "");
+      const address = isStoreSale ? "Magasin Maison Jiya" : textValue(payload.address).slice(0, 300);
       const productId = numberValue(payload.productId);
       const quantity = numberValue(payload.quantity, 1);
       if (!phone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
-      if (!name || !city || !address || !productId || quantity < 1) return Response.json({ error: "Cliente, téléphone, ville, adresse, produit et quantité sont obligatoires." }, { status: 400 });
+      if (!name || !city || !productId || quantity < 1 || (!isStoreSale && !address)) return Response.json({ error: isStoreSale ? "Cliente, téléphone, ville, produit et quantité sont obligatoires." : "Cliente, téléphone, ville, adresse, produit et quantité sont obligatoires." }, { status: 400 });
       const [selectedProduct] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
       if (!selectedProduct) return Response.json({ error: "Le produit sélectionné n’existe plus dans le catalogue." }, { status: 404 });
-      const selectedStatus = orderStatus(payload.status);
+      const selectedStatus = isStoreSale ? "Livrée" : orderStatus(payload.status);
       const selectedReturnReason = selectedStatus === "Retour" ? returnReason(payload.returnReason) : "";
       const selectedReturnNote = selectedStatus === "Retour" ? textValue(payload.returnNote).slice(0, 240) : "";
       if (selectedStatus === "Retour" && !selectedReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
@@ -394,17 +402,25 @@ export async function POST(request: Request) {
         carrierSettings.find((setting) => setting.key === "carrier_name")?.value,
       );
       const requestedCarrier = textValue(payload.carrier);
-      const selectedCarrier = requestedCarrier && (!carrierNames.length || carrierNames.includes(requestedCarrier))
-        ? requestedCarrier
-        : carrierNames[0] || "Non affecté";
+      const selectedCarrier = isStoreSale
+        ? "Magasin physique"
+        : requestedCarrier && (!carrierNames.length || carrierNames.includes(requestedCarrier))
+          ? requestedCarrier
+          : carrierNames[0] || "Non affecté";
       const orderRef = `MJ-${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
       const now = new Date().toISOString();
       const productLabel = `${selectedProduct.name} · ${selectedProduct.productCode}`;
       const saleAmount = numberValue(payload.saleAmount, selectedProduct.salePrice * quantity);
+      const selectedPaymentStatus = isStoreSale ? "Encaissé" : "À encaisser";
+      const selectedSource = isStoreSale ? "Magasin physique" : orderSource(payload.source);
+      const selectedShippingCost = isStoreSale ? 0 : numberValue(payload.shippingCost);
+      const selectedTrackingNumber = isStoreSale ? "" : textValue(payload.trackingNumber);
+      const selectedDispatchState = isStoreSale ? "Non requis" : "À autoriser";
+      const selectedPaidAt = isStoreSale ? now : null;
       const rawDb = await getRawDb();
       const statements = [
-        rawDb.prepare(`INSERT INTO orders (order_ref, customer_id, product_id, city, address, products, quantity, sale_amount, product_cost, shipping_cost, ad_cost, fees, return_cost, return_reason, return_note, source, status, payment_status, carrier, tracking_number, stock_deducted, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'À encaisser', ?, ?, ?, ?)`).bind(orderRef, customer.id, productId, city, address, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, numberValue(payload.shippingCost), numberValue(payload.adCost), numberValue(payload.fees), selectedReturnReason, selectedReturnNote, orderSource(payload.source), selectedStatus, selectedCarrier, textValue(payload.trackingNumber), shouldDeductStock ? 1 : 0, now),
+        rawDb.prepare(`INSERT INTO orders (order_ref, customer_id, product_id, city, address, products, quantity, sale_amount, product_cost, shipping_cost, ad_cost, fees, return_cost, return_reason, return_note, source, fulfillment_type, status, payment_status, carrier, tracking_number, carrier_dispatch_state, stock_deducted, paid_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(orderRef, customer.id, productId, city, address, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, selectedShippingCost, numberValue(payload.adCost), numberValue(payload.fees), selectedReturnReason, selectedReturnNote, selectedSource, selectedFulfillmentType, selectedStatus, selectedPaymentStatus, selectedCarrier, selectedTrackingNumber, selectedDispatchState, shouldDeductStock ? 1 : 0, selectedPaidAt, now),
         rawDb.prepare(`INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at)
           SELECT id, NULL, ?, ?, ?, ? FROM orders WHERE order_ref = ?`).bind(selectedStatus, user.id, user.displayName, now, orderRef),
       ];
@@ -420,17 +436,23 @@ export async function POST(request: Request) {
       if (!createdOrder) throw new Error("La commande n’a pas été créée.");
       auditEntityId = String(createdOrder.id);
       auditEntityLabel = createdOrder.orderRef;
-      if (selectedStatus === "Confirmée" && !createdOrder.trackingNumber) integrationMessage = "Commande confirmée. Aucun colis n’a été envoyé : ouvrez la commande puis autorisez l’agence choisie.";
+      if (isStoreSale) integrationMessage = "Vente en magasin enregistrée : paiement encaissé, stock déduit et capital actualisé. Aucun colis n’est nécessaire.";
+      else if (selectedStatus === "Confirmée" && !createdOrder.trackingNumber) integrationMessage = "Commande confirmée. Aucun colis n’a été envoyé : ouvrez la commande puis autorisez l’agence choisie.";
     } else if (payload.action === "updateOrder") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
       const [existingOrder] = await db.select().from(orders).where(and(eq(orders.id, id), isNull(orders.deletedAt))).limit(1);
       if (!existingOrder) return Response.json({ error: "Commande introuvable." }, { status: 404 });
-      const nextPaymentStatus = paymentStatus(payload.paymentStatus, existingOrder.paymentStatus);
-      const nextStatus = orderStatus(payload.status, existingOrder.status);
-      const nextAddress = textValue(payload.address, existingOrder.address).slice(0, 300);
+      const nextFulfillmentType = fulfillmentType(payload.fulfillmentType, existingOrder.fulfillmentType || "Livraison");
+      const isStoreSale = nextFulfillmentType === "Magasin physique";
+      const switchingToStore = isStoreSale && existingOrder.fulfillmentType !== "Magasin physique";
+      if (switchingToStore && existingOrder.trackingNumber) return Response.json({ error: "Ce colis possède déjà un numéro de suivi. Il ne peut plus être transformé en vente magasin." }, { status: 409 });
+      const nextPaymentStatus = switchingToStore ? "Encaissé" : paymentStatus(payload.paymentStatus, existingOrder.paymentStatus);
+      const nextStatus = switchingToStore ? "Livrée" : orderStatus(payload.status, existingOrder.status);
+      if (isStoreSale && !["Livrée", "Retour", "Annulée"].includes(nextStatus)) return Response.json({ error: "Une vente magasin peut être livrée, retournée ou annulée." }, { status: 400 });
+      const nextAddress = isStoreSale ? "Magasin Maison Jiya" : textValue(payload.address, existingOrder.address).slice(0, 300);
       const nextPhone = normalizeMoroccanPhone(textValue(payload.phone));
-      if (!nextAddress) return Response.json({ error: "L’adresse de livraison est obligatoire." }, { status: 400 });
+      if (!isStoreSale && !nextAddress) return Response.json({ error: "L’adresse de livraison est obligatoire." }, { status: 400 });
       if (!nextPhone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
       const [duplicatePhone] = await db.select({ id: customers.id }).from(customers).where(eq(customers.phone, nextPhone)).limit(1);
       if (duplicatePhone && duplicatePhone.id !== existingOrder.customerId) return Response.json({ error: "Ce numéro appartient déjà à un autre client." }, { status: 409 });
@@ -452,11 +474,17 @@ export async function POST(request: Request) {
         }
       }
       const nextStockDeducted = existingOrder.productId ? commitsStock(nextStatus) : existingOrder.stockDeducted;
+      const nextSource = isStoreSale ? "Magasin physique" : orderSource(payload.source, existingOrder.source);
+      const nextCarrier = isStoreSale ? "Magasin physique" : textValue(payload.carrier, existingOrder.fulfillmentType === "Magasin physique" ? "Non affecté" : existingOrder.carrier || "Non affecté");
+      const nextTrackingNumber = isStoreSale ? "" : textValue(payload.trackingNumber, existingOrder.trackingNumber);
+      const nextDispatchState = isStoreSale ? "Non requis" : existingOrder.fulfillmentType === "Magasin physique" ? "À autoriser" : existingOrder.carrierDispatchState;
+      const nextCarrierAuthorizedAt = isStoreSale ? null : existingOrder.carrierAuthorizedAt;
+      const nextCarrierInvoiceCode = isStoreSale ? "" : existingOrder.carrierInvoiceCode;
       const rawDb = await getRawDb();
       const statements = [
         rawDb.prepare("UPDATE customers SET phone = ? WHERE id = ?").bind(nextPhone, existingOrder.customerId),
-        rawDb.prepare(`UPDATE orders SET status = ?, payment_status = ?, source = ?, address = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, return_cost = ?, return_reason = ?, return_note = ?, paid_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
-          .bind(nextStatus, nextPaymentStatus, orderSource(payload.source, existingOrder.source), nextAddress, numberValue(payload.shippingCost), textValue(payload.carrier, "Non affecté"), textValue(payload.trackingNumber, existingOrder.trackingNumber), numberValue(payload.returnCost), nextReturnReason, nextReturnNote, paidAt, nextStockDeducted ? 1 : 0, now, id),
+        rawDb.prepare(`UPDATE orders SET fulfillment_type = ?, status = ?, payment_status = ?, source = ?, address = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, carrier_dispatch_state = ?, carrier_authorized_at = ?, carrier_invoice_code = ?, return_cost = ?, return_reason = ?, return_note = ?, paid_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
+          .bind(nextFulfillmentType, nextStatus, nextPaymentStatus, nextSource, nextAddress, isStoreSale ? 0 : numberValue(payload.shippingCost), nextCarrier, nextTrackingNumber, nextDispatchState, nextCarrierAuthorizedAt, nextCarrierInvoiceCode, numberValue(payload.returnCost), nextReturnReason, nextReturnNote, paidAt, nextStockDeducted ? 1 : 0, now, id),
       ];
       if (nextStatus !== existingOrder.status) {
         statements.push(rawDb.prepare("INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at) VALUES (?, ?, ?, ?, ?, ?)").bind(id, existingOrder.status, nextStatus, user.id, user.displayName, now));
@@ -474,7 +502,8 @@ export async function POST(request: Request) {
       }
       await rawDb.batch(statements);
       auditEntityLabel = existingOrder.orderRef;
-      if (nextStatus === "Confirmée" && !textValue(payload.trackingNumber, existingOrder.trackingNumber)) integrationMessage = "Commande confirmée. Aucun colis n’a été envoyé : vérifiez l’agence puis cliquez sur « Autoriser et créer le colis ».";
+      if (isStoreSale) integrationMessage = "Vente en magasin mise à jour : aucun transporteur ni frais de livraison.";
+      else if (nextStatus === "Confirmée" && !nextTrackingNumber) integrationMessage = "Commande confirmée. Aucun colis n’a été envoyé : vérifiez l’agence puis cliquez sur « Autoriser et créer le colis ».";
     } else if (payload.action === "authorizeCarrierDispatch") {
       const id = numberValue(payload.id);
       const carrier = textValue(payload.carrier);
@@ -483,8 +512,9 @@ export async function POST(request: Request) {
       const phone = normalizeMoroccanPhone(textValue(payload.phone));
       if (!address) return Response.json({ error: "L’adresse de livraison est obligatoire." }, { status: 400 });
       if (!phone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
-      const [orderToDispatch] = await db.select({ customerId: orders.customerId }).from(orders).where(and(eq(orders.id, id), isNull(orders.deletedAt))).limit(1);
+      const [orderToDispatch] = await db.select({ customerId: orders.customerId, fulfillmentType: orders.fulfillmentType }).from(orders).where(and(eq(orders.id, id), isNull(orders.deletedAt))).limit(1);
       if (!orderToDispatch) return Response.json({ error: "Commande introuvable." }, { status: 404 });
+      if (orderToDispatch.fulfillmentType === "Magasin physique") return Response.json({ error: "Cette vente a été remise en magasin : aucun colis ne doit être créé." }, { status: 409 });
       const [duplicatePhone] = await db.select({ id: customers.id }).from(customers).where(eq(customers.phone, phone)).limit(1);
       if (duplicatePhone && duplicatePhone.id !== orderToDispatch.customerId) return Response.json({ error: "Ce numéro appartient déjà à un autre client." }, { status: 409 });
       await db.batch([
