@@ -69,6 +69,7 @@ export const orders = sqliteTable("orders", {
   returnReason: text("return_reason").notNull().default(""),
   returnNote: text("return_note").notNull().default(""),
   source: text("source").notNull().default("Non renseignée"),
+  campaign: text("campaign").notNull().default(""),
   fulfillmentType: text("fulfillment_type").notNull().default("Livraison"),
   status: text("status").notNull().default("Nouvelle"),
   paymentStatus: text("payment_status").notNull().default("À encaisser"),
@@ -176,6 +177,10 @@ export const capitalLedger = sqliteTable("capital_ledger", {
   category: text("category").notNull(),
   label: text("label").notNull(),
   amount: integer("amount").notNull(),
+  account: text("account").notNull().default("Banque"),
+  orderId: integer("order_id"),
+  isAutomatic: integer("is_automatic", { mode: "boolean" }).notNull().default(false),
+  autoKey: text("auto_key").unique(),
   entryDate: text("entry_date").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

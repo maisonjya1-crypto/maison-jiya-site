@@ -101,6 +101,7 @@ export async function GET(request: Request) {
         returnReason: orders.returnReason,
         returnNote: orders.returnNote,
         source: orders.source,
+        campaign: orders.campaign,
         fulfillmentType: orders.fulfillmentType,
         status: orders.status,
         paymentStatus: orders.paymentStatus,
@@ -119,8 +120,8 @@ export async function GET(request: Request) {
       const customerNumbers = new Map([...customerRows].reverse().map((customer, index) => [customer.id, index + 1]));
 
       if (dataset === "orders") return csvResponse(
-        ["N° commande", "Référence commande", "N° client", "Cliente", "Téléphone", "Ville", "Adresse", "Produits", "Quantité", "Prix de vente (MAD)", "Coût produit (MAD)", "Frais livraison (MAD)", "Coût publicité (MAD)", "Autres frais (MAD)", "Coût retour (MAD)", "Motif du retour", "Détail du retour", "Source", "Mode de vente", "Statut", "Paiement", "Agence", "Numéro de suivi", "État création agence", "Autorisé le", "Facture agence", "Date encaissée", "Créée le", "Modifiée le", "ID technique commande", "ID technique client"],
-        orderRows.map((row) => [orderNumbers.get(row.id), row.orderRef, customerNumbers.get(row.customerId), row.customerName, row.phone, row.city, row.address, row.products, row.quantity, row.saleAmount, row.productCost, row.shippingCost, row.adCost, row.fees, row.returnCost, row.returnReason, row.returnNote, row.source, row.fulfillmentType, row.status, row.paymentStatus, row.carrier, row.trackingNumber, row.carrierDispatchState, row.carrierAuthorizedAt, row.carrierInvoiceCode, row.paidAt, row.createdAt, row.updatedAt, row.id, row.customerId]),
+        ["N° commande", "Référence commande", "N° client", "Cliente", "Téléphone", "Ville", "Adresse", "Produits", "Quantité", "Prix de vente (MAD)", "Coût produit (MAD)", "Frais livraison (MAD)", "Coût publicité (MAD)", "Autres frais (MAD)", "Coût retour (MAD)", "Motif du retour", "Détail du retour", "Source", "Campagne", "Mode de vente", "Statut", "Paiement", "Agence", "Numéro de suivi", "État création agence", "Autorisé le", "Facture agence", "Date encaissée", "Créée le", "Modifiée le", "Gain exact (MAD)", "ID technique commande", "ID technique client"],
+        orderRows.map((row) => [orderNumbers.get(row.id), row.orderRef, customerNumbers.get(row.customerId), row.customerName, row.phone, row.city, row.address, row.products, row.quantity, row.saleAmount, row.productCost, row.shippingCost, row.adCost, row.fees, row.returnCost, row.returnReason, row.returnNote, row.source, row.campaign, row.fulfillmentType, row.status, row.paymentStatus, row.carrier, row.trackingNumber, row.carrierDispatchState, row.carrierAuthorizedAt, row.carrierInvoiceCode, row.paidAt, row.createdAt, row.updatedAt, row.saleAmount - row.productCost - row.shippingCost - row.adCost - row.fees - row.returnCost, row.id, row.customerId]),
       );
 
       if (dataset === "shipments") return csvResponse(
@@ -168,8 +169,8 @@ export async function GET(request: Request) {
     if (dataset === "capital") {
       const rows = await db.select().from(capitalLedger).orderBy(desc(capitalLedger.entryDate));
       return csvResponse(
-        ["ID", "Direction", "Catégorie", "Libellé", "Montant (MAD)", "Date opération", "Créé le"],
-        rows.map((row) => [row.id, row.direction, row.category, row.label, row.amount, row.entryDate, row.createdAt]),
+        ["ID", "Direction", "Catégorie", "Libellé", "Montant (MAD)", "Compte / enveloppe", "Commande liée", "Automatique", "Date opération", "Créé le"],
+        rows.map((row) => [row.id, row.direction, row.category, row.label, row.amount, row.account, row.orderId, row.isAutomatic, row.entryDate, row.createdAt]),
       );
     }
 

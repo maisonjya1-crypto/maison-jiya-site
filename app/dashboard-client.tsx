@@ -23,6 +23,7 @@ type Order = {
   returnReason: string;
   returnNote: string;
   source: string;
+  campaign: string;
   fulfillmentType: "Livraison" | "Magasin physique";
   status: string;
   paymentStatus: string;
@@ -71,6 +72,10 @@ type Capital = {
   category: string;
   label: string;
   amount: number;
+  account: string;
+  orderId: number | null;
+  isAutomatic: boolean;
+  autoKey: string | null;
   entryDate: string;
 };
 type Product = {
@@ -224,7 +229,7 @@ const dateTimeLabel = (value: string) =>
     minute: "2-digit",
   }).format(new Date(value));
 
-const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Publicités", "Capital", "Assistant IA", "Corbeille", "Paramètres"];
+const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Publicités", "Capital", "Rapports", "Assistant IA", "Corbeille", "Paramètres"];
 const orderStatusOptions = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
 const returnReasonOptions = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
 const orderSourceOptions = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre"];
@@ -233,6 +238,11 @@ const productCategoryOptions = ["Montres", "Bijoux", "Wallets", "Électronique",
 const capitalMonthLabels = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 const capitalMonthShort = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
 const capitalChartColors = ["var(--forest)", "var(--terracotta)", "var(--gold)", "#557ea4", "#8b6f9f", "#c47c8d", "#b68658", "#77869b"];
+const exactOrderProfit = (order: Order) => order.saleAmount - order.productCost - order.shippingCost - order.adCost - order.fees - order.returnCost;
+const whatsappUrl = (phone: string | null, orderRef: string) => {
+  const digits = (phone || "").replace(/\D/g, "").replace(/^0/, "212");
+  return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(`Bonjour, nous vous contactons concernant votre commande Maison Jiya ${orderRef}.`)}` : "";
+};
 const themeOptions: { key: ThemeKey; name: string; mode: "Clair" | "Sombre"; description: string; colors: string[] }[] = [
   { key: "mauve-froid", name: "Mauve froid", mode: "Clair", description: "Mauve élégant, blanc doux et rose froid.", colors: ["#6f5680", "#a77ea7", "#f7f4f8", "#ffffff"] },
   { key: "rose-poudre", name: "Rose poudré", mode: "Clair", description: "Rose subtil, prune douce et blanc rosé.", colors: ["#a85e78", "#d190a5", "#fff7f8", "#ffffff"] },
@@ -481,7 +491,8 @@ export default function DashboardClient() {
     const adSpend = data.ads.reduce((s, a) => s + a.spend, 0);
     const adRevenue = data.ads.reduce((s, a) => s + a.revenue, 0);
     const purchases = data.purchases.filter((p) => p.paymentStatus === "Payé").reduce((s, p) => s + p.totalCost, 0);
-    const capitalNet = data.capital.reduce((s, r) => s + (r.direction === "Entrée" ? r.amount : -r.amount), 0);
+    const capitalNet = data.capital.reduce((s, r) => s + (r.direction === "Entrée" ? r.amount : r.direction === "Sortie" ? -r.amount : 0), 0);
+    const reinvest = data.capital.filter((entry) => entry.isAutomatic && entry.category === "Réinvestissement").reduce((sum, entry) => sum + entry.amount, 0);
     const profit = deliveredRevenue - costs - losses;
     const cash = capitalNet + netCollected - purchases - losses - adSpend;
     return {
@@ -496,7 +507,7 @@ export default function DashboardClient() {
       cash,
       capitalNet,
       margin: deliveredRevenue ? (profit / deliveredRevenue) * 100 : 0,
-      reinvest: Math.round(Math.max(0, cash) * 0.5),
+      reinvest,
     };
   }, [data]);
   const delivery = useMemo(() => {
@@ -579,14 +590,17 @@ export default function DashboardClient() {
             <p className="eyebrow">Pilotage Maison Jiya · MAD</p>
             <h1>{active}</h1>
           </div>
-          {!['Assistant IA', 'Paramètres'].includes(active) && (
-            <div className="top-actions">
+          <div className="top-actions">
+            <GlobalSearch data={data} setActive={setActive} openOrder={openOrder} />
+            {!['Assistant IA', 'Paramètres', 'Rapports'].includes(active) && (
+              <>
               <button className="period-button">Toutes les données</button>
               <button className="primary-button" onClick={() => openEntry(active === "Produits" ? "product" : active === "Achats" ? "purchase" : active === "Publicités" ? "ad" : active === "Capital" ? "capital" : "order")}>
                 <span>{data.access.canEdit ? "＋" : "🔒"}</span> {data.access.canEdit ? "Ajouter" : "Lecture seule"}
               </button>
-            </div>
-          )}
+              </>
+            )}
+          </div>
         </header>
         {!loading && (
           <section className={`edit-access-strip ${data.access.canEdit ? "unlocked" : "locked"}`} aria-label="Session et droits d’accès">
@@ -613,8 +627,8 @@ export default function DashboardClient() {
         )}
         {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} print={printOrderSlip} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} moveStock={openStock} countInventory={openInventory} submit={submit} />}
       </section>
-      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products} close={() => setModal(null)} submit={submit} />}
-      {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} close={() => setSelectedOrder(null)} print={() => printOrderSlip(selectedOrder)} submit={submit} />}
+      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products} ads={data.ads} close={() => setModal(null)} submit={submit} />}
+      {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} ads={data.ads} close={() => setSelectedOrder(null)} print={() => printOrderSlip(selectedOrder)} submit={submit} />}
       {selectedEntity && <EntityModal selection={selectedEntity} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
       {inventorySelection && <InventoryCountModal product={inventorySelection} close={() => setInventorySelection(null)} submit={submit} />}
@@ -723,6 +737,28 @@ function Loading() {
   );
 }
 
+function GlobalSearch({ data, setActive, openOrder }: { data: Data; setActive: (page: string) => void; openOrder: (order: Order) => void }) {
+  const [query, setQuery] = useState("");
+  const normalized = query.trim().toLocaleLowerCase("fr");
+  const results = useMemo<Array<{ key: string; page: string; label: string; detail: string; order?: Order }>>(() => {
+    if (normalized.length < 2) return [];
+    const matches = (values: Array<string | number | null | undefined>) => values.some((value) => String(value || "").toLocaleLowerCase("fr").includes(normalized));
+    return [
+      ...data.orders.filter((order) => matches([order.orderRef, order.customerName, order.phone, order.city, order.products, order.trackingNumber, order.campaign])).map((order) => ({ key: `order-${order.id}`, page: "Commandes", label: order.orderRef, detail: `${order.customerName} · ${order.products}`, order })),
+      ...data.products.filter((product) => matches([product.productCode, product.name, product.category])).map((product) => ({ key: `product-${product.id}`, page: "Produits", label: product.name, detail: `${product.productCode} · stock ${product.stockQuantity}` })),
+      ...data.customers.filter((customer) => matches([customer.name, customer.phone, customer.city])).map((customer) => ({ key: `customer-${customer.id}`, page: "Clients", label: customer.name, detail: `${customer.phone} · ${customer.city}` })),
+      ...data.purchases.filter((purchase) => matches([purchase.supplier, purchase.item])).map((purchase) => ({ key: `purchase-${purchase.id}`, page: "Achats", label: purchase.item, detail: `${purchase.supplier} · ${money(purchase.totalCost)}` })),
+      ...data.ads.filter((ad) => matches([ad.campaign, ad.platform])).map((ad) => ({ key: `ad-${ad.id}`, page: "Publicités", label: ad.campaign, detail: `${ad.platform} · ${money(ad.spend)}` })),
+    ].slice(0, 10);
+  }, [data, normalized]);
+  return (
+    <div className="global-search">
+      <label><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Rechercher partout…" aria-label="Recherche générale" /></label>
+      {normalized.length >= 2 && <div className="global-search-results">{results.length ? results.map((result) => <button type="button" key={result.key} onClick={() => { setQuery(""); if (result.order) openOrder(result.order); else setActive(result.page); }}><strong>{result.label}</strong><small>{result.page} · {result.detail}</small></button>) : <p>Aucun résultat</p>}</div>}
+    </div>
+  );
+}
+
 function Page({
   active,
   setActive,
@@ -772,11 +808,12 @@ function Page({
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Achats") return <PurchasesPage purchases={data.purchases} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
-  if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Rapports") return <ReportsPage data={data} />;
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
   if (active === "Corbeille") return <TrashPage orders={data.trash} canRestore={data.access.isOwner} submit={submit} />;
-  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} submit={submit} />;
+  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} products={data.products} submit={submit} />;
   const deliveryOrderCount = data.orders.filter((order) => order.fulfillmentType !== "Magasin physique").length;
   const total = Math.max(1, deliveryOrderCount);
   return (
@@ -867,7 +904,7 @@ function Page({
   );
 }
 
-function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, senditApiConfigured, senditWebhookConfigured, forceLogApiConfigured, carrierLastSyncAt, access, members, auditLogs, backups, submit }: {
+function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, senditApiConfigured, senditWebhookConfigured, forceLogApiConfigured, carrierLastSyncAt, access, members, auditLogs, backups, products, submit }: {
   currentTheme: ThemeKey;
   accountName: string;
   accountEmail: string;
@@ -884,6 +921,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   members: Member[];
   auditLogs: AuditLog[];
   backups: DailyBackup[];
+  products: Product[];
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
 }) {
   const [pendingTheme, setPendingTheme] = useState<ThemeKey | null>(null);
@@ -1353,6 +1391,8 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
         </form>
       </section>
 
+      <ImportOrdersPanel products={products} canEdit={access.canEdit} submit={submit} />
+
       <section className="settings-panel">
         <div className="settings-panel-head">
           <div>
@@ -1400,6 +1440,69 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
         </div>
       </section>
     </div>
+  );
+}
+
+const importColumns = ["productCode", "customerName", "phone", "city", "address", "quantity", "saleAmount", "source", "fulfillmentType", "status", "paymentStatus", "campaign", "carrier", "shippingCost", "adCost", "fees"];
+function parseDelimitedOrders(text: string) {
+  const firstLine = text.split(/\r?\n/, 1)[0] || "";
+  const delimiter = firstLine.includes("\t") ? "\t" : firstLine.includes(";") ? ";" : ",";
+  const rows: string[][] = [];
+  let current = "", row: string[] = [], quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '"' && quoted && text[index + 1] === '"') { current += '"'; index += 1; }
+    else if (char === '"') quoted = !quoted;
+    else if (char === delimiter && !quoted) { row.push(current.trim()); current = ""; }
+    else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && text[index + 1] === "\n") index += 1;
+      row.push(current.trim());
+      if (row.some(Boolean)) rows.push(row);
+      current = ""; row = [];
+    } else current += char;
+  }
+  row.push(current.trim());
+  if (row.some(Boolean)) rows.push(row);
+  if (rows.length < 2) return [];
+  const aliases: Record<string, string> = {
+    idproduit: "productCode", produit: "productCode", productcode: "productCode", client: "customerName", nomclient: "customerName", customername: "customerName",
+    telephone: "phone", phone: "phone", ville: "city", city: "city", adresse: "address", address: "address", quantite: "quantity", quantity: "quantity",
+    prixvente: "saleAmount", montant: "saleAmount", saleamount: "saleAmount", source: "source", mode: "fulfillmentType", modedevente: "fulfillmentType", fulfillmenttype: "fulfillmentType",
+    statut: "status", status: "status", paiement: "paymentStatus", paymentstatus: "paymentStatus", campagne: "campaign", campaign: "campaign", agence: "carrier", carrier: "carrier",
+    livraison: "shippingCost", shippingcost: "shippingCost", publicite: "adCost", adcost: "adCost", frais: "fees", fees: "fees",
+  };
+  const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toLocaleLowerCase("fr");
+  const headers = rows[0].map((header) => aliases[normalize(header)] || header.trim());
+  return rows.slice(1).map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] || ""])));
+}
+
+function ImportOrdersPanel({ products, canEdit, submit }: { products: Product[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  const [content, setContent] = useState("");
+  const [saving, setSaving] = useState(false);
+  const parsed = useMemo(() => parseDelimitedOrders(content), [content]);
+  function downloadTemplate() {
+    const exampleCode = products[0]?.productCode || "MJ-001";
+    const csv = `${importColumns.join(";")}\n${[exampleCode, "Cliente Exemple", "0612345678", "Casablanca", "Adresse complète", "1", products[0]?.salePrice || "199", "WhatsApp", "Livraison", "En attente", "À encaisser", "", "Sendit", "0", "0", "0"].join(";")}\n`;
+    const url = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a"); link.href = url; link.download = "modele-commandes-maison-jiya.csv"; link.click(); URL.revokeObjectURL(url);
+  }
+  async function importRows() {
+    if (!parsed.length || !canEdit || saving) return;
+    setSaving(true);
+    try {
+      await submit("importOrders", { rows: JSON.stringify(parsed) });
+      setContent("");
+    } finally { setSaving(false); }
+  }
+  return (
+    <section className="settings-panel import-orders-panel">
+      <div className="settings-panel-head"><div><span className="card-kicker">Importation</span><h2>Excel ou Google Sheets</h2></div><p>Jusqu’à 200 commandes par import.</p></div>
+      <div className="import-orders-grid">
+        <div><h3>1 · Préparer le tableau</h3><p>Téléchargez le modèle, remplissez-le dans Excel ou Google Sheets, puis enregistrez-le en CSV. Vous pouvez aussi copier directement les cellules depuis Google Sheets.</p><button type="button" className="secondary-button" onClick={downloadTemplate}>↓ Télécharger le modèle CSV</button></div>
+        <div><h3>2 · Charger ou coller</h3><input type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" disabled={!canEdit} onChange={(event) => { const file = event.target.files?.[0]; if (file) void file.text().then(setContent); }} /><textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="Collez ici les cellules copiées depuis Google Sheets…" disabled={!canEdit} /><div className="import-preview"><span>{parsed.length} ligne{parsed.length === 1 ? "" : "s"} reconnue{parsed.length === 1 ? "" : "s"}</span><button type="button" className="primary-button" disabled={!parsed.length || !canEdit || saving} onClick={() => void importRows()}>{saving ? "Importation…" : "Importer les commandes"}</button></div></div>
+      </div>
+      <small>Colonnes obligatoires : ID produit, client, téléphone, ville, quantité et prix de vente. Le stock et l’historique sont mis à jour automatiquement.</small>
+    </section>
   );
 }
 
@@ -1565,6 +1668,7 @@ function OrderActions({ order, onEdit, onPrint, onDelete }: { order: Order; onEd
         ⋯
       </summary>
       <div className="order-action-menu" role="menu">
+        {whatsappUrl(order.phone, order.orderRef) && <a role="menuitem" href={whatsappUrl(order.phone, order.orderRef)} target="_blank" rel="noopener noreferrer" onClick={(event) => event.currentTarget.closest("details")?.removeAttribute("open")}><span aria-hidden="true">◉</span>Contacter sur WhatsApp</a>}
         <button type="button" role="menuitem" onClick={(event) => {
           event.currentTarget.closest("details")?.removeAttribute("open");
           onEdit(order);
@@ -2181,15 +2285,15 @@ function PurchasesPage({ purchases, onAdd, onEdit, onDelete }: { purchases: Purc
     </>
   );
 }
-function AdsPage({ ads, settings, onAdd, onEdit, onDelete }: { ads: Ad[]; settings: Record<string, string>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+function AdsPage({ ads, settings, access, submit, onAdd, onEdit, onDelete }: { ads: Ad[]; settings: Record<string, string>; access: Data["access"]; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
   const spend = ads.reduce((sum, ad) => sum + ad.spend, 0),
     revenue = ads.reduce((sum, ad) => sum + ad.revenue, 0),
     count = ads.reduce((sum, ad) => sum + ad.orderCount, 0);
   return (
     <>
       <section className="integration-banner">
-        <div><span className="meta-mark">M</span><div><strong>Meta Ads</strong><p>Saisie manuelle active. La connexion automatique nécessitera l’autorisation de votre compte Meta Ads.</p></div></div>
-        <Status value={settings.meta_status || "À connecter"} />
+        <div><span className="meta-mark">M</span><div><strong>Meta Ads</strong><p>{settings.meta_api_configured === "true" ? `Synchronisation API prête${settings.meta_last_sync_at ? ` · dernière mise à jour ${dateTimeLabel(settings.meta_last_sync_at)}` : ""}.` : "La saisie manuelle reste disponible. Ajoutez les trois secrets Meta dans Cloudflare pour activer la synchronisation."}</p>{settings.meta_last_error && <small className="meta-sync-error">{settings.meta_last_error}</small>}</div></div>
+        <div className="meta-sync-actions"><Status value={settings.meta_status || "À connecter"} />{access.isOwner && <button type="button" className="secondary-button" disabled={settings.meta_api_configured !== "true"} onClick={() => void submit("syncMetaNow", {})}>↻ Synchroniser Meta</button>}</div>
       </section>
       <section className="kpi-grid three">
         <Kpi label="Dépenses" value={money(spend)} detail="Données saisies" />
@@ -2198,7 +2302,7 @@ function AdsPage({ ads, settings, onAdd, onEdit, onDelete }: { ads: Ad[]; settin
       </section>
       <section className="panel page-panel">
         <div className="section-toolbar">
-          <div><h2>Performance des campagnes</h2><p>Ces résultats sont manuels jusqu’à la connexion Meta.</p></div>
+          <div><h2>Performance des campagnes</h2><p>Données manuelles et données Meta API réunies dans le même tableau.</p></div>
           <button className="primary-button" onClick={onAdd}>＋ Saisir une campagne</button>
         </div>
         <div className="ad-grid">
@@ -2221,6 +2325,64 @@ function AdsPage({ ads, settings, onAdd, onEdit, onDelete }: { ads: Ad[]; settin
     </>
   );
 }
+
+type AnalysisRow = { label: string; orders: number; revenue: number; profit: number };
+function groupOrderAnalysis(orders: Order[], label: (order: Order) => string): AnalysisRow[] {
+  const grouped = new Map<string, AnalysisRow>();
+  orders.forEach((order) => {
+    const key = label(order) || "Non renseigné";
+    const current = grouped.get(key) || { label: key, orders: 0, revenue: 0, profit: 0 };
+    current.orders += 1; current.revenue += order.saleAmount; current.profit += exactOrderProfit(order); grouped.set(key, current);
+  });
+  return [...grouped.values()].sort((left, right) => right.profit - left.profit);
+}
+function AnalysisTable({ title, rows }: { title: string; rows: AnalysisRow[] }) {
+  return <section className="panel report-table"><PanelHead kicker="Analyse automatique" title={title} total={`${rows.length} ligne${rows.length === 1 ? "" : "s"}`} /><div className="table-scroll"><table><thead><tr><th>Élément</th><th>Commandes</th><th>CA</th><th>Gain exact</th><th>Marge</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={row.label}><td><strong>{row.label}</strong></td><td>{row.orders}</td><td>{money(row.revenue)}</td><td className={moneyTone(row.profit)}>{money(row.profit)}</td><td>{row.revenue ? `${((row.profit / row.revenue) * 100).toFixed(1)}%` : "0%"}</td></tr>) : <tr><td colSpan={5}>Aucune donnée pour le moment.</td></tr>}</tbody></table></div></section>;
+}
+function ReportsPage({ data }: { data: Data }) {
+  const now = new Date();
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Casablanca", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  const weekStart = new Date(now.getTime() - 6 * 86_400_000);
+  const monthKey = today.slice(0, 7);
+  const completed = data.orders.filter((order) => order.status === "Livrée");
+  const collected = data.orders.filter((order) => order.paymentStatus === "Encaissé");
+  const daily = completed.filter((order) => order.createdAt.slice(0, 10) === today);
+  const weekly = completed.filter((order) => new Date(order.createdAt) >= weekStart);
+  const monthly = completed.filter((order) => order.createdAt.slice(0, 7) === monthKey);
+  const periodCard = (label: string, orders: Order[]) => ({ label, count: orders.length, revenue: orders.reduce((sum, order) => sum + order.saleAmount, 0), profit: orders.reduce((sum, order) => sum + exactOrderProfit(order), 0) });
+  const periods = [periodCard("Aujourd’hui", daily), periodCard("7 derniers jours", weekly), periodCard("Mois en cours", monthly)];
+  const lowStock = data.products.filter((product) => product.stockQuantity <= 3);
+  const delayed = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && elapsedDays(order.updatedAt || order.createdAt) >= 4);
+  const unpaid = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus !== "Encaissé" && elapsedDays(order.updatedAt || order.createdAt) >= 3);
+  const storeCash = collected.filter((order) => order.fulfillmentType === "Magasin physique").reduce((sum, order) => sum + order.saleAmount - order.fees - order.returnCost, 0);
+  const carrierMoney = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus === "À encaisser").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees, 0);
+  const receivables = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && order.paymentStatus !== "Encaissé").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees, 0);
+  const manualCapital = data.capital.reduce((sum, entry) => sum + (entry.direction === "Entrée" ? entry.amount : entry.direction === "Sortie" ? -entry.amount : 0), 0);
+  const deliveryReceipts = collected.filter((order) => order.fulfillmentType !== "Magasin physique").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees - order.returnCost, 0);
+  const paidPurchases = data.purchases.filter((purchase) => purchase.paymentStatus === "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
+  const adSpend = data.ads.reduce((sum, ad) => sum + ad.spend, 0);
+  const bank = deliveryReceipts + manualCapital - paidPurchases - adSpend;
+  const automaticAllocations = data.capital.filter((entry) => entry.isAutomatic);
+  const positiveProfit = automaticAllocations.reduce((sum, entry) => sum + entry.amount, 0);
+  const allocationAmount = (category: string) => automaticAllocations.filter((entry) => entry.category === category).reduce((sum, entry) => sum + entry.amount, 0);
+  const alerts = [
+    ...lowStock.map((product) => ({ key: `stock-${product.id}`, level: product.stockQuantity === 0 ? "danger" : "warning", title: `${product.name} : stock ${product.stockQuantity}`, detail: `SKU ${product.productCode} · seuil faible atteint` })),
+    ...delayed.map((order) => ({ key: `delay-${order.id}`, level: "warning", title: `${order.orderRef} semble bloquée`, detail: `${order.carrier} · ${order.status} depuis ${elapsedDays(order.updatedAt || order.createdAt)} jours` })),
+    ...unpaid.map((order) => ({ key: `unpaid-${order.id}`, level: "danger", title: `${order.orderRef} livrée mais non encaissée`, detail: `${order.carrier} · ${money(order.saleAmount - order.shippingCost - order.fees)} à vérifier` })),
+  ];
+  const platformRows = groupOrderAnalysis(completed.filter((order) => ["Facebook", "Instagram", "TikTok", "WhatsApp"].includes(order.source)), (order) => order.source);
+  const campaignRows = groupOrderAnalysis(completed.filter((order) => order.campaign), (order) => order.campaign);
+  return <div className="reports-page">
+    <section className="report-automation-banner"><div><span>↻</span><div><strong>Rapports automatiques actifs</strong><p>Les chiffres quotidiens, hebdomadaires et mensuels se recalculent à chaque commande, paiement, retour, achat ou publicité.</p></div></div><small>Actualisé maintenant</small></section>
+    <section className="report-period-grid">{periods.map((period) => <article key={period.label}><span>{period.label}</span><strong>{money(period.profit)}</strong><p>{period.count} commande{period.count === 1 ? "" : "s"} · CA {money(period.revenue)}</p></article>)}</section>
+    <section className="financial-account-grid"><article><span>Caisse magasin</span><strong>{money(storeCash)}</strong><small>Encaissements remis sur place</small></article><article><span>Banque estimée</span><strong className={moneyTone(bank)}>{money(bank)}</strong><small>Virements et sorties confirmées</small></article><article><span>Argent transporteurs</span><strong>{money(carrierMoney)}</strong><small>Livré, en attente de virement</small></article><article><span>Créances en cours</span><strong>{money(receivables)}</strong><small>Confirmé ou en transit</small></article></section>
+    <section className="allocation-report"><div><span className="card-kicker">Mouvements automatiques enregistrés</span><h2>{money(positiveProfit)} affectés</h2><p>Chaque vente encaissée crée trois écritures comptables liées à la commande. Elles sont recalculées sans modifier deux fois votre solde bancaire.</p></div><div><article><span>Réinvestissement · 50%</span><strong>{money(allocationAmount("Réinvestissement"))}</strong></article><article><span>Salaire personnel · 30%</span><strong>{money(allocationAmount("Salaire personnel"))}</strong></article><article><span>Fonds d’urgence · 20%</span><strong>{money(allocationAmount("Fonds d’urgence"))}</strong></article></div></section>
+    <section className="panel alerts-panel"><PanelHead kicker="Surveillance automatique" title="Alertes actives" total={String(alerts.length)} />{alerts.length ? <div className="alerts-list">{alerts.map((alert) => <article className={alert.level} key={alert.key}><span aria-hidden="true">{alert.level === "danger" ? "!" : "◷"}</span><div><strong>{alert.title}</strong><small>{alert.detail}</small></div></article>)}</div> : <div className="pending-empty">✓ Aucun stock critique, colis bloqué ou encaissement en retard détecté.</div>}</section>
+    <div className="report-analysis-grid"><AnalysisTable title="Résultats par produit" rows={groupOrderAnalysis(completed, (order) => order.products)} /><AnalysisTable title="Résultats par ville" rows={groupOrderAnalysis(completed, (order) => order.city)} /><AnalysisTable title="Résultats par source" rows={groupOrderAnalysis(completed, (order) => order.source)} /><AnalysisTable title="Résultats par agence" rows={groupOrderAnalysis(completed.filter((order) => order.fulfillmentType !== "Magasin physique"), (order) => order.carrier)} /><AnalysisTable title="Facebook, Instagram, TikTok et WhatsApp" rows={platformRows} /><AnalysisTable title="Campagnes reliées aux commandes" rows={campaignRows} /></div>
+    <section className="panel exact-profit-panel"><PanelHead kicker="Rentabilité" title="Gain exact par commande" total={`${completed.length} livrée${completed.length === 1 ? "" : "s"}`} /><div className="table-scroll"><table><thead><tr><th>Commande</th><th>Produit</th><th>Source / campagne</th><th>Vente</th><th>Produit</th><th>Livraison</th><th>Ads + frais</th><th>Retour</th><th>Gain exact</th></tr></thead><tbody>{completed.slice(0, 200).map((order) => <tr key={order.id}><td><strong>{order.orderRef}</strong><small>{dateLabel(order.createdAt)}</small></td><td>{order.products}</td><td>{order.source}<small>{order.campaign || "Sans campagne"}</small></td><td>{money(order.saleAmount)}</td><td>{money(order.productCost)}</td><td>{money(order.shippingCost)}</td><td>{money(order.adCost + order.fees)}</td><td>{money(order.returnCost)}</td><td className={moneyTone(exactOrderProfit(order))}><strong>{money(exactOrderProfit(order))}</strong></td></tr>)}</tbody></table></div></section>
+  </div>;
+}
+
 function CapitalPage({
   data,
   metrics,
@@ -2240,9 +2402,10 @@ function CapitalPage({
   onDelete: (selection: EditableEntity) => void;
 }) {
   const currentYear = new Date().getFullYear();
-  const distributableCapital = Math.max(0, metrics.cash);
-  const personalSalary = Math.round(distributableCapital * 0.3);
-  const emergencyFund = Math.max(0, distributableCapital - metrics.reinvest - personalSalary);
+  const automaticAllocations = data.capital.filter((entry) => entry.isAutomatic);
+  const personalSalary = automaticAllocations.filter((entry) => entry.category === "Salaire personnel").reduce((sum, entry) => sum + entry.amount, 0);
+  const emergencyFund = automaticAllocations.filter((entry) => entry.category === "Fonds d’urgence").reduce((sum, entry) => sum + entry.amount, 0);
+  const distributableCapital = metrics.reinvest + personalSalary + emergencyFund;
   const automatedFlows: CapitalFlow[] = [
     ...data.orders
       .filter((order) => order.paymentStatus === "Encaissé")
@@ -2285,7 +2448,8 @@ function CapitalPage({
         date: ad.performanceDate,
       })),
   ];
-  const manualFlows: CapitalFlow[] = data.capital.map((entry) => ({
+  const manualEntries = data.capital.filter((entry) => !entry.isAutomatic);
+  const manualFlows: CapitalFlow[] = manualEntries.map((entry) => ({
     direction: entry.direction === "Entrée" ? "Entrée" : "Sortie",
     source: `Capital · ${entry.category || "Sans source"}`,
     amount: entry.amount,
@@ -2376,29 +2540,29 @@ function CapitalPage({
         <div className="capital-envelope-head">
           <span className="card-kicker">Répartition personnelle</span>
           <h2>Vos trois enveloppes</h2>
-          <p>Le calcul se met à jour automatiquement dès que la trésorerie change. Ces enveloppes sont des montants conseillés pour piloter votre argent.</p>
+          <p>Chaque commande encaissée crée automatiquement trois écritures liées à son gain exact. Les enveloppes restent séparées du solde bancaire pour éviter un double débit.</p>
         </div>
         <div className="capital-envelope-grid">
           <article className="capital-envelope-card reinvest-envelope">
             <span className="envelope-icon">↗</span>
             <span className="envelope-label">Montant de réinvestissement</span>
             <h3>{money(metrics.reinvest)}</h3>
-            <p>50% du capital positif disponible pour le stock, les achats et la croissance.</p>
-            <small>Automatique · 50%</small>
+            <p>50% des gains positifs encaissés pour le stock, les achats et la croissance.</p>
+            <small>Écritures automatiques · 50%</small>
           </article>
           <article className="capital-envelope-card salary-envelope">
             <span className="envelope-icon">◎</span>
             <span className="envelope-label">Salaire personnel</span>
             <h3>{money(personalSalary)}</h3>
-            <p>30% du capital positif disponible comme rémunération personnelle conseillée.</p>
-            <small>Automatique · 30%</small>
+            <p>30% des gains positifs encaissés affectés à votre rémunération personnelle.</p>
+            <small>Écritures automatiques · 30%</small>
           </article>
           <article className="capital-envelope-card emergency-envelope">
             <span className="envelope-icon">◇</span>
             <span className="envelope-label">Fonds d’urgence</span>
             <h3>{money(emergencyFund)}</h3>
-            <p>20% du capital positif disponible conservé pour les imprévus et les périodes difficiles.</p>
-            <small>Automatique · 20%</small>
+            <p>20% des gains positifs encaissés conservés pour les imprévus.</p>
+            <small>Écritures automatiques · 20%</small>
           </article>
         </div>
       </section>
@@ -2514,11 +2678,11 @@ function CapitalPage({
             ＋ Nouveau mouvement
           </button>
         </div>
-        {data.capital.length === 0 ? (
+        {manualEntries.length === 0 ? (
           <EmptyState title="Aucun ajustement manuel" text="C’est normal : les opérations courantes alimentent automatiquement le capital." />
         ) : (
           <div className="ledger-list">
-            {data.capital.map((r) => (
+            {manualEntries.map((r) => (
               <article key={r.id}>
                 <span className={r.direction === "Entrée" ? "ledger-icon in" : "ledger-icon out"}>{r.direction === "Entrée" ? "↘" : "↗"}</span>
                 <div>
@@ -2696,7 +2860,7 @@ function CarrierQuoteChooser({ city, defaultCarrier = "", defaultFee = 0, locked
   );
 }
 
-function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; products: Product[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; products: Product[]; ads: Ad[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const labels = {
     order: "Nouvelle commande",
     purchase: "Nouvel achat",
@@ -2804,6 +2968,7 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
                   </div>
                 )}
                 {orderFulfillment === "Livraison" ? <Select label="Source de la commande *" name="source" options={orderSourceOptions.filter((source) => source !== "Magasin physique")} /> : <input type="hidden" name="source" value="Magasin physique" />}
+                {orderFulfillment === "Livraison" && <Select label="Campagne publicitaire" name="campaign" options={["Aucune campagne", ...Array.from(new Set(ads.map((ad) => ad.campaign))).sort((a, b) => a.localeCompare(b, "fr"))]} />}
                 <label className="field">
                   <span>Statut de la commande</span>
                   <select name="status" value={selectedOrderStatus} onChange={(event) => setSelectedOrderStatus(event.target.value)} disabled={orderFulfillment === "Magasin physique"}>
@@ -2888,7 +3053,7 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
     </div>
   );
 }
-function OrderModal({ order, history, carrierNames, close, print, submit }: { order: Order; history: OrderStatusHistory[]; carrierNames: string[]; close: () => void; print: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function OrderModal({ order, history, carrierNames, ads, close, print, submit }: { order: Order; history: OrderStatusHistory[]; carrierNames: string[]; ads: Ad[]; close: () => void; print: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [selectedStatus, setSelectedStatus] = useState(order.status);
@@ -2947,6 +3112,7 @@ function OrderModal({ order, history, carrierNames, close, print, submit }: { or
               </select>
             </label>
             {isStoreSale ? <input type="hidden" name="source" value="Magasin physique" /> : <Select label="Source de la commande" name="source" defaultValue={order.source === "Magasin physique" ? "Non renseignée" : order.source || "Non renseignée"} options={[...orderSourceOptions.filter((source) => source !== "Magasin physique"), "Non renseignée"]} />}
+            {isStoreSale ? <input type="hidden" name="campaign" value="" /> : <Select label="Campagne publicitaire" name="campaign" defaultValue={order.campaign || "Aucune campagne"} options={["Aucune campagne", ...Array.from(new Set([order.campaign, ...ads.map((ad) => ad.campaign)].filter((value) => value && value !== "Aucune campagne"))).sort((a, b) => a.localeCompare(b, "fr"))]} />}
             <label className="field">
               <span>Statut de la commande</span>
               <select name="status" value={selectedStatus} onChange={(event) => setSelectedStatus(event.target.value)}>

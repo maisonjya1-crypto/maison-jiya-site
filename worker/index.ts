@@ -3,6 +3,8 @@ import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } fr
 import handler from "vinext/server/app-router-entry";
 import { runDailyMaintenance } from "../db/backups";
 import { syncCarrierOperations } from "../db/carriers";
+import { syncMetaAds } from "../db/meta";
+import { reconcileOrderAllocations } from "../db/allocations";
 import { getRawDb } from "../db";
 
 interface Env extends CloudflareEnv {
@@ -44,7 +46,11 @@ const worker = {
       ctx.waitUntil(syncCarrierOperations());
       return;
     }
-    ctx.waitUntil(getRawDb().then((database) => runDailyMaintenance(database)));
+    ctx.waitUntil(Promise.all([
+      getRawDb().then((database) => runDailyMaintenance(database)),
+      syncMetaAds().then(() => undefined),
+      reconcileOrderAllocations().then(() => undefined),
+    ]).then(() => undefined));
   },
 };
 
