@@ -2292,11 +2292,11 @@ function AdsPage({ ads, settings, access, submit, onAdd, onEdit, onDelete }: { a
   return (
     <>
       <section className="integration-banner">
-        <div><span className="meta-mark">M</span><div><strong>Meta Ads</strong><p>{settings.meta_api_configured === "true" ? `Synchronisation API prête${settings.meta_last_sync_at ? ` · dernière mise à jour ${dateTimeLabel(settings.meta_last_sync_at)}` : ""}.` : "La saisie manuelle reste disponible. Ajoutez les trois secrets Meta dans Cloudflare pour activer la synchronisation."}</p>{settings.meta_last_error && <small className="meta-sync-error">{settings.meta_last_error}</small>}</div></div>
+        <div><span className="meta-mark">M</span><div><strong>Meta Ads</strong><p>{settings.meta_api_configured === "true" ? `Synchronisation API prête${settings.meta_last_sync_at ? ` · dernière mise à jour ${dateTimeLabel(settings.meta_last_sync_at)}` : ""}.` : "La saisie manuelle reste disponible. Ajoutez les trois secrets Meta dans Cloudflare pour activer la synchronisation."}</p>{settings.meta_currency && settings.meta_fx_rate && <small>Devise Meta : {settings.meta_currency} · 1 {settings.meta_currency} = {Number(settings.meta_fx_rate).toFixed(4)} MAD · <a href="https://www.exchangerate-api.com" target="_blank" rel="noreferrer">Taux par ExchangeRate-API</a></small>}{settings.meta_last_error && <small className="meta-sync-error">{settings.meta_last_error}</small>}</div></div>
         <div className="meta-sync-actions"><Status value={settings.meta_status || "À connecter"} />{access.isOwner && <button type="button" className="secondary-button" disabled={settings.meta_api_configured !== "true"} onClick={() => void submit("syncMetaNow", {})}>↻ Synchroniser Meta</button>}</div>
       </section>
       <section className="kpi-grid three">
-        <Kpi label="Dépenses" value={money(spend)} detail="Données saisies" />
+        <Kpi label="Dépenses" value={money(spend)} detail="Toutes les données converties en MAD" />
         <Kpi label="CA attribué" value={money(revenue)} detail={`${count} commandes`} />
         <Kpi label="ROAS" value={`${spend ? (revenue / spend).toFixed(2) : "0.00"}×`} detail="CA attribué ÷ dépenses" />
       </section>
