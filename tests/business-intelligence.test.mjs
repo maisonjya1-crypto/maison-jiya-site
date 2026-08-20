@@ -44,6 +44,14 @@ test("Meta Ads utilise uniquement des secrets serveur et une version API configu
   assert.doesNotMatch(dashboard, /META_ACCESS_TOKEN/);
 });
 
+test("Meta Ads détecte la devise du compte et convertit dépenses et revenus en MAD", () => {
+  assert.match(meta, /fields: "currency"/);
+  assert.match(meta, /open\.er-api\.com\/v6\/latest/);
+  assert.match(meta, /Number\(row\.spend\).*\* fx\.rate/);
+  assert.match(meta, /actionTotal\(row\.action_values.*\* fx\.rate/);
+  assert.match(dashboard, /Toutes les données converties en MAD/);
+});
+
 test("réinvestissement, salaire et fonds d’urgence sont des écritures liées aux commandes", () => {
   assert.match(allocations, /order_id/);
   assert.match(allocations, /Réinvestissement/);

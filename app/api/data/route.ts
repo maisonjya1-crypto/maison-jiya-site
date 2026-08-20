@@ -625,7 +625,7 @@ export async function POST(request: Request) {
       if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut synchroniser Meta Ads." }, { status: 403 });
       const result = await syncMetaAds();
       if (!result.configured) return Response.json({ error: result.message }, { status: 409 });
-      if (!result.imported && result.message !== "0 ligne(s) Meta Ads synchronisée(s).") return Response.json({ error: result.message }, { status: 502 });
+      if (result.failed) return Response.json({ error: result.message }, { status: 502 });
       integrationMessage = result.message;
       auditEntityLabel = "Meta Ads";
     } else if (payload.action === "deleteOrder") {
