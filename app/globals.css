@@ -528,7 +528,30 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,select:focus-vis
 
 /* Rentabilité par produit et inventaire physique */
 .product-profit-panel,.inventory-history-panel { margin-top:14px; padding:22px; }
-.profitability-note { margin:-8px 0 16px; color:var(--muted); font-size:9px; line-height:1.55; }
+.product-disclosure { margin-top:14px; padding:0; overflow:visible; }
+.product-disclosure-summary { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:20px 22px; cursor:pointer; list-style:none; }
+.product-disclosure-summary::-webkit-details-marker { display:none; }
+.product-disclosure-summary:hover { border-radius:20px; background:var(--surface-soft); }
+.product-disclosure-summary h2 { margin:4px 0 6px; font:500 21px Georgia,serif; }
+.product-disclosure-summary p { margin:0; color:var(--muted); font-size:9px; line-height:1.45; }
+.product-disclosure-meta { flex:0 0 auto; display:flex; align-items:center; gap:13px; }
+.product-disclosure-meta strong { color:var(--ink); font:500 20px Georgia,serif; white-space:nowrap; }
+.product-disclosure-toggle { width:35px; height:35px; display:grid; place-items:center; border:1px solid var(--line); border-radius:10px; color:var(--forest); background:var(--surface-soft); font-size:18px; transition:transform .2s ease; }
+.product-disclosure[open]>.product-disclosure-summary { border-bottom:1px solid var(--line); }
+.product-disclosure[open]>.product-disclosure-summary .product-disclosure-toggle { transform:rotate(180deg); }
+.product-disclosure-body { padding:20px 22px 22px; }
+.product-filter-bar { display:grid; grid-template-columns:minmax(220px,1.5fr) minmax(180px,.8fr) auto auto; align-items:end; gap:10px; margin-bottom:17px; padding:13px; border:1px solid var(--line); border-radius:13px; background:var(--surface-soft); }
+.product-search-field,.product-category-filter { min-width:0; display:grid; gap:6px; }
+.product-search-field span,.product-category-filter span { color:var(--muted); font-size:8px; font-weight:700; }
+.product-search-field input,.product-category-filter select { width:100%; min-height:40px; padding:0 11px; border:1px solid var(--line); border-radius:10px; color:var(--ink); background:var(--paper); outline:none; font-size:10px; }
+.product-search-field input:focus,.product-category-filter select:focus { border-color:var(--forest); box-shadow:0 0 0 3px color-mix(in srgb,var(--forest) 12%,transparent); }
+.product-filter-result { min-height:40px; display:flex; align-items:center; gap:5px; padding:0 11px; border:1px solid var(--line); border-radius:10px; background:var(--paper); white-space:nowrap; }
+.product-filter-result strong { color:var(--forest); font-size:11px; }.product-filter-result span { color:var(--muted); font-size:8px; }
+.product-filter-reset { min-height:40px; padding:0 12px; border:1px solid var(--accent-border); border-radius:10px; color:var(--forest); background:var(--accent-soft); cursor:pointer; font-size:8px; font-weight:800; white-space:nowrap; }
+.product-catalog-actions { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:15px; }
+.product-catalog-actions p { max-width:760px; margin:0; color:var(--muted); font-size:9px; line-height:1.55; }
+.product-catalog-actions .primary-button { flex:0 0 auto; }
+.profitability-note { margin:0 0 16px; color:var(--muted); font-size:9px; line-height:1.55; }
 .profitability-table td small,.inventory-history-panel td small { display:block; margin-top:4px; color:var(--muted); font-size:8px; }
 .margin-chip { display:inline-flex; min-width:58px; justify-content:center; padding:6px 8px; border-radius:999px; font-size:8px; font-weight:800; }
 .margin-chip.positive { color:#2d6b50; background:#e8f3ec; }
@@ -546,7 +569,18 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,select:focus-vis
 .theme-sombre-prune .margin-chip.positive { color:#a8dcc0; background:#24372d; }
 .theme-sombre-prune .margin-chip.negative { color:#f0aaa0; background:#3b2527; }
 @media(max-width:720px){
-  .product-profit-panel,.inventory-history-panel{padding:16px}
+  .inventory-history-panel{padding:16px}
+  .product-disclosure{padding:0}
+  .product-disclosure-summary{align-items:flex-start;padding:17px}
+  .product-disclosure-summary h2{font-size:19px}
+  .product-disclosure-meta{gap:8px}.product-disclosure-meta strong{font-size:15px}
+  .product-disclosure-body{padding:16px 17px 18px}
+  .product-filter-bar{grid-template-columns:1fr;padding:11px}
+  .product-search-field input,.product-category-filter select{min-height:46px;font-size:16px}
+  .product-filter-result{justify-content:center}
+  .product-filter-reset{width:100%;min-height:42px}
+  .product-catalog-actions{align-items:stretch;flex-direction:column}
+  .product-catalog-actions .primary-button{width:100%;min-height:44px}
   .inventory-summary{grid-template-columns:1fr 1fr}
   .inventory-summary>div:last-child{grid-column:1/-1}
   .product-card .stock-actions .inventory-button{flex-basis:100%}
