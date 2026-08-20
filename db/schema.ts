@@ -69,6 +69,7 @@ export const orders = sqliteTable("orders", {
   returnReason: text("return_reason").notNull().default(""),
   returnNote: text("return_note").notNull().default(""),
   source: text("source").notNull().default("Non renseignée"),
+  fulfillmentType: text("fulfillment_type").notNull().default("Livraison"),
   status: text("status").notNull().default("Nouvelle"),
   paymentStatus: text("payment_status").notNull().default("À encaisser"),
   carrier: text("carrier").notNull().default("Non affecté"),

@@ -23,6 +23,7 @@ type Order = {
   returnReason: string;
   returnNote: string;
   source: string;
+  fulfillmentType: "Livraison" | "Magasin physique";
   status: string;
   paymentStatus: string;
   carrier: string;
@@ -226,7 +227,8 @@ const dateTimeLabel = (value: string) =>
 const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Publicités", "Capital", "Assistant IA", "Corbeille", "Paramètres"];
 const orderStatusOptions = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
 const returnReasonOptions = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
-const orderSourceOptions = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Autre"];
+const orderSourceOptions = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre"];
+const fulfillmentTypeOptions = ["Livraison", "Magasin physique"];
 const productCategoryOptions = ["Montres", "Bijoux", "Wallets", "Électronique", "Autre"];
 const capitalMonthLabels = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 const capitalMonthShort = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
@@ -498,7 +500,8 @@ export default function DashboardClient() {
     };
   }, [data]);
   const delivery = useMemo(() => {
-    const count = (states: string[]) => data.orders.filter((o) => states.includes(o.status)).length;
+    const deliveryOrders = data.orders.filter((order) => order.fulfillmentType !== "Magasin physique");
+    const count = (states: string[]) => deliveryOrders.filter((o) => states.includes(o.status)).length;
     return [
       { label: "Livrés", value: count(["Livrée"]), tone: "green" },
       {
@@ -774,7 +777,8 @@ function Page({
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
   if (active === "Corbeille") return <TrashPage orders={data.trash} canRestore={data.access.isOwner} submit={submit} />;
   if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} submit={submit} />;
-  const total = Math.max(1, data.orders.length);
+  const deliveryOrderCount = data.orders.filter((order) => order.fulfillmentType !== "Magasin physique").length;
+  const total = Math.max(1, deliveryOrderCount);
   return (
     <>
       <section className="hero-grid">
@@ -840,7 +844,7 @@ function Page({
           <OrderTable orders={data.orders.slice(0, 5)} onEdit={edit} onPrint={print} onDelete={remove} />
         </article>
         <article className="panel delivery-panel">
-          <PanelHead kicker="Livraison" title="État des colis" total={String(data.orders.length)} />
+          <PanelHead kicker="Livraison" title="État des colis" total={String(deliveryOrderCount)} />
           <div className="delivery-list">
             {delivery.map((r) => (
               <div className="delivery-row" key={r.label}>
@@ -1695,7 +1699,7 @@ function OrderTable({ orders, onEdit, onPrint, onDelete }: { orders: Order[]; on
                   </td>
                   <td>
                     {o.customerName}
-                    <small>{o.products} · {o.source}</small>
+                    <small>{o.products} · {o.source} · {o.fulfillmentType === "Magasin physique" ? "Magasin" : "Livraison"}</small>
                   </td>
                   <td>{o.city}</td>
                   <td><strong>{money(o.saleAmount)}</strong></td>
@@ -1723,7 +1727,7 @@ function OrderTable({ orders, onEdit, onPrint, onDelete }: { orders: Order[]; on
               <div className="mobile-order-top">
                 <span>
                   <strong>{o.orderRef}</strong>
-                  <small>{dateLabel(o.createdAt)} · {o.source}</small>
+                  <small>{dateLabel(o.createdAt)} · {o.source} · {o.fulfillmentType === "Magasin physique" ? "Magasin" : "Livraison"}</small>
                 </span>
                 <div className="mobile-order-status">
                   <Status value={o.status} />
@@ -1760,6 +1764,7 @@ function elapsedDays(from: string, to = new Date().toISOString()) {
 
 function ShippingPage({ orders, history, settings, onEdit, onPrint, onDelete }: { orders: Order[]; history: OrderStatusHistory[]; settings: Record<string, string>; onEdit: (o: Order) => void; onPrint: (o: Order) => void; onDelete: (o: Order) => void }) {
   const carrierNames = useMemo(() => parseCarrierNames(settings), [settings]);
+  const deliveryOrders = useMemo(() => orders.filter((order) => order.fulfillmentType !== "Magasin physique"), [orders]);
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Casablanca", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const [query, setQuery] = useState("");
   const [carrierFilter, setCarrierFilter] = useState("Toutes");
@@ -1781,7 +1786,7 @@ function ShippingPage({ orders, history, settings, onEdit, onPrint, onDelete }: 
   }, []);
 
   const carrierComparison = carrierNames.map((carrier) => {
-    const assigned = orders.filter((order) => order.carrier.toLocaleLowerCase("fr") === carrier.toLocaleLowerCase("fr"));
+    const assigned = deliveryOrders.filter((order) => order.carrier.toLocaleLowerCase("fr") === carrier.toLocaleLowerCase("fr"));
     const delivered = assigned.filter((order) => order.status === "Livrée");
     const returned = assigned.filter((order) => order.status === "Retour");
     const completed = delivered.length + returned.length;
@@ -1804,7 +1809,7 @@ function ShippingPage({ orders, history, settings, onEdit, onPrint, onDelete }: 
   const rankedCarriers = carrierComparison.filter((row) => row.completed > 0).sort((left, right) => right.successRate - left.successRate || (left.averageDelay ?? 999) - (right.averageDelay ?? 999));
   const bestCarrier = rankedCarriers[0]?.carrier || "";
 
-  const trackingRows = orders.map((order) => {
+  const trackingRows = deliveryOrders.map((order) => {
     const latestHistory = historyByOrder.get(order.id)?.[0];
     const age = elapsedDays(latestHistory?.changedAt || order.updatedAt || order.createdAt);
     const needsTrackingNumber = ["Expédiée", "En livraison", "Livrée"].includes(order.status) && !order.trackingNumber;
@@ -1818,7 +1823,7 @@ function ShippingPage({ orders, history, settings, onEdit, onPrint, onDelete }: 
     return matchesQuery && matchesCarrier && matchesStatus;
   }).sort((left, right) => Number(right.alert) - Number(left.alert) || new Date(right.order.createdAt).getTime() - new Date(left.order.createdAt).getTime());
   const alertCount = trackingRows.filter((row) => row.alert).length;
-  const manifestOrders = orders.filter((order) => order.carrier === effectiveManifestCarrier && ["Confirmée", "Expédiée", "En livraison"].includes(order.status));
+  const manifestOrders = deliveryOrders.filter((order) => order.carrier === effectiveManifestCarrier && ["Confirmée", "Expédiée", "En livraison"].includes(order.status));
 
   function printManifest() {
     if (!effectiveManifestCarrier || manifestOrders.length === 0) return;
@@ -1904,7 +1909,7 @@ function ShippingPage({ orders, history, settings, onEdit, onPrint, onDelete }: 
           );})}
           {trackingRows.length === 0 && <EmptyState title="Aucun colis trouvé" text="Modifiez les filtres ou ajoutez une commande." />}
         </div>
-        <p className="tracking-source-note">Sendit met à jour automatiquement les statuts dès que son webhook sécurisé est connecté. Les commandes confirmées sont envoyées automatiquement à Sendit ou ForceLog lorsque leurs clés Cloudflare sont actives.</p>
+        <p className="tracking-source-note">Lorsque le webhook sécurisé est connecté, Sendit met à jour automatiquement les statuts. Une commande confirmée n’est envoyée à Sendit ou ForceLog qu’après votre clic sur « Autoriser et créer le colis ». Les ventes magasin restent hors de cette page.</p>
       </section>
       {manifestToPrint && <CarrierManifestSheet manifest={manifestToPrint} />}
     </>
@@ -2706,6 +2711,7 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
   const [orderSaleAmount, setOrderSaleAmount] = useState(products[0] ? String(products[0].salePrice) : "");
   const [selectedOrderStatus, setSelectedOrderStatus] = useState("En attente");
   const [orderCity, setOrderCity] = useState("");
+  const [orderFulfillment, setOrderFulfillment] = useState<"Livraison" | "Magasin physique">("Livraison");
   const selectedProduct = products.find((product) => String(product.id) === selectedProductId) || null;
 
   function selectOrderProduct(productId: string) {
@@ -2717,6 +2723,17 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
   function updateOrderQuantity(quantity: string) {
     setOrderQuantity(quantity);
     if (selectedProduct) setOrderSaleAmount(String(selectedProduct.salePrice * Math.max(1, Number(quantity) || 1)));
+  }
+
+  function updateOrderFulfillment(value: string) {
+    const next = value === "Magasin physique" ? "Magasin physique" : "Livraison";
+    setOrderFulfillment(next);
+    if (next === "Magasin physique") {
+      if (!orderCity.trim()) setOrderCity("Casablanca");
+      setSelectedOrderStatus("Livrée");
+    } else if (selectedOrderStatus === "Livrée") {
+      setSelectedOrderStatus("En attente");
+    }
   }
   async function handle(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -2761,10 +2778,16 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
             )}
             {kind === "order" && (
               <>
+                <label className="field order-fulfillment-field">
+                  <span>Mode de vente *</span>
+                  <select name="fulfillmentType" value={orderFulfillment} onChange={(event) => updateOrderFulfillment(event.target.value)}>
+                    {fulfillmentTypeOptions.map((type) => <option key={type}>{type}</option>)}
+                  </select>
+                </label>
                 <Field label="Nom de la cliente *" name="customerName" autoComplete="name" required />
                 <Field label="Téléphone *" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="06 12 34 56 78" maxLength={18} required />
-                <label className="field"><span>Ville *</span><input name="city" autoComplete="address-level2" value={orderCity} onChange={(event) => setOrderCity(event.target.value)} required /></label>
-                <Field label="Adresse de livraison *" name="address" autoComplete="street-address" required />
+                <label className="field"><span>{orderFulfillment === "Magasin physique" ? "Ville de la cliente *" : "Ville de livraison *"}</span><input name="city" autoComplete="address-level2" value={orderCity} onChange={(event) => setOrderCity(event.target.value)} required /></label>
+                {orderFulfillment === "Livraison" ? <Field label="Adresse de livraison *" name="address" autoComplete="street-address" required /> : <input type="hidden" name="address" value="Magasin Maison Jiya" />}
                 {products.length ? (
                   <label className="field order-product-select">
                     <span>Produit du catalogue *</span>
@@ -2780,11 +2803,11 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
                     <small>Fermez cette fenêtre, ouvrez Produits et ajoutez d’abord votre produit au catalogue.</small>
                   </div>
                 )}
-                <Select label="Source de la commande *" name="source" options={orderSourceOptions} />
+                {orderFulfillment === "Livraison" ? <Select label="Source de la commande *" name="source" options={orderSourceOptions.filter((source) => source !== "Magasin physique")} /> : <input type="hidden" name="source" value="Magasin physique" />}
                 <label className="field">
                   <span>Statut de la commande</span>
-                  <select name="status" value={selectedOrderStatus} onChange={(event) => setSelectedOrderStatus(event.target.value)}>
-                    {orderStatusOptions.map((status) => <option key={status}>{status}</option>)}
+                  <select name="status" value={selectedOrderStatus} onChange={(event) => setSelectedOrderStatus(event.target.value)} disabled={orderFulfillment === "Magasin physique"}>
+                    {(orderFulfillment === "Magasin physique" ? ["Livrée"] : orderStatusOptions).map((status) => <option key={status}>{status}</option>)}
                   </select>
                 </label>
                 {selectedOrderStatus === "Retour" && (
@@ -2808,13 +2831,19 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
                   <div className="order-product-summary">
                     <div><small>Stock disponible</small><strong>{selectedProduct.stockQuantity} unité{selectedProduct.stockQuantity === 1 ? "" : "s"}</strong></div>
                     <div><small>Coût automatique</small><strong>{money(selectedProduct.purchasePrice * Math.max(1, Number(orderQuantity) || 1))}</strong></div>
-                    <p>Le stock sera déduit une seule fois dès que le statut devient « Confirmée ».</p>
+                    <p>{orderFulfillment === "Magasin physique" ? "Le stock sera déduit immédiatement avec la vente magasin." : "Le stock sera déduit une seule fois dès que le statut devient « Confirmée »."}</p>
                   </div>
                 )}
                 <Field label="Publicité attribuée (MAD)" name="adCost" type="number" inputMode="decimal" min="0" />
                 <Field label="Autres frais (MAD)" name="fees" type="number" inputMode="decimal" min="0" />
-                <CarrierQuoteChooser city={orderCity} defaultCarrier={carrierNames.find((carrier) => ["Sendit", "ForceLog"].includes(carrier)) || carrierNames[0]} />
-                <div className="order-carrier-safety-note"><strong>Validation en deux étapes</strong><small>Enregistrer cette commande ne crée aucun colis. Vous l’autoriserez ensuite depuis la commande confirmée.</small></div>
+                {orderFulfillment === "Livraison" ? (
+                  <>
+                    <CarrierQuoteChooser city={orderCity} defaultCarrier={carrierNames.find((carrier) => ["Sendit", "ForceLog"].includes(carrier)) || carrierNames[0]} />
+                    <div className="order-carrier-safety-note"><strong>Validation en deux étapes</strong><small>Enregistrer cette commande ne crée aucun colis. Vous l’autoriserez ensuite depuis la commande confirmée.</small></div>
+                  </>
+                ) : (
+                  <div className="order-carrier-safety-note store-sale-note"><strong>Vente encaissée sur place</strong><small>0 MAD de livraison · aucun colis ni suivi · stock, chiffre d’affaires et capital mis à jour automatiquement.</small></div>
+                )}
               </>
             )}
             {kind === "purchase" && (
@@ -2851,7 +2880,7 @@ function EntryModal({ kind, carrierNames, products, close, submit }: { kind: Exc
               Annuler
             </button>
             <button className="primary-button" disabled={saving || (kind === "order" && products.length === 0)}>
-              {saving ? "Enregistrement…" : "Enregistrer"}
+              {saving ? "Enregistrement…" : kind === "order" && orderFulfillment === "Magasin physique" ? "Enregistrer la vente" : "Enregistrer"}
             </button>
           </div>
         </form>
@@ -2863,7 +2892,16 @@ function OrderModal({ order, history, carrierNames, close, print, submit }: { or
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [selectedStatus, setSelectedStatus] = useState(order.status);
-  const currentCarrier = order.carrier && order.carrier !== "Non affecté" ? order.carrier : "";
+  const [selectedFulfillment, setSelectedFulfillment] = useState<"Livraison" | "Magasin physique">(order.fulfillmentType === "Magasin physique" ? "Magasin physique" : "Livraison");
+  const isStoreSale = selectedFulfillment === "Magasin physique";
+  const currentCarrier = order.carrier && !["Non affecté", "Magasin physique"].includes(order.carrier) ? order.carrier : "";
+
+  function changeFulfillment(value: string) {
+    const next = value === "Magasin physique" ? "Magasin physique" : "Livraison";
+    setSelectedFulfillment(next);
+    if (next === "Magasin physique") setSelectedStatus("Livrée");
+    else if (order.fulfillmentType === "Magasin physique") setSelectedStatus("Confirmée");
+  }
   return (
     <div
       className="modal-backdrop"
@@ -2901,11 +2939,18 @@ function OrderModal({ order, history, carrierNames, close, print, submit }: { or
           }}
         >
           <div className="form-grid">
-            <Select label="Source de la commande" name="source" defaultValue={order.source || "Non renseignée"} options={[...orderSourceOptions, "Non renseignée"]} />
+            <label className="field order-fulfillment-field">
+              <span>Mode de vente</span>
+              <select name="fulfillmentType" value={selectedFulfillment} onChange={(event) => changeFulfillment(event.target.value)}>
+                <option>Livraison</option>
+                <option disabled={Boolean(order.trackingNumber)}>Magasin physique</option>
+              </select>
+            </label>
+            {isStoreSale ? <input type="hidden" name="source" value="Magasin physique" /> : <Select label="Source de la commande" name="source" defaultValue={order.source === "Magasin physique" ? "Non renseignée" : order.source || "Non renseignée"} options={[...orderSourceOptions.filter((source) => source !== "Magasin physique"), "Non renseignée"]} />}
             <label className="field">
               <span>Statut de la commande</span>
               <select name="status" value={selectedStatus} onChange={(event) => setSelectedStatus(event.target.value)}>
-                {orderStatusOptions.map((status) => <option key={status}>{status}</option>)}
+                {(isStoreSale ? ["Livrée", "Retour", "Annulée"] : orderStatusOptions).map((status) => <option key={status}>{status}</option>)}
               </select>
             </label>
             {selectedStatus === "Retour" && (
@@ -2924,18 +2969,26 @@ function OrderModal({ order, history, carrierNames, close, print, submit }: { or
               </>
             )}
             <Select label="Encaissement" name="paymentStatus" defaultValue={order.paymentStatus} options={["À encaisser", "Encaissé", "Non encaissé", "Remboursé"]} />
-            <Field label="Téléphone de livraison *" name="phone" type="tel" inputMode="tel" defaultValue={order.phone || ""} autoComplete="tel" placeholder="06 12 34 56 78" maxLength={18} required />
-            <Field label="Adresse de livraison *" name="address" defaultValue={order.address} autoComplete="street-address" required />
+            <Field label={isStoreSale ? "Téléphone de la cliente *" : "Téléphone de livraison *"} name="phone" type="tel" inputMode="tel" defaultValue={order.phone || ""} autoComplete="tel" placeholder="06 12 34 56 78" maxLength={18} required />
+            {isStoreSale ? <input type="hidden" name="address" value="Magasin Maison Jiya" /> : <Field label="Adresse de livraison *" name="address" defaultValue={order.address === "Magasin Maison Jiya" ? "" : order.address} autoComplete="street-address" required />}
             <Field label="Coût retour (MAD)" name="returnCost" type="number" inputMode="decimal" min="0" defaultValue={String(order.returnCost)} />
-            <CarrierQuoteChooser city={order.city} defaultCarrier={currentCarrier || carrierNames[0]} defaultFee={order.shippingCost} locked={Boolean(order.trackingNumber)} />
+            {isStoreSale ? (
+              <div className="order-carrier-safety-note store-sale-note"><strong>Aucun transporteur</strong><small>Cette vente est remise sur place : 0 MAD de livraison, aucun colis et aucun numéro de suivi.</small></div>
+            ) : (
+              <CarrierQuoteChooser city={order.city} defaultCarrier={currentCarrier || carrierNames[0]} defaultFee={order.fulfillmentType === "Magasin physique" ? 0 : order.shippingCost} locked={Boolean(order.trackingNumber)} />
+            )}
           </div>
-          <div className={`carrier-authorization-state ${order.trackingNumber ? "created" : order.status === "Confirmée" ? "ready" : "waiting"}`}>
-            <span aria-hidden="true">{order.trackingNumber ? "✓" : order.status === "Confirmée" ? "🔒" : "◷"}</span>
-            <div>
-              <strong>{order.trackingNumber ? `Colis créé · ${order.trackingNumber}` : order.status === "Confirmée" ? "En attente de votre autorisation" : "Confirmez d’abord la commande"}</strong>
-              <small>{order.trackingNumber ? `${order.carrier} suit maintenant ce colis. L’encaissement sera ajouté au capital après facturation payée.` : order.status === "Confirmée" ? "Vérifiez l’agence et son tarif, puis autorisez la création réelle du colis." : "Aucune donnée n’est envoyée à Sendit ou ForceLog avant la confirmation et votre autorisation."}</small>
+          {isStoreSale ? (
+            <div className="carrier-authorization-state created"><span aria-hidden="true">✓</span><div><strong>Vente en magasin</strong><small>Le montant encaissé alimente la trésorerie immédiatement et cette commande n’apparaît pas dans Colis.</small></div></div>
+          ) : (
+            <div className={`carrier-authorization-state ${order.trackingNumber ? "created" : order.status === "Confirmée" ? "ready" : "waiting"}`}>
+              <span aria-hidden="true">{order.trackingNumber ? "✓" : order.status === "Confirmée" ? "🔒" : "◷"}</span>
+              <div>
+                <strong>{order.trackingNumber ? `Colis créé · ${order.trackingNumber}` : order.status === "Confirmée" ? "En attente de votre autorisation" : "Confirmez d’abord la commande"}</strong>
+                <small>{order.trackingNumber ? `${order.carrier} suit maintenant ce colis. L’encaissement sera ajouté au capital après facturation payée.` : order.status === "Confirmée" ? "Vérifiez l’agence et son tarif, puis autorisez la création réelle du colis." : "Aucune donnée n’est envoyée à Sendit ou ForceLog avant la confirmation et votre autorisation."}</small>
+              </div>
             </div>
-          </div>
+          )}
           <div className={`order-stock-state ${order.productId ? (order.stockDeducted ? "deducted" : "waiting") : "legacy"}`}>
             <span aria-hidden="true">{order.productId ? (order.stockDeducted ? "✓" : "◷") : "!"}</span>
             <div>
@@ -2963,12 +3016,12 @@ function OrderModal({ order, history, carrierNames, close, print, submit }: { or
           {formError && <p className="form-error">{formError}</p>}
           <div className="modal-actions">
             <button type="button" className="secondary-button print-order-button" onClick={print}>
-              ▣ Imprimer le bordereau
+              {isStoreSale ? "▣ Imprimer le reçu" : "▣ Imprimer le bordereau"}
             </button>
             <button type="button" className="cancel-button" onClick={close}>
               Annuler
             </button>
-            {!order.trackingNumber && order.status === "Confirmée" && (
+            {!isStoreSale && !order.trackingNumber && order.status === "Confirmée" && (
               <button
                 type="button"
                 className="carrier-authorize-button"
@@ -3014,9 +3067,9 @@ function PrintOrderSheet({ order }: { order: Order }) {
         </div>
       </header>
       <div className="print-slip-highlight">
-        <span>Montant à encaisser</span>
+        <span>{order.fulfillmentType === "Magasin physique" ? "Montant encaissé" : "Montant à encaisser"}</span>
         <strong>{money(order.saleAmount)}</strong>
-        <small>Paiement à la livraison</small>
+        <small>{order.fulfillmentType === "Magasin physique" ? "Vente en magasin" : "Paiement à la livraison"}</small>
       </div>
       <div className="print-slip-grid">
         <article>
@@ -3026,9 +3079,9 @@ function PrintOrderSheet({ order }: { order: Order }) {
           <p>{order.city}</p>
         </article>
         <article>
-          <span>Livraison</span>
-          <strong>{order.carrier || "Agence non affectée"}</strong>
-          <p>N° de suivi : {order.trackingNumber || "À compléter"}</p>
+          <span>{order.fulfillmentType === "Magasin physique" ? "Remise" : "Livraison"}</span>
+          <strong>{order.fulfillmentType === "Magasin physique" ? "Magasin Maison Jiya" : order.carrier || "Agence non affectée"}</strong>
+          <p>{order.fulfillmentType === "Magasin physique" ? "Aucun colis nécessaire" : `N° de suivi : ${order.trackingNumber || "À compléter"}`}</p>
           <p>Statut : {order.status}</p>
         </article>
       </div>
@@ -3046,7 +3099,7 @@ function PrintOrderSheet({ order }: { order: Order }) {
       )}
       <footer className="print-slip-footer">
         <div><span>Signature / cachet</span></div>
-        <p>Merci de vérifier le nom, le téléphone, la ville et le montant avant l&apos;expédition.</p>
+        <p>{order.fulfillmentType === "Magasin physique" ? "Reçu de vente en magasin Maison Jiya." : "Merci de vérifier le nom, le téléphone, la ville et le montant avant l’expédition."}</p>
       </footer>
     </section>
   );
