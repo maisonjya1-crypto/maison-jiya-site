@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 type Media = {
@@ -25,6 +25,7 @@ type CmsProduct = {
   isVisible: boolean;
   availabilityMode: string;
   badge: string;
+  isBestSeller: boolean;
   description: string;
   sortOrder: number;
   media: Media[];
@@ -288,9 +289,9 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
           <label><span>Catégorie</span><select value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item}>{item}</option>)}</select></label>
           <div><strong>{filteredProducts.length}</strong><small>produit(s)</small></div>
         </div>
-        <div className="storefront-cms-public-category-note">Électronique et Boîtes sont volontairement exclues de la boutique publique. Wallets est affiché aux clients sous le nom « Portefeuilles ».</div>
+        <div className="storefront-cms-public-category-note">Coche « Afficher dans Best-sellers » sur les produits que tu veux mettre dans la bande horizontale de la boutique. Électronique et Boîtes restent exclues du site public.</div>
         <div className="storefront-cms-product-list">
-          {filteredProducts.map((product) => <ProductEditor key={`${product.productId}-${product.publicName}-${product.publicPrice}-${product.media.length}`} product={product} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />)}
+          {filteredProducts.map((product) => <ProductEditor key={`${product.productId}-${product.publicName}-${product.publicPrice}-${product.badge}-${product.isBestSeller ? 1 : 0}-${product.media.length}`} product={product} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />)}
         </div>
       </div>}
       {tab === "offers" && <OffersPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />}
@@ -437,6 +438,7 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
         isVisible: form.get("isVisible") === "on",
         availabilityMode: form.get("availabilityMode"),
         badge: form.get("badge"),
+        isBestSeller: form.get("isBestSeller") === "on",
         description: form.get("description"),
         sortOrder: form.get("sortOrder"),
       });
@@ -453,7 +455,7 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={mediaUrl(product.media[0].id)} alt="" loading="lazy" decoding="async" />
         </> : <span className="storefront-cms-product-placeholder">{publicCategory(product.category).slice(0, 1)}</span>}
-        <div><strong>{product.publicName || product.internalName}</strong><small>{product.productCode} · {publicCategory(product.category)}</small></div>
+        <div><strong>{product.publicName || product.internalName}</strong><small>{product.productCode} · {publicCategory(product.category)}{product.isBestSeller ? " · Best-seller" : ""}</small></div>
       </div>
       <div className="storefront-cms-product-status"><span className={effectiveOut ? "out" : "in"}>{effectiveOut ? "Rupture" : "Disponible"}</span><strong>{money(product.publicPrice || product.internalPrice)}</strong><small>Stock réel : {product.stockQuantity}</small></div>
       <b>⌄</b>
@@ -464,9 +466,10 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
         <label><span>Nom sur le site public</span><input name="publicName" defaultValue={product.publicName} disabled={!canEdit} /></label>
         <label><span>Prix public (MAD)</span><input name="publicPrice" type="number" min="0" step="1" defaultValue={product.publicPrice} disabled={!canEdit} /></label>
         <label><span>Disponibilité publique</span><select name="availabilityMode" defaultValue={product.availabilityMode} disabled={!canEdit}><option value="auto">Automatique selon le stock</option><option value="available">Disponible si stock réel &gt; 0</option><option value="out_of_stock">Forcer « Rupture »</option></select></label>
-        <label><span>Badge</span><input name="badge" defaultValue={product.badge} placeholder="Nouveau, Best-seller…" disabled={!canEdit} /></label>
+        <label><span>Badge</span><input name="badge" defaultValue={product.badge} placeholder="Nouveau, Promo…" disabled={!canEdit} /></label>
         <label><span>Ordre d’affichage</span><input name="sortOrder" type="number" defaultValue={product.sortOrder} disabled={!canEdit} /></label>
         <label className="storefront-cms-visible"><input name="isVisible" type="checkbox" defaultChecked={product.isVisible} disabled={!canEdit} /><span>Afficher ce produit sur le site public</span></label>
+        <label className="storefront-cms-visible storefront-cms-best-seller"><input name="isBestSeller" type="checkbox" defaultChecked={product.isBestSeller} disabled={!canEdit} /><span>Afficher dans Best-sellers</span></label>
       </div>
       <label><span>Description publique</span><textarea name="description" rows={3} defaultValue={product.description} placeholder="Courte description visible par les clients…" disabled={!canEdit} /></label>
       <GalleryEditor ownerType="product" ownerId={product.productId} media={product.media} canEdit={canEdit} uploadMany={uploadMany} removeMedia={removeMedia} title="Photos du produit" />
