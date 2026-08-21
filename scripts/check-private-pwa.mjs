@@ -36,8 +36,16 @@ for (const [src, size, purpose] of [
 }
 
 const privatePage = await readText("app/page.tsx");
-assert.match(privatePage, /manifest:\s*["']\/maison-jiya-gestion\.webmanifest\?v=2["']/);
+assert.match(privatePage, /manifest:\s*["']\/maison-jiya-gestion\.webmanifest\?v=3["']/);
 assert.match(privatePage, /PrivatePwa/);
+assert.match(privatePage, /appleWebApp/);
+assert.match(privatePage, /statusBarStyle:\s*["']black-translucent["']/);
+assert.match(privatePage, /viewportFit:\s*["']cover["']/);
+assert.match(privatePage, /private-ios\.css/);
+assert.match(privatePage, /mobile-native\.css/);
+
+const rootLayout = await readText("app/layout.tsx");
+assert.doesNotMatch(rootLayout, /mobile-native\.css|private-ios\.css/);
 
 const boutiqueLayout = await readText("app/boutique/layout.tsx");
 assert.doesNotMatch(boutiqueLayout, /maison-jiya-gestion\.webmanifest/);
@@ -47,4 +55,10 @@ assert.match(worker, /addEventListener\(["']push["']/);
 assert.match(worker, /addEventListener\(["']fetch["']/);
 assert.doesNotMatch(worker, /caches\.open|cache\.put|caches\.match/);
 
-console.log("Private Android PWA validation: OK");
+const pwaClient = await readText("app/private-pwa.tsx");
+assert.match(pwaClient, /navigator\.standalone|standalone/);
+assert.match(pwaClient, /MacIntel/);
+assert.match(pwaClient, /Installer sur iPhone/);
+assert.match(pwaClient, /private-sw\.js\?v=3/);
+
+console.log("Private mobile app validation (Android + iPhone): OK");
