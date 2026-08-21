@@ -107,7 +107,7 @@ export default function PrivatePwa() {
 
   useEffect(() => {
     ensurePrivatePwaMetadata();
-    setInstalled(isStandalone());
+    const standaloneTimer = window.setTimeout(() => setInstalled(isStandalone()), 0);
 
     const beforeInstall = (event: Event) => {
       event.preventDefault();
@@ -136,6 +136,7 @@ export default function PrivatePwa() {
 
     return () => {
       cancelled = true;
+      window.clearTimeout(standaloneTimer);
       window.clearTimeout(timer);
       window.removeEventListener("beforeinstallprompt", beforeInstall);
       window.removeEventListener("appinstalled", appInstalled);
