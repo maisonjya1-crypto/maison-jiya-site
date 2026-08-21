@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./storefront.css";
 import "./storefront-cms-public.css";
 import "./storefront-contact.css";
-import StorefrontContactEnhancement from "./storefront-contact-enhancement";
+import "./storefront-fast.css";
 
 export const metadata: Metadata = {
   title: "Maison Jiya — Boutique",
@@ -19,5 +19,5 @@ export const metadata: Metadata = {
 };
 
 export default function BoutiqueLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <>{children}<StorefrontContactEnhancement /></>;
+  return children;
 }

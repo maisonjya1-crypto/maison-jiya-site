@@ -1,0 +1,25 @@
+.storefront-load-more-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 28px 0 4px;
+}
+.storefront-load-more {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 20px;
+  border: 1px solid var(--shop-line);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--shop-ink);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.storefront-load-more:hover { transform: translateY(-1px); }
+.storefront-load-more span { color: var(--shop-muted); font-size: 11px; }
+@media (max-width: 760px) {
+  .storefront-load-more { width: 100%; }
+}
