@@ -1,7 +1,7 @@
 import { getRawDb } from "../../../../db";
 import { getPublicDb } from "../../../../db/public-db";
 import { ensureStorefrontCms } from "../../../../db/storefront-cms";
-import { loadStorefrontCatalog } from "../../../../db/storefront-public";
+import { loadStorefrontCatalogFast } from "../../../../db/storefront-public-fast";
 
 function cacheHeaders() {
   return {
@@ -19,14 +19,14 @@ function looksLikeMissingSchema(error: unknown) {
 async function buildCatalogResponse() {
   try {
     const database = await getPublicDb();
-    const catalog = await loadStorefrontCatalog(database);
+    const catalog = await loadStorefrontCatalogFast(database);
     return Response.json(catalog, { headers: cacheHeaders() });
   } catch (error) {
     if (looksLikeMissingSchema(error)) {
       try {
         const database = await getRawDb();
         await ensureStorefrontCms(database);
-        const catalog = await loadStorefrontCatalog(database);
+        const catalog = await loadStorefrontCatalogFast(database);
         return Response.json(catalog, { headers: cacheHeaders() });
       } catch (fallbackError) {
         console.error("Maison Jiya storefront catalog fallback failed", fallbackError);
