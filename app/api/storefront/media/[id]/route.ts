@@ -9,7 +9,7 @@ function fromBase64(base64: string) {
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const cache = caches.default;
+    const cache = (caches as CacheStorage & { default: Cache }).default;
     const cached = await cache.match(request);
     if (cached) return cached;
 
