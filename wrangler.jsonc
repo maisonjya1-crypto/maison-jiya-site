@@ -1,13 +1,15 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "maison-jiya-pilotage",
+  "name": "maison-jiya-site",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-08-13",
   "compatibility_flags": ["nodejs_compat"],
+  "account_id": "ba411a0676f980baae49fad053b50563",
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "maison-jiya-pilotage-db"
+      "database_name": "maison-jiya-pilotage-db",
+      "database_id": "67e99a76-643b-4454-88c7-6ae9706e2d8f"
     }
   ],
   "ai": {
