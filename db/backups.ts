@@ -35,7 +35,7 @@ const TABLES = {
 
 const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   customers: ["id", "name", "phone", "city", "created_at"],
-  orders: ["id", "order_ref", "customer_id", "product_id", "city", "address", "products", "quantity", "sale_amount", "product_cost", "shipping_cost", "ad_cost", "fees", "return_cost", "return_reason", "return_note", "source", "campaign", "fulfillment_type", "status", "payment_status", "carrier", "tracking_number", "carrier_dispatch_state", "carrier_authorized_at", "carrier_invoice_code", "stock_deducted", "paid_at", "deleted_at", "deleted_by_user_id", "created_at", "updated_at"],
+  orders: ["id", "order_ref", "customer_id", "product_id", "city", "address", "products", "quantity", "sale_amount", "product_cost", "shipping_cost", "ad_cost", "fees", "return_cost", "return_reason", "return_note", "source", "campaign", "fulfillment_type", "status", "payment_status", "carrier", "tracking_number", "carrier_dispatch_state", "carrier_authorized_at", "carrier_invoice_code", "stock_deducted", "paid_at", "deleted_at", "deleted_by_user_id", "created_at", "updated_at", "items_json", "pack_name"],
   products: ["id", "product_code", "name", "category", "purchase_price", "sale_price", "minimum_sale_price", "stock_quantity", "created_at"],
   stockMovements: ["id", "product_id", "order_id", "movement_type", "quantity", "note", "created_at"],
   inventoryCounts: ["id", "count_ref", "product_id", "system_quantity", "physical_quantity", "difference", "note", "counted_by_user_id", "counted_by_name", "created_at"],
@@ -118,6 +118,8 @@ function insertStatement(database: D1Database, tableKey: keyof BusinessSnapshot[
     if (column === "stock_deducted") return row[column] ?? 0;
     if (column === "minimum_sale_price") return row[column] ?? row.sale_price ?? 0;
     if (column === "fulfillment_type") return row[column] ?? "Livraison";
+    if (column === "items_json") return row[column] ?? "[]";
+    if (column === "pack_name") return row[column] ?? "";
     if (["return_reason", "return_note", "campaign", "address", "carrier_dispatch_state", "carrier_invoice_code", "message", "proof_image", "error_message"].includes(column)) return row[column] ?? "";
     if (column === "account") return row[column] ?? "Banque";
     if (column === "is_automatic") return row[column] ?? 0;
