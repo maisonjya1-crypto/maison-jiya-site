@@ -1,0 +1,45 @@
+name: Build Maison Jiya iOS App
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-real-app.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Validate Xcode project
+        run: xcodebuild -list -project ios/MaisonJiyaGestion.xcodeproj
+
+      - name: Build native iOS app for simulator
+        run: |
+          xcodebuild \
+            -project ios/MaisonJiyaGestion.xcodeproj \
+            -scheme MaisonJiyaGestion \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -derivedDataPath "$RUNNER_TEMP/MaisonJiyaDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Verify iOS application bundle
+        run: |
+          APP_PATH="$(find "$RUNNER_TEMP/MaisonJiyaDerivedData" -type d -name 'MaisonJiyaGestion.app' | head -1)"
+          test -n "$APP_PATH"
+          test -d "$APP_PATH"
+          echo "iOS native app bundle validated: $APP_PATH"

@@ -7,8 +7,6 @@ on:
     paths:
       - "android/**"
       - ".github/workflows/android-real-app.yml"
-      - ".github/android-signing-backup-cert.pem"
-      - "public/.well-known/assetlinks.json"
   workflow_dispatch:
 
 permissions:
@@ -42,84 +40,28 @@ jobs:
       - name: Verify native application icon
         run: test -s android/app/src/main/res/drawable/app_icon.xml
 
-      - name: Build validation APK
-        if: ${{ hashFiles('public/.well-known/assetlinks.json') != '' }}
+      - name: Build native Android v2
         working-directory: android
-        run: gradle :app:assembleDebug --stacktrace
+        run: gradle :app:assembleDebug :app:assembleRelease --stacktrace
 
-      - name: Generate release signing key
-        id: key
-        if: ${{ hashFiles('public/.well-known/assetlinks.json') == '' }}
-        shell: bash
+      - name: Verify release package exists
         run: |
-          set -euo pipefail
-          KEYSTORE="$RUNNER_TEMP/maison-jiya-gestion.jks"
-          PASS="$(openssl rand -hex 24)"
-          echo "::add-mask::$PASS"
-          keytool -genkeypair -v \
-            -keystore "$KEYSTORE" \
-            -storepass "$PASS" \
-            -keypass "$PASS" \
-            -alias maisonjiya \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Maison Jiya Gestion,O=Maison Jiya,C=MA"
-          FINGERPRINT="$(keytool -list -v -keystore "$KEYSTORE" -storepass "$PASS" -alias maisonjiya | sed -n 's/^[[:space:]]*SHA256: //p' | head -1)"
-          test -n "$FINGERPRINT"
-          echo "MJ_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
-          echo "MJ_KEYSTORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
-          echo "MJ_KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
-          echo "MJ_KEY_ALIAS=maisonjiya" >> "$GITHUB_ENV"
-          echo "ASSETLINKS_FINGERPRINT=$FINGERPRINT"
-          echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
+          test -s android/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar"
+          echo "Unsigned release APK ready for Maison Jiya release signing"
 
-      - name: Create encrypted signing backup
-        if: ${{ hashFiles('public/.well-known/assetlinks.json') == '' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          BACKUP_DIR="$RUNNER_TEMP/signing-backup"
-          mkdir -p "$BACKUP_DIR"
-          cp "$MJ_KEYSTORE_PATH" "$BACKUP_DIR/maison-jiya-gestion.jks"
-          printf 'alias=maisonjiya\nstore_password=%s\nkey_password=%s\nsha256_fingerprint=%s\n' \
-            "$MJ_KEYSTORE_PASSWORD" "$MJ_KEY_PASSWORD" "${{ steps.key.outputs.fingerprint }}" \
-            > "$BACKUP_DIR/credentials.txt"
-          tar -C "$BACKUP_DIR" -cf "$RUNNER_TEMP/maison-jiya-signing-backup.tar" .
-          openssl cms -encrypt -binary -aes256 \
-            -in "$RUNNER_TEMP/maison-jiya-signing-backup.tar" \
-            -outform DER \
-            -out "$RUNNER_TEMP/maison-jiya-signing-backup.cms" \
-            .github/android-signing-backup-cert.pem
-          test -s "$RUNNER_TEMP/maison-jiya-signing-backup.cms"
-
-      - name: Upload encrypted signing backup
-        if: ${{ hashFiles('public/.well-known/assetlinks.json') == '' }}
+      - name: Upload unsigned release APK
         uses: actions/upload-artifact@v4
         with:
-          name: Maison-Jiya-Android-Signing-Backup-Encrypted
-          path: ${{ runner.temp }}/maison-jiya-signing-backup.cms
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Build signed release APK
-        if: ${{ hashFiles('public/.well-known/assetlinks.json') == '' }}
-        working-directory: android
-        run: gradle :app:assembleRelease --stacktrace
-
-      - name: Verify release APK
-        if: ${{ hashFiles('public/.well-known/assetlinks.json') == '' }}
-        run: |
-          test -s android/app/build/outputs/apk/release/app-release.apk
-          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose android/app/build/outputs/apk/release/app-release.apk
-          echo "APK signed successfully"
-          echo "Digital Asset Links fingerprint: ${{ steps.key.outputs.fingerprint }}"
-
-      - name: Upload Maison Jiya APK
-        if: ${{ hashFiles('public/.well-known/assetlinks.json') == '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: Maison-Jiya-Gestion-Android
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: Maison-Jiya-Gestion-Android-v2-Unsigned
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload Android APK signer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Maison-Jiya-Android-ApkSigner
+          path: ${{ env.ANDROID_HOME }}/build-tools/35.0.0/lib/apksigner.jar
+          if-no-files-found: error
+          retention-days: 7
