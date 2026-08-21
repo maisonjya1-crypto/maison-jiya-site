@@ -77,6 +77,7 @@ async function snapshot(database: D1Database) {
       COALESCE(s.is_visible, 1) AS isVisible,
       COALESCE(s.availability_mode, 'auto') AS availabilityMode,
       COALESCE(s.badge, '') AS badge,
+      COALESCE(s.is_best_seller, 0) AS isBestSeller,
       COALESCE(s.description, '') AS description,
       COALESCE(s.sort_order, 0) AS sortOrder
     FROM products p
@@ -117,6 +118,7 @@ async function snapshot(database: D1Database) {
     products: products.map((product) => ({
       ...product,
       isVisible: Boolean(product.isVisible),
+      isBestSeller: Boolean(product.isBestSeller),
       media: media.filter((item) => item.ownerType === "product" && item.ownerId === product.productId),
     })),
     offers: offers.map((offer) => ({
@@ -188,14 +190,15 @@ export async function POST(request: Request) {
       await database.prepare(`
         INSERT INTO storefront_product_settings (
           product_id, public_name, public_price, is_visible, availability_mode,
-          badge, description, sort_order, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          badge, is_best_seller, description, sort_order, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(product_id) DO UPDATE SET
           public_name = excluded.public_name,
           public_price = excluded.public_price,
           is_visible = excluded.is_visible,
           availability_mode = excluded.availability_mode,
           badge = excluded.badge,
+          is_best_seller = excluded.is_best_seller,
           description = excluded.description,
           sort_order = excluded.sort_order,
           updated_at = CURRENT_TIMESTAMP
@@ -206,6 +209,7 @@ export async function POST(request: Request) {
         boolean(payload.isVisible, true) ? 1 : 0,
         availabilityMode,
         text(payload.badge, 50),
+        boolean(payload.isBestSeller, false) ? 1 : 0,
         text(payload.description, 600),
         integer(payload.sortOrder),
       ).run();
