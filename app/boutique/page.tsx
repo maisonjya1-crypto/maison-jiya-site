@@ -1,5 +1,6 @@
 import { getPublicDb } from "../../db/public-db";
 import { loadStorefrontCatalogFast } from "../../db/storefront-public-fast";
+import BestSellerVerticalEnhancement from "./best-seller-vertical-enhancement";
 import StorefrontClientFast from "./storefront-client-fast";
 import type { StorefrontCatalog } from "./storefront-types";
 
@@ -14,5 +15,8 @@ export default async function BoutiquePage() {
   } catch (error) {
     console.error("Maison Jiya storefront preload failed", error);
   }
-  return <StorefrontClientFast initialCatalog={initialCatalog} />;
+  return <>
+    <StorefrontClientFast initialCatalog={initialCatalog} />
+    <BestSellerVerticalEnhancement initialCatalog={initialCatalog} />
+  </>;
 }
