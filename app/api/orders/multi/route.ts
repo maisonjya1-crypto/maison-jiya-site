@@ -51,8 +51,8 @@ function parseRequestedItems(value: unknown) {
   if (typeof value === "string") {
     try { parsed = JSON.parse(value); } catch { parsed = []; }
   }
-  if (!Array.isArray(parsed) || parsed.length < 2 || parsed.length > 20) {
-    throw new Error("Ajoutez entre 2 et 20 lignes produit pour une commande multi-produits.");
+  if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 20) {
+    throw new Error("Sélectionnez entre 1 et 20 lignes produit pour cette commande.");
   }
   const quantities = new Map<number, number>();
   for (const raw of parsed) {
@@ -94,7 +94,7 @@ async function syncGoogleSheets(database: D1Database) {
     if (url.protocol !== "https:" || url.hostname !== "script.google.com" || !/^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url.pathname)) return;
     await fetch(url.toString(), { method: "POST", redirect: "manual", signal: AbortSignal.timeout(3500), headers: { "user-agent": "Maison-Jiya-Backup/1.0" } });
   } catch (error) {
-    console.error("Maison Jiya multi-order Sheets sync failed", error);
+    console.error("Maison Jiya order Sheets sync failed", error);
   }
 }
 
@@ -102,7 +102,7 @@ export async function POST(request: Request) {
   if (!validOrigin(request)) return Response.json({ error: "Origine de la requête refusée." }, { status: 403 });
   const user = await getAuthenticatedUser(request);
   if (!user) return Response.json({ error: "Connexion requise." }, { status: 401 });
-  if (!['admin', 'editor'].includes(user.role)) return Response.json({ error: "Votre compte est en lecture seule." }, { status: 403 });
+  if (!["admin", "editor"].includes(user.role)) return Response.json({ error: "Votre compte est en lecture seule." }, { status: 403 });
 
   let payload: Record<string, unknown>;
   try {
@@ -157,7 +157,7 @@ export async function POST(request: Request) {
     const productCost = capturedItems.reduce((sum, item) => sum + item.unitCost * item.quantity, 0);
     const rawPackName = text(payload.packName).replace(/\s+/g, " ").slice(0, 100);
     const packEnabled = payload.isPack === true || text(payload.isPack) === "true";
-    const packName = packEnabled ? (rawPackName || "Pack") : "";
+    const packName = packEnabled && capturedItems.length > 1 ? (rawPackName || "Pack") : "";
     const itemSummary = capturedItems.map((item) => `${item.name} ×${item.quantity}`).join(" + ");
     const productLabel = packName ? `${packName} · ${itemSummary}` : itemSummary;
 
@@ -174,12 +174,15 @@ export async function POST(request: Request) {
     const source = sources.includes(sourceCandidate) ? sourceCandidate : "Non renseignée";
     const campaignRaw = text(payload.campaign).slice(0, 120);
     const campaign = isStoreSale || campaignRaw === "Aucune campagne" ? "" : campaignRaw;
-    const shippingCost = isStoreSale ? 0 : money(payload.shippingCost);
+
+    const manualCarrier = text(payload.carrierManual).replace(/\s+/g, " ").slice(0, 80);
+    const carrier = isStoreSale ? "Magasin physique" : (manualCarrier || text(payload.carrier, "Non affecté").slice(0, 80));
+    const shippingCost = isStoreSale ? 0 : money(payload.shippingCostManual, money(payload.shippingCost));
+    const trackingNumber = isStoreSale ? "" : text(payload.trackingNumberManual, text(payload.trackingNumber)).slice(0, 120);
     const adCost = money(payload.adCost);
     const fees = money(payload.fees);
-    const carrier = isStoreSale ? "Magasin physique" : text(payload.carrier, "Non affecté").slice(0, 80);
     const paymentStatus = isStoreSale ? "Encaissé" : "À encaisser";
-    const dispatchState = isStoreSale ? "Non requis" : "À autoriser";
+    const dispatchState = isStoreSale ? "Non requis" : manualCarrier ? "Enregistré manuellement" : "À autoriser";
     const now = new Date().toISOString();
     const paidAt = isStoreSale ? now : null;
     const orderRef = `MJ-${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
@@ -192,7 +195,7 @@ export async function POST(request: Request) {
     const values: Array<string | number | null> = [
       orderRef, customer.id, null, city, address, productLabel, totalQuantity, saleAmount, productCost,
       shippingCost, adCost, fees, 0, returnReason, returnNote, source, campaign, fulfillmentType,
-      status, paymentStatus, carrier, "", dispatchState, 0, paidAt, JSON.stringify(capturedItems), packName, now,
+      status, paymentStatus, carrier || "Non affecté", trackingNumber, dispatchState, 0, paidAt, JSON.stringify(capturedItems), packName, now,
     ];
     const statements: D1PreparedStatement[] = [
       database.prepare(`INSERT INTO orders (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`).bind(...values),
@@ -205,24 +208,22 @@ export async function POST(request: Request) {
         VALUES (?, ?, ?, 'Ajout', 'Commande', NULL, ?, ?)
       `).bind(user.id, user.username, user.displayName, `${orderRef} · ${productLabel}`, now),
     ];
-    if (stockCommittedStatuses.has(status)) {
-      statements.push(database.prepare("UPDATE orders SET stock_deducted = 1 WHERE order_ref = ?").bind(orderRef));
-    }
+    if (stockCommittedStatuses.has(status)) statements.push(database.prepare("UPDATE orders SET stock_deducted = 1 WHERE order_ref = ?").bind(orderRef));
 
     try {
       await database.batch(statements);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.toLocaleLowerCase("fr").includes("stock insuffisant")) {
-        return Response.json({ error: "Stock insuffisant pour au moins un article du pack. Actualisez le catalogue puis réessayez." }, { status: 409 });
+        return Response.json({ error: "Stock insuffisant pour au moins un article. Actualisez le catalogue puis réessayez." }, { status: 409 });
       }
       throw error;
     }
 
     await syncGoogleSheets(database);
-    return Response.json({ ok: true, orderRef, products: productLabel, totalQuantity, productCost });
+    return Response.json({ ok: true, orderRef, products: productLabel, totalQuantity, productCost, carrier, shippingCost, trackingNumber });
   } catch (error) {
-    console.error("Maison Jiya multi-order creation failed", error);
+    console.error("Maison Jiya order creation failed", error);
     return Response.json({ error: error instanceof Error ? error.message : "Création de la commande impossible." }, { status: 400 });
   }
 }
