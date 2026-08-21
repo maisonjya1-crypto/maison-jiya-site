@@ -244,8 +244,9 @@ export default function PlatformEnhancements() {
       if (settingsPage && !settingsPage.querySelector('[data-mj-whatsapp-host="true"]')) {
         const host = document.createElement("div");
         host.dataset.mjWhatsappHost = "true";
-        const intro = settingsPage.querySelector(".settings-intro");
-        if (intro?.parentNode) intro.parentNode.insertBefore(host, intro.nextSibling); else settingsPage.prepend(host);
+        const intro = settingsPage.querySelector(".settings-intro") as HTMLElement | null;
+        if (intro?.parentNode) intro.parentNode.insertBefore(host, intro.nextSibling);
+        else settingsPage.insertBefore(host, settingsPage.firstChild);
         setSettingsHost(host);
       } else if (!settingsPage) setSettingsHost(null);
     };
@@ -266,8 +267,8 @@ export default function PlatformEnhancements() {
     }).catch(() => undefined);
     const host = document.createElement("div");
     host.dataset.mjMultiOrderHost = "true";
-    const actions = orderForm.querySelector(".modal-actions");
-    if (actions) orderForm.insertBefore(host, actions); else orderForm.append(host);
+    const actions = orderForm.querySelector(".modal-actions") as HTMLElement | null;
+    orderForm.insertBefore(host, actions);
     setOrderHost(host);
     return () => { cancelled = true; host.remove(); setOrderHost(null); };
   }, [orderForm]);
