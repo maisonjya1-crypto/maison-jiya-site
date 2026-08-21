@@ -19,6 +19,26 @@ async function ensureMultiProductColumns(database: D1Database) {
 
 async function ensureMultiProductStockTriggers(database: D1Database) {
   await database.prepare(`
+    CREATE TRIGGER IF NOT EXISTS multi_order_stock_guard
+    BEFORE UPDATE OF stock_deducted ON orders
+    WHEN OLD.stock_deducted = 0
+      AND NEW.stock_deducted = 1
+      AND NEW.product_id IS NULL
+      AND json_valid(NEW.items_json)
+      AND json_array_length(NEW.items_json) > 0
+      AND EXISTS (
+        SELECT 1
+        FROM products p
+        JOIN json_each(NEW.items_json) item
+          ON p.id = CAST(json_extract(item.value, '$.productId') AS INTEGER)
+        WHERE p.stock_quantity < CAST(json_extract(item.value, '$.quantity') AS INTEGER)
+      )
+    BEGIN
+      SELECT RAISE(ABORT, 'stock insuffisant pour une commande multi-produits');
+    END
+  `).run();
+
+  await database.prepare(`
     CREATE TRIGGER IF NOT EXISTS multi_order_stock_deduct
     AFTER UPDATE OF stock_deducted ON orders
     WHEN OLD.stock_deducted = 0
@@ -79,6 +99,27 @@ async function ensureMultiProductStockTriggers(database: D1Database) {
         'Réintégration automatique · ' || NEW.order_ref,
         CURRENT_TIMESTAMP
       FROM json_each(NEW.items_json) AS item;
+    END
+  `).run();
+
+  await database.prepare(`
+    CREATE TRIGGER IF NOT EXISTS multi_order_status_stock_sync
+    AFTER UPDATE OF status ON orders
+    WHEN NEW.product_id IS NULL
+      AND json_valid(NEW.items_json)
+      AND json_array_length(NEW.items_json) > 0
+      AND NEW.stock_deducted <> CASE
+        WHEN NEW.status IN ('Confirmée', 'Expédiée', 'En livraison', 'Livrée', 'Retour') THEN 1
+        ELSE 0
+      END
+    BEGIN
+      UPDATE orders
+      SET stock_deducted = CASE
+        WHEN NEW.status IN ('Confirmée', 'Expédiée', 'En livraison', 'Livrée', 'Retour') THEN 1
+        ELSE 0
+      END,
+      updated_at = CURRENT_TIMESTAMP
+      WHERE id = NEW.id;
     END
   `).run();
 }
