@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Maison Jiya Gestion</string>
+    <string name="launch_url">https://maison-jiya-site.maisonjya1.workers.dev/?source=android-app</string>
+    <string name="asset_statements">[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"web","site":"https://maison-jiya-site.maisonjya1.workers.dev"}}]</string>
+</resources>
