@@ -6,6 +6,7 @@ import "./storefront-cms.css";
 import "./storefront-cms-v2.css";
 import "./best-seller-cms.css";
 import "./private-pwa.css";
+import "./private-pwa-android.css";
 import DashboardClient from "./dashboard-client";
 import PlatformEnhancements from "./platform-enhancements";
 import CarrierModeEnhancement from "./carrier-mode-enhancement";
@@ -17,7 +18,7 @@ export const metadata: Metadata = {
   title: "Maison Jiya Gestion",
   description: "Application privée Maison Jiya : commandes, stock, partenaires et pilotage de la boutique publique.",
   applicationName: "Maison Jiya Gestion",
-  manifest: "/maison-jiya-gestion.webmanifest",
+  manifest: "/maison-jiya-gestion.webmanifest?v=2",
   icons: {
     icon: [
       { url: "/jiya-gestion-192.png", sizes: "192x192", type: "image/png" },
