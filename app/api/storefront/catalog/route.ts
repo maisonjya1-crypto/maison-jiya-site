@@ -1,176 +1,51 @@
 import { getRawDb } from "../../../../db";
-import { normalizeMoroccanPhone } from "../../../../db/phone";
-import { ensurePlatformUpgrades } from "../../../../db/platform-upgrades";
+import { getPublicDb } from "../../../../db/public-db";
 import { ensureStorefrontCms } from "../../../../db/storefront-cms";
-
-type PublicProductRow = {
-  id: number;
-  productCode: string;
-  name: string;
-  category: string;
-  salePrice: number;
-  stockQuantity: number;
-  availabilityMode: string;
-  badge: string;
-  description: string;
-  sortOrder: number;
-};
-type PublicOfferRow = { id: number; name: string; description: string; price: number; comparePrice: number; badge: string; sortOrder: number };
-type OfferItemRow = { offerId: number; productId: number; quantity: number; stockQuantity: number; category: string };
-type MediaRow = { id: number; ownerType: string; ownerId: number; kind: string; sortOrder: number };
-type WhatsAppNumber = { label?: string; phone?: string; isDefault?: boolean };
-
-const excludedPublicCategories = new Set(["Électronique", "Electronique", "Boîtes", "Boites"]);
-
-function publicCategory(category: string) {
-  if (["Wallets", "Wallet", "Portefeuille", "Portefeuilles"].includes(category)) return "Portefeuilles";
-  return category || "Autre";
-}
+import { loadStorefrontCatalog } from "../../../../db/storefront-public";
 
 function cacheHeaders() {
   return {
-    "cache-control": "public, max-age=20, s-maxage=30, stale-while-revalidate=90",
+    "cache-control": "public, max-age=30, s-maxage=60, stale-while-revalidate=300",
     "content-type": "application/json; charset=utf-8",
     "x-content-type-options": "nosniff",
   };
 }
 
-function defaultWhatsApp(raw: string | undefined) {
-  try {
-    const parsed = JSON.parse(raw || "[]") as WhatsAppNumber[];
-    const preferred = parsed.find((item) => item?.isDefault && item?.phone) || parsed.find((item) => item?.phone);
-    return typeof preferred?.phone === "string" ? (normalizeMoroccanPhone(preferred.phone) || "") : "";
-  } catch {
-    return "";
-  }
+function looksLikeMissingSchema(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /no such table|no such column/i.test(message);
 }
 
-export async function GET() {
+async function buildCatalogResponse() {
   try {
-    const database = await getRawDb();
-    await ensurePlatformUpgrades(database);
-    await ensureStorefrontCms(database);
-
-    const products = (await database.prepare(`
-      SELECT
-        p.id,
-        p.product_code AS productCode,
-        COALESCE(NULLIF(s.public_name, ''), p.name) AS name,
-        p.category,
-        CASE WHEN s.public_price IS NULL OR s.public_price <= 0 THEN p.sale_price ELSE s.public_price END AS salePrice,
-        p.stock_quantity AS stockQuantity,
-        COALESCE(s.availability_mode, 'auto') AS availabilityMode,
-        COALESCE(s.badge, '') AS badge,
-        COALESCE(s.description, '') AS description,
-        COALESCE(s.sort_order, 0) AS sortOrder
-      FROM products p
-      LEFT JOIN storefront_product_settings s ON s.product_id = p.id
-      WHERE COALESCE(s.is_visible, 1) = 1
-        AND p.category NOT IN ('Électronique', 'Electronique', 'Boîtes', 'Boites')
-      ORDER BY COALESCE(s.sort_order, 0), p.category COLLATE NOCASE, name COLLATE NOCASE
-      LIMIT 500
-    `).all<PublicProductRow>()).results;
-
-    const offers = (await database.prepare(`
-      SELECT id, name, description, price, compare_price AS comparePrice, badge, sort_order AS sortOrder
-      FROM storefront_offers
-      WHERE is_active = 1
-      ORDER BY sort_order, id DESC
-      LIMIT 100
-    `).all<PublicOfferRow>()).results;
-    const offerItems = (await database.prepare(`
-      SELECT i.offer_id AS offerId, i.product_id AS productId, i.quantity,
-             p.stock_quantity AS stockQuantity, p.category AS category
-      FROM storefront_offer_items i
-      JOIN products p ON p.id = i.product_id
-      ORDER BY i.offer_id, i.product_id
-    `).all<OfferItemRow>()).results;
-    const media = (await database.prepare(`
-      SELECT id, owner_type AS ownerType, owner_id AS ownerId, kind, sort_order AS sortOrder
-      FROM storefront_media
-      ORDER BY sort_order, id
-    `).all<MediaRow>()).results;
-
-    const settingsRows = (await database.prepare(`
-      SELECT key, value FROM settings
-      WHERE key IN (
-        'account_name', 'whatsapp_numbers', 'storefront_brand_name', 'storefront_announcement',
-        'storefront_hero_title', 'storefront_hero_text', 'storefront_shipping_note',
-        'storefront_meta_pixel_id', 'storefront_contact_whatsapp'
-      )
-    `).all<{ key: string; value: string }>()).results;
-    const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
-
-    const businessWhatsapp = defaultWhatsApp(settings.whatsapp_numbers);
-    const contactWhatsapp = normalizeMoroccanPhone(settings.storefront_contact_whatsapp || "") || businessWhatsapp;
-
-    const publicProducts = products.map((product) => {
-      const forcedOut = product.availabilityMode === "out_of_stock";
-      const available = product.stockQuantity > 0 && !forcedOut;
-      const images = media.filter((item) => item.ownerType === "product" && item.ownerId === product.id).map((item) => `/api/storefront/media/${item.id}`);
-      return {
-        id: product.id,
-        kind: "product" as const,
-        productCode: product.productCode,
-        name: product.name,
-        category: publicCategory(product.category),
-        salePrice: Math.max(0, Number(product.salePrice) || 0),
-        comparePrice: 0,
-        badge: product.badge,
-        description: product.description,
-        availability: available ? "En stock" : "Rupture de stock",
-        available,
-        lowStock: available && product.stockQuantity <= 3,
-        images,
-      };
-    });
-
-    const publicOffers = offers.flatMap((offer) => {
-      const components = offerItems.filter((item) => item.offerId === offer.id);
-      if (!components.length || components.some((item) => excludedPublicCategories.has(item.category))) return [];
-      const available = components.every((item) => item.stockQuantity >= item.quantity);
-      const images = media.filter((item) => item.ownerType === "offer" && item.ownerId === offer.id).map((item) => `/api/storefront/media/${item.id}`);
-      return [{
-        id: offer.id,
-        kind: "offer" as const,
-        productCode: `PACK-${offer.id}`,
-        name: offer.name,
-        category: "Packs & offres",
-        salePrice: Math.max(0, Number(offer.price) || 0),
-        comparePrice: Math.max(0, Number(offer.comparePrice) || 0),
-        badge: offer.badge,
-        description: offer.description,
-        availability: available ? "En stock" : "Rupture de stock",
-        available,
-        lowStock: false,
-        images,
-      }];
-    });
-
-    const logo = media.find((item) => item.ownerType === "brand" && item.kind === "logo");
-    const heroImage = media.find((item) => item.ownerType === "brand" && item.kind === "hero");
-    const categories = Array.from(new Set([...publicProducts.map((product) => product.category), ...(publicOffers.length ? ["Packs & offres"] : [])]));
-
-    return Response.json({
-      brand: settings.storefront_brand_name?.trim() || settings.account_name?.trim() || "Maison Jiya",
-      announcement: settings.storefront_announcement?.trim() || "Paiement à la livraison partout au Maroc",
-      heroTitle: settings.storefront_hero_title?.trim() || "Les pièces que vous aimez, simplement livrées chez vous.",
-      heroText: settings.storefront_hero_text?.trim() || "Choisissez vos articles, validez votre commande en ligne et payez à la livraison. Notre équipe vous contacte ensuite pour confirmer.",
-      shippingNote: settings.storefront_shipping_note?.trim() || "Les éventuels frais de livraison sont confirmés par notre équipe.",
-      metaPixelId: settings.storefront_meta_pixel_id?.trim() || "",
-      logoUrl: logo ? `/api/storefront/media/${logo.id}` : "/maison-jiya-logo.jpeg",
-      heroImageUrl: heroImage ? `/api/storefront/media/${heroImage.id}` : "",
-      whatsapp: contactWhatsapp,
-      contactWhatsapp,
-      products: publicProducts,
-      offers: publicOffers,
-      categories,
-    }, { headers: cacheHeaders() });
+    const database = await getPublicDb();
+    const catalog = await loadStorefrontCatalog(database);
+    return Response.json(catalog, { headers: cacheHeaders() });
   } catch (error) {
+    if (looksLikeMissingSchema(error)) {
+      try {
+        const database = await getRawDb();
+        await ensureStorefrontCms(database);
+        const catalog = await loadStorefrontCatalog(database);
+        return Response.json(catalog, { headers: cacheHeaders() });
+      } catch (fallbackError) {
+        console.error("Maison Jiya storefront catalog fallback failed", fallbackError);
+      }
+    }
     console.error("Maison Jiya storefront catalog failed", error);
     return Response.json({ error: "Le catalogue est momentanément indisponible." }, {
       status: 503,
       headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" },
     });
   }
+}
+
+export async function GET(request: Request) {
+  const cache = (caches as CacheStorage & { default: Cache }).default;
+  const cached = await cache.match(request);
+  if (cached) return cached;
+
+  const response = await buildCatalogResponse();
+  if (response.ok) await cache.put(request, response.clone());
+  return response;
 }
