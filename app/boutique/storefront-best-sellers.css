@@ -1,0 +1,100 @@
+.storefront-best-sellers {
+  margin: 32px 0 18px;
+  overflow: hidden;
+}
+
+.storefront-best-seller-head {
+  align-items: end;
+}
+
+.storefront-best-seller-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.storefront-best-seller-controls > strong {
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.storefront-best-seller-controls > button {
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(24, 24, 24, 0.14);
+  border-radius: 999px;
+  background: #fff;
+  color: #171717;
+  font: inherit;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.storefront-best-seller-controls > button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(24, 24, 24, 0.32);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.08);
+}
+
+.storefront-best-seller-track {
+  display: flex;
+  gap: 18px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 2px;
+  scrollbar-width: thin;
+  padding: 4px 2px 14px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.storefront-best-seller-track > .storefront-product {
+  flex: 0 0 clamp(245px, 26vw, 310px);
+  min-width: 0;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.storefront-best-seller-track::-webkit-scrollbar {
+  height: 7px;
+}
+
+.storefront-best-seller-track::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(24, 24, 24, 0.22);
+}
+
+.storefront-best-seller-track::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (max-width: 760px) {
+  .storefront-best-sellers {
+    margin-top: 24px;
+  }
+
+  .storefront-best-seller-head {
+    align-items: center;
+  }
+
+  .storefront-best-seller-controls > strong {
+    display: none;
+  }
+
+  .storefront-best-seller-controls > button {
+    width: 38px;
+    height: 38px;
+    font-size: 23px;
+  }
+
+  .storefront-best-seller-track {
+    gap: 13px;
+    padding-bottom: 10px;
+  }
+
+  .storefront-best-seller-track > .storefront-product {
+    flex-basis: min(78vw, 290px);
+  }
+}
