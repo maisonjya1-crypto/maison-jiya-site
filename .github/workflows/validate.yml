@@ -34,3 +34,7 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Production smoke diagnostic
+        continue-on-error: true
+        run: node scripts/smoke-production.mjs
