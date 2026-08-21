@@ -38,10 +38,8 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
-      - name: Prepare application icon
-        run: |
-          mkdir -p android/app/src/main/res/drawable
-          cp public/jiya-gestion-512-maskable.png android/app/src/main/res/drawable/app_icon.png
+      - name: Verify native application icon
+        run: test -s android/app/src/main/res/drawable/app_icon.xml
 
       - name: Build validation APK
         if: ${{ hashFiles('public/.well-known/assetlinks.json') != '' }}
