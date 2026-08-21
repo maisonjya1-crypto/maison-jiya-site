@@ -7,6 +7,7 @@ export type CatalogItem = {
   salePrice: number;
   comparePrice: number;
   badge: string;
+  isBestSeller: boolean;
   description: string;
   availability: string;
   available: boolean;
