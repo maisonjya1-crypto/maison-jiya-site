@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./storefront.css";
+import "./storefront-cms-public.css";
 
 export const metadata: Metadata = {
   title: "Maison Jiya — Boutique",
