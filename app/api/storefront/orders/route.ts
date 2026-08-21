@@ -208,7 +208,7 @@ export async function POST(request: Request) {
       SELECT orders.order_ref AS orderRef FROM orders
       JOIN customers ON customers.id = orders.customer_id
       WHERE customers.phone = ? AND orders.deleted_at IS NULL
-        AND orders.created_at >= datetime('now', '-2 minutes') AND orders.products = ?
+        AND datetime(orders.created_at) >= datetime('now', '-2 minutes') AND orders.products = ?
       ORDER BY orders.id DESC LIMIT 1
     `).bind(phone, productLabel).first<{ orderRef: string }>();
     if (duplicate?.orderRef) return Response.json({ ok: true, orderRef: duplicate.orderRef, duplicate: true, total: saleAmount }, { headers: { "cache-control": "no-store" } });
