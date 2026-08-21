@@ -2,7 +2,7 @@ import { getAuthenticatedUser } from "../../../../auth";
 import { getRawDb } from "../../../../../db";
 import { ensureStorefrontCms } from "../../../../../db/storefront-cms";
 
-const GALLERY_LIMIT = 20;
+const GALLERY_LIMIT = 6;
 
 function integer(value: FormDataEntryValue | null, fallback = 0) {
   const parsed = Number(typeof value === "string" ? value : "");
