@@ -10,6 +10,7 @@ type PublicProductRow = {
   stockQuantity: number;
   availabilityMode: string;
   badge: string;
+  isBestSeller: number;
   description: string;
 };
 
@@ -73,6 +74,7 @@ export async function loadStorefrontCatalog(database: D1Database): Promise<Store
         p.stock_quantity AS stockQuantity,
         COALESCE(s.availability_mode, 'auto') AS availabilityMode,
         COALESCE(s.badge, '') AS badge,
+        COALESCE(s.is_best_seller, 0) AS isBestSeller,
         COALESCE(s.description, '') AS description
       FROM products p
       LEFT JOIN storefront_product_settings s ON s.product_id = p.id
@@ -155,6 +157,7 @@ export async function loadStorefrontCatalog(database: D1Database): Promise<Store
       salePrice: Math.max(0, Number(product.salePrice) || 0),
       comparePrice: 0,
       badge: product.badge,
+      isBestSeller: Boolean(product.isBestSeller),
       description: product.description,
       availability: available ? "En stock" : "Rupture de stock",
       available,
@@ -176,6 +179,7 @@ export async function loadStorefrontCatalog(database: D1Database): Promise<Store
       salePrice: Math.max(0, Number(offer.price) || 0),
       comparePrice: Math.max(0, Number(offer.comparePrice) || 0),
       badge: offer.badge,
+      isBestSeller: false,
       description: offer.description,
       availability: available ? "En stock" : "Rupture de stock",
       available,
