@@ -8,9 +8,7 @@
     background: var(--cream, #f7f4f8);
   }
 
-  body {
-    min-height: 100dvh;
-  }
+  body { min-height: 100dvh; }
 
   @media (display-mode: standalone) {
     body {
@@ -27,6 +25,11 @@
 
     .sidebar {
       padding-top: max(14px, env(safe-area-inset-top, 0px));
+    }
+
+    .private-pwa-panel,
+    .private-pwa-pill {
+      bottom: max(12px, calc(env(safe-area-inset-bottom, 0px) + 8px));
     }
   }
 
