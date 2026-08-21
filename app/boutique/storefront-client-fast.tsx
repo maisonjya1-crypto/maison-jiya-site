@@ -1,11 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { CatalogItem, StorefrontCatalog } from "./storefront-types";
 
 type Cart = Record<string, number>;
 type FbqFunction = ((...args: unknown[]) => void) & { queue?: unknown[][]; loaded?: boolean; version?: string };
 type FbqWindow = Window & { fbq?: FbqFunction; _fbq?: FbqFunction };
+type ImageState = { src: string; attempt: number; failed: boolean };
 
 const INITIAL_VISIBLE = 24;
 const FEATURED_OFFERS = 8;
@@ -37,6 +38,42 @@ function enableMetaPixel(pixelId: string) {
   target.fbq?.("track", "PageView");
 }
 
+function SafeImage({
+  src,
+  alt,
+  fallback,
+  loading = "lazy",
+  fetchPriority = "auto",
+  className,
+}: {
+  src: string;
+  alt: string;
+  fallback: ReactNode;
+  loading?: "eager" | "lazy";
+  fetchPriority?: "high" | "low" | "auto";
+  className?: string;
+}) {
+  const [storedState, setStoredState] = useState<ImageState>({ src: "", attempt: 0, failed: false });
+  const state = storedState.src === src ? storedState : { src, attempt: 0, failed: false };
+
+  if (!src || state.failed) return <>{fallback}</>;
+  const separator = src.includes("?") ? "&" : "?";
+  const resolvedSrc = state.attempt ? `${src}${separator}retry=${state.attempt}` : src;
+
+  return <img
+    src={resolvedSrc}
+    alt={alt}
+    className={className}
+    loading={loading}
+    fetchPriority={fetchPriority}
+    decoding="async"
+    onError={() => {
+      if (state.attempt < 1) setStoredState({ src, attempt: 1, failed: false });
+      else setStoredState({ src, attempt: state.attempt, failed: true });
+    }}
+  />;
+}
+
 export default function StorefrontClientFast({ initialCatalog }: { initialCatalog: StorefrontCatalog | null }) {
   const [catalog, setCatalog] = useState<StorefrontCatalog | null>(initialCatalog);
   const [loading, setLoading] = useState(!initialCatalog);
@@ -51,6 +88,30 @@ export default function StorefrontClientFast({ initialCatalog }: { initialCatalo
   const [submitError, setSubmitError] = useState("");
   const [confirmation, setConfirmation] = useState<{ orderRef: string; total: number } | null>(null);
   const [utm, setUtm] = useState({ source: "", medium: "", campaign: "" });
+  const refreshInFlight = useRef(false);
+  const lastRefreshAt = useRef(0);
+
+  const refreshCatalog = useCallback(async (showLoading = false) => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    if (showLoading) setLoading(true);
+    try {
+      const response = await fetch(`/api/storefront/catalog?refresh=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "cache-control": "no-cache" },
+      });
+      const body = await response.json() as StorefrontCatalog & { error?: string };
+      if (!response.ok) throw new Error(body.error || "Catalogue indisponible.");
+      setCatalog(body);
+      setError("");
+      lastRefreshAt.current = Date.now();
+    } catch (caught) {
+      if (showLoading) setError(caught instanceof Error ? caught.message : "Catalogue indisponible.");
+    } finally {
+      refreshInFlight.current = false;
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -68,26 +129,30 @@ export default function StorefrontClientFast({ initialCatalog }: { initialCatalo
 
   useEffect(() => {
     if (initialCatalog) {
+      lastRefreshAt.current = Date.now();
       enableMetaPixel(initialCatalog.metaPixelId || "");
       track("ViewContent", { content_name: "Maison Jiya Boutique" });
       return;
     }
+    const timer = window.setTimeout(() => void refreshCatalog(true), 0);
+    return () => window.clearTimeout(timer);
+  }, [initialCatalog, refreshCatalog]);
 
-    void (async () => {
-      try {
-        const response = await fetch("/api/storefront/catalog");
-        const body = await response.json() as StorefrontCatalog & { error?: string };
-        if (!response.ok) throw new Error(body.error || "Catalogue indisponible.");
-        setCatalog(body);
-        enableMetaPixel(body.metaPixelId || "");
-        track("ViewContent", { content_name: "Maison Jiya Boutique" });
-      } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "Catalogue indisponible.");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [initialCatalog]);
+  useEffect(() => {
+    const refreshIfNeeded = () => {
+      if (Date.now() - lastRefreshAt.current < 2500) return;
+      void refreshCatalog(false);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refreshIfNeeded();
+    };
+    window.addEventListener("focus", refreshIfNeeded);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", refreshIfNeeded);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [refreshCatalog]);
 
   useEffect(() => {
     try { localStorage.setItem("maison-jiya-cart-v2", JSON.stringify(cart)); } catch { /* stockage facultatif */ }
@@ -184,8 +249,13 @@ export default function StorefrontClientFast({ initialCatalog }: { initialCatalo
     <div className="storefront-announcement">{catalog?.announcement || "Paiement à la livraison partout au Maroc"}</div>
     <header className="storefront-header">
       <a className="storefront-brand" href="/boutique" aria-label={`${brand} boutique`}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={catalog?.logoUrl || "/maison-jiya-logo.jpeg"} alt={brand} loading="eager" fetchPriority="high" />
+        <SafeImage
+          src={catalog?.logoUrl || "/maison-jiya-logo.jpeg"}
+          alt={brand}
+          loading="eager"
+          fetchPriority="high"
+          fallback={<span className="storefront-logo-fallback">MJ</span>}
+        />
         <span><strong>{brand}</strong><small>Boutique officielle</small></span>
       </a>
       <nav>
@@ -209,13 +279,13 @@ export default function StorefrontClientFast({ initialCatalog }: { initialCatalo
         <div className="storefront-trust"><span>Paiement à la livraison</span><span>Confirmation par notre équipe</span><span>Livraison au Maroc</span></div>
       </div>
       {catalog?.heroImageUrl
-        ? <div className="storefront-hero-photo">{/* eslint-disable-next-line @next/next/no-img-element */}<img src={catalog.heroImageUrl} alt={`Collection ${brand}`} loading="eager" fetchPriority="high" /></div>
+        ? <div className="storefront-hero-photo"><SafeImage src={catalog.heroImageUrl} alt={`Collection ${brand}`} loading="eager" fetchPriority="high" fallback={<div className="storefront-hero-card"><span>MJ</span><strong>{brand}</strong><small>Montres · Bijoux · Portefeuilles · Packs</small></div>} /></div>
         : <div className="storefront-hero-card" aria-hidden="true"><span>MJ</span><strong>{brand}</strong><small>Montres · Bijoux · Portefeuilles · Packs</small></div>}
     </section>
 
     {Boolean(featuredOffers.length) && <section className="storefront-featured-offers" id="offres">
       <div className="storefront-section-head"><div><span>Offres Maison Jiya</span><h2>Packs & bons plans</h2></div><strong>{catalog?.offers.length} offre(s)</strong></div>
-      <div className="storefront-product-grid storefront-offer-grid">{featuredOffers.map((item, index) => <StoreItemCard key={`offer-${item.id}`} item={item} add={add} priority={index < 2} />)}</div>
+      <div className="storefront-product-grid storefront-offer-grid">{featuredOffers.map((item, index) => <StoreItemCard key={`offer-${item.id}`} item={item} add={add} priority={index < 1} />)}</div>
     </section>}
 
     <section className="storefront-catalogue" id="catalogue">
@@ -227,7 +297,7 @@ export default function StorefrontClientFast({ initialCatalog }: { initialCatalo
       {loading && <div className="storefront-state">Chargement du catalogue…</div>}
       {error && <div className="storefront-state error">{error}</div>}
       {!loading && !error && <>
-        <div className="storefront-product-grid">{visibleItems.map((item, index) => <StoreItemCard key={`${item.kind}-${item.id}`} item={item} add={add} priority={index < 4} />)}{!filtered.length && <div className="storefront-state">Aucun article ne correspond à votre recherche.</div>}</div>
+        <div className="storefront-product-grid">{visibleItems.map((item, index) => <StoreItemCard key={`${item.kind}-${item.id}`} item={item} add={add} priority={index < 2} />)}{!filtered.length && <div className="storefront-state">Aucun article ne correspond à votre recherche.</div>}</div>
         {visibleItems.length < filtered.length && <div className="storefront-load-more-wrap"><button className="storefront-load-more" type="button" onClick={() => setVisibleCount((current) => current + INITIAL_VISIBLE)}>Afficher plus de produits <span>{visibleItems.length}/{filtered.length}</span></button></div>}
       </>}
     </section>
@@ -279,9 +349,12 @@ export default function StorefrontClientFast({ initialCatalog }: { initialCatalo
 }
 
 function StoreItemCard({ item, add, priority = false }: { item: CatalogItem; add: (item: CatalogItem) => void; priority?: boolean }) {
+  const fallback = <><span>{item.category.slice(0, 1).toUpperCase()}</span><small>{item.category}</small></>;
   return <article className={`storefront-product ${item.kind === "offer" ? "storefront-offer" : ""} ${!item.available ? "unavailable" : ""}`}>
     <div className="storefront-product-visual">
-      {item.images[0] ? <>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={item.images[0]} alt={item.name} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} /></> : <><span>{item.category.slice(0, 1).toUpperCase()}</span><small>{item.category}</small></>}
+      {item.images[0]
+        ? <SafeImage src={item.images[0]} alt={item.name} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} fallback={fallback} />
+        : fallback}
       {item.badge && <em className="storefront-product-badge">{item.badge}</em>}
       {item.lowStock && !item.badge && <em>Dernières pièces</em>}
       {!item.available && <i>Rupture de stock</i>}

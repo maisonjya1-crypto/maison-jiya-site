@@ -1,0 +1,29 @@
+.storefront-logo-fallback {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 42px;
+  background: #f2edf2;
+  color: #2d2430;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: .06em;
+}
+
+.storefront-product-visual > img,
+.storefront-hero-photo > img,
+.storefront-brand > img {
+  content-visibility: auto;
+}
+
+.storefront-product-visual > img {
+  background: #f6f4f5;
+}
+
+.storefront-hero-photo .storefront-hero-card {
+  width: 100%;
+  min-height: 100%;
+}

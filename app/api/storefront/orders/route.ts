@@ -159,6 +159,13 @@ export async function POST(request: Request) {
     if (rows.some((product) => excludedPublicCategories.has(product.category))) throw new Error("Un article du panier n’est pas disponible sur la boutique publique.");
     const products = new Map(rows.map((product) => [product.id, product]));
 
+    for (const offer of offers) {
+      const components = offerComponents.filter((component) => component.offerId === offer.id);
+      if (components.some((component) => products.get(component.productId)?.availabilityMode === "out_of_stock")) {
+        throw new Error(`${offer.name} n’est plus disponible.`);
+      }
+    }
+
     const expanded = new Map<number, { product: ProductRow; quantity: number; weight: number }>();
     const labels: string[] = [];
     let saleAmount = 0;
