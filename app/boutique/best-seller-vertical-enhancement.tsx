@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { CatalogItem, StorefrontCatalog } from "./storefront-types";
 
@@ -40,10 +40,10 @@ function focusProduct(item: CatalogItem) {
   catalogue?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-export default function BestSellerVerticalEnhancement({ initialCatalog }: { initialCatalog: StorefrontCatalog | null }) {
+export default function BestSellerHorizontalEnhancement({ initialCatalog }: { initialCatalog: StorefrontCatalog | null }) {
   const [catalog, setCatalog] = useState<StorefrontCatalog | null>(initialCatalog);
   const [host, setHost] = useState<HTMLElement | null>(null);
-  const [active, setActive] = useState(0);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -93,34 +93,35 @@ export default function BestSellerVerticalEnhancement({ initialCatalog }: { init
     () => (catalog?.products || []).filter((item) => isBestSeller(item.badge)),
     [catalog],
   );
-  const safeActive = items.length ? active % items.length : 0;
 
-  useEffect(() => {
-    if (items.length < 2 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const timer = window.setInterval(() => setActive((current) => (current + 1) % items.length), 3800);
-    return () => window.clearInterval(timer);
-  }, [items.length]);
+  function scroll(direction: -1 | 1) {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    viewport.scrollBy({
+      left: direction * Math.max(280, viewport.clientWidth * 0.82),
+      behavior: "smooth",
+    });
+  }
 
   if (!host || !items.length) return null;
-
-  const previous = () => setActive((current) => (current - 1 + items.length) % items.length);
-  const next = () => setActive((current) => (current + 1) % items.length);
 
   return createPortal(
     <section className="storefront-best-sellers" id="best-sellers" aria-label="Best sellers Maison Jiya">
       <div className="storefront-best-sellers-copy">
-        <span>Les favoris du moment</span>
-        <h2>Best sellers</h2>
-        <p>Une sélection des modèles Maison Jiya les plus mis en avant.</p>
+        <div>
+          <span>Les favoris du moment</span>
+          <h2>Best sellers</h2>
+          <p>Fais glisser horizontalement pour découvrir les modèles Maison Jiya sélectionnés.</p>
+        </div>
         <div className="storefront-best-sellers-controls">
-          <button type="button" onClick={previous} disabled={items.length < 2} aria-label="Best seller précédent">↑</button>
-          <strong>{String(safeActive + 1).padStart(2, "0")} / {String(items.length).padStart(2, "0")}</strong>
-          <button type="button" onClick={next} disabled={items.length < 2} aria-label="Best seller suivant">↓</button>
+          <button type="button" onClick={() => scroll(-1)} disabled={items.length < 2} aria-label="Best sellers précédents">←</button>
+          <strong>{items.length} sélection{items.length === 1 ? "" : "s"}</strong>
+          <button type="button" onClick={() => scroll(1)} disabled={items.length < 2} aria-label="Best sellers suivants">→</button>
         </div>
       </div>
 
-      <div className="storefront-best-sellers-viewport">
-        <div className="storefront-best-sellers-track" style={{ transform: `translateY(-${safeActive * 100}%)` }}>
+      <div className="storefront-best-sellers-viewport" ref={viewportRef}>
+        <div className="storefront-best-sellers-track">
           {items.map((item) => {
             const fallback = <div className="storefront-best-seller-fallback"><b>{item.category.slice(0, 1).toUpperCase()}</b><small>{item.category}</small></div>;
             return <article className={`storefront-best-seller-card ${!item.available ? "unavailable" : ""}`} key={item.id}>

@@ -26,7 +26,7 @@ export default function BestSellerCmsEnhancement() {
         button.type = "button";
         button.className = "storefront-best-seller-cms-toggle";
         const note = document.createElement("small");
-        note.textContent = "Les produits sélectionnés ici apparaissent automatiquement dans le carrousel vertical Best sellers du site public.";
+        note.textContent = "Les produits sélectionnés ici apparaissent automatiquement dans la liste horizontale Best sellers du site public.";
 
         const sync = () => {
           const active = isBestSeller(badgeInput.value);
