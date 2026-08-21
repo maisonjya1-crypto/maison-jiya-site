@@ -175,14 +175,27 @@ export async function POST(request: Request) {
     const campaignRaw = text(payload.campaign).slice(0, 120);
     const campaign = isStoreSale || campaignRaw === "Aucune campagne" ? "" : campaignRaw;
 
+    const manualMode = Object.prototype.hasOwnProperty.call(payload, "carrierManual");
     const manualCarrier = text(payload.carrierManual).replace(/\s+/g, " ").slice(0, 80);
-    const carrier = isStoreSale ? "Magasin physique" : (manualCarrier || text(payload.carrier, "Non affecté").slice(0, 80));
-    const shippingCost = isStoreSale ? 0 : money(payload.shippingCostManual, money(payload.shippingCost));
-    const trackingNumber = isStoreSale ? "" : text(payload.trackingNumberManual, text(payload.trackingNumber)).slice(0, 120);
+    const carrier = isStoreSale
+      ? "Magasin physique"
+      : manualMode
+        ? (manualCarrier || "Non affecté")
+        : text(payload.carrier, "Non affecté").slice(0, 80);
+    const shippingCost = isStoreSale
+      ? 0
+      : manualMode
+        ? money(payload.shippingCostManual)
+        : money(payload.shippingCost);
+    const trackingNumber = isStoreSale
+      ? ""
+      : manualMode
+        ? text(payload.trackingNumberManual).slice(0, 120)
+        : text(payload.trackingNumber).slice(0, 120);
     const adCost = money(payload.adCost);
     const fees = money(payload.fees);
     const paymentStatus = isStoreSale ? "Encaissé" : "À encaisser";
-    const dispatchState = isStoreSale ? "Non requis" : manualCarrier ? "Enregistré manuellement" : "À autoriser";
+    const dispatchState = isStoreSale ? "Non requis" : manualMode ? (manualCarrier ? "Enregistré manuellement" : "À renseigner") : "À autoriser";
     const now = new Date().toISOString();
     const paidAt = isStoreSale ? now : null;
     const orderRef = `MJ-${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
@@ -195,7 +208,7 @@ export async function POST(request: Request) {
     const values: Array<string | number | null> = [
       orderRef, customer.id, null, city, address, productLabel, totalQuantity, saleAmount, productCost,
       shippingCost, adCost, fees, 0, returnReason, returnNote, source, campaign, fulfillmentType,
-      status, paymentStatus, carrier || "Non affecté", trackingNumber, dispatchState, 0, paidAt, JSON.stringify(capturedItems), packName, now,
+      status, paymentStatus, carrier, trackingNumber, dispatchState, 0, paidAt, JSON.stringify(capturedItems), packName, now,
     ];
     const statements: D1PreparedStatement[] = [
       database.prepare(`INSERT INTO orders (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`).bind(...values),
