@@ -47,6 +47,7 @@ jobs:
       - name: Verify release package exists
         run: |
           test -s android/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar"
           echo "Unsigned release APK ready for Maison Jiya release signing"
 
       - name: Upload unsigned release APK
@@ -56,3 +57,11 @@ jobs:
           path: android/app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload Android APK signer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Maison-Jiya-Android-ApkSigner
+          path: ${{ env.ANDROID_HOME }}/build-tools/35.0.0/lib/apksigner.jar
+          if-no-files-found: error
+          retention-days: 7
