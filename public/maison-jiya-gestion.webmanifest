@@ -1,0 +1,20 @@
+{
+  "id": "/?source=pwa",
+  "name": "Maison Jiya Gestion",
+  "short_name": "Jiya Gestion",
+  "description": "Gestion privée Maison Jiya : commandes, stock, partenaires et boutique publique.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#2d2430",
+  "icons": [
+    {
+      "src": "/maison-jiya-logo.jpeg",
+      "sizes": "any",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}
