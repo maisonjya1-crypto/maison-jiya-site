@@ -1,0 +1,65 @@
+/* iPhone/iPad Home Screen optimization for the private Maison Jiya dashboard only. */
+@supports (-webkit-touch-callout: none) {
+  html, body {
+    width: 100%;
+    min-height: 100%;
+    -webkit-text-size-adjust: 100%;
+    overscroll-behavior-y: none;
+    background: var(--cream, #f7f4f8);
+  }
+
+  body {
+    min-height: 100dvh;
+  }
+
+  @media (display-mode: standalone) {
+    body {
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      padding-left: env(safe-area-inset-left, 0px);
+    }
+
+    .app-shell,
+    .auth-shell {
+      min-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    }
+
+    .sidebar {
+      padding-top: max(14px, env(safe-area-inset-top, 0px));
+    }
+  }
+
+  @media (max-width: 820px) {
+    .app-shell input,
+    .app-shell select,
+    .app-shell textarea,
+    .auth-shell input,
+    .auth-shell select,
+    .auth-shell textarea {
+      font-size: 16px !important;
+    }
+
+    .app-shell button,
+    .app-shell .nav-item,
+    .auth-shell button {
+      min-height: 44px;
+    }
+
+    .app-shell,
+    .auth-shell,
+    .workspace,
+    .page-content,
+    main {
+      min-width: 0 !important;
+      max-width: 100% !important;
+    }
+
+    main,
+    .workspace,
+    .page-content {
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
+}
