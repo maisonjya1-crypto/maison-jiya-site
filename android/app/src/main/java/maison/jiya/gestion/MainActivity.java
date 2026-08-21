@@ -6,7 +6,6 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
-import android.provider.Settings;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.SafeBrowsingResponse;
@@ -68,8 +67,14 @@ public class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
-        settings.setLoadWithOverviewMode(true);
+
+        // Respect the real physical viewport. Do not shrink a desktop-sized page to fit.
+        settings.setLoadWithOverviewMode(false);
         settings.setUseWideViewPort(true);
+        settings.setTextZoom(100);
+        settings.setDefaultFontSize(16);
+        settings.setMinimumFontSize(8);
+
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
         settings.setSupportZoom(false);
@@ -78,13 +83,14 @@ public class MainActivity extends Activity {
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " MaisonJiyaAndroid/2.0");
+        settings.setUserAgentString(settings.getUserAgentString() + " MaisonJiyaAndroid/2.1");
 
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(webView, true);
 
-        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        webView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
         webView.setWebViewClient(new MaisonJiyaWebViewClient());
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -224,6 +230,18 @@ public class MainActivity extends Activity {
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
             progressBar.setVisibility(View.VISIBLE);
             super.onPageStarted(view, url, favicon);
+        }
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            // Force the WebView to follow the current device width even on pages restored from history.
+            view.evaluateJavascript(
+                    "(function(){var m=document.querySelector('meta[name=viewport]');" +
+                    "if(!m){m=document.createElement('meta');m.name='viewport';document.head.appendChild(m);}" +
+                    "m.content='width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover';})();",
+                    null
+            );
+            super.onPageFinished(view, url);
         }
 
         @Override
