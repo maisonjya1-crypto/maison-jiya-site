@@ -6,7 +6,7 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    files: ["app/platform-enhancements.tsx"],
+    files: ["app/platform-enhancements.tsx", "app/storefront-cms-enhancement.tsx"],
     rules: {
       "react-hooks/set-state-in-effect": "off",
     },
