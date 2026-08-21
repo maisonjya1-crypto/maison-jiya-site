@@ -8,6 +8,7 @@ type ProductRow = {
   id: number;
   productCode: string;
   name: string;
+  category: string;
   publicName: string;
   publicPrice: number;
   purchasePrice: number;
@@ -18,6 +19,8 @@ type ProductRow = {
 type OfferRow = { id: number; name: string; price: number; isActive: number };
 type OfferComponentRow = { offerId: number; productId: number; quantity: number };
 type CapturedItem = { productId: number; productCode: string; name: string; quantity: number; unitCost: number; catalogUnitPrice: number; lineSaleAmount: number };
+
+const excludedPublicCategories = new Set(["Électronique", "Electronique", "Boîtes", "Boites"]);
 
 function text(value: unknown, max = 200) {
   return typeof value === "string" ? value.trim().replace(/\s+/g, " ").slice(0, max) : "";
@@ -143,7 +146,7 @@ export async function POST(request: Request) {
     if (!productIds.length) throw new Error("Votre panier est vide.");
     const productPlaceholders = productIds.map(() => "?").join(",");
     const rows = (await database.prepare(`
-      SELECT p.id, p.product_code AS productCode, p.name,
+      SELECT p.id, p.product_code AS productCode, p.name, p.category AS category,
         COALESCE(NULLIF(s.public_name, ''), p.name) AS publicName,
         CASE WHEN s.public_price IS NULL OR s.public_price <= 0 THEN p.sale_price ELSE s.public_price END AS publicPrice,
         p.purchase_price AS purchasePrice, p.stock_quantity AS stockQuantity,
@@ -153,6 +156,7 @@ export async function POST(request: Request) {
       WHERE p.id IN (${productPlaceholders})
     `).bind(...productIds).all<ProductRow>()).results;
     if (rows.length !== productIds.length) throw new Error("Un article du panier n’est plus disponible.");
+    if (rows.some((product) => excludedPublicCategories.has(product.category))) throw new Error("Un article du panier n’est pas disponible sur la boutique publique.");
     const products = new Map(rows.map((product) => [product.id, product]));
 
     const expanded = new Map<number, { product: ProductRow; quantity: number; weight: number }>();
