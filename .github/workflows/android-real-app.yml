@@ -1,0 +1,97 @@
+name: Build Maison Jiya Android App
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "android/**"
+      - ".github/workflows/android-real-app.yml"
+      - "public/.well-known/assetlinks.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Prepare application icon
+        run: |
+          mkdir -p android/app/src/main/res/drawable
+          cp public/jiya-gestion-512-maskable.png android/app/src/main/res/drawable/app_icon.png
+
+      - name: Build validation APK
+        if: ${{ hashFiles('public/.well-known/assetlinks.json') != '' }}
+        working-directory: android
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Generate one-time release signing key
+        id: key
+        if: ${{ hashFiles('public/.well-known/assetlinks.json') == '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/maison-jiya-gestion.jks"
+          PASS="$(openssl rand -hex 24)"
+          keytool -genkeypair -v \
+            -keystore "$KEYSTORE" \
+            -storepass "$PASS" \
+            -keypass "$PASS" \
+            -alias maisonjiya \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Maison Jiya Gestion,O=Maison Jiya,C=MA"
+          FINGERPRINT="$(keytool -list -v -keystore "$KEYSTORE" -storepass "$PASS" -alias maisonjiya | sed -n 's/^[[:space:]]*SHA256: //p' | head -1)"
+          test -n "$FINGERPRINT"
+          echo "MJ_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+          echo "MJ_KEYSTORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "MJ_KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "MJ_KEY_ALIAS=maisonjiya" >> "$GITHUB_ENV"
+          echo "ASSETLINKS_FINGERPRINT=$FINGERPRINT"
+          echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
+
+      - name: Build signed release APK
+        if: ${{ hashFiles('public/.well-known/assetlinks.json') == '' }}
+        working-directory: android
+        run: gradle :app:assembleRelease --stacktrace
+
+      - name: Verify release APK
+        if: ${{ hashFiles('public/.well-known/assetlinks.json') == '' }}
+        run: |
+          test -s android/app/build/outputs/apk/release/app-release.apk
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose android/app/build/outputs/apk/release/app-release.apk
+          echo "APK signed successfully"
+          echo "Digital Asset Links fingerprint: ${{ steps.key.outputs.fingerprint }}"
+
+      - name: Upload Maison Jiya APK
+        if: ${{ hashFiles('public/.well-known/assetlinks.json') == '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Maison-Jiya-Gestion-Android
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
