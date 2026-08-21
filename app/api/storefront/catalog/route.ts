@@ -5,7 +5,7 @@ import { loadStorefrontCatalog } from "../../../../db/storefront-public";
 
 function cacheHeaders() {
   return {
-    "cache-control": "public, max-age=30, s-maxage=120, stale-while-revalidate=600",
+    "cache-control": "public, max-age=30, s-maxage=60, stale-while-revalidate=300",
     "content-type": "application/json; charset=utf-8",
     "x-content-type-options": "nosniff",
   };
@@ -16,7 +16,7 @@ function looksLikeMissingSchema(error: unknown) {
   return /no such table|no such column/i.test(message);
 }
 
-export async function GET() {
+async function buildCatalogResponse() {
   try {
     const database = await getPublicDb();
     const catalog = await loadStorefrontCatalog(database);
@@ -38,4 +38,14 @@ export async function GET() {
       headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" },
     });
   }
+}
+
+export async function GET(request: Request) {
+  const cache = (caches as CacheStorage & { default: Cache }).default;
+  const cached = await cache.match(request);
+  if (cached) return cached;
+
+  const response = await buildCatalogResponse();
+  if (response.ok) await cache.put(request, response.clone());
+  return response;
 }
