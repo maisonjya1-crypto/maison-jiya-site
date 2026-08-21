@@ -13,6 +13,7 @@ const FEATURED_OFFERS = 8;
 const money = (value: number) => `${Number(value).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} DH`;
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("fr");
 const itemKey = (item: Pick<CatalogItem, "kind" | "id">) => `${item.kind === "offer" ? "o" : "p"}:${item.id}`;
+const legacyBestSellerBadge = (badge: string) => normalize(badge).replace(/[^a-z0-9]/g, "").includes("bestseller");
 
 function track(event: string, data?: Record<string, unknown>) {
   if (typeof window === "undefined") return;
@@ -90,6 +91,7 @@ export default function StorefrontClientFast({ initialCatalog }: { initialCatalo
   const [utm, setUtm] = useState({ source: "", medium: "", campaign: "" });
   const refreshInFlight = useRef(false);
   const lastRefreshAt = useRef(0);
+  const bestSellerTrackRef = useRef<HTMLDivElement | null>(null);
 
   const refreshCatalog = useCallback(async (showLoading = false) => {
     if (refreshInFlight.current) return;
@@ -159,6 +161,7 @@ export default function StorefrontClientFast({ initialCatalog }: { initialCatalo
   }, [cart]);
 
   const items = useMemo(() => [...(catalog?.offers ?? []), ...(catalog?.products ?? [])], [catalog]);
+  const bestSellers = useMemo(() => (catalog?.products ?? []).filter((item) => item.isBestSeller || legacyBestSellerBadge(item.badge)), [catalog]);
   const filtered = useMemo(() => {
     const cleanQuery = normalize(query.trim());
     return items.filter((item) => {
@@ -194,6 +197,12 @@ export default function StorefrontClientFast({ initialCatalog }: { initialCatalo
       }
       return { ...current, [key]: Math.min(20, quantity) };
     });
+  }
+
+  function scrollBestSellers(direction: -1 | 1) {
+    const trackNode = bestSellerTrackRef.current;
+    if (!trackNode) return;
+    trackNode.scrollBy({ left: direction * Math.max(280, trackNode.clientWidth * 0.82), behavior: "smooth" });
   }
 
   function beginCheckout() {
@@ -259,6 +268,7 @@ export default function StorefrontClientFast({ initialCatalog }: { initialCatalo
         <span><strong>{brand}</strong><small>Boutique officielle</small></span>
       </a>
       <nav>
+        {Boolean(bestSellers.length) && <a href="#best-sellers">Best-sellers</a>}
         <a href="#catalogue">Catalogue</a>
         {Boolean(catalog?.offers.length) && <a href="#offres">Offres</a>}
         <a href="#commande">Comment commander</a>
@@ -282,6 +292,16 @@ export default function StorefrontClientFast({ initialCatalog }: { initialCatalo
         ? <div className="storefront-hero-photo"><SafeImage src={catalog.heroImageUrl} alt={`Collection ${brand}`} loading="eager" fetchPriority="high" fallback={<div className="storefront-hero-card"><span>MJ</span><strong>{brand}</strong><small>Montres · Bijoux · Portefeuilles · Packs</small></div>} /></div>
         : <div className="storefront-hero-card" aria-hidden="true"><span>MJ</span><strong>{brand}</strong><small>Montres · Bijoux · Portefeuilles · Packs</small></div>}
     </section>
+
+    {Boolean(bestSellers.length) && <section className="storefront-best-sellers" id="best-sellers">
+      <div className="storefront-section-head storefront-best-seller-head">
+        <div><span>Les favoris Maison Jiya</span><h2>Best-sellers</h2></div>
+        <div className="storefront-best-seller-controls"><strong>{bestSellers.length} sélection{bestSellers.length === 1 ? "" : "s"}</strong><button type="button" onClick={() => scrollBestSellers(-1)} aria-label="Best-sellers précédents">‹</button><button type="button" onClick={() => scrollBestSellers(1)} aria-label="Best-sellers suivants">›</button></div>
+      </div>
+      <div className="storefront-best-seller-track" ref={bestSellerTrackRef}>
+        {bestSellers.map((item, index) => <StoreItemCard key={`best-${item.id}`} item={item} add={add} priority={index < 2} />)}
+      </div>
+    </section>}
 
     {Boolean(featuredOffers.length) && <section className="storefront-featured-offers" id="offres">
       <div className="storefront-section-head"><div><span>Offres Maison Jiya</span><h2>Packs & bons plans</h2></div><strong>{catalog?.offers.length} offre(s)</strong></div>
