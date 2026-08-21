@@ -245,7 +245,7 @@ export default function PlatformEnhancements() {
         const host = document.createElement("div");
         host.dataset.mjWhatsappHost = "true";
         const intro = settingsPage.querySelector(".settings-intro");
-        if (intro) intro.insertAdjacentElement("afterend", host); else settingsPage.prepend(host);
+        if (intro?.parentNode) intro.parentNode.insertBefore(host, intro.nextSibling); else settingsPage.prepend(host);
         setSettingsHost(host);
       } else if (!settingsPage) setSettingsHost(null);
     };
@@ -267,7 +267,7 @@ export default function PlatformEnhancements() {
     const host = document.createElement("div");
     host.dataset.mjMultiOrderHost = "true";
     const actions = orderForm.querySelector(".modal-actions");
-    if (actions) actions.insertAdjacentElement("beforebegin", host); else orderForm.append(host);
+    if (actions) orderForm.insertBefore(host, actions); else orderForm.append(host);
     setOrderHost(host);
     return () => { cancelled = true; host.remove(); setOrderHost(null); };
   }, [orderForm]);
