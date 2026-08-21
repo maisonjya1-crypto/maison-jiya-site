@@ -47,19 +47,21 @@ export default function StorefrontClient() {
   const [utm, setUtm] = useState({ source: "", medium: "", campaign: "" });
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("maison-jiya-cart-v1");
-      if (saved) setCart(JSON.parse(saved) as Cart);
-    } catch {
-      localStorage.removeItem("maison-jiya-cart-v1");
-    }
+    const restoreTimer = window.setTimeout(() => {
+      try {
+        const saved = localStorage.getItem("maison-jiya-cart-v1");
+        if (saved) setCart(JSON.parse(saved) as Cart);
+      } catch {
+        localStorage.removeItem("maison-jiya-cart-v1");
+      }
 
-    const params = new URLSearchParams(window.location.search);
-    setUtm({
-      source: params.get("utm_source") || "",
-      medium: params.get("utm_medium") || "",
-      campaign: params.get("utm_campaign") || "",
-    });
+      const params = new URLSearchParams(window.location.search);
+      setUtm({
+        source: params.get("utm_source") || "",
+        medium: params.get("utm_medium") || "",
+        campaign: params.get("utm_campaign") || "",
+      });
+    }, 0);
 
     void (async () => {
       try {
@@ -74,13 +76,15 @@ export default function StorefrontClient() {
         setLoading(false);
       }
     })();
+
+    return () => window.clearTimeout(restoreTimer);
   }, []);
 
   useEffect(() => {
     try { localStorage.setItem("maison-jiya-cart-v1", JSON.stringify(cart)); } catch { /* stockage facultatif */ }
   }, [cart]);
 
-  const products = catalog?.products || [];
+  const products = useMemo(() => catalog?.products ?? [], [catalog]);
   const filtered = useMemo(() => {
     const cleanQuery = normalize(query.trim());
     return products.filter((product) => {
