@@ -4,6 +4,7 @@ import StorefrontClientFast from "./storefront-client-fast";
 import type { StorefrontCatalog } from "./storefront-types";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function BoutiquePage() {
   let initialCatalog: StorefrontCatalog | null = null;
