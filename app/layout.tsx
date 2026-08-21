@@ -4,9 +4,10 @@ import "./globals.css";
 import "./enhancements.css";
 import "./carrier-mode.css";
 import "./storefront-cms.css";
+import "./storefront-cms-v2.css";
 import PlatformEnhancements from "./platform-enhancements";
 import CarrierModeEnhancement from "./carrier-mode-enhancement";
-import StorefrontCmsEnhancement from "./storefront-cms-enhancement";
+import StorefrontCmsV2Enhancement from "./storefront-cms-v2-enhancement";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -42,7 +43,7 @@ export default function RootLayout({
         {children}
         <PlatformEnhancements />
         <CarrierModeEnhancement />
-        <StorefrontCmsEnhancement />
+        <StorefrontCmsV2Enhancement />
       </body>
     </html>
   );
