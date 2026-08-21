@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 
 type Product = {
@@ -14,6 +14,7 @@ type Product = {
 
 type ExtraItem = { key: string; productId: string; quantity: string };
 type WhatsAppNumber = { id: string; label: string; phone: string; isDefault: boolean };
+type PortalContainer = Parameters<typeof createPortal>[1];
 
 const formatMoney = (value: number) => `${value.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD`;
 
@@ -39,7 +40,7 @@ function MultiOrderBuilder({
   form: HTMLFormElement;
   products: Product[];
   extras: ExtraItem[];
-  setExtras: React.Dispatch<React.SetStateAction<ExtraItem[]>>;
+  setExtras: Dispatch<SetStateAction<ExtraItem[]>>;
   isPack: boolean;
   setIsPack: (value: boolean) => void;
   packName: string;
@@ -51,8 +52,8 @@ function MultiOrderBuilder({
   const [firstQuantity, setFirstQuantity] = useState("1");
 
   useEffect(() => {
-    const productSelect = form.querySelector<HTMLSelectElement>('select[name="productId"]');
-    const quantityInput = form.querySelector<HTMLInputElement>('input[name="quantity"]');
+    const productSelect = form.querySelector('select[name="productId"]') as HTMLSelectElement | null;
+    const quantityInput = form.querySelector('input[name="quantity"]') as HTMLInputElement | null;
     if (!productSelect || !quantityInput) return;
     const read = () => {
       setFirstProductId(productSelect.value);
@@ -85,7 +86,7 @@ function MultiOrderBuilder({
   }
 
   function applyCatalogTotal() {
-    const input = form.querySelector<HTMLInputElement>('input[name="saleAmount"]');
+    const input = form.querySelector('input[name="saleAmount"]') as HTMLInputElement | null;
     if (input) setControlledInputValue(input, String(catalogTotal));
   }
 
@@ -213,7 +214,8 @@ export default function PlatformEnhancements() {
 
   useEffect(() => {
     const scan = () => {
-      const form = document.querySelector<HTMLSelectElement>('.modal form select[name="productId"]')?.form || null;
+      const productSelect = document.querySelector('.modal form select[name="productId"]') as HTMLSelectElement | null;
+      const form = productSelect?.form || null;
       setOrderForm((current) => current === form ? current : form);
 
       if (!bootstrapped.current && document.querySelector(".app-shell")) {
@@ -238,7 +240,7 @@ export default function PlatformEnhancements() {
         })();
       }
 
-      const settingsPage = document.querySelector<HTMLElement>(".settings-page");
+      const settingsPage = document.querySelector(".settings-page") as HTMLElement | null;
       if (settingsPage && !settingsPage.querySelector('[data-mj-whatsapp-host="true"]')) {
         const host = document.createElement("div");
         host.dataset.mjWhatsappHost = "true";
@@ -256,12 +258,18 @@ export default function PlatformEnhancements() {
   useEffect(() => {
     setExtras([]); setIsPack(false); setPackName(""); setMultiError(""); setMultiSaving(false);
     if (!orderForm) { setOrderHost(null); return; }
+    let cancelled = false;
+    void fetch("/api/data", { cache: "no-store" }).then(async (response) => {
+      if (!response.ok || cancelled) return;
+      const body = await response.json() as { products?: Product[] };
+      if (!cancelled) setProducts(body.products || []);
+    }).catch(() => undefined);
     const host = document.createElement("div");
     host.dataset.mjMultiOrderHost = "true";
     const actions = orderForm.querySelector(".modal-actions");
     if (actions) actions.insertAdjacentElement("beforebegin", host); else orderForm.append(host);
     setOrderHost(host);
-    return () => { host.remove(); setOrderHost(null); };
+    return () => { cancelled = true; host.remove(); setOrderHost(null); };
   }, [orderForm]);
 
   useEffect(() => {
@@ -302,7 +310,7 @@ export default function PlatformEnhancements() {
   }, [extras, isPack, multiSaving, orderForm, packName]);
 
   return <>
-    {orderHost && orderForm ? createPortal(<MultiOrderBuilder form={orderForm} products={products} extras={extras} setExtras={setExtras} isPack={isPack} setIsPack={setIsPack} packName={packName} setPackName={setPackName} saving={multiSaving} error={multiError} />, orderHost) : null}
-    {settingsHost ? createPortal(<WhatsAppSettingsPanel />, settingsHost) : null}
+    {orderHost && orderForm ? createPortal(<MultiOrderBuilder form={orderForm} products={products} extras={extras} setExtras={setExtras} isPack={isPack} setIsPack={setIsPack} packName={packName} setPackName={setPackName} saving={multiSaving} error={multiError} />, orderHost as unknown as PortalContainer) : null}
+    {settingsHost ? createPortal(<WhatsAppSettingsPanel />, settingsHost as unknown as PortalContainer) : null}
   </>;
 }
