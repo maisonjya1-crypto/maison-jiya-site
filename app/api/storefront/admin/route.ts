@@ -1,6 +1,11 @@
 import { getAuthenticatedUser } from "../../../auth";
 import { getRawDb } from "../../../../db";
+import { normalizeMoroccanPhone } from "../../../../db/phone";
 import { ensureStorefrontCms, getStorefrontMedia, type StorefrontOfferItemRow, type StorefrontOfferRow, type StorefrontProductSettingRow } from "../../../../db/storefront-cms";
+
+type WhatsAppNumber = { label?: string; phone?: string; isDefault?: boolean };
+
+const excludedPublicCategories = new Set(["Électronique", "Electronique", "Boîtes", "Boites"]);
 
 function text(value: unknown, max = 240) {
   return typeof value === "string" ? value.trim().replace(/\s+/g, " ").slice(0, max) : "";
@@ -28,6 +33,16 @@ function validOrigin(request: Request) {
   return !origin || origin === new URL(request.url).origin;
 }
 
+function defaultWhatsApp(raw: string | undefined) {
+  try {
+    const parsed = JSON.parse(raw || "[]") as WhatsAppNumber[];
+    const preferred = parsed.find((item) => item?.isDefault && item?.phone) || parsed.find((item) => item?.phone);
+    return typeof preferred?.phone === "string" ? (normalizeMoroccanPhone(preferred.phone) || "") : "";
+  } catch {
+    return "";
+  }
+}
+
 async function requireUser(request: Request) {
   const user = await getAuthenticatedUser(request);
   if (!user) return { error: Response.json({ error: "Connexion requise." }, { status: 401 }) } as const;
@@ -41,10 +56,13 @@ async function snapshot(database: D1Database) {
     SELECT key, value FROM settings
     WHERE key IN (
       'storefront_brand_name', 'storefront_announcement', 'storefront_hero_title',
-      'storefront_hero_text', 'storefront_shipping_note', 'storefront_meta_pixel_id'
+      'storefront_hero_text', 'storefront_shipping_note', 'storefront_meta_pixel_id',
+      'storefront_contact_whatsapp', 'whatsapp_numbers'
     )
   `).all<{ key: string; value: string }>()).results;
   const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
+  const businessWhatsapp = defaultWhatsApp(settings.whatsapp_numbers);
+  const configuredContact = normalizeMoroccanPhone(settings.storefront_contact_whatsapp || "") || "";
 
   const products = (await database.prepare(`
     SELECT
@@ -63,6 +81,7 @@ async function snapshot(database: D1Database) {
       COALESCE(s.sort_order, 0) AS sortOrder
     FROM products p
     LEFT JOIN storefront_product_settings s ON s.product_id = p.id
+    WHERE p.category NOT IN ('Électronique', 'Electronique', 'Boîtes', 'Boites')
     ORDER BY COALESCE(s.sort_order, 0), p.category COLLATE NOCASE, p.name COLLATE NOCASE
   `).all<StorefrontProductSettingRow>()).results;
 
@@ -81,6 +100,7 @@ async function snapshot(database: D1Database) {
   `).all<StorefrontOfferItemRow>()).results;
 
   const media = await getStorefrontMedia(database);
+  const allowedProductIds = new Set(products.map((product) => product.productId));
 
   return {
     settings: {
@@ -90,6 +110,9 @@ async function snapshot(database: D1Database) {
       heroText: settings.storefront_hero_text || "Choisissez vos articles, validez votre commande en ligne et payez à la livraison. Notre équipe vous contacte ensuite pour confirmer.",
       shippingNote: settings.storefront_shipping_note || "Les éventuels frais de livraison sont confirmés par notre équipe.",
       metaPixelId: settings.storefront_meta_pixel_id || "",
+      contactWhatsapp: configuredContact || businessWhatsapp,
+      defaultBusinessWhatsapp: businessWhatsapp,
+      contactUsesDefault: !configuredContact,
     },
     products: products.map((product) => ({
       ...product,
@@ -99,7 +122,7 @@ async function snapshot(database: D1Database) {
     offers: offers.map((offer) => ({
       ...offer,
       isActive: Boolean(offer.isActive),
-      items: offerItems.filter((item) => item.offerId === offer.id),
+      items: offerItems.filter((item) => item.offerId === offer.id && allowedProductIds.has(item.productId)),
       media: media.filter((item) => item.ownerType === "offer" && item.ownerId === offer.id),
     })),
     brandMedia: media.filter((item) => item.ownerType === "brand" && item.ownerId === 0),
@@ -138,6 +161,10 @@ export async function POST(request: Request) {
     const action = text(payload.action, 40);
 
     if (action === "saveGeneral") {
+      const contactInput = text(payload.contactWhatsapp, 40);
+      const contactWhatsapp = contactInput ? normalizeMoroccanPhone(contactInput) : null;
+      if (contactInput && !contactWhatsapp) throw new Error("Le numéro WhatsApp doit être un numéro marocain valide.");
+      const useDefaultWhatsapp = boolean(payload.useDefaultWhatsapp, false);
       const rows: Array<[string, string]> = [
         ["storefront_brand_name", text(payload.brandName, 80) || "Maison Jiya"],
         ["storefront_announcement", text(payload.announcement, 160)],
@@ -145,6 +172,7 @@ export async function POST(request: Request) {
         ["storefront_hero_text", text(payload.heroText, 420)],
         ["storefront_shipping_note", text(payload.shippingNote, 220)],
         ["storefront_meta_pixel_id", text(payload.metaPixelId, 40).replace(/[^0-9]/g, "")],
+        ["storefront_contact_whatsapp", useDefaultWhatsapp ? "" : (contactWhatsapp || "")],
       ];
       await database.batch(rows.map(([key, value]) => database.prepare(`
         INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
@@ -153,8 +181,9 @@ export async function POST(request: Request) {
     } else if (action === "saveProduct") {
       const productId = integer(payload.productId);
       if (productId <= 0) throw new Error("Produit invalide.");
-      const exists = await database.prepare("SELECT id FROM products WHERE id = ? LIMIT 1").bind(productId).first<{ id: number }>();
+      const exists = await database.prepare("SELECT id, category FROM products WHERE id = ? LIMIT 1").bind(productId).first<{ id: number; category: string }>();
       if (!exists) throw new Error("Ce produit n’existe plus.");
+      if (excludedPublicCategories.has(exists.category)) throw new Error("Cette catégorie n’est pas publiée sur la boutique.");
       const availabilityMode = ["auto", "available", "out_of_stock"].includes(text(payload.availabilityMode, 30)) ? text(payload.availabilityMode, 30) : "auto";
       await database.prepare(`
         INSERT INTO storefront_product_settings (
@@ -185,7 +214,7 @@ export async function POST(request: Request) {
       const name = text(payload.name, 140);
       const price = money(payload.price);
       if (!name || price <= 0) throw new Error("Nom et prix du pack sont obligatoires.");
-      if (!Array.isArray(payload.items) || payload.items.length < 1 || payload.items.length > 20) throw new Error("Ajoutez au moins un produit au pack.");
+      if (!Array.isArray(payload.items) || payload.items.length < 1 || payload.items.length > 30) throw new Error("Ajoutez au moins un produit au pack.");
       const grouped = new Map<number, number>();
       for (const raw of payload.items) {
         if (!raw || typeof raw !== "object") continue;
@@ -197,8 +226,12 @@ export async function POST(request: Request) {
       if (!grouped.size) throw new Error("Ajoutez au moins un produit valide au pack.");
       const productIds = [...grouped.keys()];
       const placeholders = productIds.map(() => "?").join(",");
-      const check = (await database.prepare(`SELECT id FROM products WHERE id IN (${placeholders})`).bind(...productIds).all<{ id: number }>()).results;
-      if (check.length !== productIds.length) throw new Error("Un produit du pack n’existe plus.");
+      const check = (await database.prepare(`
+        SELECT id, category FROM products WHERE id IN (${placeholders})
+      `).bind(...productIds).all<{ id: number; category: string }>()).results;
+      if (check.length !== productIds.length || check.some((row) => excludedPublicCategories.has(row.category))) {
+        throw new Error("Un produit choisi n’est pas autorisé sur la boutique publique.");
+      }
 
       let id = offerId;
       if (id > 0) {

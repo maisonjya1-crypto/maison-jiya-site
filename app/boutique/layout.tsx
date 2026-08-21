@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import "./storefront.css";
 import "./storefront-cms-public.css";
+import "./storefront-contact.css";
+import StorefrontContactEnhancement from "./storefront-contact-enhancement";
 
 export const metadata: Metadata = {
   title: "Maison Jiya — Boutique",
-  description: "Montres, bijoux, wallets, électronique et packs Maison Jiya. Commandez en ligne avec paiement à la livraison.",
+  description: "Montres, bijoux, portefeuilles et packs Maison Jiya. Commandez en ligne avec paiement à la livraison.",
   robots: {
     index: true,
     follow: true,
@@ -17,5 +19,5 @@ export const metadata: Metadata = {
 };
 
 export default function BoutiqueLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return children;
+  return <>{children}<StorefrontContactEnhancement /></>;
 }
