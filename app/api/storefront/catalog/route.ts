@@ -1,4 +1,5 @@
 import { getRawDb } from "../../../../db";
+import { normalizeMoroccanPhone } from "../../../../db/phone";
 import { ensurePlatformUpgrades } from "../../../../db/platform-upgrades";
 import { ensureStorefrontCms } from "../../../../db/storefront-cms";
 
@@ -15,9 +16,16 @@ type PublicProductRow = {
   sortOrder: number;
 };
 type PublicOfferRow = { id: number; name: string; description: string; price: number; comparePrice: number; badge: string; sortOrder: number };
-type OfferItemRow = { offerId: number; productId: number; quantity: number; stockQuantity: number };
+type OfferItemRow = { offerId: number; productId: number; quantity: number; stockQuantity: number; category: string };
 type MediaRow = { id: number; ownerType: string; ownerId: number; kind: string; sortOrder: number };
 type WhatsAppNumber = { label?: string; phone?: string; isDefault?: boolean };
+
+const excludedPublicCategories = new Set(["Électronique", "Electronique", "Boîtes", "Boites"]);
+
+function publicCategory(category: string) {
+  if (["Wallets", "Wallet", "Portefeuille", "Portefeuilles"].includes(category)) return "Portefeuilles";
+  return category || "Autre";
+}
 
 function cacheHeaders() {
   return {
@@ -25,6 +33,16 @@ function cacheHeaders() {
     "content-type": "application/json; charset=utf-8",
     "x-content-type-options": "nosniff",
   };
+}
+
+function defaultWhatsApp(raw: string | undefined) {
+  try {
+    const parsed = JSON.parse(raw || "[]") as WhatsAppNumber[];
+    const preferred = parsed.find((item) => item?.isDefault && item?.phone) || parsed.find((item) => item?.phone);
+    return typeof preferred?.phone === "string" ? (normalizeMoroccanPhone(preferred.phone) || "") : "";
+  } catch {
+    return "";
+  }
 }
 
 export async function GET() {
@@ -48,6 +66,7 @@ export async function GET() {
       FROM products p
       LEFT JOIN storefront_product_settings s ON s.product_id = p.id
       WHERE COALESCE(s.is_visible, 1) = 1
+        AND p.category NOT IN ('Électronique', 'Electronique', 'Boîtes', 'Boites')
       ORDER BY COALESCE(s.sort_order, 0), p.category COLLATE NOCASE, name COLLATE NOCASE
       LIMIT 500
     `).all<PublicProductRow>()).results;
@@ -60,7 +79,8 @@ export async function GET() {
       LIMIT 100
     `).all<PublicOfferRow>()).results;
     const offerItems = (await database.prepare(`
-      SELECT i.offer_id AS offerId, i.product_id AS productId, i.quantity, p.stock_quantity AS stockQuantity
+      SELECT i.offer_id AS offerId, i.product_id AS productId, i.quantity,
+             p.stock_quantity AS stockQuantity, p.category AS category
       FROM storefront_offer_items i
       JOIN products p ON p.id = i.product_id
       ORDER BY i.offer_id, i.product_id
@@ -75,17 +95,14 @@ export async function GET() {
       SELECT key, value FROM settings
       WHERE key IN (
         'account_name', 'whatsapp_numbers', 'storefront_brand_name', 'storefront_announcement',
-        'storefront_hero_title', 'storefront_hero_text', 'storefront_shipping_note', 'storefront_meta_pixel_id'
+        'storefront_hero_title', 'storefront_hero_text', 'storefront_shipping_note',
+        'storefront_meta_pixel_id', 'storefront_contact_whatsapp'
       )
     `).all<{ key: string; value: string }>()).results;
     const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
 
-    let whatsapp = "";
-    try {
-      const parsed = JSON.parse(settings.whatsapp_numbers || "[]") as WhatsAppNumber[];
-      const preferred = parsed.find((item) => item?.isDefault && item?.phone) || parsed.find((item) => item?.phone);
-      whatsapp = typeof preferred?.phone === "string" ? preferred.phone.replace(/\D/g, "") : "";
-    } catch { whatsapp = ""; }
+    const businessWhatsapp = defaultWhatsApp(settings.whatsapp_numbers);
+    const contactWhatsapp = normalizeMoroccanPhone(settings.storefront_contact_whatsapp || "") || businessWhatsapp;
 
     const publicProducts = products.map((product) => {
       const forcedOut = product.availabilityMode === "out_of_stock";
@@ -96,7 +113,7 @@ export async function GET() {
         kind: "product" as const,
         productCode: product.productCode,
         name: product.name,
-        category: product.category || "Autre",
+        category: publicCategory(product.category),
         salePrice: Math.max(0, Number(product.salePrice) || 0),
         comparePrice: 0,
         badge: product.badge,
@@ -108,11 +125,12 @@ export async function GET() {
       };
     });
 
-    const publicOffers = offers.map((offer) => {
+    const publicOffers = offers.flatMap((offer) => {
       const components = offerItems.filter((item) => item.offerId === offer.id);
-      const available = components.length > 0 && components.every((item) => item.stockQuantity >= item.quantity);
+      if (!components.length || components.some((item) => excludedPublicCategories.has(item.category))) return [];
+      const available = components.every((item) => item.stockQuantity >= item.quantity);
       const images = media.filter((item) => item.ownerType === "offer" && item.ownerId === offer.id).map((item) => `/api/storefront/media/${item.id}`);
-      return {
+      return [{
         id: offer.id,
         kind: "offer" as const,
         productCode: `PACK-${offer.id}`,
@@ -126,7 +144,7 @@ export async function GET() {
         available,
         lowStock: false,
         images,
-      };
+      }];
     });
 
     const logo = media.find((item) => item.ownerType === "brand" && item.kind === "logo");
@@ -142,7 +160,8 @@ export async function GET() {
       metaPixelId: settings.storefront_meta_pixel_id?.trim() || "",
       logoUrl: logo ? `/api/storefront/media/${logo.id}` : "/maison-jiya-logo.jpeg",
       heroImageUrl: heroImage ? `/api/storefront/media/${heroImage.id}` : "",
-      whatsapp,
+      whatsapp: contactWhatsapp,
+      contactWhatsapp,
       products: publicProducts,
       offers: publicOffers,
       categories,
