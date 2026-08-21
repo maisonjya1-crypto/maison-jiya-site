@@ -1,20 +1,37 @@
 {
-  "id": "/?source=pwa",
+  "id": "/",
   "name": "Maison Jiya Gestion",
   "short_name": "Jiya Gestion",
-  "description": "Gestion privée Maison Jiya : commandes, stock, partenaires et boutique publique.",
-  "start_url": "/?source=pwa",
+  "description": "Application privée Maison Jiya pour gérer les commandes, le stock, les partenaires et la boutique publique.",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "/?source=android-app",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "any",
-  "background_color": "#ffffff",
+  "background_color": "#f7f4f7",
   "theme_color": "#2d2430",
+  "categories": ["business", "productivity"],
+  "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/maison-jiya-logo.jpeg",
-      "sizes": "any",
-      "type": "image/jpeg",
+      "src": "/jiya-gestion-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/jiya-gestion-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/jiya-gestion-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

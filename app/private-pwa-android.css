@@ -1,0 +1,30 @@
+@media (display-mode: standalone) {
+  html,
+  body {
+    min-height: 100dvh;
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .private-pwa-panel,
+  .private-pwa-pill {
+    bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+}
+
+.private-pwa-status span.android-ready {
+  background: #eee8f0;
+  color: #5f4a5d;
+}
+
+@media (max-width: 680px) {
+  .private-pwa-panel {
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overflow: auto;
+  }
+}

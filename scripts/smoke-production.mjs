@@ -23,10 +23,39 @@ async function fetchWithRetry(path, options = {}) {
   throw lastError;
 }
 
+function pngDimensions(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (signature.some((value, index) => bytes[index] !== value)) throw new Error("Icône Android invalide : ce n'est pas un PNG.");
+  const view = new DataView(arrayBuffer);
+  return { width: view.getUint32(16), height: view.getUint32(20) };
+}
+
+const privateResponse = await fetchWithRetry("/");
+const privateHtml = await privateResponse.text();
+if (privateHtml.length < 500) throw new Error("Le site privé est anormalement vide.");
+if (!privateHtml.includes("maison-jiya-gestion.webmanifest")) throw new Error("Le manifeste Android n'est pas déclaré dans le HTML privé.");
+
+const manifestResponse = await fetchWithRetry("/maison-jiya-gestion.webmanifest");
+const manifest = await manifestResponse.json();
+if (manifest?.name !== "Maison Jiya Gestion" || manifest?.display !== "standalone") {
+  throw new Error("Le manifeste Android n'est pas configuré en vraie application standalone.");
+}
+
+for (const [path, expectedSize] of [["/jiya-gestion-192.png", 192], ["/jiya-gestion-512.png", 512], ["/jiya-gestion-512-maskable.png", 512]]) {
+  const iconResponse = await fetchWithRetry(path);
+  if (!(iconResponse.headers.get("content-type") || "").startsWith("image/png")) throw new Error(`${path} n'est pas servi en PNG.`);
+  const dimensions = pngDimensions(await iconResponse.arrayBuffer());
+  if (dimensions.width !== expectedSize || dimensions.height !== expectedSize) {
+    throw new Error(`${path} a des dimensions ${dimensions.width}x${dimensions.height} au lieu de ${expectedSize}x${expectedSize}.`);
+  }
+}
+
 const boutiqueResponse = await fetchWithRetry("/boutique");
 const boutiqueHtml = await boutiqueResponse.text();
 if (boutiqueHtml.length < 500) throw new Error("La page boutique est anormalement vide.");
 if (!/Maison Jiya|storefront-shell|Boutique/i.test(boutiqueHtml)) throw new Error("La page boutique ne contient pas le contenu attendu.");
+if (boutiqueHtml.includes("maison-jiya-gestion.webmanifest")) throw new Error("Le manifeste de l'application privée ne doit pas être injecté dans la boutique publique.");
 
 const catalogResponse = await fetchWithRetry("/api/storefront/catalog");
 const catalog = await catalogResponse.json();
@@ -52,4 +81,4 @@ if (imagePath?.startsWith("/api/storefront/media/")) {
   if (bytes.byteLength < 100) throw new Error("Le média public est vide ou corrompu.");
 }
 
-console.log(`Smoke production OK · ${catalog.products.length} produit(s) · ${catalog.offers.length} offre(s) · média ${imagePath ? "OK" : "non requis"}`);
+console.log(`Smoke production OK · Android PWA standalone · ${catalog.products.length} produit(s) · ${catalog.offers.length} offre(s) · média ${imagePath ? "OK" : "non requis"}`);
