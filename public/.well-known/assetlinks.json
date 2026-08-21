@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "maison.jiya.gestion",
+      "sha256_cert_fingerprints": [
+        "BC:DF:12:73:1A:03:11:5C:26:AF:C4:D3:00:17:6C:07:69:89:48:6C:CF:D9:8F:3B:C7:E3:85:70:AF:46:C6:44"
+      ]
+    }
+  }
+]
