@@ -43,7 +43,8 @@ export default function BestSellerCmsEnhancement() {
         badgeInput.addEventListener("input", sync);
         badgeInput.addEventListener("change", sync);
         sync();
-        row.append(button, note);
+        row.appendChild(button);
+        row.appendChild(note);
         badgeInput.closest("label")?.insertAdjacentElement("afterend", row);
       });
     };
