@@ -67,9 +67,9 @@ type CmsData = {
 type PortalTarget = Element | DocumentFragment;
 type UploadOwner = "brand" | "product" | "offer";
 type UploadKind = "logo" | "hero" | "gallery";
-type UploadMany = (ownerType: UploadOwner, ownerId: number, kind: UploadKind, files: FileList | null) => Promise<void>;
+type UploadMany = (ownerType: UploadOwner, ownerId: number, kind: UploadKind, files: FileList | null, maxFiles?: number) => Promise<void>;
 
-const MAX_GALLERY = 20;
+const MAX_GALLERY = 6;
 const emptyData: CmsData = {
   settings: {
     brandName: "Maison Jiya",
@@ -97,11 +97,15 @@ async function canvasBlob(canvas: HTMLCanvasElement, quality: number) {
   return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", quality));
 }
 
-async function compressImage(file: File) {
+async function compressImage(file: File, kind: UploadKind) {
   if (!file.type.match(/^image\/(jpeg|png|webp)$/)) throw new Error("Choisis une image JPG, PNG ou WebP.");
   const bitmap = await createImageBitmap(file);
-  const maxSide = 1500;
-  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const limits = kind === "gallery"
+    ? { maxSide: 1000, targetBytes: 420_000, maxBytes: 650_000 }
+    : kind === "logo"
+      ? { maxSide: 800, targetBytes: 260_000, maxBytes: 450_000 }
+      : { maxSide: 1600, targetBytes: 600_000, maxBytes: 850_000 };
+  const scale = Math.min(1, limits.maxSide / Math.max(bitmap.width, bitmap.height));
   const width = Math.max(1, Math.round(bitmap.width * scale));
   const height = Math.max(1, Math.round(bitmap.height * scale));
   const canvas = document.createElement("canvas");
@@ -113,11 +117,11 @@ async function compressImage(file: File) {
   bitmap.close();
 
   let lastBlob: Blob | null = null;
-  for (const quality of [0.82, 0.72, 0.62, 0.52]) {
+  for (const quality of [0.78, 0.68, 0.58, 0.48, 0.4]) {
     lastBlob = await canvasBlob(canvas, quality);
-    if (lastBlob && lastBlob.size <= 900_000) break;
+    if (lastBlob && lastBlob.size <= limits.targetBytes) break;
   }
-  if (!lastBlob || lastBlob.size > 1_250_000) throw new Error("Cette photo reste trop lourde après compression.");
+  if (!lastBlob || lastBlob.size > limits.maxBytes) throw new Error("Cette photo reste trop lourde après compression.");
   return new File([lastBlob], file.name.replace(/\.[^.]+$/, "") + ".webp", { type: "image/webp" });
 }
 
@@ -207,14 +211,16 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
     window.setTimeout(() => setNotice(""), 2400);
   }
 
-  async function uploadMany(ownerType: UploadOwner, ownerId: number, kind: UploadKind, files: FileList | null) {
+  async function uploadMany(ownerType: UploadOwner, ownerId: number, kind: UploadKind, files: FileList | null, maxFiles?: number) {
     if (!files?.length) return;
     setError("");
     setNotice("");
     try {
-      const selected = Array.from(files).slice(0, kind === "gallery" ? MAX_GALLERY : 1);
+      const allowed = kind === "gallery" ? Math.max(0, Math.min(MAX_GALLERY, maxFiles ?? MAX_GALLERY)) : 1;
+      const selected = Array.from(files).slice(0, allowed);
+      if (!selected.length) throw new Error(`Maximum ${MAX_GALLERY} photos par produit ou pack.`);
       for (const raw of selected) {
-        const file = await compressImage(raw);
+        const file = await compressImage(raw, kind);
         const form = new FormData();
         form.set("ownerType", ownerType);
         form.set("ownerId", String(ownerId));
@@ -372,7 +378,7 @@ function MediaSlot({ title, media, canEdit, onFiles, onRemove }: {
   return <div className="storefront-cms-media-slot">
     <div>{media ? <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={mediaUrl(media.id)} alt={title} />
+      <img src={mediaUrl(media.id)} alt={title} loading="lazy" decoding="async" />
     </> : <span>Aucune image</span>}</div>
     <section>
       <strong>{title}</strong><small>JPG, PNG ou WebP</small>
@@ -395,12 +401,12 @@ function GalleryEditor({ ownerType, ownerId, media, canEdit, uploadMany, removeM
   return <div className="storefront-cms-gallery">
     <div className="storefront-cms-gallery-head">
       <div><strong>{title}</strong><small>{media.length}/{MAX_GALLERY} photo(s) · la première est le visuel principal.</small></div>
-      {canEdit && remaining > 0 && <label className="storefront-cms-upload">＋ Ajouter des photos<input type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => void uploadMany(ownerType, ownerId, "gallery", event.target.files)} /></label>}
+      {canEdit && remaining > 0 && <label className="storefront-cms-upload">＋ Ajouter des photos<input type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => void uploadMany(ownerType, ownerId, "gallery", event.target.files, remaining)} /></label>}
     </div>
     <div className="storefront-cms-gallery-grid">
       {media.map((item, index) => <figure key={item.id}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={mediaUrl(item.id)} alt="" />
+        <img src={mediaUrl(item.id)} alt="" loading="lazy" decoding="async" />
         {index === 0 && <span className="storefront-cms-main-photo">Principale</span>}
         {canEdit && <button type="button" onClick={() => void removeMedia(item.id)}>×</button>}
       </figure>)}
@@ -445,7 +451,7 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
       <div className="storefront-cms-product-main">
         {product.media[0] ? <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={mediaUrl(product.media[0].id)} alt="" />
+          <img src={mediaUrl(product.media[0].id)} alt="" loading="lazy" decoding="async" />
         </> : <span className="storefront-cms-product-placeholder">{publicCategory(product.category).slice(0, 1)}</span>}
         <div><strong>{product.publicName || product.internalName}</strong><small>{product.productCode} · {publicCategory(product.category)}</small></div>
       </div>
