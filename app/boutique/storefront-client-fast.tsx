@@ -1,11 +1,12 @@
 "use client";
 
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { CatalogItem, StorefrontCatalog } from "./storefront-types";
 
 type Cart = Record<string, number>;
 type FbqFunction = ((...args: unknown[]) => void) & { queue?: unknown[][]; loaded?: boolean; version?: string };
 type FbqWindow = Window & { fbq?: FbqFunction; _fbq?: FbqFunction };
+type ImageState = { src: string; attempt: number; failed: boolean };
 
 const INITIAL_VISIBLE = 24;
 const FEATURED_OFFERS = 8;
@@ -52,17 +53,12 @@ function SafeImage({
   fetchPriority?: "high" | "low" | "auto";
   className?: string;
 }) {
-  const [attempt, setAttempt] = useState(0);
-  const [failed, setFailed] = useState(false);
+  const [storedState, setStoredState] = useState<ImageState>({ src: "", attempt: 0, failed: false });
+  const state = storedState.src === src ? storedState : { src, attempt: 0, failed: false };
 
-  useEffect(() => {
-    setAttempt(0);
-    setFailed(false);
-  }, [src]);
-
-  if (!src || failed) return <>{fallback}</>;
+  if (!src || state.failed) return <>{fallback}</>;
   const separator = src.includes("?") ? "&" : "?";
-  const resolvedSrc = attempt ? `${src}${separator}retry=${attempt}` : src;
+  const resolvedSrc = state.attempt ? `${src}${separator}retry=${state.attempt}` : src;
 
   return <img
     src={resolvedSrc}
@@ -72,8 +68,8 @@ function SafeImage({
     fetchPriority={fetchPriority}
     decoding="async"
     onError={() => {
-      if (attempt < 1) setAttempt((current) => current + 1);
-      else setFailed(true);
+      if (state.attempt < 1) setStoredState({ src, attempt: 1, failed: false });
+      else setStoredState({ src, attempt: state.attempt, failed: true });
     }}
   />;
 }
@@ -93,7 +89,7 @@ export default function StorefrontClientFast({ initialCatalog }: { initialCatalo
   const [confirmation, setConfirmation] = useState<{ orderRef: string; total: number } | null>(null);
   const [utm, setUtm] = useState({ source: "", medium: "", campaign: "" });
   const refreshInFlight = useRef(false);
-  const lastRefreshAt = useRef(Date.now());
+  const lastRefreshAt = useRef(0);
 
   const refreshCatalog = useCallback(async (showLoading = false) => {
     if (refreshInFlight.current) return;
@@ -110,12 +106,12 @@ export default function StorefrontClientFast({ initialCatalog }: { initialCatalo
       setError("");
       lastRefreshAt.current = Date.now();
     } catch (caught) {
-      if (!catalog) setError(caught instanceof Error ? caught.message : "Catalogue indisponible.");
+      if (showLoading) setError(caught instanceof Error ? caught.message : "Catalogue indisponible.");
     } finally {
       refreshInFlight.current = false;
       setLoading(false);
     }
-  }, [catalog]);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -133,11 +129,13 @@ export default function StorefrontClientFast({ initialCatalog }: { initialCatalo
 
   useEffect(() => {
     if (initialCatalog) {
+      lastRefreshAt.current = Date.now();
       enableMetaPixel(initialCatalog.metaPixelId || "");
       track("ViewContent", { content_name: "Maison Jiya Boutique" });
       return;
     }
-    void refreshCatalog(true);
+    const timer = window.setTimeout(() => void refreshCatalog(true), 0);
+    return () => window.clearTimeout(timer);
   }, [initialCatalog, refreshCatalog]);
 
   useEffect(() => {
