@@ -1,11 +1,10 @@
-const APP_URL = "/?source=android-app";
+const APP_URL = "/?source=mobile-app";
 const APP_ICON = "/jiya-gestion-192.png";
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
-// Pass-through réseau uniquement : aucune donnée du dashboard privé n'est stockée en cache.
-// La présence d'un fetch handler permet à Android/Chrome de traiter l'installation comme une vraie PWA.
+// Réseau uniquement : aucune donnée du dashboard privé n'est conservée en cache.
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const requestUrl = new URL(event.request.url);
@@ -14,14 +13,24 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  event.waitUntil(self.registration.showNotification("Nouvelle commande Maison Jiya", {
-    body: "Une nouvelle commande vient d’arriver. Ouvre Maison Jiya Gestion pour la traiter.",
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = {};
+  }
+
+  const title = payload.title || "Nouvelle commande Maison Jiya";
+  const body = payload.body || "Une nouvelle commande vient d’arriver. Ouvre Maison Jiya Gestion pour la traiter.";
+  const target = payload.url || "/?newOrder=1&source=notification";
+
+  event.waitUntil(self.registration.showNotification(title, {
+    body,
     icon: APP_ICON,
     badge: APP_ICON,
-    tag: `maison-jiya-order-${Date.now()}`,
+    tag: payload.tag || `maison-jiya-order-${Date.now()}`,
     renotify: true,
-    requireInteraction: true,
-    data: { url: "/?newOrder=1&source=notification" },
+    data: { url: target },
   }));
 });
 
