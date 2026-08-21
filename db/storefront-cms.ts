@@ -10,6 +10,7 @@ export type StorefrontProductSettingRow = {
   isVisible: number;
   availabilityMode: string;
   badge: string;
+  isBestSeller: number;
   description: string;
   sortOrder: number;
 };
@@ -53,6 +54,7 @@ export async function ensureStorefrontCms(database: D1Database) {
         is_visible INTEGER DEFAULT 1 NOT NULL,
         availability_mode TEXT DEFAULT 'auto' NOT NULL,
         badge TEXT DEFAULT '' NOT NULL,
+        is_best_seller INTEGER DEFAULT 0 NOT NULL,
         description TEXT DEFAULT '' NOT NULL,
         sort_order INTEGER DEFAULT 0 NOT NULL,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
@@ -96,6 +98,11 @@ export async function ensureStorefrontCms(database: D1Database) {
     database.prepare("CREATE INDEX IF NOT EXISTS storefront_media_owner_idx ON storefront_media (owner_type, owner_id, sort_order, id)"),
     database.prepare("CREATE INDEX IF NOT EXISTS storefront_offer_items_offer_idx ON storefront_offer_items (offer_id)"),
   ]);
+
+  const productColumns = (await database.prepare("PRAGMA table_info(storefront_product_settings)").all<{ name: string }>()).results;
+  if (!productColumns.some((column) => column.name === "is_best_seller")) {
+    await database.prepare("ALTER TABLE storefront_product_settings ADD COLUMN is_best_seller INTEGER DEFAULT 0 NOT NULL").run();
+  }
 
   const defaults = [
     ["storefront_brand_name", "Maison Jiya"],
