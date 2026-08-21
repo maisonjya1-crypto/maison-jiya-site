@@ -104,6 +104,7 @@ export async function ensureStorefrontCms(database: D1Database) {
     ["storefront_hero_text", "Choisissez vos articles, validez votre commande en ligne et payez à la livraison. Notre équipe vous contacte ensuite pour confirmer."],
     ["storefront_shipping_note", "Les éventuels frais de livraison sont confirmés par notre équipe."],
     ["storefront_meta_pixel_id", ""],
+    ["storefront_contact_whatsapp", ""],
   ];
   await database.batch(defaults.map(([key, value]) => database.prepare(`
     INSERT INTO settings (key, value, updated_at)
