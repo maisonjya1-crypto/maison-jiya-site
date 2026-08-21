@@ -1,13 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
-import "./enhancements.css";
-import "./carrier-mode.css";
-import "./storefront-cms.css";
-import "./storefront-cms-v2.css";
-import PlatformEnhancements from "./platform-enhancements";
-import CarrierModeEnhancement from "./carrier-mode-enhancement";
-import StorefrontCmsV2Enhancement from "./storefront-cms-v2-enhancement";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,11 +31,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className={`${geistSans.variable} ${geistMono.variable}`}>
         {children}
-        <PlatformEnhancements />
-        <CarrierModeEnhancement />
-        <StorefrontCmsV2Enhancement />
       </body>
     </html>
   );
