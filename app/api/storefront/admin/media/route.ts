@@ -2,6 +2,8 @@ import { getAuthenticatedUser } from "../../../../auth";
 import { getRawDb } from "../../../../../db";
 import { ensureStorefrontCms } from "../../../../../db/storefront-cms";
 
+const GALLERY_LIMIT = 20;
+
 function integer(value: FormDataEntryValue | null, fallback = 0) {
   const parsed = Number(typeof value === "string" ? value : "");
   return Number.isFinite(parsed) ? Math.round(parsed) : fallback;
@@ -55,12 +57,12 @@ export async function POST(request: Request) {
 
     const count = await database.prepare("SELECT COUNT(*) AS count FROM storefront_media WHERE owner_type = ? AND owner_id = ? AND kind = ?")
       .bind(ownerType, ownerId, kind).first<{ count: number }>();
-    const limit = ownerType === "brand" ? 1 : 6;
+    const limit = ownerType === "brand" ? 1 : GALLERY_LIMIT;
     if (Number(count?.count || 0) >= limit) {
       if (ownerType === "brand") {
         await database.prepare("DELETE FROM storefront_media WHERE owner_type = ? AND owner_id = ? AND kind = ?").bind(ownerType, ownerId, kind).run();
       } else {
-        throw new Error("Maximum 6 photos par produit ou pack.");
+        throw new Error(`Maximum ${GALLERY_LIMIT} photos par produit ou pack.`);
       }
     }
 
