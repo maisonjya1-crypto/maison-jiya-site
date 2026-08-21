@@ -30,7 +30,7 @@ jobs:
         run: |
           xcodebuild \
             -project ios/MaisonJiyaGestion.xcodeproj \
-            -target MaisonJiyaGestion \
+            -scheme MaisonJiyaGestion \
             -configuration Debug \
             -sdk iphonesimulator \
             -derivedDataPath "$RUNNER_TEMP/MaisonJiyaDerivedData" \
