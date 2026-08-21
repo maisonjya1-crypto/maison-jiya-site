@@ -1,0 +1,47 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'maison.jiya.gestion'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'maison.jiya.gestion'
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    signingConfigs {
+        release {
+            def keyPath = System.getenv('MJ_KEYSTORE_PATH')
+            if (keyPath) {
+                storeFile file(keyPath)
+                storePassword System.getenv('MJ_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('MJ_KEY_ALIAS') ?: 'maisonjiya'
+                keyPassword System.getenv('MJ_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            if (System.getenv('MJ_KEYSTORE_PATH')) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.7.2'
+}
