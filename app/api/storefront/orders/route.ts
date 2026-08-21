@@ -1,6 +1,7 @@
 import { getRawDb } from "../../../../db";
 import { normalizeMoroccanPhone } from "../../../../db/phone";
 import { ensurePlatformUpgrades } from "../../../../db/platform-upgrades";
+import { notifyNewOrder } from "../../../../db/push-notifications";
 import { ensureStorefrontCms } from "../../../../db/storefront-cms";
 
 type RequestedCartItem = { kind: "product" | "offer"; id: number; quantity: number };
@@ -243,6 +244,8 @@ export async function POST(request: Request) {
         VALUES (NULL, 'storefront', 'Boutique publique', 'Commande web', 'Commande', NULL, ?, ?)
       `).bind(`${orderRef} · ${productLabel}`.slice(0, 300), now),
     ]);
+
+    await notifyNewOrder(database);
 
     return Response.json({ ok: true, orderRef, total: saleAmount, payment: "Paiement à la livraison", message: "Commande reçue. Maison Jiya vous contactera pour confirmation." }, {
       status: 201,
