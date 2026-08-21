@@ -3,6 +3,8 @@ import { loadStorefrontCatalogFast } from "../../db/storefront-public-fast";
 import StorefrontClientFast from "./storefront-client-fast";
 import type { StorefrontCatalog } from "./storefront-types";
 
+export const dynamic = "force-dynamic";
+
 export default async function BoutiquePage() {
   let initialCatalog: StorefrontCatalog | null = null;
   try {
