@@ -7,6 +7,7 @@ on:
     paths:
       - "android/**"
       - ".github/workflows/android-real-app.yml"
+      - ".github/android-signing-backup-cert.pem"
       - "public/.well-known/assetlinks.json"
   workflow_dispatch:
 
@@ -46,7 +47,7 @@ jobs:
         working-directory: android
         run: gradle :app:assembleDebug --stacktrace
 
-      - name: Generate one-time release signing key
+      - name: Generate release signing key
         id: key
         if: ${{ hashFiles('public/.well-known/assetlinks.json') == '' }}
         shell: bash
@@ -72,6 +73,34 @@ jobs:
           echo "MJ_KEY_ALIAS=maisonjiya" >> "$GITHUB_ENV"
           echo "ASSETLINKS_FINGERPRINT=$FINGERPRINT"
           echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
+
+      - name: Create encrypted signing backup
+        if: ${{ hashFiles('public/.well-known/assetlinks.json') == '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BACKUP_DIR="$RUNNER_TEMP/signing-backup"
+          mkdir -p "$BACKUP_DIR"
+          cp "$MJ_KEYSTORE_PATH" "$BACKUP_DIR/maison-jiya-gestion.jks"
+          printf 'alias=maisonjiya\nstore_password=%s\nkey_password=%s\nsha256_fingerprint=%s\n' \
+            "$MJ_KEYSTORE_PASSWORD" "$MJ_KEY_PASSWORD" "${{ steps.key.outputs.fingerprint }}" \
+            > "$BACKUP_DIR/credentials.txt"
+          tar -C "$BACKUP_DIR" -cf "$RUNNER_TEMP/maison-jiya-signing-backup.tar" .
+          openssl cms -encrypt -binary -aes256 \
+            -in "$RUNNER_TEMP/maison-jiya-signing-backup.tar" \
+            -outform DER \
+            -out "$RUNNER_TEMP/maison-jiya-signing-backup.cms" \
+            .github/android-signing-backup-cert.pem
+          test -s "$RUNNER_TEMP/maison-jiya-signing-backup.cms"
+
+      - name: Upload encrypted signing backup
+        if: ${{ hashFiles('public/.well-known/assetlinks.json') == '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Maison-Jiya-Android-Signing-Backup-Encrypted
+          path: ${{ runner.temp }}/maison-jiya-signing-backup.cms
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Build signed release APK
         if: ${{ hashFiles('public/.well-known/assetlinks.json') == '' }}
