@@ -13,7 +13,14 @@ type PublicProductRow = {
   description: string;
 };
 type PublicOfferRow = { id: number; name: string; description: string; price: number; comparePrice: number; badge: string };
-type OfferItemRow = { offerId: number; productId: number; quantity: number; stockQuantity: number; category: string };
+type OfferItemRow = {
+  offerId: number;
+  productId: number;
+  quantity: number;
+  stockQuantity: number;
+  category: string;
+  availabilityMode: string;
+};
 type MediaRow = { id: number; ownerType: string; ownerId: number; kind: string };
 type SettingRow = { key: string; value: string };
 type WhatsAppNumber = { label?: string; phone?: string; isDefault?: boolean };
@@ -68,9 +75,11 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     `),
     database.prepare(`
       SELECT i.offer_id AS offerId, i.product_id AS productId, i.quantity,
-             p.stock_quantity AS stockQuantity, p.category AS category
+             p.stock_quantity AS stockQuantity, p.category AS category,
+             COALESCE(s.availability_mode, 'auto') AS availabilityMode
       FROM storefront_offer_items i
       JOIN products p ON p.id = i.product_id
+      LEFT JOIN storefront_product_settings s ON s.product_id = p.id
       ORDER BY i.offer_id, i.product_id
     `),
     database.prepare(`
@@ -155,7 +164,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
   const publicOffers = offers.flatMap((offer) => {
     const components = itemsByOffer.get(offer.id) || [];
     if (!components.length || components.some((item) => excludedPublicCategories.has(item.category))) return [];
-    const available = components.every((item) => item.stockQuantity >= item.quantity);
+    const available = components.every((item) => item.stockQuantity >= item.quantity && item.availabilityMode !== "out_of_stock");
     const firstImage = mediaByOwner.get(`offer:${offer.id}`);
     return [{
       id: offer.id,
@@ -174,7 +183,10 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     }];
   });
 
-  const categories = Array.from(new Set(publicProducts.map((product) => product.category)));
+  const categories = Array.from(new Set([
+    ...publicProducts.map((product) => product.category),
+    ...(publicOffers.length ? ["Packs & offres"] : []),
+  ]));
 
   return {
     brand: settings.storefront_brand_name?.trim() || settings.account_name?.trim() || "Maison Jiya",
