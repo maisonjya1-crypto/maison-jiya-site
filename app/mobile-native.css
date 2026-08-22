@@ -1,5 +1,11 @@
-/* Native mobile wrappers: keep the private dashboard fluid on phone-sized WebViews. */
-html, body { max-width: 100%; overflow-x: hidden; }
+/* Maison Jiya Gestion — responsive natif téléphone + tablette. */
+html, body {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
 
 @supports (padding: max(0px)) {
   body {
@@ -8,50 +14,186 @@ html, body { max-width: 100%; overflow-x: hidden; }
   }
 }
 
-@media (max-width: 820px) {
+/* Tablettes Android : on abandonne la mise en page desktop fixe bien avant 820 px. */
+@media (max-width: 1280px) {
   .app-shell {
     min-width: 0 !important;
     width: 100% !important;
-    grid-template-columns: 1fr !important;
+    max-width: 100% !important;
+    grid-template-columns: minmax(0, 1fr) !important;
   }
 
   .sidebar {
-    position: relative !important;
-    top: auto !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 950 !important;
     width: 100% !important;
     height: auto !important;
     max-height: none !important;
-    padding: 14px 12px !important;
+    overflow: visible !important;
+    padding: 12px 14px !important;
+  }
+
+  .sidebar .brand {
+    padding: 0 6px 10px !important;
   }
 
   .sidebar nav {
     display: flex !important;
     flex-direction: row !important;
-    gap: 6px !important;
+    align-items: stretch !important;
+    gap: 7px !important;
+    width: 100% !important;
+    max-width: 100% !important;
     overflow-x: auto !important;
+    overflow-y: hidden !important;
     overscroll-behavior-x: contain;
     scrollbar-width: none;
-    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 2px 2px !important;
   }
 
   .sidebar nav::-webkit-scrollbar { display: none; }
-  .sidebar .nav-item { flex: 0 0 auto !important; width: auto !important; white-space: nowrap; }
-  .sidebar .brand { padding-bottom: 12px !important; }
+
+  .sidebar .nav-item {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-height: 42px;
+    white-space: nowrap;
+    padding: 10px 12px !important;
+  }
+
   .sidebar .connection-card,
-  .sidebar .profile { display: none !important; }
+  .sidebar .profile {
+    display: none !important;
+  }
 
   main,
   .workspace,
   .content,
   .dashboard,
   .panel,
-  .page-content {
+  .page-content,
+  .app-main,
+  .main-content {
     min-width: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
   }
 
-  table { max-width: 100%; }
-  img, video, canvas, svg { max-width: 100%; height: auto; }
-  input, select, textarea, button { max-width: 100%; }
+  main,
+  .workspace,
+  .page-content,
+  .content {
+    overflow-x: hidden;
+  }
+
+  /* Les grilles desktop deviennent 2 colonnes sur tablette. */
+  .overview-grid,
+  .kpi-grid,
+  .stats-grid,
+  .cards-grid,
+  .dashboard-grid,
+  .profit-grid,
+  .settings-grid,
+  .form-grid,
+  .product-grid,
+  .orders-grid,
+  .catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* Les tableaux restent utilisables sans agrandir toute l'application. */
+  .table-wrap,
+  .table-wrapper,
+  .table-scroll,
+  .table-shell,
+  .data-table-wrap,
+  .orders-table-wrap,
+  .products-table-wrap {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    max-width: 100%;
+  }
+
+  img, video, canvas, svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  input, select, textarea, button {
+    max-width: 100%;
+  }
+
+  .auth-shell {
+    min-width: 0 !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .auth-showcase {
+    display: none !important;
+  }
+
+  .auth-card {
+    width: min(100%, 680px) !important;
+    padding: clamp(24px, 5vw, 46px) !important;
+  }
+}
+
+/* Téléphones et petites tablettes en portrait. */
+@media (max-width: 820px) {
+  .sidebar {
+    position: relative !important;
+    top: auto !important;
+    padding: 12px 10px !important;
+  }
+
+  .sidebar .brand {
+    padding-bottom: 9px !important;
+  }
+
+  .overview-grid,
+  .kpi-grid,
+  .stats-grid,
+  .cards-grid,
+  .dashboard-grid,
+  .profit-grid,
+  .settings-grid,
+  .form-grid,
+  .product-grid,
+  .orders-grid,
+  .catalog-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .carrier-quote-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Très petites largeurs : aucun composant ne doit provoquer une page plus large que l'écran. */
+@media (max-width: 520px) {
+  .app-shell,
+  .workspace,
+  .page-content,
+  main {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  .sidebar .nav-item {
+    min-height: 40px;
+    padding: 9px 10px !important;
+  }
 }
