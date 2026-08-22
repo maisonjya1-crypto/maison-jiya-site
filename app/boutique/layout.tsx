@@ -5,6 +5,7 @@ import "./storefront-contact.css";
 import "./storefront-fast.css";
 import "./storefront-reliability.css";
 import "./best-seller-vertical.css";
+import "./storefront-responsive.css";
 
 export const metadata: Metadata = {
   title: "Maison Jiya — Boutique",
