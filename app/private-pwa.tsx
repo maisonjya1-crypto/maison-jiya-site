@@ -216,8 +216,11 @@ export default function PrivatePwa() {
       }
     };
     window.addEventListener("maison-jiya-native-notifications", handleNativeNotificationState);
-    syncNativeNotificationState();
-    return () => window.removeEventListener("maison-jiya-native-notifications", handleNativeNotificationState);
+    const syncTimer = window.setTimeout(() => syncNativeNotificationState(), 0);
+    return () => {
+      window.clearTimeout(syncTimer);
+      window.removeEventListener("maison-jiya-native-notifications", handleNativeNotificationState);
+    };
   }, [nativeAndroid, syncNativeNotificationState]);
 
   useEffect(() => {
