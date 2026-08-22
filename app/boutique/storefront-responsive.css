@@ -1,0 +1,234 @@
+/* Maison Jiya Boutique — robustesse responsive téléphone, tablette, pliable et grand écran. */
+.storefront-shell {
+  width: 100%;
+  max-width: 100vw;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+}
+
+.storefront-shell *,
+.storefront-header,
+.storefront-hero,
+.storefront-catalogue,
+.storefront-best-sellers,
+.storefront-featured-offers,
+.storefront-contact,
+.storefront-how,
+.storefront-footer,
+.storefront-drawer,
+.storefront-checkout,
+.storefront-success {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.storefront-shell img,
+.storefront-shell video,
+.storefront-shell canvas,
+.storefront-shell svg,
+.storefront-shell iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+.storefront-product-body h3,
+.storefront-product-body p,
+.storefront-best-seller-info h3,
+.storefront-best-seller-info p,
+.storefront-contact h2,
+.storefront-contact p,
+.storefront-checkout,
+.storefront-success {
+  overflow-wrap: anywhere;
+}
+
+.storefront-overlay {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.storefront-drawer {
+  max-height: 100vh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.storefront-cart-lines {
+  min-height: 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.storefront-checkout,
+.storefront-success {
+  max-height: calc(100dvh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (pointer: coarse), (hover: none) {
+  .storefront-shell button,
+  .storefront-shell a,
+  .storefront-shell input,
+  .storefront-shell select,
+  .storefront-shell textarea {
+    min-height: 44px;
+  }
+
+  .storefront-shell input,
+  .storefront-shell select,
+  .storefront-shell textarea {
+    font-size: 16px !important;
+  }
+
+  .storefront-overlay,
+  .storefront-drawer,
+  .storefront-checkout,
+  .storefront-success,
+  .storefront-cart-lines {
+    touch-action: pan-y;
+  }
+}
+
+@media (max-width: 760px) {
+  .storefront-header {
+    width: 100%;
+    padding-left: max(14px, env(safe-area-inset-left, 0px));
+    padding-right: max(14px, env(safe-area-inset-right, 0px));
+  }
+
+  .storefront-announcement {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+
+  .storefront-hero,
+  .storefront-catalogue,
+  .storefront-best-sellers,
+  .storefront-featured-offers {
+    padding-left: max(14px, env(safe-area-inset-left, 0px));
+    padding-right: max(14px, env(safe-area-inset-right, 0px));
+  }
+
+  .storefront-section-head,
+  .storefront-best-sellers-copy {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .storefront-best-sellers-controls {
+    align-self: flex-end;
+  }
+
+  .storefront-contact {
+    margin-left: max(14px, env(safe-area-inset-left, 0px));
+    margin-right: max(14px, env(safe-area-inset-right, 0px));
+  }
+
+  .storefront-footer {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .storefront-whatsapp-float {
+    right: max(12px, env(safe-area-inset-right, 0px));
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .storefront-overlay {
+    align-items: flex-end;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+
+  .storefront-drawer {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+
+  .storefront-drawer header,
+  .storefront-checkout header {
+    padding-top: max(16px, env(safe-area-inset-top, 0px));
+  }
+
+  .storefront-drawer footer {
+    padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .storefront-checkout,
+  .storefront-success {
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    margin: 0;
+    border-radius: 22px 22px 0 0;
+  }
+
+  .storefront-checkout form,
+  .storefront-success {
+    padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .storefront-hero-actions > a {
+    flex: 1 1 180px;
+  }
+}
+
+@media (max-width: 430px) {
+  .storefront-header {
+    gap: 10px;
+  }
+
+  .storefront-brand {
+    min-width: 0;
+  }
+
+  .storefront-brand strong {
+    font-size: 15px;
+    white-space: nowrap;
+  }
+
+  .storefront-cart-button {
+    flex: 0 0 auto;
+  }
+
+  .storefront-hero h1 {
+    font-size: clamp(34px, 11vw, 48px);
+  }
+
+  .storefront-product-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 380px) {
+  .storefront-product-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .storefront-product-visual {
+    aspect-ratio: 1.55 / 1;
+  }
+
+  .storefront-hero-actions > a {
+    flex-basis: 100%;
+  }
+}
+
+@media (max-height: 560px) and (max-width: 900px) {
+  .storefront-overlay {
+    align-items: stretch;
+  }
+
+  .storefront-checkout,
+  .storefront-success {
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+}
