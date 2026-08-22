@@ -226,10 +226,11 @@ export default function PrivatePwa() {
     setPanelPinned(true);
   }
 
-  function releasePanel() {
+  function closePanel() {
+    clearHideTimer();
     setPanelPinned(false);
-    setPanelVisible(true);
-    startHideTimer();
+    setPanelVisible(false);
+    setMessage("");
   }
 
   function openFromSettings() {
@@ -272,13 +273,10 @@ export default function PrivatePwa() {
   }
 
   async function enableNotifications() {
-    if (busy) return;
+    if (busy || nativeAndroid) return;
     setBusy(true);
     setMessage("");
     try {
-      if (nativeAndroid) {
-        throw new Error("Dans l’APK Android actuel, les notifications web ne peuvent pas être activées depuis la WebView. La fonction reste disponible sur l’app iPhone/PWA.");
-      }
       if (ios && !isStandalone()) {
         setMessage("Sur iPhone, ajoute d’abord Maison Jiya Gestion à l’écran d’accueil depuis Safari. Ouvre ensuite l’icône installée pour activer les notifications.");
         return;
@@ -376,27 +374,38 @@ export default function PrivatePwa() {
     {panelVisible && canShowPanel && <aside
       className={`private-pwa-panel private-pwa-temporary ${panelPinned ? "pinned" : ""}`}
       aria-label="Application Maison Jiya Gestion"
-      onClick={keepPanelOpen}
-      onKeyDown={keepPanelOpen}
+      onPointerDown={keepPanelOpen}
     >
       <header>
         <div><span>Application privée</span><strong>Maison Jiya Gestion</strong></div>
-        <button type="button" className="private-pwa-close" onClick={(event) => { event.stopPropagation(); releasePanel(); }}>Fermer</button>
+        <button
+          type="button"
+          className="private-pwa-close"
+          aria-label="Fermer le panneau application"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => { event.stopPropagation(); closePanel(); }}
+        >Fermer</button>
       </header>
       <p>{description}</p>
       <div className="private-pwa-status">
         <span className={appRuntime ? "ok" : ""}>{nativeAndroid ? "APK Android ✓" : installed ? "Mode application ✓" : ios ? "Safari" : android ? "Android" : "App non installée"}</span>
-        <span className={notificationsEnabled ? "ok" : ""}>{notificationsEnabled ? "Notifications ✓" : nativeAndroid ? "Notifications web indisponibles dans l’APK actuel" : "Notifications désactivées"}</span>
+        <span className={notificationsEnabled ? "ok" : ""}>{notificationsEnabled ? "Notifications ✓" : nativeAndroid ? "Notifications Android non disponibles dans cette version APK" : "Notifications désactivées"}</span>
       </div>
-      <div className="private-pwa-actions">
-        <button type="button" onClick={() => void installApp()}>{appRuntime ? "Application installée" : ios ? "Installer sur iPhone" : android ? "Télécharger l’app Android" : "Installer l’app"}</button>
-        {!notificationsEnabled
-          ? <button type="button" className="primary" disabled={busy} onClick={() => void enableNotifications()}>{busy ? "Activation…" : "Activer les notifications"}</button>
-          : <button type="button" className="secondary" disabled={busy} onClick={() => void disableNotifications()}>Désactiver notifications</button>}
+      <div className="private-pwa-actions" onPointerDown={(event) => event.stopPropagation()}>
+        {nativeAndroid
+          ? <a className="private-pwa-action-link" href="/telecharger-app">Page de téléchargement Android</a>
+          : appRuntime
+            ? <span className="private-pwa-installed-state">Application installée</span>
+            : <button type="button" onClick={() => void installApp()}>{ios ? "Installer sur iPhone" : android ? "Télécharger l’app Android" : "Installer l’app"}</button>}
+        {nativeAndroid
+          ? <span className="private-pwa-unavailable-action">Notifications : une version Android native signée est nécessaire</span>
+          : !notificationsEnabled
+            ? <button type="button" className="primary" disabled={busy} onClick={() => void enableNotifications()}>{busy ? "Activation…" : "Activer les notifications"}</button>
+            : <button type="button" className="secondary" disabled={busy} onClick={() => void disableNotifications()}>Désactiver notifications</button>}
       </div>
       {message && <small className="private-pwa-message">{message}</small>}
-      {!panelPinned && <small className="private-pwa-countdown">Ce panneau se masque automatiquement après 30 secondes. Clique dessus pour le garder ouvert.</small>}
-      {panelPinned && <small className="private-pwa-countdown">Panneau maintenu ouvert. « Fermer » relance un délai de 30 secondes.</small>}
+      {!panelPinned && <small className="private-pwa-countdown">Ce panneau se masque automatiquement après 30 secondes. Touche-le pour le garder ouvert.</small>}
+      {panelPinned && <small className="private-pwa-countdown">Panneau maintenu ouvert. « Fermer » le masque immédiatement. Tu peux le rouvrir depuis Paramètres → Application & notifications.</small>}
     </aside>}
   </>;
 }
