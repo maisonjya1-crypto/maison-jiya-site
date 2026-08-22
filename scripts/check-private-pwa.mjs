@@ -62,8 +62,8 @@ assert.match(pwaClient, /MacIntel/);
 assert.match(pwaClient, /Installer sur iPhone/);
 assert.match(pwaClient, /private-sw\.js\?v=3/);
 assert.match(pwaClient, /MaisonJiyaAndroid\\\//);
-assert.match(pwaClient, /if \(nativeAndroid \|\| !authorized\) return null/);
-assert.match(pwaClient, /installed && notificationsEnabled/);
+assert.match(pwaClient, /if \(nativeAndroid \|\| installed \|\| !authorized\) return null/);
+assert.match(pwaClient, /syncExistingSubscription/);
 
 const pwaCss = await readText("app/private-pwa.css");
 assert.doesNotMatch(pwaCss, /position:\s*fixed/);
@@ -84,6 +84,10 @@ assert.match(androidActivity, /Connexion momentanément indisponible/);
 assert.match(androidActivity, /scheduleRetry\(\)/);
 assert.match(androidActivity, /onPageCommitVisible/);
 assert.match(androidActivity, /ACCESS_NETWORK_STATE|isNetworkConnected/);
+assert.match(androidActivity, /registerNetworkCallback/);
+assert.match(androidActivity, /NET_CAPABILITY_VALIDATED/);
+assert.match(androidActivity, /hasCommittedPage/);
+assert.doesNotMatch(androidActivity, /retryAttempts\s*>=\s*5/);
 
 const androidManifest = await readText("android/app/src/main/AndroidManifest.xml");
 assert.match(androidManifest, /ACCESS_NETWORK_STATE/);
@@ -116,4 +120,4 @@ assert.match(downloadRoute, /application\/vnd\.android\.package-archive/);
 const downloadPage = await readText("app/telecharger-app/page.tsx");
 assert.match(downloadPage, /\/api\/download\/android/);
 
-console.log("Private mobile app validation (Android 2.4 recovery + no floating overlay + iPhone): OK");
+console.log("Private mobile app validation (Android resilient recovery + no installed-app overlay + iPhone push sync): OK");

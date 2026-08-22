@@ -65,7 +65,7 @@ export default function PrivatePwa() {
       });
       if (!response.ok && response.status === 401) setAuthorized(false);
     } catch {
-      // L'utilisateur pourra réactiver manuellement depuis le panneau intégré.
+      // Un abonnement existant reste utilisable même si une resynchronisation ponctuelle échoue.
     }
   }, []);
 
@@ -239,16 +239,12 @@ export default function PrivatePwa() {
     }
   }
 
-  // L'APK Android est déjà une application : aucun panneau web ne doit se superposer au dashboard.
-  if (nativeAndroid || !authorized) return null;
-
-  // Une fois l'app iPhone/PWA installée et les notifications activées, le panneau disparaît complètement.
-  if (installed && notificationsEnabled) return null;
+  // Dans une app déjà installée (APK Android ou PWA iPhone), aucun panneau ne doit recouvrir le dashboard.
+  // La synchronisation d'un abonnement push existant continue en arrière-plan sur la PWA iPhone.
+  if (nativeAndroid || installed || !authorized) return null;
 
   const description = ios
-    ? installed
-      ? "Active les notifications une seule fois. Ce bloc disparaîtra ensuite et ne masquera jamais le dashboard."
-      : "Ajoute le dashboard privé à l’écran d’accueil depuis Safari pour l’ouvrir comme une application gratuite."
+    ? "Ajoute le dashboard privé à l’écran d’accueil depuis Safari pour l’ouvrir comme une application gratuite."
     : android
       ? "Télécharge l’APK Maison Jiya Gestion depuis la page officielle."
       : "Installe uniquement le dashboard privé sur ton appareil.";
@@ -259,11 +255,11 @@ export default function PrivatePwa() {
     </header>
     <p>{description}</p>
     <div className="private-pwa-status">
-      <span className={installed ? "ok" : ""}>{installed ? "Mode application ✓" : ios ? "Safari" : android ? "Android" : "App non installée"}</span>
+      <span>{ios ? "Safari" : android ? "Android" : "App non installée"}</span>
       <span className={notificationsEnabled ? "ok" : ""}>{notificationsEnabled ? "Notifications ✓" : "Notifications désactivées"}</span>
     </div>
     <div className="private-pwa-actions">
-      {!installed && <button type="button" onClick={() => void installApp()}>{ios ? "Installer sur iPhone" : android ? "Télécharger l’app Android" : "Installer l’app"}</button>}
+      <button type="button" onClick={() => void installApp()}>{ios ? "Installer sur iPhone" : android ? "Télécharger l’app Android" : "Installer l’app"}</button>
       {!notificationsEnabled
         ? <button type="button" className="primary" disabled={busy} onClick={() => void enableNotifications()}>{busy ? "Activation…" : "Activer les notifications"}</button>
         : <button type="button" className="secondary" disabled={busy} onClick={() => void disableNotifications()}>Désactiver notifications</button>}

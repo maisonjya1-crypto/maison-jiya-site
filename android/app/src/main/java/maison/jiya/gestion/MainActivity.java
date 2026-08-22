@@ -9,8 +9,10 @@ import android.graphics.Color;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.net.Uri;
 import android.net.http.SslError;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -44,13 +46,16 @@ public class MainActivity extends Activity {
     private View errorOverlay;
     private TextView errorMessage;
     private ValueCallback<Uri[]> fileCallback;
+    private ConnectivityManager.NetworkCallback networkCallback;
     private final Handler retryHandler = new Handler(Looper.getMainLooper());
     private int retryAttempts = 0;
     private String lastRequestedUrl = HOME_URL;
+    private boolean hasCommittedPage = false;
 
     private final Runnable retryRunnable = () -> {
-        if (webView == null || errorOverlay == null || errorOverlay.getVisibility() != View.VISIBLE) return;
+        if (webView == null) return;
         if (!isNetworkConnected()) {
+            showConnectionError("Connexion indisponible. Maison Jiya réessaie automatiquement.");
             scheduleRetry();
             return;
         }
@@ -88,11 +93,19 @@ public class MainActivity extends Activity {
 
         setContentView(root);
         configureWebView();
+        registerNetworkCallback();
 
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
             String restored = webView.getUrl();
-            if (restored != null && !restored.isEmpty()) lastRequestedUrl = restored;
+            if (restored != null && !restored.isEmpty()) {
+                lastRequestedUrl = restored;
+                hasCommittedPage = true;
+                webView.setVisibility(View.VISIBLE);
+                errorOverlay.setVisibility(View.GONE);
+            } else {
+                loadWithRecovery(resolveLaunchUrl(getIntent()));
+            }
         } else {
             loadWithRecovery(resolveLaunchUrl(getIntent()));
         }
@@ -224,12 +237,52 @@ public class MainActivity extends Activity {
         webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> openExternal(url));
     }
 
+    private void registerNetworkCallback() {
+        ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (manager == null) return;
+
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(Network network) {
+                retryHandler.post(() -> {
+                    if (webView == null || !isNetworkConnected()) return;
+                    retryAttempts = 0;
+                    if (!hasCommittedPage || errorOverlay.getVisibility() == View.VISIBLE) {
+                        loadWithRecovery(lastRequestedUrl);
+                    }
+                });
+            }
+
+            @Override
+            public void onLost(Network network) {
+                retryHandler.post(() -> {
+                    if (webView == null || isNetworkConnected()) return;
+                    showConnectionError("Connexion perdue. La page reste protégée pendant la reconnexion automatique.");
+                    scheduleRetry();
+                });
+            }
+        };
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                manager.registerDefaultNetworkCallback(networkCallback);
+            } else {
+                NetworkRequest request = new NetworkRequest.Builder()
+                        .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        .build();
+                manager.registerNetworkCallback(request, networkCallback);
+            }
+        } catch (Exception ignored) {
+            networkCallback = null;
+        }
+    }
+
     private void loadWithRecovery(String url) {
         if (webView == null) return;
         lastRequestedUrl = (url == null || url.isEmpty()) ? HOME_URL : url;
         retryHandler.removeCallbacks(retryRunnable);
         errorOverlay.setVisibility(View.GONE);
-        webView.setVisibility(View.VISIBLE);
+        if (!hasCommittedPage) webView.setVisibility(View.INVISIBLE);
         progressBar.setVisibility(View.VISIBLE);
 
         if (!isNetworkConnected()) {
@@ -242,17 +295,21 @@ public class MainActivity extends Activity {
 
     private void showConnectionError(String message) {
         progressBar.setVisibility(View.GONE);
-        webView.setVisibility(View.INVISIBLE);
         errorMessage.setText(message);
-        errorOverlay.setVisibility(View.VISIBLE);
+        if (hasCommittedPage) {
+            webView.setVisibility(View.VISIBLE);
+            errorOverlay.setVisibility(View.GONE);
+        } else {
+            webView.setVisibility(View.INVISIBLE);
+            errorOverlay.setVisibility(View.VISIBLE);
+        }
     }
 
     private void scheduleRetry() {
         retryHandler.removeCallbacks(retryRunnable);
-        if (retryAttempts >= 5) return;
-        long[] delays = {1200L, 2500L, 4500L, 7000L, 10000L};
+        long[] delays = {1200L, 2500L, 4500L, 7000L, 10000L, 15000L};
         long delay = delays[Math.min(retryAttempts, delays.length - 1)];
-        retryAttempts += 1;
+        if (retryAttempts < Integer.MAX_VALUE) retryAttempts += 1;
         retryHandler.postDelayed(retryRunnable, delay);
     }
 
@@ -262,7 +319,9 @@ public class MainActivity extends Activity {
         Network network = manager.getActiveNetwork();
         if (network == null) return false;
         NetworkCapabilities capabilities = manager.getNetworkCapabilities(network);
-        return capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        return capabilities != null
+                && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
     }
 
     private String resolveLaunchUrl(Intent intent) {
@@ -298,7 +357,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (errorOverlay != null && errorOverlay.getVisibility() == View.VISIBLE && isNetworkConnected()) {
+        if (webView != null && isNetworkConnected() && (!hasCommittedPage || errorOverlay.getVisibility() == View.VISIBLE)) {
             retryAttempts = 0;
             loadWithRecovery(lastRequestedUrl);
         }
@@ -313,7 +372,7 @@ public class MainActivity extends Activity {
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
-        if (errorOverlay != null && errorOverlay.getVisibility() == View.VISIBLE) {
+        if (!hasCommittedPage && errorOverlay != null && errorOverlay.getVisibility() == View.VISIBLE) {
             finishAndRemoveTask();
             return;
         }
@@ -347,6 +406,15 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         retryHandler.removeCallbacksAndMessages(null);
+        ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (manager != null && networkCallback != null) {
+            try {
+                manager.unregisterNetworkCallback(networkCallback);
+            } catch (Exception ignored) {
+                // La callback peut déjà être détachée par Android.
+            }
+            networkCallback = null;
+        }
         if (webView != null) {
             webView.stopLoading();
             webView.setWebChromeClient(null);
@@ -377,6 +445,7 @@ public class MainActivity extends Activity {
         public void onPageCommitVisible(WebView view, String url) {
             retryHandler.removeCallbacks(retryRunnable);
             retryAttempts = 0;
+            hasCommittedPage = true;
             errorOverlay.setVisibility(View.GONE);
             webView.setVisibility(View.VISIBLE);
             super.onPageCommitVisible(view, url);
@@ -423,7 +492,8 @@ public class MainActivity extends Activity {
         @Override
         public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
             handler.cancel();
-            showConnectionError("Connexion sécurisée impossible. Réessaie dans un instant.");
+            showConnectionError("Connexion sécurisée impossible. Nouvelle tentative automatique…");
+            scheduleRetry();
         }
 
         @Override
