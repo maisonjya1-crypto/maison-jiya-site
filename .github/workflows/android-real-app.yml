@@ -40,20 +40,29 @@ jobs:
       - name: Verify native application icon
         run: test -s android/app/src/main/res/drawable/app_icon.xml
 
-      - name: Build native Android v2
+      - name: Build native Android v2.5
         working-directory: android
         run: gradle :app:assembleDebug :app:assembleRelease --stacktrace
 
-      - name: Verify release package exists
+      - name: Verify Android packages exist
         run: |
+          test -s android/app/build/outputs/apk/debug/app-debug.apk
           test -s android/app/build/outputs/apk/release/app-release-unsigned.apk
           test -s "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar"
-          echo "Unsigned release APK ready for Maison Jiya release signing"
+          echo "Installable debug APK and unsigned release APK ready"
+
+      - name: Upload installable Android 2.5 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Maison-Jiya-Gestion-Android-2.5-Installable
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload unsigned release APK
         uses: actions/upload-artifact@v4
         with:
-          name: Maison-Jiya-Gestion-Android-v2-Unsigned
+          name: Maison-Jiya-Gestion-Android-2.5-Unsigned-Release
           path: android/app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
           retention-days: 30

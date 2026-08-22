@@ -1,9 +1,15 @@
 package maison.jiya.gestion;
 
+import android.Manifest;
 import android.app.Activity;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.ConnectivityManager;
@@ -16,9 +22,11 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.SafeBrowsingResponse;
 import android.webkit.SslErrorHandler;
 import android.webkit.ValueCallback;
@@ -40,6 +48,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://maison-jiya-site.maisonjya1.workers.dev/";
     private static final String HOME_HOST = "maison-jiya-site.maisonjya1.workers.dev";
     private static final int FILE_CHOOSER_REQUEST = 4102;
+    private static final int NOTIFICATION_PERMISSION_REQUEST = 4103;
+    private static final String NOTIFICATION_CHANNEL_ID = "maison_jiya_orders";
 
     private WebView webView;
     private ProgressBar progressBar;
@@ -49,6 +59,7 @@ public class MainActivity extends Activity {
     private ConnectivityManager.NetworkCallback networkCallback;
     private final Handler retryHandler = new Handler(Looper.getMainLooper());
     private int retryAttempts = 0;
+    private int notificationCounter = 2200;
     private String lastRequestedUrl = HOME_URL;
     private boolean hasCommittedPage = false;
 
@@ -68,6 +79,7 @@ public class MainActivity extends Activity {
 
         getWindow().setStatusBarColor(0xFF111111);
         getWindow().setNavigationBarColor(0xFF111111);
+        createNotificationChannel();
 
         FrameLayout root = new FrameLayout(this);
         webView = new WebView(this);
@@ -171,6 +183,123 @@ public class MainActivity extends Activity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null) return;
+        NotificationChannel channel = new NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "Commandes Maison Jiya",
+                NotificationManager.IMPORTANCE_HIGH
+        );
+        channel.setDescription("Notifications des nouvelles commandes Maison Jiya");
+        channel.enableVibration(true);
+        manager.createNotificationChannel(channel);
+    }
+
+    private boolean hasNotificationPermission() {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestNativeNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission()) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_PERMISSION_REQUEST);
+            return;
+        }
+        dispatchNotificationStateToWeb();
+        showLocalNotification(
+                "Notifications Maison Jiya activées",
+                "Tu recevras une alerte lorsque l’application détecte une nouvelle commande."
+        );
+    }
+
+    private void openNativeNotificationSettings() {
+        try {
+            Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+            intent.putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+            startActivity(intent);
+        } catch (Exception e) {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        }
+    }
+
+    private void showOrderNotification(String orderRef, String customerName, String products) {
+        if (!hasNotificationPermission()) return;
+        String safeRef = orderRef == null || orderRef.trim().isEmpty() ? "Nouvelle commande" : orderRef.trim();
+        String customer = customerName == null ? "" : customerName.trim();
+        String productList = products == null ? "" : products.trim();
+        String detail = customer;
+        if (!productList.isEmpty()) detail = detail.isEmpty() ? productList : detail + " · " + productList;
+        if (detail.isEmpty()) detail = "Une nouvelle commande vient d’être enregistrée.";
+        showLocalNotification("Nouvelle commande · " + safeRef, detail);
+    }
+
+    private void showLocalNotification(String title, String text) {
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null || !hasNotificationPermission()) return;
+
+        Intent openApp = new Intent(this, MainActivity.class);
+        openApp.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                this,
+                notificationCounter,
+                openApp,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? new Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+                : new Notification.Builder(this);
+        builder.setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setStyle(new Notification.BigTextStyle().bigText(text))
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .setDefaults(Notification.DEFAULT_SOUND | Notification.DEFAULT_VIBRATE)
+                .setPriority(Notification.PRIORITY_HIGH);
+
+        manager.notify(notificationCounter++, builder.build());
+    }
+
+    private void dispatchNotificationStateToWeb() {
+        if (webView == null) return;
+        boolean enabled = hasNotificationPermission();
+        webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('maison-jiya-native-notifications',{detail:{enabled:" + (enabled ? "true" : "false") + "}}));",
+                null
+        );
+    }
+
+    private class NativeBridge {
+        @JavascriptInterface
+        public boolean notificationsSupported() {
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean notificationsEnabled() {
+            return hasNotificationPermission();
+        }
+
+        @JavascriptInterface
+        public void requestNotificationPermission() {
+            runOnUiThread(() -> requestNativeNotificationPermission());
+        }
+
+        @JavascriptInterface
+        public void openNotificationSettings() {
+            runOnUiThread(() -> openNativeNotificationSettings());
+        }
+
+        @JavascriptInterface
+        public void notifyNewOrder(String orderRef, String customerName, String products) {
+            runOnUiThread(() -> showOrderNotification(orderRef, customerName, products));
+        }
+    }
+
     private void configureWebView() {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -195,12 +324,13 @@ public class MainActivity extends Activity {
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " MaisonJiyaAndroid/2.4");
+        settings.setUserAgentString(settings.getUserAgentString() + " MaisonJiyaAndroid/2.5");
 
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(webView, true);
 
+        webView.addJavascriptInterface(new NativeBridge(), "MaisonJiyaNative");
         webView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
         webView.setWebViewClient(new MaisonJiyaWebViewClient());
@@ -357,6 +487,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        dispatchNotificationStateToWeb();
         if (webView != null && isNetworkConnected() && (!hasCommittedPage || errorOverlay.getVisibility() == View.VISIBLE)) {
             retryAttempts = 0;
             loadWithRecovery(lastRequestedUrl);
@@ -404,6 +535,20 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != NOTIFICATION_PERMISSION_REQUEST) return;
+        boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+        dispatchNotificationStateToWeb();
+        if (granted) {
+            showLocalNotification(
+                    "Notifications Maison Jiya activées",
+                    "Les alertes Android sont maintenant autorisées sur cet appareil."
+            );
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         retryHandler.removeCallbacksAndMessages(null);
         ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
@@ -416,6 +561,7 @@ public class MainActivity extends Activity {
             networkCallback = null;
         }
         if (webView != null) {
+            webView.removeJavascriptInterface("MaisonJiyaNative");
             webView.stopLoading();
             webView.setWebChromeClient(null);
             webView.setWebViewClient(null);
@@ -464,6 +610,7 @@ public class MainActivity extends Activity {
                     "})();",
                     null
             );
+            dispatchNotificationStateToWeb();
             super.onPageFinished(view, url);
         }
 

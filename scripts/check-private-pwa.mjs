@@ -62,6 +62,12 @@ assert.match(pwaClient, /MacIntel/);
 assert.match(pwaClient, /Installer sur iPhone/);
 assert.match(pwaClient, /private-sw\.js\?v=3/);
 assert.match(pwaClient, /MaisonJiyaAndroid\\\//);
+assert.match(pwaClient, /MaisonJiyaNative/);
+assert.match(pwaClient, /requestNotificationPermission/);
+assert.match(pwaClient, /openNotificationSettings/);
+assert.match(pwaClient, /notifyNewOrder/);
+assert.match(pwaClient, /Mise à jour Android 2\.5 requise/);
+assert.match(pwaClient, /Activer les notifications/);
 assert.match(pwaClient, /PANEL_VISIBLE_MS\s*=\s*30_000/);
 assert.match(pwaClient, /APP_REFRESH_MS\s*=\s*1_000/);
 assert.match(pwaClient, /setInterval\([^]*APP_REFRESH_MS/);
@@ -88,7 +94,13 @@ assert.match(fluidCss, /clamp\(190px,\s*18vw,\s*248px\)/);
 const androidActivity = await readText("android/app/src/main/java/maison/jiya/gestion/MainActivity.java");
 assert.match(androidActivity, /setUseWideViewPort\(false\)/);
 assert.match(androidActivity, /TEXT_AUTOSIZING/);
-assert.match(androidActivity, /MaisonJiyaAndroid\/2\.4/);
+assert.match(androidActivity, /MaisonJiyaAndroid\/2\.5/);
+assert.match(androidActivity, /addJavascriptInterface\(new NativeBridge\(\),\s*["']MaisonJiyaNative["']\)/);
+assert.match(androidActivity, /@JavascriptInterface[\s\S]*requestNotificationPermission/);
+assert.match(androidActivity, /@JavascriptInterface[\s\S]*notifyNewOrder/);
+assert.match(androidActivity, /NotificationChannel/);
+assert.match(androidActivity, /POST_NOTIFICATIONS/);
+assert.match(androidActivity, /ACTION_APP_NOTIFICATION_SETTINGS/);
 assert.match(androidActivity, /orientationchange/);
 assert.match(androidActivity, /Connexion momentanément indisponible/);
 assert.match(androidActivity, /scheduleRetry\(\)/);
@@ -101,12 +113,13 @@ assert.doesNotMatch(androidActivity, /retryAttempts\s*>=\s*5/);
 
 const androidManifest = await readText("android/app/src/main/AndroidManifest.xml");
 assert.match(androidManifest, /ACCESS_NETWORK_STATE/);
+assert.match(androidManifest, /POST_NOTIFICATIONS/);
 
 const gradle = await readText("android/app/build.gradle");
-assert.match(gradle, /versionCode\s+6/);
-assert.match(gradle, /versionName\s+'2\.4\.0'/);
+assert.match(gradle, /versionCode\s+7/);
+assert.match(gradle, /versionName\s+'2\.5\.0'/);
 
-// Le téléchargement public reste sur le dernier APK signé jusqu'à ce que le build 2.4 soit resigné avec le certificat Maison Jiya.
+// Le téléchargement public reste sur le dernier APK signé 2.3 jusqu'à publication d'un nouveau paquet signé et vérifié.
 const chunkTexts = await Promise.all([1, 2, 3, 4].map((number) => readText(`app/api/download/android/apk-chunk-${number}.ts`)));
 const chunkValues = chunkTexts.map((source, index) => {
   const pieces = [...source.matchAll(/"([A-Za-z0-9+/=]{100,})"/g)].map((match) => match[1]);
@@ -130,4 +143,4 @@ assert.match(downloadRoute, /application\/vnd\.android\.package-archive/);
 const downloadPage = await readText("app/telecharger-app/page.tsx");
 assert.match(downloadPage, /\/api\/download\/android/);
 
-console.log("Private mobile app validation (30s panel + settings access + 1s app refresh + Android recovery): OK");
+console.log("Private mobile app validation (Android 2.5 native notifications + 30s panel + 1s refresh + recovery): OK");
