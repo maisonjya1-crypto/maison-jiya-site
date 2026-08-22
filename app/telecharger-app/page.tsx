@@ -13,7 +13,7 @@ export const viewport: Viewport = {
   themeColor: "#2d2430",
 };
 
-const apkPath = "/downloads/Maison-Jiya-Gestion-Android.apk";
+const apkPath = "/api/download/android";
 
 export default function DownloadAndroidApp() {
   return (
