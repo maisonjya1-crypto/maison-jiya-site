@@ -181,7 +181,7 @@ export default function PrivatePwa() {
         host.dataset.mjAppSettingsHost = "true";
         const intro = settingsPage.querySelector(".settings-intro");
         if (intro?.nextSibling) settingsPage.insertBefore(host, intro.nextSibling);
-        else settingsPage.prepend(host);
+        else settingsPage.insertBefore(host, settingsPage.firstChild);
       }
       setSettingsHost(host);
     };
