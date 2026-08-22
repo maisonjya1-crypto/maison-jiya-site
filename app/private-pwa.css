@@ -19,6 +19,9 @@
   max-height: min(620px, calc(100dvh - 28px));
   margin: 0;
   overflow: auto;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-overflow-scrolling: touch;
   box-shadow: 0 24px 70px rgba(45, 36, 48, .24);
   animation: private-pwa-enter .22s ease-out;
 }
@@ -45,15 +48,21 @@
 }
 .private-pwa-panel header strong { font-size: 17px; }
 .private-pwa-close {
-  min-height: 34px;
-  padding: 0 10px;
+  position: relative;
+  z-index: 2;
+  min-width: 64px;
+  min-height: 44px;
+  padding: 0 12px;
   border: 1px solid rgba(45, 36, 48, .12);
   border-radius: 10px;
   background: #f8f5f9;
   color: #6f626f;
   cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   font: inherit;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 850;
 }
 .private-pwa-panel > p {
@@ -77,18 +86,49 @@
   font-weight: 800;
 }
 .private-pwa-status span.ok { background: #eaf7ef; color: #237348; }
-.private-pwa-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.private-pwa-actions button {
-  min-height: 40px;
+.private-pwa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  pointer-events: auto;
+}
+.private-pwa-actions button,
+.private-pwa-action-link,
+.private-pwa-installed-state,
+.private-pwa-unavailable-action {
+  min-height: 44px;
   padding: 0 12px;
   border: 1px solid rgba(45, 36, 48, .14);
   border-radius: 11px;
   background: #fff;
   color: #2d2430;
-  cursor: pointer;
   font: inherit;
   font-size: 11px;
   font-weight: 800;
+}
+.private-pwa-actions button,
+.private-pwa-action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  text-decoration: none;
+}
+.private-pwa-installed-state,
+.private-pwa-unavailable-action {
+  display: inline-flex;
+  align-items: center;
+}
+.private-pwa-installed-state {
+  background: #eaf7ef;
+  color: #237348;
+}
+.private-pwa-unavailable-action {
+  background: #f5f2f5;
+  color: #756b77;
 }
 .private-pwa-actions button.primary { border-color: #2d2430; background: #2d2430; color: #fff; }
 .private-pwa-actions button.secondary { color: #7c697a; }
