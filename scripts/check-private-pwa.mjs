@@ -83,7 +83,7 @@ assert.match(androidActivity, /orientationchange/);
 assert.match(androidActivity, /Connexion momentanément indisponible/);
 assert.match(androidActivity, /scheduleRetry\(\)/);
 assert.match(androidActivity, /onPageCommitVisible/);
-assert.match(androidActivity, /ACCESS_NETWORK_STATE|isNetworkConnected/);
+assert.match(androidActivity, /isNetworkConnected/);
 
 const androidManifest = await readText("android/app/src/main/AndroidManifest.xml");
 assert.match(androidManifest, /ACCESS_NETWORK_STATE/);
@@ -92,28 +92,28 @@ const gradle = await readText("android/app/build.gradle");
 assert.match(gradle, /versionCode\s+6/);
 assert.match(gradle, /versionName\s+'2\.4\.0'/);
 
-// Le téléchargement public reste sur le dernier APK signé jusqu'à ce que le build 2.4 soit resigné avec le certificat Maison Jiya.
-const chunkTexts = await Promise.all([1, 2, 3, 4].map((number) => readText(`app/api/download/android/apk-chunk-${number}.ts`)));
-const chunkValues = chunkTexts.map((source, index) => {
-  const pieces = [...source.matchAll(/"([A-Za-z0-9+/=]{100,})"/g)].map((match) => match[1]);
-  assert.ok(pieces.length > 0, `Partie APK ${index + 1} illisible.`);
-  return pieces.join("");
-});
-chunkValues[3] = chunkValues[3].replace("HdlckIA", `HdlckIA${"A".repeat(24)}`);
-const apkBase64 = chunkValues.join("");
+const chunkTexts = await Promise.all([1, 2, 3, 4, 5].map((number) => readText(`app/api/download/android/apk-chunk-${number}.ts`)));
+const apkBase64 = chunkTexts.map((source, index) => {
+  const match = source.match(/const chunk = "([A-Za-z0-9+/=]+)";/);
+  assert.ok(match, `Partie APK ${index + 1} illisible.`);
+  return match[1];
+}).join("");
 const apkBytes = Buffer.from(apkBase64, "base64");
-assert.equal(apkBytes.length, 17087, "Taille APK 2.3 incorrecte.");
+assert.equal(apkBytes.length, 21183, "Taille APK 2.4 incorrecte.");
 assert.equal(apkBytes[0], 0x50);
 assert.equal(apkBytes[1], 0x4b);
 assert.equal(
   createHash("sha256").update(apkBytes).digest("hex"),
-  "077d1a696da9124e7ef3982ca3502f3f6982d8da716307d2dd63cb6ee925374c",
-  "Empreinte APK 2.3 incorrecte.",
+  "20ed7f22622d0c11f412438055ad9f8f915a6e6d40b2ce6176cfdca34fdebef0",
+  "Empreinte APK 2.4 incorrecte.",
 );
 
 const downloadRoute = await readText("app/api/download/android/route.ts");
 assert.match(downloadRoute, /application\/vnd\.android\.package-archive/);
+assert.match(downloadRoute, /Maison-Jiya-Gestion-Android-2\.4\.apk/);
+assert.match(downloadRoute, /EXPECTED_SIZE = 21183/);
 const downloadPage = await readText("app/telecharger-app/page.tsx");
+assert.match(downloadPage, /ANDROID · VERSION 2\.4/);
 assert.match(downloadPage, /\/api\/download\/android/);
 
-console.log("Private mobile app validation (Android 2.4 recovery + no floating overlay + iPhone): OK");
+console.log("Private mobile app validation (Android 2.4 signed + recovery + no floating overlay + iPhone): OK");
