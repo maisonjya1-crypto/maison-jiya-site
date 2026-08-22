@@ -62,11 +62,21 @@ assert.match(pwaClient, /MacIntel/);
 assert.match(pwaClient, /Installer sur iPhone/);
 assert.match(pwaClient, /private-sw\.js\?v=3/);
 assert.match(pwaClient, /MaisonJiyaAndroid\\\//);
-assert.match(pwaClient, /if \(nativeAndroid \|\| installed \|\| !authorized\) return null/);
+assert.match(pwaClient, /PANEL_VISIBLE_MS\s*=\s*30_000/);
+assert.match(pwaClient, /APP_REFRESH_MS\s*=\s*1_000/);
+assert.match(pwaClient, /setInterval\([^]*APP_REFRESH_MS/);
+assert.match(pwaClient, /window\.location\.reload\(\)/);
+assert.match(pwaClient, /data-mj-app-settings-host|mjAppSettingsHost/);
+assert.match(pwaClient, /Application & notifications/);
+assert.match(pwaClient, /Ouvrir le panneau/);
+assert.match(pwaClient, /Télécharger Android/);
 assert.match(pwaClient, /syncExistingSubscription/);
+assert.match(pwaClient, /Panneau maintenu ouvert/);
 
 const pwaCss = await readText("app/private-pwa.css");
-assert.doesNotMatch(pwaCss, /position:\s*fixed/);
+assert.match(pwaCss, /private-pwa-temporary\s*\{/);
+assert.match(pwaCss, /position:\s*fixed/);
+assert.match(pwaCss, /app-notification-settings/);
 assert.match(pwaCss, /private-pwa-pill\s*\{\s*display:\s*none/i);
 
 const fluidCss = await readText("app/mobile-native.css");
@@ -120,4 +130,4 @@ assert.match(downloadRoute, /application\/vnd\.android\.package-archive/);
 const downloadPage = await readText("app/telecharger-app/page.tsx");
 assert.match(downloadPage, /\/api\/download\/android/);
 
-console.log("Private mobile app validation (Android resilient recovery + no installed-app overlay + iPhone push sync): OK");
+console.log("Private mobile app validation (30s panel + settings access + 1s app refresh + Android recovery): OK");
