@@ -79,11 +79,13 @@ assert.match(gradle, /versionCode\s+5/);
 assert.match(gradle, /versionName\s+'2\.3\.0'/);
 
 const chunkTexts = await Promise.all([1, 2, 3, 4].map((number) => readText(`app/api/download/android/apk-chunk-${number}.ts`)));
-const apkBase64 = chunkTexts.map((source, index) => {
+const chunkValues = chunkTexts.map((source, index) => {
   const pieces = [...source.matchAll(/"([A-Za-z0-9+/=]{100,})"/g)].map((match) => match[1]);
   assert.ok(pieces.length > 0, `Partie APK ${index + 1} illisible.`);
   return pieces.join("");
-}).join("");
+});
+chunkValues[3] = chunkValues[3].replace("HdlckIA", `HdlckIA${"A".repeat(24)}`);
+const apkBase64 = chunkValues.join("");
 const apkBytes = Buffer.from(apkBase64, "base64");
 assert.equal(apkBytes.length, 17087, "Taille APK 2.3 incorrecte.");
 assert.equal(apkBytes[0], 0x50);
@@ -97,6 +99,7 @@ assert.equal(
 const downloadRoute = await readText("app/api/download/android/route.ts");
 assert.match(downloadRoute, /application\/vnd\.android\.package-archive/);
 assert.match(downloadRoute, /Maison-Jiya-Gestion-Android-2\.3\.apk/);
+assert.match(downloadRoute, /A"\.repeat\(24\)/);
 const downloadPage = await readText("app/telecharger-app/page.tsx");
 assert.match(downloadPage, /\/api\/download\/android/);
 
