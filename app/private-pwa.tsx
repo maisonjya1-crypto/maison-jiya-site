@@ -10,6 +10,16 @@ type InstallPromptEvent = Event & {
 
 type PushConfig = { publicKey?: string; subscriptions?: number; error?: string };
 type AppNavigator = Navigator & { standalone?: boolean };
+type NativeOrder = { id: number; orderRef: string; customerName: string | null; products: string };
+type LiveData = { orders?: NativeOrder[] };
+type NativeAndroidBridge = {
+  notificationsSupported: () => boolean;
+  notificationsEnabled: () => boolean;
+  requestNotificationPermission: () => void;
+  openNotificationSettings: () => void;
+  notifyNewOrder: (orderRef: string, customerName: string, products: string) => void;
+};
+type NativeWindow = Window & { MaisonJiyaNative?: NativeAndroidBridge };
 
 const PANEL_VISIBLE_MS = 30_000;
 const APP_REFRESH_MS = 1_000;
@@ -43,6 +53,11 @@ function isStandalone() {
   return window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as AppNavigator).standalone);
 }
 
+function getNativeBridge() {
+  if (typeof window === "undefined") return undefined;
+  return (window as NativeWindow).MaisonJiyaNative;
+}
+
 export default function PrivatePwa() {
   const [authorized, setAuthorized] = useState(false);
   const [publicKey, setPublicKey] = useState("");
@@ -50,6 +65,7 @@ export default function PrivatePwa() {
   const [android, setAndroid] = useState(false);
   const [ios, setIos] = useState(false);
   const [nativeAndroid, setNativeAndroid] = useState(false);
+  const [nativeNotificationsAvailable, setNativeNotificationsAvailable] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [message, setMessage] = useState("");
@@ -59,6 +75,8 @@ export default function PrivatePwa() {
   const [settingsHost, setSettingsHost] = useState<HTMLElement | null>(null);
   const hideTimer = useRef<number | null>(null);
   const lastDataSnapshot = useRef<string>("");
+  const lastNativeOrderIds = useRef<Set<string> | null>(null);
+  const nativePermissionPending = useRef(false);
 
   const clearHideTimer = useCallback(() => {
     if (hideTimer.current !== null) {
@@ -74,6 +92,22 @@ export default function PrivatePwa() {
       hideTimer.current = null;
     }, PANEL_VISIBLE_MS);
   }, [clearHideTimer]);
+
+  const syncNativeNotificationState = useCallback(() => {
+    const bridge = getNativeBridge();
+    let available = false;
+    let enabled = false;
+    try {
+      available = Boolean(bridge?.notificationsSupported?.());
+      enabled = available && Boolean(bridge?.notificationsEnabled?.());
+    } catch {
+      available = false;
+      enabled = false;
+    }
+    setNativeNotificationsAvailable(available);
+    if (available) setNotificationsEnabled(enabled);
+    return { available, enabled };
+  }, []);
 
   const syncExistingSubscription = useCallback(async (key: string) => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !key) return;
@@ -113,10 +147,12 @@ export default function PrivatePwa() {
 
   useEffect(() => {
     const deviceTimer = window.setTimeout(() => {
+      const native = isNativeAndroidApp();
       setInstalled(isStandalone());
       setAndroid(isAndroidDevice());
       setIos(isIosDevice());
-      setNativeAndroid(isNativeAndroidApp());
+      setNativeAndroid(native);
+      if (native) syncNativeNotificationState();
     }, 0);
 
     const beforeInstall = (event: Event) => {
@@ -161,7 +197,28 @@ export default function PrivatePwa() {
       window.removeEventListener("appinstalled", appInstalled);
       displayMode.removeEventListener?.("change", displayChanged);
     };
-  }, [loadConfig]);
+  }, [loadConfig, syncNativeNotificationState]);
+
+  useEffect(() => {
+    if (!nativeAndroid) return;
+    const handleNativeNotificationState = (event: Event) => {
+      const detail = (event as CustomEvent<{ enabled?: boolean }>).detail;
+      const state = syncNativeNotificationState();
+      const enabled = typeof detail?.enabled === "boolean" ? detail.enabled : state.enabled;
+      setNativeNotificationsAvailable(true);
+      setNotificationsEnabled(enabled);
+      setBusy(false);
+      if (nativePermissionPending.current) {
+        nativePermissionPending.current = false;
+        setMessage(enabled
+          ? "Notifications Android activées. Maison Jiya peut maintenant afficher les alertes de nouvelles commandes."
+          : "Les notifications Android restent désactivées. Tu peux les autoriser depuis les paramètres Android.");
+      }
+    };
+    window.addEventListener("maison-jiya-native-notifications", handleNativeNotificationState);
+    syncNativeNotificationState();
+    return () => window.removeEventListener("maison-jiya-native-notifications", handleNativeNotificationState);
+  }, [nativeAndroid, syncNativeNotificationState]);
 
   useEffect(() => {
     startHideTimer();
@@ -201,6 +258,27 @@ export default function PrivatePwa() {
         const response = await fetch(`/api/data?live=${Date.now()}`, { cache: "no-store" });
         if (!response.ok) return;
         const snapshot = await response.text();
+
+        if (nativeAndroid) {
+          try {
+            const body = JSON.parse(snapshot) as LiveData;
+            const orders = Array.isArray(body.orders) ? body.orders : [];
+            const currentIds = new Set(orders.map((order) => String(order.id)));
+            const previousIds = lastNativeOrderIds.current;
+            const bridge = getNativeBridge();
+            if (previousIds && bridge?.notificationsEnabled?.()) {
+              for (const order of orders) {
+                if (!previousIds.has(String(order.id))) {
+                  bridge.notifyNewOrder(order.orderRef || "Nouvelle commande", order.customerName || "", order.products || "");
+                }
+              }
+            }
+            lastNativeOrderIds.current = currentIds;
+          } catch {
+            // Une réponse non JSON ne bloque jamais l’actualisation normale.
+          }
+        }
+
         if (!lastDataSnapshot.current) {
           lastDataSnapshot.current = snapshot;
           return;
@@ -273,7 +351,27 @@ export default function PrivatePwa() {
   }
 
   async function enableNotifications() {
-    if (busy || nativeAndroid) return;
+    if (busy) return;
+
+    if (nativeAndroid) {
+      const bridge = getNativeBridge();
+      if (!nativeNotificationsAvailable || !bridge?.requestNotificationPermission) {
+        setMessage("Mets à jour Maison Jiya Gestion vers l’APK Android 2.5 pour activer les notifications natives.");
+        return;
+      }
+      setBusy(true);
+      setMessage("Autorise les notifications dans la fenêtre Android qui va s’afficher.");
+      nativePermissionPending.current = true;
+      try {
+        bridge.requestNotificationPermission();
+      } catch {
+        nativePermissionPending.current = false;
+        setBusy(false);
+        setMessage("Impossible d’ouvrir l’autorisation Android. Utilise « Gérer les notifications Android » dans les paramètres de l’application.");
+      }
+      return;
+    }
+
     setBusy(true);
     setMessage("");
     try {
@@ -319,6 +417,15 @@ export default function PrivatePwa() {
     }
   }
 
+  async function manageNativeNotifications() {
+    const bridge = getNativeBridge();
+    try {
+      bridge?.openNotificationSettings?.();
+    } catch {
+      setMessage("Ouvre Paramètres Android → Applications → Maison Jiya Gestion → Notifications.");
+    }
+  }
+
   async function disableNotifications() {
     if (busy || nativeAndroid || !("serviceWorker" in navigator)) return;
     setBusy(true);
@@ -344,7 +451,9 @@ export default function PrivatePwa() {
   const appRuntime = nativeAndroid || installed;
   const canShowPanel = nativeAndroid || authorized;
   const description = nativeAndroid
-    ? "Application Android installée. Les données sont vérifiées automatiquement chaque seconde et la dernière page valide reste affichée pendant une coupure."
+    ? nativeNotificationsAvailable
+      ? "Application Android installée. Les données sont vérifiées automatiquement chaque seconde et les notifications natives peuvent être activées sur cet appareil."
+      : "Application Android installée. Mets à jour vers la version 2.5 pour activer les notifications Android natives."
     : ios
       ? installed
         ? "Application iPhone installée. Les données sont vérifiées automatiquement chaque seconde."
@@ -365,9 +474,17 @@ export default function PrivatePwa() {
         <a className="secondary-button" href="/telecharger-app">Télécharger Android</a>
       </div>
       {appRuntime && <small>Actualisation automatique : vérification des nouvelles données toutes les 1 seconde lorsque l’application est ouverte.</small>}
+      {nativeAndroid && nativeNotificationsAvailable && <small>Notifications Android natives : {notificationsEnabled ? "activées" : "désactivées"}.</small>}
+      {nativeAndroid && !nativeNotificationsAvailable && <small>Notifications Android natives : mise à jour APK 2.5 requise.</small>}
     </section>,
     settingsHost,
   ) : null;
+
+  const notificationStatus = nativeAndroid
+    ? nativeNotificationsAvailable
+      ? notificationsEnabled ? "Notifications Android ✓" : "Notifications Android désactivées"
+      : "Mise à jour Android 2.5 requise"
+    : notificationsEnabled ? "Notifications ✓" : "Notifications désactivées";
 
   return <>
     {settingsCard}
@@ -389,16 +506,20 @@ export default function PrivatePwa() {
       <p>{description}</p>
       <div className="private-pwa-status">
         <span className={appRuntime ? "ok" : ""}>{nativeAndroid ? "APK Android ✓" : installed ? "Mode application ✓" : ios ? "Safari" : android ? "Android" : "App non installée"}</span>
-        <span className={notificationsEnabled ? "ok" : ""}>{notificationsEnabled ? "Notifications ✓" : nativeAndroid ? "Notifications Android non disponibles dans cette version APK" : "Notifications désactivées"}</span>
+        <span className={notificationsEnabled ? "ok" : ""}>{notificationStatus}</span>
       </div>
       <div className="private-pwa-actions" onPointerDown={(event) => event.stopPropagation()}>
         {nativeAndroid
-          ? <a className="private-pwa-action-link" href="/telecharger-app">Page de téléchargement Android</a>
+          ? <span className="private-pwa-installed-state">Application installée</span>
           : appRuntime
             ? <span className="private-pwa-installed-state">Application installée</span>
             : <button type="button" onClick={() => void installApp()}>{ios ? "Installer sur iPhone" : android ? "Télécharger l’app Android" : "Installer l’app"}</button>}
         {nativeAndroid
-          ? <span className="private-pwa-unavailable-action">Notifications : une version Android native signée est nécessaire</span>
+          ? nativeNotificationsAvailable
+            ? notificationsEnabled
+              ? <button type="button" className="secondary" onClick={() => void manageNativeNotifications()}>Gérer les notifications Android</button>
+              : <button type="button" className="primary" disabled={busy} onClick={() => void enableNotifications()}>{busy ? "Activation…" : "Activer les notifications"}</button>
+            : <a className="private-pwa-action-link" href="/telecharger-app">Mettre à jour l’app Android</a>
           : !notificationsEnabled
             ? <button type="button" className="primary" disabled={busy} onClick={() => void enableNotifications()}>{busy ? "Activation…" : "Activer les notifications"}</button>
             : <button type="button" className="secondary" disabled={busy} onClick={() => void disableNotifications()}>Désactiver notifications</button>}
