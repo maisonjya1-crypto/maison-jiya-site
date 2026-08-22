@@ -10,6 +10,25 @@
   box-shadow: 0 10px 30px rgba(45, 36, 48, .10);
   color: #2d2430;
 }
+.private-pwa-temporary {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right, 0px));
+  bottom: max(14px, env(safe-area-inset-bottom, 0px));
+  z-index: 1200;
+  width: min(430px, calc(100vw - 28px));
+  max-height: min(620px, calc(100dvh - 28px));
+  margin: 0;
+  overflow: auto;
+  box-shadow: 0 24px 70px rgba(45, 36, 48, .24);
+  animation: private-pwa-enter .22s ease-out;
+}
+.private-pwa-temporary.pinned {
+  box-shadow: 0 26px 80px rgba(45, 36, 48, .30);
+}
+@keyframes private-pwa-enter {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .private-pwa-panel header {
   display: flex;
   align-items: flex-start;
@@ -25,6 +44,18 @@
   text-transform: uppercase;
 }
 .private-pwa-panel header strong { font-size: 17px; }
+.private-pwa-close {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(45, 36, 48, .12);
+  border-radius: 10px;
+  background: #f8f5f9;
+  color: #6f626f;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 850;
+}
 .private-pwa-panel > p {
   margin: 10px 0 12px;
   color: #716773;
@@ -62,7 +93,8 @@
 .private-pwa-actions button.primary { border-color: #2d2430; background: #2d2430; color: #fff; }
 .private-pwa-actions button.secondary { color: #7c697a; }
 .private-pwa-actions button:disabled { opacity: .55; cursor: wait; }
-.private-pwa-message {
+.private-pwa-message,
+.private-pwa-countdown {
   display: block;
   margin-top: 10px;
   padding: 9px 10px;
@@ -72,13 +104,53 @@
   font-size: 11px;
   line-height: 1.45;
 }
+.private-pwa-countdown {
+  background: transparent;
+  padding: 0;
+  color: #8a7e8c;
+  font-size: 10px;
+}
 
-/* Aucun panneau d'installation/notification ne doit flotter au-dessus des blocs du dashboard. */
+.app-notification-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+}
+.app-notification-settings h2 { margin: 4px 0 6px; }
+.app-notification-settings p { margin: 0; color: #716773; line-height: 1.5; }
+.app-notification-settings small { grid-column: 1 / -1; color: #7c7180; }
+.app-notification-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.app-notification-settings-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+/* Ancien mini-pill désactivé : le seul panneau temporaire est celui piloté par le composant. */
 .private-pwa-pill { display: none !important; }
 
 @media (max-width: 760px) {
-  .private-pwa-panel {
+  .private-pwa-panel:not(.private-pwa-temporary) {
     width: calc(100% - 24px);
     margin: 12px auto 20px;
+  }
+  .private-pwa-temporary {
+    right: max(10px, env(safe-area-inset-right, 0px));
+    bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+  }
+  .app-notification-settings {
+    grid-template-columns: 1fr;
+  }
+  .app-notification-settings-actions {
+    justify-content: flex-start;
   }
 }
