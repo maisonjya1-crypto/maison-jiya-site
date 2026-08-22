@@ -68,9 +68,11 @@ public class MainActivity extends Activity {
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
 
-        // Respect the real physical viewport. Do not shrink a desktop-sized page to fit.
+        // La largeur de mise en page suit toujours la largeur réelle du WebView.
+        // C'est important sur les tablettes haute résolution, foldables et fenêtres redimensionnées.
         settings.setLoadWithOverviewMode(false);
-        settings.setUseWideViewPort(true);
+        settings.setUseWideViewPort(false);
+        settings.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING);
         settings.setTextZoom(100);
         settings.setDefaultFontSize(16);
         settings.setMinimumFontSize(8);
@@ -83,7 +85,7 @@ public class MainActivity extends Activity {
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " MaisonJiyaAndroid/2.1");
+        settings.setUserAgentString(settings.getUserAgentString() + " MaisonJiyaAndroid/2.3");
 
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
@@ -234,11 +236,16 @@ public class MainActivity extends Activity {
 
         @Override
         public void onPageFinished(WebView view, String url) {
-            // Force the WebView to follow the current device width even on pages restored from history.
+            // Synchronise la page avec la fenêtre Android réelle à chaque navigation et redimensionnement.
             view.evaluateJavascript(
-                    "(function(){var m=document.querySelector('meta[name=viewport]');" +
+                    "(function(){" +
+                    "var m=document.querySelector('meta[name=viewport]');" +
                     "if(!m){m=document.createElement('meta');m.name='viewport';document.head.appendChild(m);}" +
-                    "m.content='width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover';})();",
+                    "m.content='width=device-width,initial-scale=1,viewport-fit=cover';" +
+                    "var r=document.documentElement;r.classList.add('maison-jiya-native-app');" +
+                    "function s(){r.style.setProperty('--mj-native-width',window.innerWidth+'px');r.style.setProperty('--mj-native-height',window.innerHeight+'px');}" +
+                    "s();if(!window.__mjNativeResize){window.__mjNativeResize=true;window.addEventListener('resize',s,{passive:true});window.addEventListener('orientationchange',s,{passive:true});}" +
+                    "})();",
                     null
             );
             super.onPageFinished(view, url);
