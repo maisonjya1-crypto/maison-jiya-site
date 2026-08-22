@@ -3,7 +3,9 @@ import chunk2 from "./apk-chunk-2";
 import chunk3 from "./apk-chunk-3";
 import chunk4 from "./apk-chunk-4";
 
-const apkBase64 = `${chunk1}${chunk2}${chunk3}${chunk4}`;
+const zeroPadding = "A".repeat(24);
+const restoredChunk4 = chunk4.replace("HdlckIA", `HdlckIA${zeroPadding}`);
+const apkBase64 = `${chunk1}${chunk2}${chunk3}${restoredChunk4}`;
 const EXPECTED_SIZE = 17087;
 
 function decodeApk() {
