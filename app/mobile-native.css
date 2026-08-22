@@ -208,3 +208,117 @@ table {
     top: auto !important;
   }
 }
+
+/* Fenêtres longues : défilement réellement fluide sur iPhone, Android, tablette et pliables. */
+@media (max-width: 900px), (pointer: coarse), (hover: none) {
+  .workspace {
+    padding-bottom: calc(118px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .sidebar nav {
+    bottom: max(7px, env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .modal-backdrop {
+    z-index: 4000 !important;
+    align-items: flex-end !important;
+    overflow: hidden !important;
+    padding-top: max(6px, env(safe-area-inset-top, 0px)) !important;
+    padding-right: env(safe-area-inset-right, 0px) !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+    padding-left: env(safe-area-inset-left, 0px) !important;
+    touch-action: pan-y;
+  }
+
+  .modal,
+  .modal.compact {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    scrollbar-gutter: stable;
+  }
+
+  .modal-head {
+    z-index: 4 !important;
+  }
+
+  .modal-head > button {
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    flex: 0 0 44px !important;
+  }
+
+  .modal-actions {
+    z-index: 4 !important;
+    bottom: 0 !important;
+    flex-wrap: wrap !important;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .modal-actions > button,
+  .modal-actions > a {
+    flex: 1 1 140px !important;
+    min-width: 0 !important;
+  }
+
+  .status-history-panel,
+  .carrier-authorization-state,
+  .order-stock-state,
+  .carrier-quote-chooser {
+    min-width: 0 !important;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 440px) {
+  .workspace {
+    padding-right: 10px !important;
+    padding-left: 10px !important;
+    padding-bottom: calc(122px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .modal,
+  .modal.compact {
+    padding-right: 16px !important;
+    padding-left: 16px !important;
+    border-radius: 20px 20px 0 0 !important;
+  }
+
+  .modal-head {
+    gap: 12px !important;
+  }
+
+  .modal-head h2 {
+    font-size: clamp(20px, 7vw, 24px) !important;
+    overflow-wrap: anywhere;
+  }
+
+  .modal-actions > button,
+  .modal-actions > a {
+    flex-basis: 100% !important;
+  }
+
+  .sidebar nav .nav-item {
+    min-width: 62px !important;
+  }
+}
+
+@media (max-height: 620px) and (max-width: 900px) {
+  .modal,
+  .modal.compact {
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+  }
+
+  .modal-head {
+    padding-top: 14px !important;
+    padding-bottom: 10px !important;
+  }
+}
