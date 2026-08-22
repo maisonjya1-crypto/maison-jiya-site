@@ -56,19 +56,19 @@ export default function DownloadAndroidApp() {
           color: "#6f5680",
           fontSize: 12,
           fontWeight: 800,
-        }}>ANDROID · VERSION 2.3</span>
+        }}>ANDROID · VERSION 2.4</span>
 
         <h1 style={{ margin: "18px 0 10px", fontSize: "clamp(28px, 7vw, 46px)", lineHeight: 1.02 }}>
           Maison Jiya Gestion
         </h1>
         <p style={{ margin: "0 0 24px", color: "#746b76", fontSize: 15, lineHeight: 1.65 }}>
-          Application privée officielle pour gérer les commandes, les produits et le pilotage Maison Jiya.
-          L’interface s’adapte automatiquement aux téléphones, tablettes et écrans pliables Android.
+          Version stabilisée : reprise automatique en cas de coupure réseau, écran de reconnexion propre
+          et aucun panneau flottant qui masque le dashboard.
         </p>
 
         <a
           href={apkPath}
-          download="Maison-Jiya-Gestion-Android-2.3.apk"
+          download="Maison-Jiya-Gestion-Android-2.4.apk"
           style={{
             display: "flex",
             alignItems: "center",
@@ -84,11 +84,11 @@ export default function DownloadAndroidApp() {
             fontWeight: 850,
           }}
         >
-          Télécharger l’application Android
+          Télécharger Android 2.4
         </a>
 
         <div style={{ marginTop: 20, padding: 16, borderRadius: 16, background: "#f8f5f9", color: "#665d68", fontSize: 13, lineHeight: 1.6 }}>
-          <strong style={{ color: "#2d2430" }}>Installation :</strong> ouvre le fichier téléchargé puis autorise l’installation depuis ton navigateur si Android le demande. Les futures versions pourront remplacer l’application actuelle.
+          <strong style={{ color: "#2d2430" }}>Mise à jour :</strong> tu peux installer la version 2.4 directement par-dessus l’ancienne version. Elle utilise le même package et le même certificat Maison Jiya.
         </div>
       </section>
     </main>
