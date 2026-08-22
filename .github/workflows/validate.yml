@@ -38,6 +38,9 @@ jobs:
       - name: Validate private Android PWA
         run: node scripts/check-private-pwa.mjs
 
+      - name: Run rendered HTML tests
+        run: node --test tests/rendered-html.test.mjs
+
       - name: Production smoke diagnostic
         continue-on-error: true
         run: node scripts/smoke-production.mjs
