@@ -2,22 +2,36 @@ package maison.jiya.gestion;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
+import android.net.http.SslError;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Gravity;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.SafeBrowsingResponse;
+import android.webkit.SslErrorHandler;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.TextView;
 import android.widget.Toast;
 
 public class MainActivity extends Activity {
@@ -27,7 +41,21 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private ProgressBar progressBar;
+    private View errorOverlay;
+    private TextView errorMessage;
     private ValueCallback<Uri[]> fileCallback;
+    private final Handler retryHandler = new Handler(Looper.getMainLooper());
+    private int retryAttempts = 0;
+    private String lastRequestedUrl = HOME_URL;
+
+    private final Runnable retryRunnable = () -> {
+        if (webView == null || errorOverlay == null || errorOverlay.getVisibility() != View.VISIBLE) return;
+        if (!isNetworkConnected()) {
+            scheduleRetry();
+            return;
+        }
+        loadWithRecovery(lastRequestedUrl);
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,15 +79,83 @@ public class MainActivity extends Activity {
                 6
         );
         root.addView(progressBar, progressParams);
-        setContentView(root);
 
+        errorOverlay = buildErrorOverlay();
+        root.addView(errorOverlay, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+
+        setContentView(root);
         configureWebView();
 
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
+            String restored = webView.getUrl();
+            if (restored != null && !restored.isEmpty()) lastRequestedUrl = restored;
         } else {
-            webView.loadUrl(resolveLaunchUrl(getIntent()));
+            loadWithRecovery(resolveLaunchUrl(getIntent()));
         }
+    }
+
+    private View buildErrorOverlay() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setGravity(Gravity.CENTER);
+        panel.setPadding(dp(30), dp(30), dp(30), dp(30));
+        panel.setBackgroundColor(Color.rgb(247, 244, 248));
+        panel.setVisibility(View.GONE);
+
+        TextView badge = new TextView(this);
+        badge.setText("MJ");
+        badge.setGravity(Gravity.CENTER);
+        badge.setTextColor(Color.WHITE);
+        badge.setTextSize(21);
+        badge.setBackgroundColor(Color.rgb(45, 36, 48));
+        LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(dp(64), dp(64));
+        badgeParams.bottomMargin = dp(22);
+        panel.addView(badge, badgeParams);
+
+        TextView title = new TextView(this);
+        title.setText("Connexion momentanément indisponible");
+        title.setTextColor(Color.rgb(45, 36, 48));
+        title.setTextSize(20);
+        title.setGravity(Gravity.CENTER);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        panel.addView(title, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+
+        errorMessage = new TextView(this);
+        errorMessage.setText("Maison Jiya va réessayer automatiquement. Vérifie simplement ta connexion Internet.");
+        errorMessage.setTextColor(Color.rgb(105, 96, 107));
+        errorMessage.setTextSize(14);
+        errorMessage.setGravity(Gravity.CENTER);
+        errorMessage.setPadding(0, dp(12), 0, dp(20));
+        panel.addView(errorMessage, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+
+        Button retry = new Button(this);
+        retry.setText("Réessayer maintenant");
+        retry.setAllCaps(false);
+        retry.setOnClickListener(v -> {
+            retryAttempts = 0;
+            loadWithRecovery(lastRequestedUrl);
+        });
+        LinearLayout.LayoutParams retryParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dp(52)
+        );
+        panel.addView(retry, retryParams);
+
+        return panel;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void configureWebView() {
@@ -67,9 +163,10 @@ public class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setLoadsImagesAutomatically(true);
+        settings.setBlockNetworkLoads(false);
 
-        // La largeur de mise en page suit toujours la largeur réelle du WebView.
-        // C'est important sur les tablettes haute résolution, foldables et fenêtres redimensionnées.
         settings.setLoadWithOverviewMode(false);
         settings.setUseWideViewPort(false);
         settings.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING);
@@ -85,7 +182,7 @@ public class MainActivity extends Activity {
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " MaisonJiyaAndroid/2.3");
+        settings.setUserAgentString(settings.getUserAgentString() + " MaisonJiyaAndroid/2.4");
 
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
@@ -107,14 +204,11 @@ public class MainActivity extends Activity {
                     ValueCallback<Uri[]> filePathCallback,
                     FileChooserParams fileChooserParams
             ) {
-                if (fileCallback != null) {
-                    fileCallback.onReceiveValue(null);
-                }
+                if (fileCallback != null) fileCallback.onReceiveValue(null);
                 fileCallback = filePathCallback;
 
-                Intent intent;
                 try {
-                    intent = fileChooserParams.createIntent();
+                    Intent intent = fileChooserParams.createIntent();
                     intent.addCategory(Intent.CATEGORY_OPENABLE);
                     intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                     startActivityForResult(intent, FILE_CHOOSER_REQUEST);
@@ -128,6 +222,47 @@ public class MainActivity extends Activity {
         });
 
         webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> openExternal(url));
+    }
+
+    private void loadWithRecovery(String url) {
+        if (webView == null) return;
+        lastRequestedUrl = (url == null || url.isEmpty()) ? HOME_URL : url;
+        retryHandler.removeCallbacks(retryRunnable);
+        errorOverlay.setVisibility(View.GONE);
+        webView.setVisibility(View.VISIBLE);
+        progressBar.setVisibility(View.VISIBLE);
+
+        if (!isNetworkConnected()) {
+            showConnectionError("Aucune connexion Internet détectée. Maison Jiya réessaiera automatiquement.");
+            scheduleRetry();
+            return;
+        }
+        webView.loadUrl(lastRequestedUrl);
+    }
+
+    private void showConnectionError(String message) {
+        progressBar.setVisibility(View.GONE);
+        webView.setVisibility(View.INVISIBLE);
+        errorMessage.setText(message);
+        errorOverlay.setVisibility(View.VISIBLE);
+    }
+
+    private void scheduleRetry() {
+        retryHandler.removeCallbacks(retryRunnable);
+        if (retryAttempts >= 5) return;
+        long[] delays = {1200L, 2500L, 4500L, 7000L, 10000L};
+        long delay = delays[Math.min(retryAttempts, delays.length - 1)];
+        retryAttempts += 1;
+        retryHandler.postDelayed(retryRunnable, delay);
+    }
+
+    private boolean isNetworkConnected() {
+        ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (manager == null) return true;
+        Network network = manager.getActiveNetwork();
+        if (network == null) return false;
+        NetworkCapabilities capabilities = manager.getNetworkCapabilities(network);
+        return capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
     }
 
     private String resolveLaunchUrl(Intent intent) {
@@ -157,23 +292,31 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        String target = resolveLaunchUrl(intent);
-        if (webView != null) {
-            webView.loadUrl(target);
+        loadWithRecovery(resolveLaunchUrl(intent));
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (errorOverlay != null && errorOverlay.getVisibility() == View.VISIBLE && isNetworkConnected()) {
+            retryAttempts = 0;
+            loadWithRecovery(lastRequestedUrl);
         }
     }
 
     @Override
     protected void onSaveInstanceState(Bundle outState) {
-        if (webView != null) {
-            webView.saveState(outState);
-        }
+        if (webView != null) webView.saveState(outState);
         super.onSaveInstanceState(outState);
     }
 
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
+        if (errorOverlay != null && errorOverlay.getVisibility() == View.VISIBLE) {
+            finishAndRemoveTask();
+            return;
+        }
         if (webView != null && webView.canGoBack()) {
             webView.goBack();
             return;
@@ -184,18 +327,14 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != FILE_CHOOSER_REQUEST || fileCallback == null) {
-            return;
-        }
+        if (requestCode != FILE_CHOOSER_REQUEST || fileCallback == null) return;
 
         Uri[] result = null;
         if (resultCode == RESULT_OK) {
             if (data != null && data.getClipData() != null) {
                 int count = data.getClipData().getItemCount();
                 result = new Uri[count];
-                for (int i = 0; i < count; i++) {
-                    result[i] = data.getClipData().getItemAt(i).getUri();
-                }
+                for (int i = 0; i < count; i++) result[i] = data.getClipData().getItemAt(i).getUri();
             } else if (data != null && data.getData() != null) {
                 result = new Uri[]{data.getData()};
             }
@@ -207,6 +346,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        retryHandler.removeCallbacksAndMessages(null);
         if (webView != null) {
             webView.stopLoading();
             webView.setWebChromeClient(null);
@@ -221,22 +361,29 @@ public class MainActivity extends Activity {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             Uri uri = request.getUrl();
-            if (isInternal(uri)) {
-                return false;
-            }
+            if (isInternal(uri)) return false;
             openExternal(uri.toString());
             return true;
         }
 
         @Override
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
+            if (url != null && url.startsWith("https://" + HOME_HOST)) lastRequestedUrl = url;
             progressBar.setVisibility(View.VISIBLE);
             super.onPageStarted(view, url, favicon);
         }
 
         @Override
+        public void onPageCommitVisible(WebView view, String url) {
+            retryHandler.removeCallbacks(retryRunnable);
+            retryAttempts = 0;
+            errorOverlay.setVisibility(View.GONE);
+            webView.setVisibility(View.VISIBLE);
+            super.onPageCommitVisible(view, url);
+        }
+
+        @Override
         public void onPageFinished(WebView view, String url) {
-            // Synchronise la page avec la fenêtre Android réelle à chaque navigation et redimensionnement.
             view.evaluateJavascript(
                     "(function(){" +
                     "var m=document.querySelector('meta[name=viewport]');" +
@@ -254,9 +401,29 @@ public class MainActivity extends Activity {
         @Override
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             if (request.isForMainFrame()) {
-                Toast.makeText(MainActivity.this, "Connexion impossible. Vérifie Internet puis réessaie.", Toast.LENGTH_LONG).show();
+                view.stopLoading();
+                showConnectionError("Le serveur n’a pas répondu. Nouvelle tentative automatique en cours…");
+                scheduleRetry();
+                return;
             }
             super.onReceivedError(view, request, error);
+        }
+
+        @Override
+        public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+            if (request.isForMainFrame() && errorResponse.getStatusCode() >= 500) {
+                view.stopLoading();
+                showConnectionError("Maison Jiya est momentanément indisponible. Nouvelle tentative automatique…");
+                scheduleRetry();
+                return;
+            }
+            super.onReceivedHttpError(view, request, errorResponse);
+        }
+
+        @Override
+        public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+            handler.cancel();
+            showConnectionError("Connexion sécurisée impossible. Réessaie dans un instant.");
         }
 
         @Override

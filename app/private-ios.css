@@ -26,11 +26,6 @@
     .sidebar {
       padding-top: max(14px, env(safe-area-inset-top, 0px));
     }
-
-    .private-pwa-panel,
-    .private-pwa-pill {
-      bottom: max(12px, calc(env(safe-area-inset-bottom, 0px) + 8px));
-    }
   }
 
   @media (max-width: 820px) {

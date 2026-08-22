@@ -10,11 +10,6 @@
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
   }
-
-  .private-pwa-panel,
-  .private-pwa-pill {
-    bottom: calc(12px + env(safe-area-inset-bottom));
-  }
 }
 
 .private-pwa-status span.android-ready {
@@ -24,7 +19,7 @@
 
 @media (max-width: 680px) {
   .private-pwa-panel {
-    max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    overflow: auto;
+    max-height: none;
+    overflow: visible;
   }
 }

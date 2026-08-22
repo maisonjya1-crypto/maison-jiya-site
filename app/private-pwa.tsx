@@ -29,6 +29,11 @@ function isAndroidDevice() {
   return /android/i.test(navigator.userAgent);
 }
 
+function isNativeAndroidApp() {
+  if (typeof navigator === "undefined") return false;
+  return /MaisonJiyaAndroid\//i.test(navigator.userAgent);
+}
+
 function isStandalone() {
   if (typeof window === "undefined") return false;
   return window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as AppNavigator).standalone);
@@ -40,11 +45,11 @@ export default function PrivatePwa() {
   const [installed, setInstalled] = useState(false);
   const [android, setAndroid] = useState(false);
   const [ios, setIos] = useState(false);
+  const [nativeAndroid, setNativeAndroid] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [expanded, setExpanded] = useState(true);
 
   const syncExistingSubscription = useCallback(async (key: string) => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !key) return;
@@ -60,7 +65,7 @@ export default function PrivatePwa() {
       });
       if (!response.ok && response.status === 401) setAuthorized(false);
     } catch {
-      // L'utilisateur pourra réactiver manuellement depuis le panneau.
+      // L'utilisateur pourra réactiver manuellement depuis le panneau intégré.
     }
   }, []);
 
@@ -87,6 +92,7 @@ export default function PrivatePwa() {
       setInstalled(isStandalone());
       setAndroid(isAndroidDevice());
       setIos(isIosDevice());
+      setNativeAndroid(isNativeAndroidApp());
     }, 0);
 
     const beforeInstall = (event: Event) => {
@@ -105,7 +111,7 @@ export default function PrivatePwa() {
     window.addEventListener("appinstalled", appInstalled);
     displayMode.addEventListener?.("change", displayChanged);
 
-    if ("serviceWorker" in navigator) {
+    if ("serviceWorker" in navigator && !isNativeAndroidApp()) {
       void navigator.serviceWorker.register("/private-sw.js?v=3", {
         scope: "/",
         updateViaCache: "none",
@@ -117,7 +123,7 @@ export default function PrivatePwa() {
     let cancelled = false;
     let timer = 0;
     const tryAuth = async () => {
-      if (cancelled) return;
+      if (cancelled || isNativeAndroidApp()) return;
       const ok = await loadConfig();
       if (!ok && !cancelled) timer = window.setTimeout(tryAuth, 4000);
     };
@@ -144,7 +150,7 @@ export default function PrivatePwa() {
       await installPrompt.prompt();
       const choice = await installPrompt.userChoice;
       if (choice.outcome === "accepted") {
-        setMessage("Installation Android lancée. L’application va apparaître dans tes applications.");
+        setMessage("Installation lancée. L’application va apparaître dans tes applications.");
       } else {
         setMessage("Installation annulée. Tu peux la relancer quand tu veux.");
       }
@@ -152,12 +158,12 @@ export default function PrivatePwa() {
     }
 
     if (ios) {
-      setMessage("Sur iPhone : ouvre cette page dans Safari → touche Partager ⤴ → « Sur l’écran d’accueil » / « Ajouter à l’écran d’accueil » → Ajouter. Ouvre ensuite l’icône Jiya Gestion : elle fonctionnera en plein écran et sans expiration.");
+      setMessage("Sur iPhone : Safari → Partager ⤴ → « Ajouter à l’écran d’accueil » → Ajouter. Ouvre ensuite l’icône Jiya Gestion.");
       return;
     }
 
     if (android) {
-      setMessage("Sur Android, utilise l’application APK Maison Jiya Gestion pour une expérience native. La PWA reste disponible comme solution de secours.");
+      setMessage("Sur Android, utilise l’APK Maison Jiya Gestion depuis la page officielle de téléchargement.");
       return;
     }
 
@@ -175,7 +181,7 @@ export default function PrivatePwa() {
       }
       if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
         throw new Error(ios
-          ? "Les notifications nécessitent une version récente d’iOS et l’ouverture depuis l’icône Maison Jiya installée sur l’écran d’accueil."
+          ? "Les notifications nécessitent une version récente d’iOS et l’ouverture depuis l’icône Maison Jiya installée."
           : "Les notifications push ne sont pas prises en charge par ce navigateur.");
       }
       if (!publicKey) {
@@ -233,36 +239,31 @@ export default function PrivatePwa() {
     }
   }
 
-  if (!authorized) return null;
+  // L'APK Android est déjà une application : aucun panneau web ne doit se superposer au dashboard.
+  if (nativeAndroid || !authorized) return null;
 
-  if (!expanded && installed && notificationsEnabled) {
-    return <button className="private-pwa-pill" type="button" onClick={() => setExpanded(true)} title="Maison Jiya Gestion">
-      <span>APP</span><strong>Maison Jiya Gestion</strong><b>Notifications ✓</b>
-    </button>;
-  }
+  // Une fois l'app iPhone/PWA installée et les notifications activées, le panneau disparaît complètement.
+  if (installed && notificationsEnabled) return null;
 
   const description = ios
     ? installed
-      ? "Maison Jiya est ouverte comme une app iPhone plein écran. Active les notifications pour recevoir chaque nouvelle commande."
-      : "Sur iPhone, ajoute le dashboard privé à l’écran d’accueil depuis Safari : il restera gratuit, sans expiration, avec une ouverture plein écran."
+      ? "Active les notifications une seule fois. Ce bloc disparaîtra ensuite et ne masquera jamais le dashboard."
+      : "Ajoute le dashboard privé à l’écran d’accueil depuis Safari pour l’ouvrir comme une application gratuite."
     : android
-      ? "Sur Android, utilise l’APK Maison Jiya Gestion pour l’expérience native. Les notifications de commandes restent disponibles depuis le dashboard."
-      : "Installe uniquement le dashboard privé sur ton téléphone et reçois les nouvelles commandes.";
+      ? "Télécharge l’APK Maison Jiya Gestion depuis la page officielle."
+      : "Installe uniquement le dashboard privé sur ton appareil.";
 
   return <aside className="private-pwa-panel" aria-label="Application Maison Jiya Gestion">
     <header>
       <div><span>Application privée</span><strong>Maison Jiya Gestion</strong></div>
-      {installed && notificationsEnabled && <button type="button" className="private-pwa-minimize" onClick={() => setExpanded(false)} aria-label="Réduire">−</button>}
     </header>
     <p>{description}</p>
     <div className="private-pwa-status">
-      <span className={installed ? "ok" : ""}>{installed ? "Mode application ✓" : ios ? "Safari" : android ? "Mode navigateur" : "App non installée"}</span>
+      <span className={installed ? "ok" : ""}>{installed ? "Mode application ✓" : ios ? "Safari" : android ? "Android" : "App non installée"}</span>
       <span className={notificationsEnabled ? "ok" : ""}>{notificationsEnabled ? "Notifications ✓" : "Notifications désactivées"}</span>
-      {ios && <span className="ios-ready">iPhone</span>}
-      {android && <span className="android-ready">Android</span>}
     </div>
     <div className="private-pwa-actions">
-      {!installed && <button type="button" onClick={() => void installApp()}>{ios ? "Installer sur iPhone" : android ? "Infos application Android" : "Installer l’app"}</button>}
+      {!installed && <button type="button" onClick={() => void installApp()}>{ios ? "Installer sur iPhone" : android ? "Télécharger l’app Android" : "Installer l’app"}</button>}
       {!notificationsEnabled
         ? <button type="button" className="primary" disabled={busy} onClick={() => void enableNotifications()}>{busy ? "Activation…" : "Activer les notifications"}</button>
         : <button type="button" className="secondary" disabled={busy} onClick={() => void disableNotifications()}>Désactiver notifications</button>}

@@ -61,6 +61,13 @@ assert.match(pwaClient, /navigator\.standalone|standalone/);
 assert.match(pwaClient, /MacIntel/);
 assert.match(pwaClient, /Installer sur iPhone/);
 assert.match(pwaClient, /private-sw\.js\?v=3/);
+assert.match(pwaClient, /MaisonJiyaAndroid\\\//);
+assert.match(pwaClient, /if \(nativeAndroid \|\| !authorized\) return null/);
+assert.match(pwaClient, /installed && notificationsEnabled/);
+
+const pwaCss = await readText("app/private-pwa.css");
+assert.doesNotMatch(pwaCss, /position:\s*fixed/);
+assert.match(pwaCss, /private-pwa-pill\s*\{\s*display:\s*none/i);
 
 const fluidCss = await readText("app/mobile-native.css");
 assert.match(fluidCss, /pointer:\s*coarse/);
@@ -71,13 +78,21 @@ assert.match(fluidCss, /clamp\(190px,\s*18vw,\s*248px\)/);
 const androidActivity = await readText("android/app/src/main/java/maison/jiya/gestion/MainActivity.java");
 assert.match(androidActivity, /setUseWideViewPort\(false\)/);
 assert.match(androidActivity, /TEXT_AUTOSIZING/);
-assert.match(androidActivity, /MaisonJiyaAndroid\/2\.3/);
+assert.match(androidActivity, /MaisonJiyaAndroid\/2\.4/);
 assert.match(androidActivity, /orientationchange/);
+assert.match(androidActivity, /Connexion momentanément indisponible/);
+assert.match(androidActivity, /scheduleRetry\(\)/);
+assert.match(androidActivity, /onPageCommitVisible/);
+assert.match(androidActivity, /ACCESS_NETWORK_STATE|isNetworkConnected/);
+
+const androidManifest = await readText("android/app/src/main/AndroidManifest.xml");
+assert.match(androidManifest, /ACCESS_NETWORK_STATE/);
 
 const gradle = await readText("android/app/build.gradle");
-assert.match(gradle, /versionCode\s+5/);
-assert.match(gradle, /versionName\s+'2\.3\.0'/);
+assert.match(gradle, /versionCode\s+6/);
+assert.match(gradle, /versionName\s+'2\.4\.0'/);
 
+// Le téléchargement public reste sur le dernier APK signé jusqu'à ce que le build 2.4 soit resigné avec le certificat Maison Jiya.
 const chunkTexts = await Promise.all([1, 2, 3, 4].map((number) => readText(`app/api/download/android/apk-chunk-${number}.ts`)));
 const chunkValues = chunkTexts.map((source, index) => {
   const pieces = [...source.matchAll(/"([A-Za-z0-9+/=]{100,})"/g)].map((match) => match[1]);
@@ -98,9 +113,7 @@ assert.equal(
 
 const downloadRoute = await readText("app/api/download/android/route.ts");
 assert.match(downloadRoute, /application\/vnd\.android\.package-archive/);
-assert.match(downloadRoute, /Maison-Jiya-Gestion-Android-2\.3\.apk/);
-assert.match(downloadRoute, /A"\.repeat\(24\)/);
 const downloadPage = await readText("app/telecharger-app/page.tsx");
 assert.match(downloadPage, /\/api\/download\/android/);
 
-console.log("Private mobile app validation (Android 2.3 fluid + iPhone + APK download): OK");
+console.log("Private mobile app validation (Android 2.4 recovery + no floating overlay + iPhone): OK");
