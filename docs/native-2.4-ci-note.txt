@@ -1,0 +1,1 @@
+Do not merge unless Validate Maison Jiya and Build Maison Jiya Android App are both green.
