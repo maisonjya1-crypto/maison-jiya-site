@@ -2,11 +2,10 @@ import chunk1 from "./apk-chunk-1";
 import chunk2 from "./apk-chunk-2";
 import chunk3 from "./apk-chunk-3";
 import chunk4 from "./apk-chunk-4";
+import chunk5 from "./apk-chunk-5";
 
-const zeroPadding = "A".repeat(24);
-const restoredChunk4 = chunk4.replace("HdlckIA", `HdlckIA${zeroPadding}`);
-const apkBase64 = `${chunk1}${chunk2}${chunk3}${restoredChunk4}`;
-const EXPECTED_SIZE = 17087;
+const apkBase64 = `${chunk1}${chunk2}${chunk3}${chunk4}${chunk5}`;
+const EXPECTED_SIZE = 21183;
 
 function decodeApk() {
   const raw = atob(apkBase64);
@@ -26,9 +25,9 @@ export async function GET() {
     status: 200,
     headers: {
       "content-type": "application/vnd.android.package-archive",
-      "content-disposition": "attachment; filename=\"Maison-Jiya-Gestion-Android-2.3.apk\"",
+      "content-disposition": "attachment; filename=\"Maison-Jiya-Gestion-Android-2.4.apk\"",
       "content-length": String(bytes.byteLength),
-      "cache-control": "public, max-age=3600, s-maxage=3600",
+      "cache-control": "public, max-age=300, s-maxage=300",
       "x-content-type-options": "nosniff",
     },
   });
