@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -9,6 +10,9 @@ type InstallPromptEvent = Event & {
 
 type PushConfig = { publicKey?: string; subscriptions?: number; error?: string };
 type AppNavigator = Navigator & { standalone?: boolean };
+
+const PANEL_VISIBLE_MS = 30_000;
+const APP_REFRESH_MS = 1_000;
 
 function base64UrlToBytes(value: string) {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -50,6 +54,26 @@ export default function PrivatePwa() {
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [panelVisible, setPanelVisible] = useState(true);
+  const [panelPinned, setPanelPinned] = useState(false);
+  const [settingsHost, setSettingsHost] = useState<HTMLElement | null>(null);
+  const hideTimer = useRef<number | null>(null);
+  const lastDataSnapshot = useRef<string>("");
+
+  const clearHideTimer = useCallback(() => {
+    if (hideTimer.current !== null) {
+      window.clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+  }, []);
+
+  const startHideTimer = useCallback(() => {
+    clearHideTimer();
+    hideTimer.current = window.setTimeout(() => {
+      setPanelVisible(false);
+      hideTimer.current = null;
+    }, PANEL_VISIBLE_MS);
+  }, [clearHideTimer]);
 
   const syncExistingSubscription = useCallback(async (key: string) => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !key) return;
@@ -139,9 +163,86 @@ export default function PrivatePwa() {
     };
   }, [loadConfig]);
 
+  useEffect(() => {
+    startHideTimer();
+    return clearHideTimer;
+  }, [clearHideTimer, startHideTimer]);
+
+  useEffect(() => {
+    const attachSettingsHost = () => {
+      const settingsPage = document.querySelector<HTMLElement>(".settings-page");
+      if (!settingsPage) {
+        setSettingsHost(null);
+        return;
+      }
+      let host = settingsPage.querySelector<HTMLElement>("[data-mj-app-settings-host]");
+      if (!host) {
+        host = document.createElement("div");
+        host.dataset.mjAppSettingsHost = "true";
+        const intro = settingsPage.querySelector(".settings-intro");
+        if (intro?.nextSibling) settingsPage.insertBefore(host, intro.nextSibling);
+        else settingsPage.prepend(host);
+      }
+      setSettingsHost(host);
+    };
+
+    attachSettingsHost();
+    const observer = new MutationObserver(attachSettingsHost);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!nativeAndroid && !installed) return;
+    let cancelled = false;
+    const refreshIfChanged = async () => {
+      if (cancelled || document.visibilityState !== "visible") return;
+      try {
+        const response = await fetch(`/api/data?live=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const snapshot = await response.text();
+        if (!lastDataSnapshot.current) {
+          lastDataSnapshot.current = snapshot;
+          return;
+        }
+        if (snapshot !== lastDataSnapshot.current) {
+          window.location.reload();
+        }
+      } catch {
+        // La récupération réseau Android/iPhone existante prendra le relais.
+      }
+    };
+    const interval = window.setInterval(() => void refreshIfChanged(), APP_REFRESH_MS);
+    void refreshIfChanged();
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [installed, nativeAndroid]);
+
+  function keepPanelOpen() {
+    if (!panelVisible) return;
+    clearHideTimer();
+    setPanelPinned(true);
+  }
+
+  function releasePanel() {
+    setPanelPinned(false);
+    setPanelVisible(true);
+    startHideTimer();
+  }
+
+  function openFromSettings() {
+    clearHideTimer();
+    setPanelVisible(true);
+    setPanelPinned(true);
+    setMessage("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   async function installApp() {
     setMessage("");
-    if (installed) {
+    if (installed || nativeAndroid) {
       setMessage("L’application est déjà installée sur cet appareil.");
       return;
     }
@@ -163,7 +264,7 @@ export default function PrivatePwa() {
     }
 
     if (android) {
-      setMessage("Sur Android, utilise l’APK Maison Jiya Gestion depuis la page officielle de téléchargement.");
+      window.location.href = "/telecharger-app";
       return;
     }
 
@@ -175,6 +276,9 @@ export default function PrivatePwa() {
     setBusy(true);
     setMessage("");
     try {
+      if (nativeAndroid) {
+        throw new Error("Dans l’APK Android actuel, les notifications web ne peuvent pas être activées depuis la WebView. La fonction reste disponible sur l’app iPhone/PWA.");
+      }
       if (ios && !isStandalone()) {
         setMessage("Sur iPhone, ajoute d’abord Maison Jiya Gestion à l’écran d’accueil depuis Safari. Ouvre ensuite l’icône installée pour activer les notifications.");
         return;
@@ -218,7 +322,7 @@ export default function PrivatePwa() {
   }
 
   async function disableNotifications() {
-    if (busy || !("serviceWorker" in navigator)) return;
+    if (busy || nativeAndroid || !("serviceWorker" in navigator)) return;
     setBusy(true);
     setMessage("");
     try {
@@ -239,31 +343,60 @@ export default function PrivatePwa() {
     }
   }
 
-  // Dans une app déjà installée (APK Android ou PWA iPhone), aucun panneau ne doit recouvrir le dashboard.
-  // La synchronisation d'un abonnement push existant continue en arrière-plan sur la PWA iPhone.
-  if (nativeAndroid || installed || !authorized) return null;
+  const appRuntime = nativeAndroid || installed;
+  const canShowPanel = nativeAndroid || authorized;
+  const description = nativeAndroid
+    ? "Application Android installée. Les données sont vérifiées automatiquement chaque seconde et la dernière page valide reste affichée pendant une coupure."
+    : ios
+      ? installed
+        ? "Application iPhone installée. Les données sont vérifiées automatiquement chaque seconde."
+        : "Ajoute le dashboard privé à l’écran d’accueil depuis Safari pour l’ouvrir comme une application gratuite."
+      : android
+        ? "Télécharge l’APK Maison Jiya Gestion depuis la page officielle."
+        : "Installe uniquement le dashboard privé sur ton appareil.";
 
-  const description = ios
-    ? "Ajoute le dashboard privé à l’écran d’accueil depuis Safari pour l’ouvrir comme une application gratuite."
-    : android
-      ? "Télécharge l’APK Maison Jiya Gestion depuis la page officielle."
-      : "Installe uniquement le dashboard privé sur ton appareil.";
+  const settingsCard = settingsHost ? createPortal(
+    <section className="settings-panel app-notification-settings" id="application-notifications">
+      <div>
+        <span className="card-kicker">Application</span>
+        <h2>Application & notifications</h2>
+        <p>Retrouve ici à tout moment le panneau d’installation, l’état des notifications et l’accès au téléchargement Android.</p>
+      </div>
+      <div className="app-notification-settings-actions">
+        <button type="button" className="primary-button" onClick={openFromSettings}>Ouvrir le panneau</button>
+        <a className="secondary-button" href="/telecharger-app">Télécharger Android</a>
+      </div>
+      {appRuntime && <small>Actualisation automatique : vérification des nouvelles données toutes les 1 seconde lorsque l’application est ouverte.</small>}
+    </section>,
+    settingsHost,
+  ) : null;
 
-  return <aside className="private-pwa-panel" aria-label="Application Maison Jiya Gestion">
-    <header>
-      <div><span>Application privée</span><strong>Maison Jiya Gestion</strong></div>
-    </header>
-    <p>{description}</p>
-    <div className="private-pwa-status">
-      <span>{ios ? "Safari" : android ? "Android" : "App non installée"}</span>
-      <span className={notificationsEnabled ? "ok" : ""}>{notificationsEnabled ? "Notifications ✓" : "Notifications désactivées"}</span>
-    </div>
-    <div className="private-pwa-actions">
-      <button type="button" onClick={() => void installApp()}>{ios ? "Installer sur iPhone" : android ? "Télécharger l’app Android" : "Installer l’app"}</button>
-      {!notificationsEnabled
-        ? <button type="button" className="primary" disabled={busy} onClick={() => void enableNotifications()}>{busy ? "Activation…" : "Activer les notifications"}</button>
-        : <button type="button" className="secondary" disabled={busy} onClick={() => void disableNotifications()}>Désactiver notifications</button>}
-    </div>
-    {message && <small className="private-pwa-message">{message}</small>}
-  </aside>;
+  return <>
+    {settingsCard}
+    {panelVisible && canShowPanel && <aside
+      className={`private-pwa-panel private-pwa-temporary ${panelPinned ? "pinned" : ""}`}
+      aria-label="Application Maison Jiya Gestion"
+      onClick={keepPanelOpen}
+      onKeyDown={keepPanelOpen}
+    >
+      <header>
+        <div><span>Application privée</span><strong>Maison Jiya Gestion</strong></div>
+        <button type="button" className="private-pwa-close" onClick={(event) => { event.stopPropagation(); releasePanel(); }}>Fermer</button>
+      </header>
+      <p>{description}</p>
+      <div className="private-pwa-status">
+        <span className={appRuntime ? "ok" : ""}>{nativeAndroid ? "APK Android ✓" : installed ? "Mode application ✓" : ios ? "Safari" : android ? "Android" : "App non installée"}</span>
+        <span className={notificationsEnabled ? "ok" : ""}>{notificationsEnabled ? "Notifications ✓" : nativeAndroid ? "Notifications web indisponibles dans l’APK actuel" : "Notifications désactivées"}</span>
+      </div>
+      <div className="private-pwa-actions">
+        <button type="button" onClick={() => void installApp()}>{appRuntime ? "Application installée" : ios ? "Installer sur iPhone" : android ? "Télécharger l’app Android" : "Installer l’app"}</button>
+        {!notificationsEnabled
+          ? <button type="button" className="primary" disabled={busy} onClick={() => void enableNotifications()}>{busy ? "Activation…" : "Activer les notifications"}</button>
+          : <button type="button" className="secondary" disabled={busy} onClick={() => void disableNotifications()}>Désactiver notifications</button>}
+      </div>
+      {message && <small className="private-pwa-message">{message}</small>}
+      {!panelPinned && <small className="private-pwa-countdown">Ce panneau se masque automatiquement après 30 secondes. Clique dessus pour le garder ouvert.</small>}
+      {panelPinned && <small className="private-pwa-countdown">Panneau maintenu ouvert. « Fermer » relance un délai de 30 secondes.</small>}
+    </aside>}
+  </>;
 }
