@@ -80,9 +80,9 @@ assert.match(gradle, /versionName\s+'2\.3\.0'/);
 
 const chunkTexts = await Promise.all([1, 2, 3, 4].map((number) => readText(`app/api/download/android/apk-chunk-${number}.ts`)));
 const apkBase64 = chunkTexts.map((source, index) => {
-  const match = source.match(/const chunk = "([A-Za-z0-9+/=]+)";/);
-  assert.ok(match, `Partie APK ${index + 1} illisible.`);
-  return match[1];
+  const pieces = [...source.matchAll(/"([A-Za-z0-9+/=]{100,})"/g)].map((match) => match[1]);
+  assert.ok(pieces.length > 0, `Partie APK ${index + 1} illisible.`);
+  return pieces.join("");
 }).join("");
 const apkBytes = Buffer.from(apkBase64, "base64");
 assert.equal(apkBytes.length, 17087, "Taille APK 2.3 incorrecte.");
