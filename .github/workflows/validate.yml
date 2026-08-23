@@ -44,6 +44,9 @@ jobs:
       - name: Validate storefront final hotfix
         run: node scripts/check-storefront-final-hotfix.mjs
 
+      - name: Validate approved cover
+        run: node scripts/check-approved-cover.mjs
+
       - name: Run rendered HTML tests
         run: node --test tests/rendered-html.test.mjs
 
