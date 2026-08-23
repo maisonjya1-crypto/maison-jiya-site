@@ -88,9 +88,7 @@ export default function StorefrontApprovedDesignEnhancement() {
       const nextHeader = document.querySelector<HTMLElement>(".storefront-v3-header");
       const nextHero = document.querySelector<HTMLElement>(".storefront-v3-hero");
       const brandStrip = document.querySelector<HTMLElement>(".storefront-v3-brand-strip");
-      if (root) {
-        root.classList.add("storefront-approved-design", "storefront-reference-exact");
-      }
+      if (root) root.classList.add("storefront-approved-design", "storefront-reference-exact");
       if (nextHeader) setHeader((current) => current === nextHeader ? current : nextHeader);
       if (nextHero) setHero((current) => current === nextHero ? current : nextHero);
 
@@ -121,15 +119,18 @@ export default function StorefrontApprovedDesignEnhancement() {
         }
         anchors.forEach((anchor, index) => {
           const target = desired[index];
-          if (!target) return anchor.remove();
-          anchor.setAttribute("href", target.href);
-          anchor.textContent = target.text;
-          anchor.dataset.approvedNav = "true";
+          if (!target) {
+            anchor.remove();
+            return;
+          }
+          if (anchor.getAttribute("href") !== target.href) anchor.setAttribute("href", target.href);
+          if (anchor.textContent !== target.text) anchor.textContent = target.text;
+          if (anchor.dataset.approvedNav !== "true") anchor.dataset.approvedNav = "true";
         });
       }
 
       const offersHeading = document.querySelector<HTMLElement>("#offres .storefront-v3-section-head h2");
-      if (offersHeading) offersHeading.textContent = ui[nextLang].currentOffers;
+      if (offersHeading && offersHeading.textContent !== ui[nextLang].currentOffers) offersHeading.textContent = ui[nextLang].currentOffers;
     };
 
     const timer = window.setTimeout(apply, 0);
