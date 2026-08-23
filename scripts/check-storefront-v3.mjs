@@ -30,7 +30,8 @@ const publicPage = await readText("app/boutique/page.tsx");
 assert.match(publicPage, /StorefrontClientV3/);
 assert.match(publicPage, /StorefrontApprovedDesignEnhancement/);
 assert.match(publicPage, /storefront_manual_catalog_initialized_v1/);
-assert.match(publicPage, /maison-jiya-public-reference-black-v1/);
+assert.match(publicPage, /maison-jiya-public-reference-black-v2/);
+assert.match(publicPage, /storefront-approved-design storefront-reference-exact/);
 assert.doesNotMatch(publicPage, /BestSellerVerticalEnhancement/);
 
 const publicLayout = await readText("app/boutique/layout.tsx");
@@ -88,7 +89,8 @@ assert.match(approvedCss, /storefront-approved-hero-collage/);
 assert.match(approvedCss, /@media \(max-width:680px\)/);
 
 const smoke = await readText("scripts/smoke-production.mjs");
-assert.match(smoke, /maison-jiya-public-reference-black-v1/);
+assert.match(smoke, /maison-jiya-public-reference-black-v2/);
+assert.match(smoke, /storefront-reference-exact/);
 assert.match(smoke, /REQUIRE_REFERENCE_BLACK_DESIGN/);
 
 const deployWorkflow = await readText(".github/workflows/deploy-cloudflare.yml");
@@ -105,4 +107,4 @@ assert.match(privateCss, /button\.danger/);
 assert.match(privateCss, /safe-area-inset-left/);
 assert.match(privateCss, /overflow-x:\s*auto/);
 
-console.log("Storefront V3 (catalogue manuel + quantités avant confirmation + FR/AR/EN + design de référence exact + vérification de déploiement + responsive privé/public): OK");
+console.log("Storefront V3 (catalogue manuel + quantités avant confirmation + FR/AR/EN + design noir SSR + vérification de déploiement + responsive privé/public): OK");
