@@ -13,7 +13,6 @@ type ProductRow = {
   publicName: string;
   publicPrice: number;
   purchasePrice: number;
-  stockQuantity: number;
   isVisible: number;
   availabilityMode: string;
 };
@@ -150,8 +149,8 @@ export async function POST(request: Request) {
       SELECT p.id, p.product_code AS productCode, p.name, p.category AS category,
         COALESCE(NULLIF(s.public_name, ''), p.name) AS publicName,
         CASE WHEN s.public_price IS NULL OR s.public_price <= 0 THEN p.sale_price ELSE s.public_price END AS publicPrice,
-        p.purchase_price AS purchasePrice, p.stock_quantity AS stockQuantity,
-        COALESCE(s.is_visible, 1) AS isVisible, COALESCE(s.availability_mode, 'auto') AS availabilityMode
+        p.purchase_price AS purchasePrice,
+        COALESCE(s.is_visible, 0) AS isVisible, COALESCE(s.availability_mode, 'available') AS availabilityMode
       FROM products p
       LEFT JOIN storefront_product_settings s ON s.product_id = p.id
       WHERE p.id IN (${productPlaceholders})
@@ -195,10 +194,10 @@ export async function POST(request: Request) {
     }
     if (saleAmount <= 0) throw new Error("Le montant de la commande est invalide.");
 
+    // Important : une commande publique reste "En attente" et n'est jamais refusée
+    // parce que le stock actuel est inférieur à la quantité demandée. Le stock réel
+    // n'est contrôlé/déduit qu'au moment où l'équipe confirme la commande au client.
     const lines = [...expanded.values()];
-    for (const { product, quantity } of lines) {
-      if (product.stockQuantity <= 0 || quantity > product.stockQuantity) throw new Error(`${product.publicName || product.name} n’est plus disponible dans cette quantité.`);
-    }
     const capturedItems = allocateSale(lines, saleAmount);
     const totalQuantity = capturedItems.reduce((sum, item) => sum + item.quantity, 0);
     const productCost = capturedItems.reduce((sum, item) => sum + item.unitCost * item.quantity, 0);
