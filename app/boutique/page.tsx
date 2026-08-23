@@ -3,13 +3,14 @@ import { getPublicDb } from "../../db/public-db";
 import { ensureStorefrontCms } from "../../db/storefront-cms";
 import { loadStorefrontCatalogFast } from "../../db/storefront-public-fast";
 import StorefrontApprovedDesignEnhancement from "./storefront-approved-design-enhancement";
+import StorefrontCoverInteractions from "./storefront-cover-interactions";
 import StorefrontClientV3 from "./storefront-client-v3";
 import type { StorefrontCatalog } from "./storefront-types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const STOREFRONT_DEPLOYMENT_MARKER = "maison-jiya-public-reference-native-v4";
+const STOREFRONT_DEPLOYMENT_MARKER = "maison-jiya-public-reference-native-v5";
 
 async function ensureManualCatalogReady() {
   const database = await getRawDb();
@@ -29,5 +30,6 @@ export default async function BoutiquePage() {
   return <div className="storefront-approved-design storefront-reference-exact storefront-reference-clean" data-storefront-deployment={STOREFRONT_DEPLOYMENT_MARKER}>
     <StorefrontClientV3 initialCatalog={initialCatalog} />
     <StorefrontApprovedDesignEnhancement />
+    <StorefrontCoverInteractions />
   </div>;
 }
