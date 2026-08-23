@@ -35,6 +35,7 @@ assert.doesNotMatch(publicPage, /BestSellerVerticalEnhancement/);
 const publicLayout = await readText("app/boutique/layout.tsx");
 assert.match(publicLayout, /storefront-v3\.css/);
 assert.match(publicLayout, /storefront-approved-design\.css/);
+assert.match(publicLayout, /storefront-reference-exact\.css/);
 
 const client = await readText("app/boutique/storefront-client-v3.tsx");
 assert.match(client, /type Copy/);
@@ -61,10 +62,21 @@ assert.match(approved, /#catalogue/);
 assert.match(approved, /#offres/);
 assert.match(approved, /#contact/);
 assert.match(approved, /storefront-approved-search/);
-assert.match(approved, /storefront-approved-hero-collage/);
+assert.match(approved, /storefront-reference-services/);
+assert.match(approved, /storefront-reference-categories/);
+assert.match(approved, /OFFRES DU MOMENT/);
 assert.match(approved, /Catalogue/);
 assert.match(approved, /الكتالوج/);
 assert.match(approved, /Catalog/);
+
+const exactCss = await readText("app/boutique/storefront-reference-exact.css");
+assert.match(exactCss, /storefront-reference-exact/);
+assert.match(exactCss, /background:#050505/);
+assert.match(exactCss, /storefront-reference-services/);
+assert.match(exactCss, /storefront-reference-category-media/);
+assert.match(exactCss, /data:image\/webp;base64/);
+assert.match(exactCss, /storefront-reference-hero-hit/);
+assert.match(exactCss, /@media\(max-width:680px\)/);
 
 const approvedCss = await readText("app/boutique/storefront-approved-design.css");
 assert.match(approvedCss, /grid-template-areas:"search brand actions" "nav nav nav"/);
@@ -85,4 +97,4 @@ assert.match(privateCss, /button\.danger/);
 assert.match(privateCss, /safe-area-inset-left/);
 assert.match(privateCss, /overflow-x:\s*auto/);
 
-console.log("Storefront V3 (catalogue manuel + quantités avant confirmation + FR/AR/EN + design approuvé + responsive privé/public): OK");
+console.log("Storefront V3 (catalogue manuel + quantités avant confirmation + FR/AR/EN + design de référence exact + responsive privé/public): OK");
