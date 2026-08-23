@@ -44,4 +44,6 @@ jobs:
           command: deploy
 
       - name: Verify production
+        env:
+          REQUIRE_REFERENCE_BLACK_DESIGN: "1"
         run: node scripts/smoke-production.mjs
