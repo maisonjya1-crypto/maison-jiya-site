@@ -1,11 +1,11 @@
-/* Couverture Maison Jiya validée — remplace uniquement le hero public. */
+/* Couverture Maison Jiya validée — image + interactions finales. */
 .storefront-reference-clean .mj-native-hero {
   position: relative !important;
   display: block !important;
   width: 100% !important;
   min-height: 0 !important;
   height: auto !important;
-  aspect-ratio: 1672 / 643 !important;
+  aspect-ratio: 1672 / 646 !important;
   margin: 0 !important;
   padding: 0 !important;
   overflow: hidden !important;
@@ -13,7 +13,6 @@
   background: #050505 url('/maison-jiya-cover-approved.svg') center center / 100% 100% no-repeat !important;
 }
 
-/* Le visuel approuvé contient déjà Homme / Femme / logo / slogan / produits / CTA / catégories. */
 .storefront-reference-clean .mj-native-hero::before,
 .storefront-reference-clean .mj-native-hero::after,
 .storefront-reference-clean .mj-native-hero-products,
@@ -21,7 +20,7 @@
   display: none !important;
 }
 
-/* On conserve un hotspot invisible sur le bouton visuel « Découvrir la collection ». */
+/* CTA central : hotspot invisible sur le bouton du visuel. */
 .storefront-reference-clean .mj-native-hero-copy {
   position: absolute !important;
   inset: 0 !important;
@@ -32,36 +31,159 @@
   padding: 0 !important;
   pointer-events: none !important;
 }
-.storefront-reference-clean .mj-native-hero-copy > * {
-  visibility: hidden !important;
-}
+.storefront-reference-clean .mj-native-hero-copy > * { visibility: hidden !important; }
 .storefront-reference-clean .mj-native-hero-copy > a {
   visibility: visible !important;
   opacity: 0 !important;
   pointer-events: auto !important;
   position: absolute !important;
   left: 40.4% !important;
-  top: 65.2% !important;
+  top: 65% !important;
   width: 19.2% !important;
-  height: 8.5% !important;
+  height: 8.8% !important;
   margin: 0 !important;
   padding: 0 !important;
   border: 0 !important;
   background: transparent !important;
+  cursor: pointer !important;
 }
 
-/* La couverture reste strictement identique lorsque FR / AR / EN change. */
+/* Homme / Femme : zones cliquables vers les modèles correspondants. */
+.storefront-reference-clean .mj-cover-hotspot {
+  position: absolute !important;
+  z-index: 8 !important;
+  display: block !important;
+  border-radius: 14px !important;
+  background: transparent !important;
+  color: transparent !important;
+  text-indent: -9999px !important;
+  overflow: hidden !important;
+  cursor: pointer !important;
+  outline: none !important;
+}
+.storefront-reference-clean .mj-cover-hotspot:focus-visible { box-shadow: 0 0 0 3px rgba(215,180,117,.95) !important; }
+.storefront-reference-clean .mj-cover-hotspot-men { left: 6.1% !important; top: 7% !important; width: 15.4% !important; height: 25% !important; }
+.storefront-reference-clean .mj-cover-hotspot-women { right: 6.1% !important; top: 7% !important; width: 15.4% !important; height: 25% !important; }
+
+/* Compte + panier bien visibles sur le header noir. */
+.storefront-reference-clean .mj-native-account,
+.storefront-reference-clean .mj-native-cart {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 0 !important;
+  border: 1px solid rgba(215,180,117,.58) !important;
+  border-radius: 50% !important;
+  background: rgba(255,255,255,.04) !important;
+  color: #f5d895 !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+  text-decoration: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+.storefront-reference-clean .mj-native-account::before,
+.storefront-reference-clean .mj-native-cart::before {
+  content: '' !important;
+  width: 22px !important;
+  height: 22px !important;
+  display: block !important;
+  background: #f7e6bd !important;
+}
+.storefront-reference-clean .mj-native-account::before {
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm-9 9a9 9 0 0 1 18 0v1H3v-1Zm2.2-1h13.6A7 7 0 0 0 5.2 20Z'/%3E%3C/svg%3E") center/contain no-repeat !important;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm-9 9a9 9 0 0 1 18 0v1H3v-1Zm2.2-1h13.6A7 7 0 0 0 5.2 20Z'/%3E%3C/svg%3E") center/contain no-repeat !important;
+}
+.storefront-reference-clean .mj-native-cart::before {
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 4h10l1 3h3v2h-1l-1.5 9h-13L4 9H3V7h3l1-3Zm1.4 2-.3 1h7.8l-.3-1H8.4ZM6.3 9l1.2 7h9l1.2-7H6.3ZM9 22a2 2 0 1 1 0-4 2 2 0 0 1 0 4Zm6 0a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z'/%3E%3C/svg%3E") center/contain no-repeat !important;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 4h10l1 3h3v2h-1l-1.5 9h-13L4 9H3V7h3l1-3Zm1.4 2-.3 1h7.8l-.3-1H8.4ZM6.3 9l1.2 7h9l1.2-7H6.3ZM9 22a2 2 0 1 1 0-4 2 2 0 0 1 0 4Zm6 0a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z'/%3E%3C/svg%3E") center/contain no-repeat !important;
+}
+.storefront-reference-clean .mj-native-account:hover,
+.storefront-reference-clean .mj-native-cart:hover { border-color: #d7b475 !important; background: rgba(215,180,117,.12) !important; }
+
+/* Option C : vraies photos adaptées à Montres / Bijoux / Portefeuilles / Packs. */
+.storefront-reference-clean .storefront-reference-categories {
+  width: min(1180px, calc(100% - 42px)) !important;
+  margin: 0 auto !important;
+  padding: 64px 0 24px !important;
+}
+.storefront-reference-clean .storefront-reference-categories > header { text-align: center !important; margin-bottom: 26px !important; }
+.storefront-reference-clean .storefront-reference-categories > div {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0,1fr)) !important;
+  gap: 16px !important;
+}
+.storefront-reference-clean .storefront-reference-categories button {
+  display: block !important;
+  width: 100% !important;
+  padding: 0 !important;
+  border: 1px solid #e5dfd7 !important;
+  border-radius: 16px !important;
+  overflow: hidden !important;
+  background: #f5f2ed !important;
+  box-shadow: 0 14px 35px rgba(0,0,0,.07) !important;
+  cursor: pointer !important;
+}
+.storefront-reference-clean .storefront-reference-category-media {
+  position: relative !important;
+  display: block !important;
+  aspect-ratio: 4/3 !important;
+  overflow: hidden !important;
+  background: linear-gradient(145deg,#1a1714,#ece5da) !important;
+}
+.storefront-reference-clean .storefront-reference-category-media img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: center !important;
+  display: block !important;
+  transition: transform .35s ease !important;
+}
+.storefront-reference-clean .storefront-reference-categories button:hover img { transform: scale(1.035) !important; }
+.storefront-reference-clean .storefront-reference-category-media::after {
+  content: '' !important;
+  position: absolute !important;
+  inset: 0 !important;
+  background: linear-gradient(180deg,transparent 46%,rgba(0,0,0,.68) 100%) !important;
+  pointer-events: none !important;
+}
+.storefront-reference-clean .storefront-reference-category-media em {
+  position: absolute !important;
+  z-index: 2 !important;
+  left: 18px !important;
+  right: 18px !important;
+  bottom: 16px !important;
+  display: flex !important;
+  align-items: flex-end !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  color: #fff !important;
+  font-style: normal !important;
+  text-align: left !important;
+}
+.storefront-reference-clean .storefront-reference-category-media em b { color:#fff !important; font:600 16px/1.1 Georgia,serif !important; letter-spacing:.03em !important; }
+.storefront-reference-clean .storefront-reference-category-media em small { color:#f2d79d !important; font-size:10px !important; white-space:nowrap !important; }
+
+/* La couverture ne change jamais lorsque FR / AR / EN change. */
 .storefront-v3[dir='rtl'] .mj-native-hero,
-.storefront-v3[dir='ltr'] .mj-native-hero {
-  direction: ltr !important;
-  transform: none !important;
-}
+.storefront-v3[dir='ltr'] .mj-native-hero { direction:ltr !important; transform:none !important; }
 
-@media (max-width: 760px) {
-  .storefront-reference-clean .mj-native-hero {
-    aspect-ratio: 1672 / 643 !important;
-    min-height: 0 !important;
-    height: auto !important;
-    background-size: 100% 100% !important;
-  }
+@media (max-width:900px) {
+  .storefront-reference-clean .mj-native-account,
+  .storefront-reference-clean .mj-native-cart { width:36px !important; height:36px !important; min-width:36px !important; }
+  .storefront-reference-clean .mj-native-account::before,
+  .storefront-reference-clean .mj-native-cart::before { width:20px !important; height:20px !important; }
+  .storefront-reference-clean .storefront-reference-categories > div { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+}
+@media (max-width:760px) {
+  .storefront-reference-clean .mj-native-hero { aspect-ratio:1672/646 !important; min-height:0 !important; height:auto !important; background-size:100% 100% !important; }
+  .storefront-reference-clean .mj-cover-hotspot-men { left:5.5% !important; top:4% !important; width:19% !important; height:31% !important; }
+  .storefront-reference-clean .mj-cover-hotspot-women { right:5.5% !important; top:4% !important; width:19% !important; height:31% !important; }
+  .storefront-reference-clean .storefront-reference-categories { width:min(100% - 24px,1180px) !important; padding-top:42px !important; }
+}
+@media (max-width:520px) {
+  .storefront-reference-clean .storefront-reference-categories > div { grid-template-columns:1fr !important; gap:12px !important; }
+  .storefront-reference-clean .storefront-reference-category-media { aspect-ratio:16/10 !important; }
 }
