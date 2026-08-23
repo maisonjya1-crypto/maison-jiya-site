@@ -2,32 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import hero0 from "./generated-assets/hero-0";
+import hero1 from "./generated-assets/hero-1";
 import type { CatalogItem, StorefrontCatalog } from "./storefront-types";
 
 type Language = "fr" | "ar" | "en";
 type SelectBridge = { options: ArrayLike<{ value: string }>; value: string; dispatchEvent: (event: Event) => boolean };
 
 type UiCopy = {
-  catalogue: string;
-  offers: string;
-  contact: string;
-  search: string;
-  categories: string;
-  categoriesSub: string;
-  watches: string;
-  jewelry: string;
-  wallets: string;
-  packs: string;
-  view: string;
-  discover: string;
-  freeDelivery: string;
-  freeDeliverySub: string;
-  cod: string;
-  codSub: string;
-  customerService: string;
-  customerServiceSub: string;
-  satisfaction: string;
-  satisfactionSub: string;
+  catalogue: string; offers: string; contact: string; search: string; categories: string; categoriesSub: string;
+  watches: string; jewelry: string; wallets: string; packs: string; view: string; discover: string;
+  freeDelivery: string; freeDeliverySub: string; cod: string; codSub: string;
+  customerService: string; customerServiceSub: string; satisfaction: string; satisfactionSub: string;
 };
 
 const ui: Record<Language, UiCopy> = {
@@ -54,7 +40,14 @@ const ui: Record<Language, UiCopy> = {
   },
 };
 
+const HERO_IMAGE = `data:image/webp;base64,${hero0}${hero1}`;
 const referenceBrands = ["ROLEX", "OMEGA", "CARTIER", "ARMANI", "BOSS", "HERMÈS", "MICHAEL KORS", "FOSSIL", "LACOSTE"];
+const categoryImages = {
+  watches: "/storefront/montres.webp",
+  jewelry: "/storefront/bijoux.webp",
+  wallets: "/storefront/portefeuilles.webp",
+  packs: "/storefront/packs.webp",
+} as const;
 
 function normalize(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -87,9 +80,7 @@ export default function StorefrontApprovedDesignEnhancement() {
       const nextHero = document.querySelector<HTMLElement>(".storefront-v3-hero");
       const nextBrandStrip = document.querySelector<HTMLElement>(".storefront-v3-brand-strip");
       if (nextHeader && nextHero && nextBrandStrip) {
-        setHeader(nextHeader);
-        setHero(nextHero);
-        setBrandStrip(nextBrandStrip);
+        setHeader(nextHeader); setHero(nextHero); setBrandStrip(nextBrandStrip);
         let host = document.querySelector<HTMLElement>(".storefront-reference-after-brand");
         if (!host) {
           host = document.createElement("div");
@@ -98,9 +89,7 @@ export default function StorefrontApprovedDesignEnhancement() {
         }
         setAfterBrandHost(host);
         window.clearInterval(timer);
-      } else if (attempts >= 30) {
-        window.clearInterval(timer);
-      }
+      } else if (attempts >= 30) window.clearInterval(timer);
     }, 50);
     return () => {
       window.clearInterval(timer);
@@ -123,32 +112,13 @@ export default function StorefrontApprovedDesignEnhancement() {
     const watches = firstMatching(products, ["montre", "watch"]);
     const jewelry = firstMatching(products, ["bijou", "jewel", "bracelet", "collier"]);
     const wallets = firstMatching(products, ["portefeuille", "wallet", "porte monnaie", "porte-monnaie"]);
-    const pack = catalog.offers?.[0] || firstMatching(products, ["pack", "coffret"]);
     return [
-      { key: "watches", label: ui[lang].watches, item: watches, category: watches?.category || "Montres", target: "catalogue" },
-      { key: "jewelry", label: ui[lang].jewelry, item: jewelry, category: jewelry?.category || "Bijoux", target: "catalogue" },
-      { key: "wallets", label: ui[lang].wallets, item: wallets, category: wallets?.category || "Portefeuilles", target: "catalogue" },
-      { key: "packs", label: ui[lang].packs, item: pack, category: "", target: "offres" },
+      { key: "watches", label: ui[lang].watches, image: categoryImages.watches, category: watches?.category || "Montres", target: "catalogue" },
+      { key: "jewelry", label: ui[lang].jewelry, image: categoryImages.jewelry, category: jewelry?.category || "Bijoux", target: "catalogue" },
+      { key: "wallets", label: ui[lang].wallets, image: categoryImages.wallets, category: wallets?.category || "Portefeuilles", target: "catalogue" },
+      { key: "packs", label: ui[lang].packs, image: categoryImages.packs, category: "", target: "offres" },
     ];
   }, [catalog, lang]);
-
-  const heroImages = useMemo(() => {
-    if (!catalog) return [];
-    const products = catalog.products || [];
-    const picks = [
-      firstMatching(products, ["montre", "watch"]),
-      firstMatching(products, ["bijou", "jewel", "bracelet"]),
-      firstMatching(products, ["portefeuille", "wallet"]),
-      catalog.offers?.[0],
-    ].filter((item): item is CatalogItem => Boolean(item));
-    const urls = picks.map((item) => item.images?.[0]).filter((url): url is string => Boolean(url));
-    for (const item of products) {
-      const url = item.images?.[0];
-      if (url && !urls.includes(url)) urls.push(url);
-      if (urls.length >= 4) break;
-    }
-    return urls.slice(0, 4);
-  }, [catalog]);
 
   function switchLanguage(next: Language) {
     setLang(next);
@@ -167,6 +137,10 @@ export default function StorefrontApprovedDesignEnhancement() {
     document.querySelector<HTMLButtonElement>(".storefront-v3-cart-button")?.click();
   }
 
+  function goToCatalogue() {
+    document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   function goToCategory(category: string, target: string) {
     if (target === "offres") {
       document.querySelector("#offres")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -180,7 +154,7 @@ export default function StorefrontApprovedDesignEnhancement() {
         select.dispatchEvent(new Event("change", { bubbles: true }));
       }
     }
-    document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    goToCatalogue();
   }
 
   const t = ui[lang];
@@ -190,9 +164,7 @@ export default function StorefrontApprovedDesignEnhancement() {
       <button className="mj-native-search" type="button" onClick={focusSearch} aria-label={t.search}>
         <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="14" cy="14" r="8" /><path d="m20 20 7 7" /></svg><span>{t.search}</span>
       </button>
-      <a className="mj-native-logo" href="/boutique" aria-label="Maison Jiya">
-        <strong>JIYA</strong><em>Maison Jiya</em><small>L’HEURE DE BRILLER</small>
-      </a>
+      <a className="mj-native-logo" href="/boutique" aria-label="Maison Jiya"><strong>JIYA</strong><em>Maison Jiya</em><small>L’HEURE DE BRILLER</small></a>
       <div className="mj-native-actions">
         <div className="mj-native-langs" aria-label="Language / اللغة">
           <button className={lang === "fr" ? "active" : ""} onClick={() => switchLanguage("fr")}>FR</button>
@@ -208,16 +180,10 @@ export default function StorefrontApprovedDesignEnhancement() {
     </div>, header)}
 
     {hero && createPortal(<section className="mj-native-hero" aria-label="Maison Jiya">
+      <img className="mj-generated-hero-image" src={HERO_IMAGE} alt="Maison Jiya — montres homme et femme, bijoux et portefeuilles" />
       <div className="mj-native-hero-copy">
-        <div className="mj-native-hero-brand"><strong>JIYA</strong><em>Maison Jiya</em></div>
-        <p>L’HEURE DE BRILLER</p>
-        <div className="mj-native-hero-categories"><span>{t.watches}</span><span>{t.jewelry}</span><span>{t.wallets}</span></div>
-        <a href="#catalogue">{t.discover} <b>→</b></a>
+        <a className="mj-cover-cta" href="#catalogue" onClick={(event) => { event.preventDefault(); goToCatalogue(); }} aria-label={t.discover}>{t.discover}</a>
       </div>
-      <div className="mj-native-hero-products" aria-hidden="true">
-        {heroImages.map((src, index) => <figure key={`${src}-${index}`}><img src={src} alt="" /></figure>)}
-      </div>
-      <span className="mj-native-arrow left" aria-hidden="true">‹</span><span className="mj-native-arrow right" aria-hidden="true">›</span>
     </section>, hero)}
 
     {brandStrip && createPortal(<div className="mj-native-brands" aria-label="Marques">
@@ -235,7 +201,7 @@ export default function StorefrontApprovedDesignEnhancement() {
         <header><h2>{t.categories}</h2><p>{t.categoriesSub}</p></header>
         <div>{categoryCards.map((card) => <button key={card.key} type="button" onClick={() => goToCategory(card.category, card.target)}>
           <span className="storefront-reference-category-media">
-            {card.item?.images?.[0] ? <img src={card.item.images[0]} alt="" loading="lazy" /> : <i>{card.label.slice(0, 1)}</i>}
+            <img src={card.image} alt={card.label} loading="lazy" />
             <em><b>{card.label}</b><small>{t.view}</small></em>
           </span>
         </button>)}</div>
