@@ -30,36 +30,36 @@ export default function StorefrontApprovedDesignEnhancement() {
       const root = document.querySelector<HTMLElement>(".storefront-v3");
       const nextHeader = document.querySelector<HTMLElement>(".storefront-v3-header");
       const nextHero = document.querySelector<HTMLElement>(".storefront-v3-hero");
-      if (root) root.classList.add("storefront-approved-design");
-      if (nextHeader) setHeader(nextHeader);
-      if (nextHero) setHero(nextHero);
+      if (root && !root.classList.contains("storefront-approved-design")) root.classList.add("storefront-approved-design");
+      if (nextHeader) setHeader((current) => current === nextHeader ? current : nextHeader);
+      if (nextHero) setHero((current) => current === nextHero ? current : nextHero);
 
       const nextLang = currentLanguage();
-      setLang(nextLang);
+      setLang((current) => current === nextLang ? current : nextLang);
       const nav = document.querySelector<HTMLElement>(".storefront-v3-nav-links");
-      if (nav) {
-        const desired = [
-          { href: "#catalogue", text: labels[nextLang].catalogue },
-          { href: "#offres", text: labels[nextLang].offers },
-          { href: "#contact", text: labels[nextLang].contact },
-        ];
-        const anchors = Array.from(nav.querySelectorAll<HTMLAnchorElement>("a"));
-        while (anchors.length < desired.length) {
-          const anchor = document.createElement("a");
-          nav.appendChild(anchor);
-          anchors.push(anchor);
-        }
-        anchors.forEach((anchor, index) => {
-          const target = desired[index];
-          if (!target) {
-            anchor.remove();
-            return;
-          }
-          anchor.href = target.href;
-          anchor.textContent = target.text;
-          anchor.dataset.approvedNav = "true";
-        });
+      if (!nav) return;
+
+      const desired = [
+        { href: "#catalogue", text: labels[nextLang].catalogue },
+        { href: "#offres", text: labels[nextLang].offers },
+        { href: "#contact", text: labels[nextLang].contact },
+      ];
+      const anchors = Array.from(nav.querySelectorAll<HTMLAnchorElement>("a"));
+      while (anchors.length < desired.length) {
+        const anchor = document.createElement("a");
+        nav.appendChild(anchor);
+        anchors.push(anchor);
       }
+      anchors.forEach((anchor, index) => {
+        const target = desired[index];
+        if (!target) {
+          anchor.remove();
+          return;
+        }
+        if (anchor.getAttribute("href") !== target.href) anchor.setAttribute("href", target.href);
+        if (anchor.textContent !== target.text) anchor.textContent = target.text;
+        if (anchor.dataset.approvedNav !== "true") anchor.dataset.approvedNav = "true";
+      });
     };
 
     const timer = window.setTimeout(apply, 0);
