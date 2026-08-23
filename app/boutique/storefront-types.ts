@@ -34,8 +34,8 @@ export type StorefrontCatalog = {
   heroImageUrl: string;
   whatsapp: string;
   contactWhatsapp: string;
-  brandStrip: string[];
-  localized: Record<StorefrontLanguage, StorefrontLocaleCopy>;
+  brandStrip?: string[];
+  localized?: Partial<Record<StorefrontLanguage, StorefrontLocaleCopy>>;
   products: CatalogItem[];
   offers: CatalogItem[];
   categories: string[];
