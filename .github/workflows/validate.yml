@@ -50,6 +50,9 @@ jobs:
       - name: Validate cover interactions and category photos
         run: node scripts/check-cover-interactions.mjs
 
+      - name: Validate storefront cover v5
+        run: node scripts/check-storefront-cover-v5.mjs
+
       - name: Run rendered HTML tests
         run: node --test tests/rendered-html.test.mjs
 
