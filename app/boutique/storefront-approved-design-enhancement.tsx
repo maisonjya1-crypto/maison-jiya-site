@@ -55,13 +55,6 @@ const ui: Record<Language, UiCopy> = {
 
 const referenceBrands = ["ROLEX", "OMEGA", "CARTIER", "ARMANI", "BOSS", "HERMÈS", "MICHAEL KORS", "FOSSIL", "LACOSTE"];
 
-function readLanguage(): Language {
-  const active = document.querySelector<HTMLButtonElement>(".storefront-v3-language button.active")?.textContent?.trim();
-  if (active === "ع") return "ar";
-  if (active === "EN") return "en";
-  return "fr";
-}
-
 function normalize(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
@@ -86,18 +79,16 @@ export default function StorefrontApprovedDesignEnhancement() {
   const [catalog, setCatalog] = useState<StorefrontCatalog | null>(null);
 
   useEffect(() => {
-    const bind = () => {
-      const root = document.querySelector<HTMLElement>(".storefront-v3");
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      attempts += 1;
       const nextHeader = document.querySelector<HTMLElement>(".storefront-v3-header");
       const nextHero = document.querySelector<HTMLElement>(".storefront-v3-hero");
       const nextBrandStrip = document.querySelector<HTMLElement>(".storefront-v3-brand-strip");
-      root?.classList.add("storefront-approved-design", "storefront-reference-exact", "storefront-reference-clean");
-      setHeader(nextHeader);
-      setHero(nextHero);
-      setBrandStrip(nextBrandStrip);
-      setLang(readLanguage());
-
-      if (nextBrandStrip) {
+      if (nextHeader && nextHero && nextBrandStrip) {
+        setHeader(nextHeader);
+        setHero(nextHero);
+        setBrandStrip(nextBrandStrip);
         let host = document.querySelector<HTMLElement>(".storefront-reference-after-brand");
         if (!host) {
           host = document.createElement("div");
@@ -105,37 +96,13 @@ export default function StorefrontApprovedDesignEnhancement() {
           nextBrandStrip.insertAdjacentElement("afterend", host);
         }
         setAfterBrandHost(host);
+        window.clearInterval(timer);
+      } else if (attempts >= 30) {
+        window.clearInterval(timer);
       }
-    };
-
-    const syncNav = () => {
-      const nextLang = readLanguage();
-      setLang(nextLang);
-      const nav = document.querySelector<HTMLElement>(".storefront-v3-nav-links");
-      if (!nav) return;
-      const links = [
-        { href: "#catalogue", text: ui[nextLang].catalogue },
-        { href: "#offres", text: ui[nextLang].offers },
-        { href: "#contact", text: ui[nextLang].contact },
-      ];
-      nav.replaceChildren(...links.map(({ href, text }) => {
-        const a = document.createElement("a");
-        a.href = href;
-        a.textContent = text;
-        return a;
-      }));
-    };
-
-    bind();
-    syncNav();
-    const secondPass = window.setTimeout(() => { bind(); syncNav(); }, 250);
-    const languageButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".storefront-v3-language button"));
-    const onLanguage = () => window.setTimeout(syncNav, 0);
-    languageButtons.forEach((button) => button.addEventListener("click", onLanguage));
-
+    }, 50);
     return () => {
-      window.clearTimeout(secondPass);
-      languageButtons.forEach((button) => button.removeEventListener("click", onLanguage));
+      window.clearInterval(timer);
       document.querySelector(".storefront-reference-after-brand")?.remove();
     };
   }, []);
@@ -174,20 +141,29 @@ export default function StorefrontApprovedDesignEnhancement() {
       catalog.offers?.[0],
     ].filter((item): item is CatalogItem => Boolean(item));
     const urls = picks.map((item) => item.images?.[0]).filter((url): url is string => Boolean(url));
-    if (urls.length < 3) {
-      for (const item of products) {
-        const url = item.images?.[0];
-        if (url && !urls.includes(url)) urls.push(url);
-        if (urls.length >= 4) break;
-      }
+    for (const item of products) {
+      const url = item.images?.[0];
+      if (url && !urls.includes(url)) urls.push(url);
+      if (urls.length >= 4) break;
     }
     return urls.slice(0, 4);
   }, [catalog]);
 
+  function switchLanguage(next: Language) {
+    setLang(next);
+    const wanted = next === "fr" ? "FR" : next === "ar" ? "ع" : "EN";
+    const button = Array.from(document.querySelectorAll<HTMLButtonElement>(".storefront-v3-language button"))
+      .find((candidate) => candidate.textContent?.trim() === wanted);
+    button?.click();
+  }
+
   function focusSearch() {
-    const input = document.querySelector<HTMLInputElement>(".storefront-v3-tools input");
     document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    window.setTimeout(() => input?.focus(), 350);
+    window.setTimeout(() => document.querySelector<HTMLInputElement>(".storefront-v3-tools input")?.focus(), 350);
+  }
+
+  function openCart() {
+    document.querySelector<HTMLButtonElement>(".storefront-v3-cart-button")?.click();
   }
 
   function goToCategory(category: string, target: string) {
@@ -195,7 +171,7 @@ export default function StorefrontApprovedDesignEnhancement() {
       document.querySelector("#offres")?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
-    const select = document.querySelector(".storefront-v3-tools select") as HTMLSelectElement | null;
+    const select = document.querySelector<HTMLSelectElement>(".storefront-v3-tools select");
     if (select && category) {
       const option = Array.from(select.options).find((entry) => entry.value === category || normalize(entry.value) === normalize(category));
       if (option) {
@@ -207,52 +183,62 @@ export default function StorefrontApprovedDesignEnhancement() {
     document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  return <>
-    {header && createPortal(<>
-      <button className="storefront-approved-search" type="button" onClick={focusSearch} aria-label={ui[lang].search}>
-        <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="14" cy="14" r="8" /><path d="m20 20 7 7" /></svg><span>{ui[lang].search}</span>
-      </button>
-      <a className="storefront-reference-account" href="#contact" aria-label={ui[lang].contact}>
-        <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="10" r="5" /><path d="M7 28c0-6 3.5-10 9-10s9 4 9 10" /></svg>
-      </a>
-    </>, header)}
+  const t = ui[lang];
 
-    {hero && createPortal(<section className="storefront-reference-hero-clean" aria-label="Maison Jiya">
-      <div className="storefront-reference-hero-copy-clean">
-        <img className="storefront-reference-hero-logo" src={catalog?.logoUrl || "/maison-jiya-logo.jpeg"} alt="Maison Jiya" />
-        <p>L’HEURE DE BRILLER</p>
-        <div className="storefront-reference-hero-icons"><span>{ui[lang].watches}</span><span>{ui[lang].jewelry}</span><span>{ui[lang].wallets}</span></div>
-        <a href="#catalogue">{ui[lang].discover} <b>→</b></a>
+  return <>
+    {header && createPortal(<div className="mj-native-header">
+      <button className="mj-native-search" type="button" onClick={focusSearch} aria-label={t.search}>
+        <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="14" cy="14" r="8" /><path d="m20 20 7 7" /></svg><span>{t.search}</span>
+      </button>
+      <a className="mj-native-logo" href="/boutique" aria-label="Maison Jiya">
+        <strong>JIYA</strong><em>Maison Jiya</em><small>L’HEURE DE BRILLER</small>
+      </a>
+      <div className="mj-native-actions">
+        <div className="mj-native-langs" aria-label="Language / اللغة">
+          <button className={lang === "fr" ? "active" : ""} onClick={() => switchLanguage("fr")}>FR</button>
+          <button className={lang === "ar" ? "active" : ""} onClick={() => switchLanguage("ar")}>ع</button>
+          <button className={lang === "en" ? "active" : ""} onClick={() => switchLanguage("en")}>EN</button>
+        </div>
+        <a className="mj-native-account" href="#contact" aria-label={t.contact}>♙</a>
+        <button className="mj-native-cart" type="button" onClick={openCart} aria-label="Panier">▢</button>
       </div>
-      <div className="storefront-reference-hero-products" aria-hidden="true">
+      <nav className="mj-native-nav" aria-label="Navigation boutique">
+        <a href="#catalogue">{t.catalogue}</a><a href="#offres">{t.offers}</a><a href="#contact">{t.contact}</a>
+      </nav>
+    </div>, header)}
+
+    {hero && createPortal(<section className="mj-native-hero" aria-label="Maison Jiya">
+      <div className="mj-native-hero-copy">
+        <div className="mj-native-hero-brand"><strong>JIYA</strong><em>Maison Jiya</em></div>
+        <p>L’HEURE DE BRILLER</p>
+        <div className="mj-native-hero-categories"><span>{t.watches}</span><span>{t.jewelry}</span><span>{t.wallets}</span></div>
+        <a href="#catalogue">{t.discover} <b>→</b></a>
+      </div>
+      <div className="mj-native-hero-products" aria-hidden="true">
         {heroImages.map((src, index) => <figure key={`${src}-${index}`}><img src={src} alt="" /></figure>)}
       </div>
-      <span className="storefront-reference-arrow left" aria-hidden="true">‹</span>
-      <span className="storefront-reference-arrow right" aria-hidden="true">›</span>
+      <span className="mj-native-arrow left" aria-hidden="true">‹</span><span className="mj-native-arrow right" aria-hidden="true">›</span>
     </section>, hero)}
 
-    {brandStrip && createPortal(<div className="storefront-reference-brand-list" aria-label="Marques">
+    {brandStrip && createPortal(<div className="mj-native-brands" aria-label="Marques">
       {[...referenceBrands, ...referenceBrands].map((brand, index) => <span key={`${brand}-${index}`}>{brand}</span>)}
     </div>, brandStrip)}
 
     {afterBrandHost && createPortal(<>
       <section className="storefront-reference-services" aria-label="Services Maison Jiya">
-        <article><ServiceIcon kind="delivery" /><div><strong>{ui[lang].freeDelivery}</strong><span>{ui[lang].freeDeliverySub}</span></div></article>
-        <article><ServiceIcon kind="payment" /><div><strong>{ui[lang].cod}</strong><span>{ui[lang].codSub}</span></div></article>
-        <article><ServiceIcon kind="support" /><div><strong>{ui[lang].customerService}</strong><span>{ui[lang].customerServiceSub}</span></div></article>
-        <article><ServiceIcon kind="satisfaction" /><div><strong>{ui[lang].satisfaction}</strong><span>{ui[lang].satisfactionSub}</span></div></article>
+        <article><ServiceIcon kind="delivery" /><div><strong>{t.freeDelivery}</strong><span>{t.freeDeliverySub}</span></div></article>
+        <article><ServiceIcon kind="payment" /><div><strong>{t.cod}</strong><span>{t.codSub}</span></div></article>
+        <article><ServiceIcon kind="support" /><div><strong>{t.customerService}</strong><span>{t.customerServiceSub}</span></div></article>
+        <article><ServiceIcon kind="satisfaction" /><div><strong>{t.satisfaction}</strong><span>{t.satisfactionSub}</span></div></article>
       </section>
-
       <section className="storefront-reference-categories">
-        <header><h2>{ui[lang].categories}</h2><p>{ui[lang].categoriesSub}</p></header>
-        <div>
-          {categoryCards.map((card) => <button key={card.key} type="button" onClick={() => goToCategory(card.category, card.target)}>
-            <span className="storefront-reference-category-media">
-              {card.item?.images?.[0] ? <img src={card.item.images[0]} alt="" loading="lazy" /> : <i>{card.label.slice(0, 1)}</i>}
-              <em><b>{card.label}</b><small>{ui[lang].view}</small></em>
-            </span>
-          </button>)}
-        </div>
+        <header><h2>{t.categories}</h2><p>{t.categoriesSub}</p></header>
+        <div>{categoryCards.map((card) => <button key={card.key} type="button" onClick={() => goToCategory(card.category, card.target)}>
+          <span className="storefront-reference-category-media">
+            {card.item?.images?.[0] ? <img src={card.item.images[0]} alt="" loading="lazy" /> : <i>{card.label.slice(0, 1)}</i>}
+            <em><b>{card.label}</b><small>{t.view}</small></em>
+          </span>
+        </button>)}</div>
       </section>
     </>, afterBrandHost)}
   </>;
