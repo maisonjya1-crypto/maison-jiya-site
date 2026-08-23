@@ -28,11 +28,13 @@ assert.match(orderRoute, /status,[^]*'En attente'/);
 
 const publicPage = await readText("app/boutique/page.tsx");
 assert.match(publicPage, /StorefrontClientV3/);
+assert.match(publicPage, /StorefrontApprovedDesignEnhancement/);
 assert.match(publicPage, /storefront_manual_catalog_initialized_v1/);
 assert.doesNotMatch(publicPage, /BestSellerVerticalEnhancement/);
 
 const publicLayout = await readText("app/boutique/layout.tsx");
 assert.match(publicLayout, /storefront-v3\.css/);
+assert.match(publicLayout, /storefront-approved-design\.css/);
 
 const client = await readText("app/boutique/storefront-client-v3.tsx");
 assert.match(client, /type Copy/);
@@ -54,6 +56,24 @@ assert.match(css, /@media\(max-width:720px\)/);
 assert.match(css, /100dvh/);
 assert.match(css, /safe-area-inset-bottom/);
 
+const approved = await readText("app/boutique/storefront-approved-design-enhancement.tsx");
+assert.match(approved, /#catalogue/);
+assert.match(approved, /#offres/);
+assert.match(approved, /#contact/);
+assert.match(approved, /storefront-approved-search/);
+assert.match(approved, /storefront-approved-hero-collage/);
+assert.match(approved, /Catalogue/);
+assert.match(approved, /الكتالوج/);
+assert.match(approved, /Catalog/);
+
+const approvedCss = await readText("app/boutique/storefront-approved-design.css");
+assert.match(approvedCss, /grid-template-areas:"search brand actions" "nav nav nav"/);
+assert.match(approvedCss, /storefront-v3-brand>img/);
+assert.match(approvedCss, /drop-shadow/);
+assert.match(approvedCss, /storefront-v3-hero-media::after/);
+assert.match(approvedCss, /storefront-approved-hero-collage/);
+assert.match(approvedCss, /@media \(max-width:680px\)/);
+
 const privateEnhancement = await readText("app/private-ui-v3-enhancement.tsx");
 assert.match(privateEnhancement, /details\.trash-actions/);
 assert.match(privateEnhancement, /details\.open = true/);
@@ -65,4 +85,4 @@ assert.match(privateCss, /button\.danger/);
 assert.match(privateCss, /safe-area-inset-left/);
 assert.match(privateCss, /overflow-x:\s*auto/);
 
-console.log("Storefront V3 (catalogue manuel + quantités avant confirmation + FR/AR/EN + responsive privé/public): OK");
+console.log("Storefront V3 (catalogue manuel + quantités avant confirmation + FR/AR/EN + design approuvé + responsive privé/public): OK");
