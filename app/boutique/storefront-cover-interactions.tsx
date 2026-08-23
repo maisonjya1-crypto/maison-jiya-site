@@ -6,39 +6,48 @@ function normalize(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
-function setNativeValue(element: HTMLInputElement | HTMLSelectElement, value: string) {
-  const prototype = element instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLSelectElement.prototype;
-  const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+function setInputValue(element: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
   setter?.call(element, value);
-  element.dispatchEvent(new Event(element instanceof HTMLInputElement ? "input" : "change", { bubbles: true }));
-  if (element instanceof HTMLInputElement) element.dispatchEvent(new Event("change", { bubbles: true }));
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function setSelectValue(element: HTMLSelectElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+  setter?.call(element, value);
+  element.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function filterGender(gender: "homme" | "femme") {
-  const select = document.querySelector<HTMLSelectElement>(".storefront-v3-tools select");
+  const select = document.querySelector(".storefront-v3-tools select") as HTMLSelectElement | null;
   let exactGenderCategory = false;
+
   if (select) {
-    const entries = Array.from(select.options);
+    const entries = Array.from(select.options) as HTMLOptionElement[];
     const genderTerms = gender === "homme"
       ? ["homme", "men", "male", "رجال", "رجالي"]
       : ["femme", "women", "female", "نساء", "نسائي"];
     const watchTerms = ["montre", "watch", "ساعة", "ساعات"];
+
     const exact = entries.find((entry) => {
       const haystack = normalize(`${entry.value} ${entry.textContent || ""}`);
       return watchTerms.some((term) => haystack.includes(normalize(term)))
         && genderTerms.some((term) => haystack.includes(normalize(term)));
     });
+
     const generic = entries.find((entry) => {
       const haystack = normalize(`${entry.value} ${entry.textContent || ""}`);
       return watchTerms.some((term) => haystack.includes(normalize(term)));
     });
+
     const option = exact || generic;
     exactGenderCategory = Boolean(exact);
-    if (option) setNativeValue(select, option.value);
+    if (option) setSelectValue(select, option.value);
   }
 
-  const input = document.querySelector<HTMLInputElement>(".storefront-v3-tools input");
-  if (input) setNativeValue(input, exactGenderCategory ? "" : gender);
+  const input = document.querySelector(".storefront-v3-tools input") as HTMLInputElement | null;
+  if (input) setInputValue(input, exactGenderCategory ? "" : gender);
 
   window.setTimeout(() => {
     document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -50,10 +59,11 @@ export default function StorefrontCoverInteractions() {
   useEffect(() => {
     let stopped = false;
     let timer = 0;
+    let cleanupHotspots: (() => void) | undefined;
 
     const mount = () => {
       if (stopped) return;
-      const hero = document.querySelector<HTMLElement>(".mj-native-hero");
+      const hero = document.querySelector(".mj-native-hero") as HTMLElement | null;
       if (!hero) {
         timer = window.setTimeout(mount, 60);
         return;
@@ -76,18 +86,17 @@ export default function StorefrontCoverInteractions() {
 
       const men = makeHotspot("mj-cover-hotspot-men", "Voir les montres homme", "homme");
       const women = makeHotspot("mj-cover-hotspot-women", "Voir les montres femme", "femme");
-
-      return () => {
+      cleanupHotspots = () => {
         men.remove();
         women.remove();
       };
     };
 
-    const cleanup = mount();
+    mount();
     return () => {
       stopped = true;
       window.clearTimeout(timer);
-      cleanup?.();
+      cleanupHotspots?.();
     };
   }, []);
 
