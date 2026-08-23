@@ -47,6 +47,9 @@ jobs:
       - name: Validate approved cover
         run: node scripts/check-approved-cover.mjs
 
+      - name: Validate cover interactions and category photos
+        run: node scripts/check-cover-interactions.mjs
+
       - name: Run rendered HTML tests
         run: node --test tests/rendered-html.test.mjs
 
