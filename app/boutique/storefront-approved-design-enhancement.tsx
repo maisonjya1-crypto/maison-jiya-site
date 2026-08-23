@@ -20,6 +20,10 @@ type UiCopy = {
   packs: string;
   view: string;
   discover: string;
+  men: string;
+  women: string;
+  heroText: string;
+  heroSub: string;
   freeDelivery: string;
   freeDeliverySub: string;
   cod: string;
@@ -35,6 +39,7 @@ const ui: Record<Language, UiCopy> = {
     catalogue: "Catalogue", offers: "Offres", contact: "Contact", search: "Rechercher un produit…",
     categories: "NOS CATÉGORIES", categoriesSub: "Découvrez nos collections soigneusement sélectionnées",
     watches: "MONTRES", jewelry: "BIJOUX", wallets: "PORTEFEUILLES", packs: "PACKS", view: "Voir →", discover: "Découvrir la collection",
+    men: "HOMME", women: "FEMME", heroText: "Montres de prestige, bijoux raffinés et portefeuilles élégants.", heroSub: "L’élégance à chaque instant.",
     freeDelivery: "Livraison gratuite", freeDeliverySub: "Partout au Maroc", cod: "Paiement à la livraison", codSub: "Vous payez à la réception",
     customerService: "Service client", customerServiceSub: "À votre écoute 7j/7", satisfaction: "Satisfaction garantie", satisfactionSub: "Votre satisfaction d’abord",
   },
@@ -42,6 +47,7 @@ const ui: Record<Language, UiCopy> = {
     catalogue: "الكتالوج", offers: "العروض", contact: "تواصل معنا", search: "ابحث عن منتج…",
     categories: "فئاتنا", categoriesSub: "اكتشف مجموعاتنا المختارة بعناية",
     watches: "الساعات", jewelry: "المجوهرات", wallets: "المحافظ", packs: "الباقات", view: "عرض ←", discover: "اكتشف المجموعة",
+    men: "رجال", women: "نساء", heroText: "ساعات راقية، مجوهرات مميزة ومحافظ أنيقة.", heroSub: "أناقة في كل لحظة.",
     freeDelivery: "توصيل مجاني", freeDeliverySub: "إلى جميع أنحاء المغرب", cod: "الدفع عند الاستلام", codSub: "تدفع عند الاستلام",
     customerService: "خدمة الزبناء", customerServiceSub: "في خدمتك 7 أيام", satisfaction: "رضاكم أولويتنا", satisfactionSub: "خدمة موثوقة قبل كل شيء",
   },
@@ -49,6 +55,7 @@ const ui: Record<Language, UiCopy> = {
     catalogue: "Catalog", offers: "Offers", contact: "Contact", search: "Search for a product…",
     categories: "OUR CATEGORIES", categoriesSub: "Discover our carefully selected collections",
     watches: "WATCHES", jewelry: "JEWELRY", wallets: "WALLETS", packs: "PACKS", view: "View →", discover: "Discover the collection",
+    men: "MEN", women: "WOMEN", heroText: "Prestige watches, refined jewelry and elegant wallets.", heroSub: "Elegance for every moment.",
     freeDelivery: "Free delivery", freeDeliverySub: "Across Morocco", cod: "Cash on delivery", codSub: "Pay when you receive it",
     customerService: "Customer service", customerServiceSub: "Here for you 7 days a week", satisfaction: "Satisfaction first", satisfactionSub: "Reliable service first",
   },
@@ -69,6 +76,12 @@ function ServiceIcon({ kind }: { kind: "delivery" | "payment" | "support" | "sat
   if (kind === "payment") return <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 5h20v22H6zM6 11h20M10 21h7" /></svg>;
   if (kind === "support") return <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 17a10 10 0 0 1 20 0v7h-5v-8h5M6 16h5v8H6zM21 27h-7" /></svg>;
   return <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 27 7v8c0 7-4.7 11.6-11 14-6.3-2.4-11-7-11-14V7zM11 16l3 3 7-7" /></svg>;
+}
+
+function CategoryGlyph({ kind }: { kind: "watch" | "jewel" | "wallet" }) {
+  if (kind === "watch") return <svg viewBox="0 0 36 36" aria-hidden="true"><path d="M13 2h10l2 7H11l2-7Zm-2 25h14l-2 7H13l-2-7Zm7-16a7 7 0 1 1 0 14 7 7 0 0 1 0-14Zm0 3v4l3 2" /></svg>;
+  if (kind === "jewel") return <svg viewBox="0 0 36 36" aria-hidden="true"><path d="m7 12 6-7h10l6 7-11 18L7 12Zm0 0h22M13 5l5 7 5-7" /></svg>;
+  return <svg viewBox="0 0 36 36" aria-hidden="true"><path d="M5 11h26v18H5zM9 7h14v4H9zM23 17h8v6h-8a3 3 0 0 1 0-6Z" /></svg>;
 }
 
 export default function StorefrontApprovedDesignEnhancement() {
@@ -132,24 +145,6 @@ export default function StorefrontApprovedDesignEnhancement() {
     ];
   }, [catalog, lang]);
 
-  const heroImages = useMemo(() => {
-    if (!catalog) return [];
-    const products = catalog.products || [];
-    const picks = [
-      firstMatching(products, ["montre", "watch"]),
-      firstMatching(products, ["bijou", "jewel", "bracelet"]),
-      firstMatching(products, ["portefeuille", "wallet"]),
-      catalog.offers?.[0],
-    ].filter((item): item is CatalogItem => Boolean(item));
-    const urls = picks.map((item) => item.images?.[0]).filter((url): url is string => Boolean(url));
-    for (const item of products) {
-      const url = item.images?.[0];
-      if (url && !urls.includes(url)) urls.push(url);
-      if (urls.length >= 4) break;
-    }
-    return urls.slice(0, 4);
-  }, [catalog]);
-
   function switchLanguage(next: Language) {
     setLang(next);
     const wanted = next === "fr" ? "FR" : next === "ar" ? "ع" : "EN";
@@ -207,17 +202,29 @@ export default function StorefrontApprovedDesignEnhancement() {
       </nav>
     </div>, header)}
 
-    {hero && createPortal(<section className="mj-native-hero" aria-label="Maison Jiya">
-      <div className="mj-native-hero-copy">
+    {hero && createPortal(<section className="mj-native-hero mj-approved-hero" aria-label="Maison Jiya">
+      <div className="mj-approved-side mj-approved-side-men">
+        <div className="mj-approved-side-title"><small>{t.watches}</small><strong>{t.men}</strong></div>
+        <div className="mj-approved-side-art" aria-hidden="true" />
+      </div>
+
+      <div className="mj-approved-center">
         <div className="mj-native-hero-brand"><strong>JIYA</strong><em>Maison Jiya</em></div>
-        <p>L’HEURE DE BRILLER</p>
-        <div className="mj-native-hero-categories"><span>{t.watches}</span><span>{t.jewelry}</span><span>{t.wallets}</span></div>
-        <a href="#catalogue">{t.discover} <b>→</b></a>
+        <span className="mj-approved-diamond" aria-hidden="true">◇</span>
+        <p className="mj-approved-tagline">L’HEURE DE BRILLER</p>
+        <div className="mj-approved-copy"><span>{t.heroText}</span><b>{t.heroSub}</b></div>
+        <a className="mj-approved-cta" href="#catalogue">{t.discover} <b>→</b></a>
+        <div className="mj-approved-categories">
+          <span><CategoryGlyph kind="watch" /><b>{t.watches}</b></span>
+          <span><CategoryGlyph kind="jewel" /><b>{t.jewelry}</b></span>
+          <span><CategoryGlyph kind="wallet" /><b>{t.wallets}</b></span>
+        </div>
       </div>
-      <div className="mj-native-hero-products" aria-hidden="true">
-        {heroImages.map((src, index) => <figure key={`${src}-${index}`}><img src={src} alt="" /></figure>)}
+
+      <div className="mj-approved-side mj-approved-side-women">
+        <div className="mj-approved-side-title"><small>{t.watches}</small><strong>{t.women}</strong></div>
+        <div className="mj-approved-side-art" aria-hidden="true" />
       </div>
-      <span className="mj-native-arrow left" aria-hidden="true">‹</span><span className="mj-native-arrow right" aria-hidden="true">›</span>
     </section>, hero)}
 
     {brandStrip && createPortal(<div className="mj-native-brands" aria-label="Marques">
