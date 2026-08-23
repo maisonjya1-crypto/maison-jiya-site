@@ -16,8 +16,15 @@ function looksLikeMissingSchema(error: unknown) {
   return /no such table|no such column/i.test(message);
 }
 
+async function ensureManualCatalogReady() {
+  const database = await getRawDb();
+  const ready = await database.prepare("SELECT value FROM settings WHERE key = 'storefront_manual_catalog_initialized_v1' LIMIT 1").first<{ value: string }>();
+  if (!ready?.value) await ensureStorefrontCms(database);
+}
+
 export async function GET() {
   try {
+    await ensureManualCatalogReady();
     const database = await getPublicDb();
     const catalog = await loadStorefrontCatalogFast(database);
     return Response.json(catalog, { headers: freshHeaders });

@@ -1,3 +1,5 @@
+export type StorefrontLanguage = "fr" | "ar" | "en";
+
 export type CatalogItem = {
   id: number;
   kind: "product" | "offer";
@@ -14,6 +16,13 @@ export type CatalogItem = {
   images: string[];
 };
 
+export type StorefrontLocaleCopy = {
+  announcement: string;
+  heroTitle: string;
+  heroText: string;
+  shippingNote: string;
+};
+
 export type StorefrontCatalog = {
   brand: string;
   announcement: string;
@@ -25,6 +34,8 @@ export type StorefrontCatalog = {
   heroImageUrl: string;
   whatsapp: string;
   contactWhatsapp: string;
+  brandStrip?: string[];
+  localized?: Partial<Record<StorefrontLanguage, StorefrontLocaleCopy>>;
   products: CatalogItem[];
   offers: CatalogItem[];
   categories: string[];

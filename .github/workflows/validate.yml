@@ -38,6 +38,9 @@ jobs:
       - name: Validate private Android PWA
         run: node scripts/check-private-pwa.mjs
 
+      - name: Validate storefront V3
+        run: node scripts/check-storefront-v3.mjs
+
       - name: Run rendered HTML tests
         run: node --test tests/rendered-html.test.mjs
 
