@@ -43,6 +43,44 @@ export type StorefrontMediaRow = {
   createdAt: string;
 };
 
+const PUBLIC_CATEGORIES_SQL = "'Électronique', 'Electronique', 'Boîtes', 'Boites'";
+const MANUAL_CATALOG_FLAG = "storefront_manual_catalog_initialized_v1";
+
+async function ensureManualCatalog(database: D1Database) {
+  const flag = await database.prepare("SELECT value FROM settings WHERE key = ? LIMIT 1").bind(MANUAL_CATALOG_FLAG).first<{ value: string }>();
+
+  if (!flag?.value) {
+    // Première migration : conserve exactement les produits actuellement exposables,
+    // puis passe la boutique en publication manuelle pour les futurs articles du stock.
+    await database.prepare(`
+      INSERT OR IGNORE INTO storefront_product_settings (
+        product_id, public_name, public_price, is_visible, availability_mode,
+        badge, description, sort_order, updated_at
+      )
+      SELECT id, name, sale_price, 1, 'available', '', '', 0, CURRENT_TIMESTAMP
+      FROM products
+      WHERE category NOT IN (${PUBLIC_CATEGORIES_SQL})
+    `).run();
+    await database.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES (?, '1', CURRENT_TIMESTAMP)
+      ON CONFLICT(key) DO UPDATE SET value = '1', updated_at = CURRENT_TIMESTAMP
+    `).bind(MANUAL_CATALOG_FLAG).run();
+    return;
+  }
+
+  // Après la migration, tout nouveau produit interne devient seulement une suggestion.
+  // Il n'est jamais publié tant que l'utilisateur ne l'active pas depuis le CMS public.
+  await database.prepare(`
+    INSERT OR IGNORE INTO storefront_product_settings (
+      product_id, public_name, public_price, is_visible, availability_mode,
+      badge, description, sort_order, updated_at
+    )
+    SELECT id, name, sale_price, 0, 'available', '', '', 0, CURRENT_TIMESTAMP
+    FROM products
+    WHERE category NOT IN (${PUBLIC_CATEGORIES_SQL})
+  `).run();
+}
+
 export async function ensureStorefrontCms(database: D1Database) {
   await database.batch([
     database.prepare(`
@@ -99,18 +137,29 @@ export async function ensureStorefrontCms(database: D1Database) {
 
   const defaults = [
     ["storefront_brand_name", "Maison Jiya"],
-    ["storefront_announcement", "Paiement à la livraison partout au Maroc"],
+    ["storefront_announcement", "Livraison gratuite partout au Maroc"],
     ["storefront_hero_title", "Les pièces que vous aimez, simplement livrées chez vous."],
     ["storefront_hero_text", "Choisissez vos articles, validez votre commande en ligne et payez à la livraison. Notre équipe vous contacte ensuite pour confirmer."],
-    ["storefront_shipping_note", "Les éventuels frais de livraison sont confirmés par notre équipe."],
+    ["storefront_shipping_note", "Livraison gratuite partout au Maroc. Notre équipe confirme chaque commande avant préparation."],
     ["storefront_meta_pixel_id", ""],
     ["storefront_contact_whatsapp", ""],
+    ["storefront_brand_strip", "MAISON JIYA|MONTRES|BIJOUX|PORTEFEUILLES|PACKS"],
+    ["storefront_announcement_ar", "توصيل مجاني إلى جميع أنحاء المغرب"],
+    ["storefront_announcement_en", "Free delivery across Morocco"],
+    ["storefront_hero_title_ar", "قطع أنيقة تحبها، تصل إليك بكل بساطة."],
+    ["storefront_hero_title_en", "Pieces you love, delivered simply to your door."],
+    ["storefront_hero_text_ar", "اختر منتجاتك وأرسل طلبك عبر الموقع. سيتواصل معك فريقنا لتأكيد الطلب قبل التجهيز، والدفع عند الاستلام."],
+    ["storefront_hero_text_en", "Choose your items and place your order online. Our team will contact you to confirm it before preparation, with cash on delivery."],
+    ["storefront_shipping_note_ar", "توصيل مجاني إلى جميع أنحاء المغرب. يؤكد فريقنا كل طلب قبل التجهيز."],
+    ["storefront_shipping_note_en", "Free delivery across Morocco. Our team confirms every order before preparation."],
   ];
   await database.batch(defaults.map(([key, value]) => database.prepare(`
     INSERT INTO settings (key, value, updated_at)
     VALUES (?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(key) DO NOTHING
   `).bind(key, value)));
+
+  await ensureManualCatalog(database);
 }
 
 export async function getStorefrontMedia(database: D1Database, ownerType?: string, ownerId?: number) {
