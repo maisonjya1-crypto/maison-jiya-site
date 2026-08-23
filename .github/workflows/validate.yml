@@ -41,6 +41,9 @@ jobs:
       - name: Validate storefront V3
         run: node scripts/check-storefront-v3.mjs
 
+      - name: Validate storefront final hotfix
+        run: node scripts/check-storefront-final-hotfix.mjs
+
       - name: Run rendered HTML tests
         run: node --test tests/rendered-html.test.mjs
 
