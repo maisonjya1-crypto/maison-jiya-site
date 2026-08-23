@@ -7,7 +7,6 @@ type PublicProductRow = {
   name: string;
   category: string;
   salePrice: number;
-  stockQuantity: number;
   availabilityMode: string;
   badge: string;
   description: string;
@@ -16,8 +15,6 @@ type PublicOfferRow = { id: number; name: string; description: string; price: nu
 type OfferItemRow = {
   offerId: number;
   productId: number;
-  quantity: number;
-  stockQuantity: number;
   category: string;
   availabilityMode: string;
 };
@@ -46,6 +43,15 @@ function rows<T>(result: D1Result<unknown> | undefined) {
   return (result?.results || []) as T[];
 }
 
+function brandStrip(raw: string | undefined) {
+  const values = (raw || "")
+    .split(/[|,\n]/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .slice(0, 30);
+  return values.length ? values : ["MAISON JIYA", "MONTRES", "BIJOUX", "PORTEFEUILLES", "PACKS"];
+}
+
 export async function loadStorefrontCatalogFast(database: D1Database): Promise<StorefrontCatalog> {
   const result = await database.batch([
     database.prepare(`
@@ -55,13 +61,12 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
         COALESCE(NULLIF(s.public_name, ''), p.name) AS name,
         p.category,
         CASE WHEN s.public_price IS NULL OR s.public_price <= 0 THEN p.sale_price ELSE s.public_price END AS salePrice,
-        p.stock_quantity AS stockQuantity,
-        COALESCE(s.availability_mode, 'auto') AS availabilityMode,
+        COALESCE(s.availability_mode, 'available') AS availabilityMode,
         COALESCE(s.badge, '') AS badge,
         COALESCE(s.description, '') AS description
       FROM products p
-      LEFT JOIN storefront_product_settings s ON s.product_id = p.id
-      WHERE COALESCE(s.is_visible, 1) = 1
+      JOIN storefront_product_settings s ON s.product_id = p.id
+      WHERE s.is_visible = 1
         AND p.category NOT IN ('Électronique', 'Electronique', 'Boîtes', 'Boites')
       ORDER BY COALESCE(s.sort_order, 0), p.category COLLATE NOCASE, name COLLATE NOCASE
       LIMIT 500
@@ -74,9 +79,9 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       LIMIT 100
     `),
     database.prepare(`
-      SELECT i.offer_id AS offerId, i.product_id AS productId, i.quantity,
-             p.stock_quantity AS stockQuantity, p.category AS category,
-             COALESCE(s.availability_mode, 'auto') AS availabilityMode
+      SELECT i.offer_id AS offerId, i.product_id AS productId,
+             p.category AS category,
+             COALESCE(s.availability_mode, 'available') AS availabilityMode
       FROM storefront_offer_items i
       JOIN products p ON p.id = i.product_id
       LEFT JOIN storefront_product_settings s ON s.product_id = p.id
@@ -105,7 +110,11 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       WHERE key IN (
         'account_name', 'whatsapp_numbers', 'storefront_brand_name', 'storefront_announcement',
         'storefront_hero_title', 'storefront_hero_text', 'storefront_shipping_note',
-        'storefront_meta_pixel_id', 'storefront_contact_whatsapp'
+        'storefront_meta_pixel_id', 'storefront_contact_whatsapp', 'storefront_brand_strip',
+        'storefront_announcement_ar', 'storefront_announcement_en',
+        'storefront_hero_title_ar', 'storefront_hero_title_en',
+        'storefront_hero_text_ar', 'storefront_hero_text_en',
+        'storefront_shipping_note_ar', 'storefront_shipping_note_en'
       )
     `),
   ]);
@@ -141,8 +150,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
   const contactWhatsapp = normalizeMoroccanPhone(settings.storefront_contact_whatsapp || "") || businessWhatsapp;
 
   const publicProducts = products.map((product) => {
-    const forcedOut = product.availabilityMode === "out_of_stock";
-    const available = product.stockQuantity > 0 && !forcedOut;
+    const available = product.availabilityMode !== "out_of_stock";
     const firstImage = mediaByOwner.get(`product:${product.id}`);
     return {
       id: product.id,
@@ -154,9 +162,9 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       comparePrice: 0,
       badge: product.badge,
       description: product.description,
-      availability: available ? "En stock" : "Rupture de stock",
+      availability: available ? "Disponible" : "Rupture de stock",
       available,
-      lowStock: available && product.stockQuantity <= 3,
+      lowStock: false,
       images: firstImage ? [firstImage] : [],
     };
   });
@@ -164,7 +172,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
   const publicOffers = offers.flatMap((offer) => {
     const components = itemsByOffer.get(offer.id) || [];
     if (!components.length || components.some((item) => excludedPublicCategories.has(item.category))) return [];
-    const available = components.every((item) => item.stockQuantity >= item.quantity && item.availabilityMode !== "out_of_stock");
+    const available = components.every((item) => item.availabilityMode !== "out_of_stock");
     const firstImage = mediaByOwner.get(`offer:${offer.id}`);
     return [{
       id: offer.id,
@@ -176,7 +184,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       comparePrice: Math.max(0, Number(offer.comparePrice) || 0),
       badge: offer.badge,
       description: offer.description,
-      availability: available ? "En stock" : "Rupture de stock",
+      availability: available ? "Disponible" : "Rupture de stock",
       available,
       lowStock: false,
       images: firstImage ? [firstImage] : [],
@@ -188,17 +196,39 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     ...(publicOffers.length ? ["Packs & offres"] : []),
   ]));
 
+  const brand = settings.storefront_brand_name?.trim() || settings.account_name?.trim() || "Maison Jiya";
+  const announcement = settings.storefront_announcement?.trim() || "Livraison gratuite partout au Maroc";
+  const heroTitle = settings.storefront_hero_title?.trim() || "Les pièces que vous aimez, simplement livrées chez vous.";
+  const heroText = settings.storefront_hero_text?.trim() || "Choisissez vos articles, validez votre commande en ligne et payez à la livraison. Notre équipe vous contacte ensuite pour confirmer.";
+  const shippingNote = settings.storefront_shipping_note?.trim() || "Livraison gratuite partout au Maroc. Notre équipe confirme chaque commande avant préparation.";
+
   return {
-    brand: settings.storefront_brand_name?.trim() || settings.account_name?.trim() || "Maison Jiya",
-    announcement: settings.storefront_announcement?.trim() || "Paiement à la livraison partout au Maroc",
-    heroTitle: settings.storefront_hero_title?.trim() || "Les pièces que vous aimez, simplement livrées chez vous.",
-    heroText: settings.storefront_hero_text?.trim() || "Choisissez vos articles, validez votre commande en ligne et payez à la livraison. Notre équipe vous contacte ensuite pour confirmer.",
-    shippingNote: settings.storefront_shipping_note?.trim() || "Les éventuels frais de livraison sont confirmés par notre équipe.",
+    brand,
+    announcement,
+    heroTitle,
+    heroText,
+    shippingNote,
     metaPixelId: settings.storefront_meta_pixel_id?.trim() || "",
     logoUrl,
     heroImageUrl,
     whatsapp: contactWhatsapp,
     contactWhatsapp,
+    brandStrip: brandStrip(settings.storefront_brand_strip),
+    localized: {
+      fr: { announcement, heroTitle, heroText, shippingNote },
+      ar: {
+        announcement: settings.storefront_announcement_ar?.trim() || "توصيل مجاني إلى جميع أنحاء المغرب",
+        heroTitle: settings.storefront_hero_title_ar?.trim() || "قطع أنيقة تحبها، تصل إليك بكل بساطة.",
+        heroText: settings.storefront_hero_text_ar?.trim() || "اختر منتجاتك وأرسل طلبك عبر الموقع. سيتواصل معك فريقنا لتأكيد الطلب قبل التجهيز، والدفع عند الاستلام.",
+        shippingNote: settings.storefront_shipping_note_ar?.trim() || "توصيل مجاني إلى جميع أنحاء المغرب. يؤكد فريقنا كل طلب قبل التجهيز.",
+      },
+      en: {
+        announcement: settings.storefront_announcement_en?.trim() || "Free delivery across Morocco",
+        heroTitle: settings.storefront_hero_title_en?.trim() || "Pieces you love, delivered simply to your door.",
+        heroText: settings.storefront_hero_text_en?.trim() || "Choose your items and place your order online. Our team will contact you to confirm it before preparation, with cash on delivery.",
+        shippingNote: settings.storefront_shipping_note_en?.trim() || "Free delivery across Morocco. Our team confirms every order before preparation.",
+      },
+    },
     products: publicProducts,
     offers: publicOffers,
     categories,
