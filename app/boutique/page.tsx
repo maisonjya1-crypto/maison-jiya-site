@@ -2,6 +2,7 @@ import { getRawDb } from "../../db";
 import { getPublicDb } from "../../db/public-db";
 import { ensureStorefrontCms } from "../../db/storefront-cms";
 import { loadStorefrontCatalogFast } from "../../db/storefront-public-fast";
+import StorefrontApprovedDesignEnhancement from "./storefront-approved-design-enhancement";
 import StorefrontClientV3 from "./storefront-client-v3";
 import type { StorefrontCatalog } from "./storefront-types";
 
@@ -23,5 +24,8 @@ export default async function BoutiquePage() {
   } catch (error) {
     console.error("Maison Jiya storefront preload failed", error);
   }
-  return <StorefrontClientV3 initialCatalog={initialCatalog} />;
+  return <>
+    <StorefrontClientV3 initialCatalog={initialCatalog} />
+    <StorefrontApprovedDesignEnhancement />
+  </>;
 }
