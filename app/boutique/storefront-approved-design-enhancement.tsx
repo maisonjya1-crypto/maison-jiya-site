@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { CatalogItem, StorefrontCatalog } from "./storefront-types";
 
 type Language = "fr" | "ar" | "en";
+type SelectBridge = { options: ArrayLike<{ value: string }>; value: string; dispatchEvent: (event: Event) => boolean };
 
 type UiCopy = {
   catalogue: string;
@@ -171,12 +172,11 @@ export default function StorefrontApprovedDesignEnhancement() {
       document.querySelector("#offres")?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
-    const select = document.querySelector<HTMLSelectElement>(".storefront-v3-tools select");
+    const select = document.querySelector(".storefront-v3-tools select") as unknown as SelectBridge | null;
     if (select && category) {
       const option = Array.from(select.options).find((entry) => entry.value === category || normalize(entry.value) === normalize(category));
       if (option) {
-        const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
-        setter?.call(select, option.value);
+        select.value = option.value;
         select.dispatchEvent(new Event("change", { bubbles: true }));
       }
     }
