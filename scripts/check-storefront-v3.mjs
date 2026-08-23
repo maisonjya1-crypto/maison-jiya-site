@@ -30,7 +30,7 @@ const publicPage = await readText("app/boutique/page.tsx");
 assert.match(publicPage, /StorefrontClientV3/);
 assert.match(publicPage, /StorefrontApprovedDesignEnhancement/);
 assert.match(publicPage, /storefront_manual_catalog_initialized_v1/);
-assert.match(publicPage, /maison-jiya-public-reference-clean-v3/);
+assert.match(publicPage, /maison-jiya-public-reference-native-v4/);
 assert.match(publicPage, /storefront-approved-design storefront-reference-exact storefront-reference-clean/);
 assert.doesNotMatch(publicPage, /BestSellerVerticalEnhancement/);
 
@@ -64,7 +64,9 @@ const approved = await readText("app/boutique/storefront-approved-design-enhance
 assert.match(approved, /#catalogue/);
 assert.match(approved, /#offres/);
 assert.match(approved, /#contact/);
-assert.match(approved, /storefront-approved-search/);
+assert.match(approved, /mj-native-header/);
+assert.match(approved, /mj-native-hero/);
+assert.match(approved, /mj-native-brands/);
 assert.match(approved, /storefront-reference-services/);
 assert.match(approved, /storefront-reference-categories/);
 assert.match(approved, /ROLEX/);
@@ -76,22 +78,22 @@ assert.match(approved, /HERMÈS/);
 assert.match(approved, /MICHAEL KORS/);
 assert.match(approved, /FOSSIL/);
 assert.match(approved, /LACOSTE/);
-assert.match(approved, /storefront-reference-hero-products/);
 assert.match(approved, /Catalogue/);
 assert.match(approved, /الكتالوج/);
 assert.match(approved, /Catalog/);
 
 const cleanCss = await readText("app/boutique/storefront-reference-clean.css");
 assert.match(cleanCss, /storefront-reference-clean/);
-assert.match(cleanCss, /grid-template-areas:"search brand actions" "nav nav nav"/);
-assert.match(cleanCss, /storefront-reference-brand-list/);
-assert.match(cleanCss, /storefront-reference-hero-products/);
+assert.match(cleanCss, /grid-template-areas:"search logo actions" "nav nav nav"/);
+assert.match(cleanCss, /mj-native-header/);
+assert.match(cleanCss, /mj-native-hero-products/);
+assert.match(cleanCss, /mj-native-brands/);
 assert.match(cleanCss, /storefront-v3-hero>\.storefront-v3-hero-media/);
 assert.match(cleanCss, /background:#fff!important/);
 assert.match(cleanCss, /@media\(max-width:680px\)/);
 
 const smoke = await readText("scripts/smoke-production.mjs");
-assert.match(smoke, /maison-jiya-public-reference-clean-v3/);
+assert.match(smoke, /maison-jiya-public-reference-native-v4/);
 assert.match(smoke, /storefront-reference-clean/);
 assert.match(smoke, /REQUIRE_REFERENCE_BLACK_DESIGN/);
 
@@ -109,4 +111,4 @@ assert.match(privateCss, /button\.danger/);
 assert.match(privateCss, /safe-area-inset-left/);
 assert.match(privateCss, /overflow-x:\s*auto/);
 
-console.log("Storefront V3 (catalogue manuel + quantités avant confirmation + FR/AR/EN + référence publique propre v3 + marques fixes + hero HD + responsive privé/public): OK");
+console.log("Storefront V3 (catalogue manuel + quantités avant confirmation + FR/AR/EN + référence native v4 + marques fixes + hero sans bannière compressée + responsive privé/public): OK");

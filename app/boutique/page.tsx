@@ -9,7 +9,7 @@ import type { StorefrontCatalog } from "./storefront-types";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const STOREFRONT_DEPLOYMENT_MARKER = "maison-jiya-public-reference-clean-v3";
+const STOREFRONT_DEPLOYMENT_MARKER = "maison-jiya-public-reference-native-v4";
 
 async function ensureManualCatalogReady() {
   const database = await getRawDb();
