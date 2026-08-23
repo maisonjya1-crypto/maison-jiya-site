@@ -1,5 +1,6 @@
 const base = (process.env.MAISON_JIYA_PRODUCTION_URL || "https://maison-jiya-site.maisonjya1.workers.dev").replace(/\/$/, "");
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const requiredStorefrontMarker = "maison-jiya-public-reference-black-v1";
 
 async function fetchWithRetry(path, options = {}) {
   let lastError;
@@ -71,6 +72,9 @@ const boutiqueHtml = await boutiqueResponse.text();
 if (boutiqueHtml.length < 500) throw new Error("La page boutique est anormalement vide.");
 if (!/Maison Jiya|storefront-shell|Boutique/i.test(boutiqueHtml)) throw new Error("La page boutique ne contient pas le contenu attendu.");
 if (boutiqueHtml.includes("maison-jiya-gestion.webmanifest")) throw new Error("Le manifeste de l'application privée ne doit pas être injecté dans la boutique publique.");
+if (process.env.REQUIRE_REFERENCE_BLACK_DESIGN === "1" && !boutiqueHtml.includes(requiredStorefrontMarker)) {
+  throw new Error(`La production sert encore une ancienne boutique : marqueur ${requiredStorefrontMarker} absent.`);
+}
 
 const catalogResponse = await fetchWithRetry("/api/storefront/catalog");
 const catalog = await catalogResponse.json();
@@ -96,4 +100,4 @@ if (imagePath?.startsWith("/api/storefront/media/")) {
   if (bytes.byteLength < 100) throw new Error("Le média public est vide ou corrompu.");
 }
 
-console.log(`Smoke production OK · téléchargement Android 2.3 OK · ${catalog.products.length} produit(s) · ${catalog.offers.length} offre(s) · média ${imagePath ? "OK" : "non requis"}`);
+console.log(`Smoke production OK · téléchargement Android 2.3 OK · ${catalog.products.length} produit(s) · ${catalog.offers.length} offre(s) · média ${imagePath ? "OK" : "non requis"}${process.env.REQUIRE_REFERENCE_BLACK_DESIGN === "1" ? " · design noir confirmé" : ""}`);
