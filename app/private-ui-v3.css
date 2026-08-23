@@ -1,0 +1,106 @@
+/* Maison Jiya privé — navigation adaptable + actions Corbeille visibles. */
+
+/* La Corbeille affiche Restaurer + Supprimer définitivement directement,
+   sans obliger l'utilisateur à ouvrir le menu « … ». */
+details.trash-actions[data-actions-visible="true"] > summary {
+  display: none !important;
+}
+
+details.trash-actions[data-actions-visible="true"] {
+  width: auto !important;
+  min-width: 0 !important;
+}
+
+details.trash-actions[data-actions-visible="true"] > .order-action-menu {
+  position: static !important;
+  inset: auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 7px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+details.trash-actions[data-actions-visible="true"] > .order-action-menu button {
+  min-height: 38px !important;
+  width: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  padding: 8px 11px !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 9px !important;
+  background: var(--surface, #fff) !important;
+  color: var(--ink) !important;
+  white-space: nowrap;
+}
+
+details.trash-actions[data-actions-visible="true"] > .order-action-menu button.danger {
+  border-color: color-mix(in srgb, #a94150 30%, var(--line)) !important;
+  background: color-mix(in srgb, #a94150 7%, var(--surface, #fff)) !important;
+  color: #9a3545 !important;
+}
+
+/* Barre privée : elle garde toujours la largeur réelle de l'appareil et respecte
+   les safe areas iPhone/Android. Sur petit écran elle défile, sur écran large elle s'étire. */
+@media (max-width: 900px), (pointer: coarse), (hover: none) {
+  .sidebar nav {
+    left: max(7px, env(safe-area-inset-left, 0px)) !important;
+    right: max(7px, env(safe-area-inset-right, 0px)) !important;
+    bottom: max(7px, env(safe-area-inset-bottom, 0px)) !important;
+    width: auto !important;
+    max-width: calc(100vw - max(7px, env(safe-area-inset-left, 0px)) - max(7px, env(safe-area-inset-right, 0px))) !important;
+    display: flex !important;
+    grid-template-columns: none !important;
+    align-items: stretch !important;
+    gap: 4px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sidebar nav .nav-item {
+    flex: 1 0 clamp(64px, 18vw, 92px) !important;
+    min-width: clamp(64px, 18vw, 92px) !important;
+    max-width: 112px !important;
+    scroll-snap-align: start;
+  }
+
+  .sidebar nav .nav-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  details.trash-actions[data-actions-visible="true"] > .order-action-menu {
+    justify-content: flex-end !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .sidebar nav .nav-item {
+    flex-basis: 70px !important;
+    min-width: 70px !important;
+    max-width: 84px !important;
+  }
+
+  details.trash-actions[data-actions-visible="true"] > .order-action-menu {
+    width: 100% !important;
+    justify-content: stretch !important;
+  }
+
+  details.trash-actions[data-actions-visible="true"] > .order-action-menu button {
+    flex: 1 1 145px !important;
+    white-space: normal;
+  }
+}
