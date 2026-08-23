@@ -1,0 +1,67 @@
+/* Couverture Maison Jiya validée — remplace uniquement le hero public. */
+.storefront-reference-clean .mj-native-hero {
+  position: relative !important;
+  display: block !important;
+  width: 100% !important;
+  min-height: 0 !important;
+  height: auto !important;
+  aspect-ratio: 1672 / 643 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  background: #050505 url('/maison-jiya-cover-approved.svg') center center / 100% 100% no-repeat !important;
+}
+
+/* Le visuel approuvé contient déjà Homme / Femme / logo / slogan / produits / CTA / catégories. */
+.storefront-reference-clean .mj-native-hero::before,
+.storefront-reference-clean .mj-native-hero::after,
+.storefront-reference-clean .mj-native-hero-products,
+.storefront-reference-clean .mj-native-arrow {
+  display: none !important;
+}
+
+/* On conserve un hotspot invisible sur le bouton visuel « Découvrir la collection ». */
+.storefront-reference-clean .mj-native-hero-copy {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  pointer-events: none !important;
+}
+.storefront-reference-clean .mj-native-hero-copy > * {
+  visibility: hidden !important;
+}
+.storefront-reference-clean .mj-native-hero-copy > a {
+  visibility: visible !important;
+  opacity: 0 !important;
+  pointer-events: auto !important;
+  position: absolute !important;
+  left: 40.4% !important;
+  top: 65.2% !important;
+  width: 19.2% !important;
+  height: 8.5% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+/* La couverture reste strictement identique lorsque FR / AR / EN change. */
+.storefront-v3[dir='rtl'] .mj-native-hero,
+.storefront-v3[dir='ltr'] .mj-native-hero {
+  direction: ltr !important;
+  transform: none !important;
+}
+
+@media (max-width: 760px) {
+  .storefront-reference-clean .mj-native-hero {
+    aspect-ratio: 1672 / 643 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    background-size: 100% 100% !important;
+  }
+}
