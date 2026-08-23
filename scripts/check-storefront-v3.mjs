@@ -30,14 +30,15 @@ const publicPage = await readText("app/boutique/page.tsx");
 assert.match(publicPage, /StorefrontClientV3/);
 assert.match(publicPage, /StorefrontApprovedDesignEnhancement/);
 assert.match(publicPage, /storefront_manual_catalog_initialized_v1/);
-assert.match(publicPage, /maison-jiya-public-reference-black-v2/);
-assert.match(publicPage, /storefront-approved-design storefront-reference-exact/);
+assert.match(publicPage, /maison-jiya-public-reference-clean-v3/);
+assert.match(publicPage, /storefront-approved-design storefront-reference-exact storefront-reference-clean/);
 assert.doesNotMatch(publicPage, /BestSellerVerticalEnhancement/);
 
 const publicLayout = await readText("app/boutique/layout.tsx");
 assert.match(publicLayout, /storefront-v3\.css/);
 assert.match(publicLayout, /storefront-approved-design\.css/);
 assert.match(publicLayout, /storefront-reference-exact\.css/);
+assert.match(publicLayout, /storefront-reference-clean\.css/);
 
 const client = await readText("app/boutique/storefront-client-v3.tsx");
 assert.match(client, /type Copy/);
@@ -66,31 +67,32 @@ assert.match(approved, /#contact/);
 assert.match(approved, /storefront-approved-search/);
 assert.match(approved, /storefront-reference-services/);
 assert.match(approved, /storefront-reference-categories/);
-assert.match(approved, /OFFRES DU MOMENT/);
+assert.match(approved, /ROLEX/);
+assert.match(approved, /OMEGA/);
+assert.match(approved, /CARTIER/);
+assert.match(approved, /ARMANI/);
+assert.match(approved, /BOSS/);
+assert.match(approved, /HERMÈS/);
+assert.match(approved, /MICHAEL KORS/);
+assert.match(approved, /FOSSIL/);
+assert.match(approved, /LACOSTE/);
+assert.match(approved, /storefront-reference-hero-products/);
 assert.match(approved, /Catalogue/);
 assert.match(approved, /الكتالوج/);
 assert.match(approved, /Catalog/);
 
-const exactCss = await readText("app/boutique/storefront-reference-exact.css");
-assert.match(exactCss, /storefront-reference-exact/);
-assert.match(exactCss, /background:#050505/);
-assert.match(exactCss, /storefront-reference-services/);
-assert.match(exactCss, /storefront-reference-category-media/);
-assert.match(exactCss, /data:image\/webp;base64/);
-assert.match(exactCss, /storefront-reference-hero-hit/);
-assert.match(exactCss, /@media\(max-width:680px\)/);
-
-const approvedCss = await readText("app/boutique/storefront-approved-design.css");
-assert.match(approvedCss, /grid-template-areas:"search brand actions" "nav nav nav"/);
-assert.match(approvedCss, /storefront-v3-brand>img/);
-assert.match(approvedCss, /drop-shadow/);
-assert.match(approvedCss, /storefront-v3-hero-media::after/);
-assert.match(approvedCss, /storefront-approved-hero-collage/);
-assert.match(approvedCss, /@media \(max-width:680px\)/);
+const cleanCss = await readText("app/boutique/storefront-reference-clean.css");
+assert.match(cleanCss, /storefront-reference-clean/);
+assert.match(cleanCss, /grid-template-areas:"search brand actions" "nav nav nav"/);
+assert.match(cleanCss, /storefront-reference-brand-list/);
+assert.match(cleanCss, /storefront-reference-hero-products/);
+assert.match(cleanCss, /storefront-v3-hero>\.storefront-v3-hero-media/);
+assert.match(cleanCss, /background:#fff!important/);
+assert.match(cleanCss, /@media\(max-width:680px\)/);
 
 const smoke = await readText("scripts/smoke-production.mjs");
-assert.match(smoke, /maison-jiya-public-reference-black-v2/);
-assert.match(smoke, /storefront-reference-exact/);
+assert.match(smoke, /maison-jiya-public-reference-clean-v3/);
+assert.match(smoke, /storefront-reference-clean/);
 assert.match(smoke, /REQUIRE_REFERENCE_BLACK_DESIGN/);
 
 const deployWorkflow = await readText(".github/workflows/deploy-cloudflare.yml");
@@ -107,4 +109,4 @@ assert.match(privateCss, /button\.danger/);
 assert.match(privateCss, /safe-area-inset-left/);
 assert.match(privateCss, /overflow-x:\s*auto/);
 
-console.log("Storefront V3 (catalogue manuel + quantités avant confirmation + FR/AR/EN + design noir SSR + vérification de déploiement + responsive privé/public): OK");
+console.log("Storefront V3 (catalogue manuel + quantités avant confirmation + FR/AR/EN + référence publique propre v3 + marques fixes + hero HD + responsive privé/public): OK");
