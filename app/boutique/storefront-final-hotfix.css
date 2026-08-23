@@ -1,0 +1,272 @@
+/* Maison Jiya — hotfix visuel final, chargé en dernier. */
+
+/* Header natif : une grille stable et une navigation réellement horizontale. */
+.storefront-reference-clean .storefront-v3-header {
+  min-height: 128px !important;
+  height: 128px !important;
+  overflow: visible !important;
+}
+.storefront-reference-clean .mj-native-header {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 128px !important;
+  min-height: 128px !important;
+  box-sizing: border-box !important;
+  display: grid !important;
+  grid-template-columns: minmax(190px,1fr) 230px minmax(240px,1fr) !important;
+  grid-template-rows: 82px 46px !important;
+  grid-template-areas: "search logo actions" "nav nav nav" !important;
+  align-items: center !important;
+  padding: 0 clamp(24px,5vw,72px) !important;
+  background: #050505 !important;
+  color: #fff !important;
+}
+.storefront-reference-clean .mj-native-search {
+  grid-area: search !important;
+  position: static !important;
+  justify-self: start !important;
+  width: auto !important;
+  margin: 0 !important;
+  transform: none !important;
+}
+.storefront-reference-clean .mj-native-logo {
+  grid-area: logo !important;
+  position: static !important;
+  justify-self: center !important;
+  width: auto !important;
+  margin: 0 !important;
+  transform: none !important;
+  color: #fff !important;
+}
+.storefront-reference-clean .mj-native-logo strong,
+.storefront-reference-clean .mj-native-logo em,
+.storefront-reference-clean .mj-native-logo small {
+  color: #fff !important;
+  background: none !important;
+  -webkit-text-fill-color: #fff !important;
+  text-shadow: none !important;
+}
+.storefront-reference-clean .mj-native-actions {
+  grid-area: actions !important;
+  position: static !important;
+  justify-self: end !important;
+  width: auto !important;
+  margin: 0 !important;
+  transform: none !important;
+}
+.storefront-reference-clean .mj-native-nav {
+  grid-area: nav !important;
+  position: static !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: 46px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 42px !important;
+  overflow: visible !important;
+  transform: none !important;
+  border-top: 1px solid #1d1d1d !important;
+  background: #050505 !important;
+}
+.storefront-reference-clean .mj-native-nav a {
+  position: static !important;
+  inset: auto !important;
+  display: inline-flex !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  height: 46px !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transform: none !important;
+  white-space: nowrap !important;
+  color: #f4f4f4 !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  text-decoration: none !important;
+  border: 0 !important;
+}
+.storefront-reference-clean .mj-native-nav a:first-child {
+  color: #fff !important;
+  border-bottom: 1px solid #fff !important;
+}
+
+/* Hero premium sans aucune photo de produit. */
+.storefront-reference-clean .mj-native-hero {
+  min-height: 430px !important;
+  grid-template-columns: minmax(330px,.9fr) minmax(480px,1.25fr) !important;
+  background:
+    radial-gradient(circle at 79% 46%, rgba(255,255,255,.10) 0 2px, transparent 3px),
+    radial-gradient(circle at 79% 46%, transparent 0 92px, rgba(240,240,240,.72) 93px 96px, transparent 97px 126px, rgba(177,177,177,.20) 127px 129px, transparent 130px),
+    radial-gradient(circle at 76% 40%, rgba(255,255,255,.09), transparent 19%),
+    radial-gradient(circle at 24% 44%, rgba(255,255,255,.055), transparent 30%),
+    linear-gradient(125deg,#050505 0%,#101010 49%,#181818 72%,#080808 100%) !important;
+  border-bottom: 1px solid #222 !important;
+}
+.storefront-reference-clean .mj-native-hero::before {
+  content: "" !important;
+  position: absolute !important;
+  right: clamp(100px,14vw,230px) !important;
+  top: 50% !important;
+  width: 188px !important;
+  height: 188px !important;
+  transform: translateY(-50%) !important;
+  border-radius: 50% !important;
+  border: 2px solid rgba(255,255,255,.58) !important;
+  box-shadow:
+    0 0 0 14px rgba(255,255,255,.025),
+    0 0 0 15px rgba(255,255,255,.13),
+    inset 0 0 45px rgba(255,255,255,.05),
+    0 22px 60px rgba(0,0,0,.45) !important;
+  background:
+    linear-gradient(90deg,transparent 49.3%,rgba(255,255,255,.34) 50%,transparent 50.7%),
+    linear-gradient(0deg,transparent 49.3%,rgba(255,255,255,.34) 50%,transparent 50.7%),
+    radial-gradient(circle,#171717 0 8px,#0b0b0b 9px 100%) !important;
+  z-index: 1 !important;
+}
+.storefront-reference-clean .mj-native-hero::after {
+  content: "" !important;
+  position: absolute !important;
+  right: clamp(48px,6vw,100px) !important;
+  bottom: 52px !important;
+  width: 210px !important;
+  height: 126px !important;
+  border-radius: 16px !important;
+  border: 1px solid rgba(255,255,255,.28) !important;
+  background:
+    linear-gradient(135deg,rgba(255,255,255,.13),rgba(255,255,255,.025) 44%,rgba(255,255,255,.08)),
+    #121212 !important;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.025), 0 22px 55px rgba(0,0,0,.50) !important;
+  transform: rotate(-7deg) !important;
+  z-index: 2 !important;
+}
+.storefront-reference-clean .mj-native-hero-products {
+  display: block !important;
+  position: relative !important;
+  height: 300px !important;
+  min-width: 0 !important;
+  z-index: 2 !important;
+}
+.storefront-reference-clean .mj-native-hero-products figure,
+.storefront-reference-clean .mj-native-hero-products img {
+  display: none !important;
+}
+.storefront-reference-clean .mj-native-hero-products::before {
+  content: "" !important;
+  position: absolute !important;
+  left: 15% !important;
+  top: 54% !important;
+  width: 170px !important;
+  height: 38px !important;
+  border: 3px solid rgba(245,245,245,.78) !important;
+  border-radius: 999px !important;
+  transform: rotate(-18deg) !important;
+  box-shadow: 0 12px 35px rgba(0,0,0,.45), inset 0 0 18px rgba(255,255,255,.05) !important;
+}
+.storefront-reference-clean .mj-native-hero-products::after {
+  content: "JIYA" !important;
+  position: absolute !important;
+  right: 8% !important;
+  top: 18% !important;
+  width: 154px !important;
+  height: 76px !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 1px solid rgba(255,255,255,.22) !important;
+  border-radius: 14px !important;
+  background: rgba(255,255,255,.035) !important;
+  color: rgba(255,255,255,.72) !important;
+  font-family: Georgia,"Times New Roman",serif !important;
+  font-size: 22px !important;
+  letter-spacing: .2em !important;
+  box-shadow: 0 20px 50px rgba(0,0,0,.35) !important;
+  transform: rotate(6deg) !important;
+}
+.storefront-reference-clean .mj-native-hero-brand strong,
+.storefront-reference-clean .mj-native-hero-brand em {
+  color: #fff !important;
+  background: none !important;
+  -webkit-text-fill-color: #fff !important;
+  text-shadow: none !important;
+}
+.storefront-reference-clean .mj-native-hero-copy>a {
+  background: #fff !important;
+  color: #0b0b0b !important;
+  border-radius: 999px !important;
+}
+
+/* Vrai pictogramme WhatsApp au lieu du texte WA. */
+.storefront-v3-wa {
+  width: 52px !important;
+  height: 52px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  display: grid !important;
+  place-items: center !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+  background: #25d366 !important;
+  box-shadow: 0 8px 28px rgba(0,0,0,.22) !important;
+}
+.storefront-v3-wa::before {
+  content: "" !important;
+  width: 29px !important;
+  height: 29px !important;
+  display: block !important;
+  background: #fff !important;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3.2A12.5 12.5 0 0 0 5.2 22l-1.7 6.3 6.5-1.7A12.5 12.5 0 1 0 16 3.2Zm0 22.5c-2 0-3.9-.6-5.5-1.6l-.4-.2-3.8 1 1-3.7-.2-.4A10 10 0 1 1 16 25.7Zm5.5-7.5c-.3-.2-1.8-.9-2.1-1-.3-.1-.5-.2-.7.2-.2.3-.8 1-.9 1.2-.2.2-.3.2-.6.1-1.8-.9-3-1.6-4.2-3.6-.3-.5.3-.5.9-1.6.1-.2.1-.4 0-.6-.1-.2-.7-1.7-1-2.3-.3-.6-.5-.5-.7-.5h-.6c-.2 0-.6.1-.9.4-.3.3-1.2 1.2-1.2 2.9s1.2 3.3 1.4 3.6c.2.2 2.4 3.7 5.9 5.2.8.4 1.5.6 2 .7.8.3 1.6.2 2.2.1.7-.1 1.8-.7 2.1-1.5.3-.7.3-1.4.2-1.5-.1-.2-.3-.3-.6-.4Z'/%3E%3C/svg%3E") center/contain no-repeat !important;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3.2A12.5 12.5 0 0 0 5.2 22l-1.7 6.3 6.5-1.7A12.5 12.5 0 1 0 16 3.2Zm0 22.5c-2 0-3.9-.6-5.5-1.6l-.4-.2-3.8 1 1-3.7-.2-.4A10 10 0 1 1 16 25.7Zm5.5-7.5c-.3-.2-1.8-.9-2.1-1-.3-.1-.5-.2-.7.2-.2.3-.8 1-.9 1.2-.2.2-.3.2-.6.1-1.8-.9-3-1.6-4.2-3.6-.3-.5.3-.5.9-1.6.1-.2.1-.4 0-.6-.1-.2-.7-1.7-1-2.3-.3-.6-.5-.5-.7-.5h-.6c-.2 0-.6.1-.9.4-.3.3-1.2 1.2-1.2 2.9s1.2 3.3 1.4 3.6c.2.2 2.4 3.7 5.9 5.2.8.4 1.5.6 2 .7.8.3 1.6.2 2.2.1.7-.1 1.8-.7 2.1-1.5.3-.7.3-1.4.2-1.5-.1-.2-.3-.3-.6-.4Z'/%3E%3C/svg%3E") center/contain no-repeat !important;
+}
+
+@media (max-width: 760px) {
+  .storefront-reference-clean .storefront-v3-header,
+  .storefront-reference-clean .mj-native-header { height: 118px !important; min-height: 118px !important; }
+  .storefront-reference-clean .mj-native-header {
+    grid-template-columns: 44px minmax(116px,1fr) auto !important;
+    grid-template-rows: 72px 46px !important;
+    padding: 0 12px !important;
+    gap: 0 8px !important;
+  }
+  .storefront-reference-clean .mj-native-search span { display: none !important; }
+  .storefront-reference-clean .mj-native-logo strong { font-size: 28px !important; }
+  .storefront-reference-clean .mj-native-logo em { font-size: 11px !important; }
+  .storefront-reference-clean .mj-native-logo small { display: none !important; }
+  .storefront-reference-clean .mj-native-nav {
+    height: 46px !important;
+    gap: 26px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scrollbar-width: none !important;
+  }
+  .storefront-reference-clean .mj-native-nav::-webkit-scrollbar { display: none !important; }
+  .storefront-reference-clean .mj-native-nav a { height: 46px !important; font-size: 11px !important; }
+  .storefront-reference-clean .mj-native-hero {
+    min-height: 470px !important;
+    grid-template-columns: 1fr !important;
+    padding: 32px 24px 28px !important;
+  }
+  .storefront-reference-clean .mj-native-hero::before {
+    right: 50% !important;
+    top: 72% !important;
+    width: 122px !important;
+    height: 122px !important;
+    transform: translate(50%,-50%) !important;
+  }
+  .storefront-reference-clean .mj-native-hero::after {
+    width: 140px !important;
+    height: 84px !important;
+    right: 9% !important;
+    bottom: 22px !important;
+  }
+  .storefront-reference-clean .mj-native-hero-products { height: 150px !important; }
+  .storefront-reference-clean .mj-native-hero-products::before { width: 112px !important; height: 26px !important; left: 4% !important; top: 64% !important; }
+  .storefront-reference-clean .mj-native-hero-products::after { width: 104px !important; height: 54px !important; right: 2% !important; top: 30% !important; font-size: 15px !important; }
+}
