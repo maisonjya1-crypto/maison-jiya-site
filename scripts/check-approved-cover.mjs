@@ -14,7 +14,7 @@ const checks = [
   [svg.includes("DÉCOUVRIR LA COLLECTION"), "cover contains CTA"],
   [page.includes("StorefrontCoverInteractions"), "Homme/Femme interaction layer is mounted"],
   [interactions.includes("mj-cover-hotspot-men") && interactions.includes("mj-cover-hotspot-women"), "Homme/Femme hotspots exist"],
-  [interactions.includes('filterGender("homme")') && interactions.includes('filterGender("femme")'), "hotspots filter gender models"],
+  [interactions.includes("filterGender(gender)") && interactions.includes('"homme"') && interactions.includes('"femme"'), "hotspots filter gender models"],
   [css.includes(".mj-native-account::before") && css.includes(".mj-native-cart::before"), "account and cart icons are visible SVG masks"],
   [css.includes(".storefront-reference-category-media img") && css.includes("object-fit: cover"), "Option C category photography layout is enabled"],
   [page.includes("maison-jiya-public-reference-native-v5"), "storefront deployment marker advanced to v5"],
