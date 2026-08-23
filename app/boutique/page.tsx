@@ -9,7 +9,7 @@ import type { StorefrontCatalog } from "./storefront-types";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const STOREFRONT_DEPLOYMENT_MARKER = "maison-jiya-public-reference-black-v1";
+const STOREFRONT_DEPLOYMENT_MARKER = "maison-jiya-public-reference-black-v2";
 
 async function ensureManualCatalogReady() {
   const database = await getRawDb();
@@ -26,9 +26,8 @@ export default async function BoutiquePage() {
   } catch (error) {
     console.error("Maison Jiya storefront preload failed", error);
   }
-  return <>
-    <span hidden data-storefront-deployment={STOREFRONT_DEPLOYMENT_MARKER} aria-hidden="true" />
+  return <div className="storefront-approved-design storefront-reference-exact" data-storefront-deployment={STOREFRONT_DEPLOYMENT_MARKER}>
     <StorefrontClientV3 initialCatalog={initialCatalog} />
     <StorefrontApprovedDesignEnhancement />
-  </>;
+  </div>;
 }
