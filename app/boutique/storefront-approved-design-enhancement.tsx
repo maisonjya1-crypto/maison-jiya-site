@@ -178,9 +178,10 @@ export default function StorefrontApprovedDesignEnhancement() {
       document.querySelector("#offres")?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
-    const select = document.querySelector<HTMLSelectElement>(".storefront-v3-tools select");
+    const select = document.querySelector(".storefront-v3-tools select") as HTMLSelectElement | null;
     if (select && category) {
-      const option = Array.from(select.options).find((entry) => entry.value === category || normalize(entry.value) === normalize(category));
+      const options = Array.from(select.options) as HTMLOptionElement[];
+      const option = options.find((entry) => entry.value === category || normalize(entry.value) === normalize(category));
       if (option) {
         const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
         setter?.call(select, option.value);
