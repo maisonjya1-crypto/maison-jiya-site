@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import hero0 from "./generated-assets/hero-0";
-import hero1 from "./generated-assets/hero-1";
 import type { CatalogItem, StorefrontCatalog } from "./storefront-types";
 
 type Language = "fr" | "ar" | "en";
@@ -12,6 +10,7 @@ type SelectBridge = { options: ArrayLike<{ value: string }>; value: string; disp
 type UiCopy = {
   catalogue: string; offers: string; contact: string; search: string; categories: string; categoriesSub: string;
   watches: string; jewelry: string; wallets: string; packs: string; view: string; discover: string;
+  men: string; women: string;
   freeDelivery: string; freeDeliverySub: string; cod: string; codSub: string;
   customerService: string; customerServiceSub: string; satisfaction: string; satisfactionSub: string;
 };
@@ -21,6 +20,7 @@ const ui: Record<Language, UiCopy> = {
     catalogue: "Catalogue", offers: "Offres", contact: "Contact", search: "Rechercher un produit…",
     categories: "NOS CATÉGORIES", categoriesSub: "Découvrez nos collections soigneusement sélectionnées",
     watches: "MONTRES", jewelry: "BIJOUX", wallets: "PORTEFEUILLES", packs: "PACKS", view: "Voir →", discover: "Découvrir la collection",
+    men: "HOMME", women: "FEMME",
     freeDelivery: "Livraison gratuite", freeDeliverySub: "Partout au Maroc", cod: "Paiement à la livraison", codSub: "Vous payez à la réception",
     customerService: "Service client", customerServiceSub: "À votre écoute 7j/7", satisfaction: "Satisfaction garantie", satisfactionSub: "Votre satisfaction d’abord",
   },
@@ -28,6 +28,7 @@ const ui: Record<Language, UiCopy> = {
     catalogue: "الكتالوج", offers: "العروض", contact: "تواصل معنا", search: "ابحث عن منتج…",
     categories: "فئاتنا", categoriesSub: "اكتشف مجموعاتنا المختارة بعناية",
     watches: "الساعات", jewelry: "المجوهرات", wallets: "المحافظ", packs: "الباقات", view: "عرض ←", discover: "اكتشف المجموعة",
+    men: "رجالية", women: "نسائية",
     freeDelivery: "توصيل مجاني", freeDeliverySub: "إلى جميع أنحاء المغرب", cod: "الدفع عند الاستلام", codSub: "تدفع عند الاستلام",
     customerService: "خدمة الزبناء", customerServiceSub: "في خدمتك 7 أيام", satisfaction: "رضاكم أولويتنا", satisfactionSub: "خدمة موثوقة قبل كل شيء",
   },
@@ -35,18 +36,26 @@ const ui: Record<Language, UiCopy> = {
     catalogue: "Catalog", offers: "Offers", contact: "Contact", search: "Search for a product…",
     categories: "OUR CATEGORIES", categoriesSub: "Discover our carefully selected collections",
     watches: "WATCHES", jewelry: "JEWELRY", wallets: "WALLETS", packs: "PACKS", view: "View →", discover: "Discover the collection",
+    men: "MEN", women: "WOMEN",
     freeDelivery: "Free delivery", freeDeliverySub: "Across Morocco", cod: "Cash on delivery", codSub: "Pay when you receive it",
     customerService: "Customer service", customerServiceSub: "Here for you 7 days a week", satisfaction: "Satisfaction first", satisfactionSub: "Reliable service first",
   },
 };
 
-const HERO_IMAGE = `data:image/webp;base64,${hero0}${hero1}`;
 const referenceBrands = ["ROLEX", "OMEGA", "CARTIER", "ARMANI", "BOSS", "HERMÈS", "MICHAEL KORS", "FOSSIL", "LACOSTE"];
+
+// Images publiques stables et licenciées pour le visuel vitrine. Elles ne dépendent jamais du stock Maison Jiya.
+const showcaseImages = {
+  watchMen: "https://images.unsplash.com/photo-1749831754129-3a84b9fdeb87?auto=format&fit=crop&fm=jpg&ixlib=rb-4.1.0&q=82&w=1400",
+  watchWomen: "https://images.unsplash.com/photo-1503606456214-22ad224525da?auto=format&fit=crop&fm=jpg&ixlib=rb-4.1.0&q=82&w=1400",
+  jewelry: "https://images.unsplash.com/photo-1773929345739-94db8a4ccd0c?auto=format&fit=crop&fm=jpg&ixlib=rb-4.1.0&q=82&w=1400",
+  wallet: "https://c.pxhere.com/photos/c3/01/black_purse_pic_leather_texture_accessories_wallet-642524.jpg!d",
+} as const;
+
 const categoryImages = {
-  watches: "/storefront/montres.webp",
-  jewelry: "/storefront/bijoux.webp",
-  wallets: "/storefront/portefeuilles.webp",
-  packs: "/storefront/packs.webp",
+  watches: showcaseImages.watchMen,
+  jewelry: showcaseImages.jewelry,
+  wallets: showcaseImages.wallet,
 } as const;
 
 function normalize(value: string) {
@@ -62,6 +71,10 @@ function ServiceIcon({ kind }: { kind: "delivery" | "payment" | "support" | "sat
   if (kind === "payment") return <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 5h20v22H6zM6 11h20M10 21h7" /></svg>;
   if (kind === "support") return <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 17a10 10 0 0 1 20 0v7h-5v-8h5M6 16h5v8H6zM21 27h-7" /></svg>;
   return <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 27 7v8c0 7-4.7 11.6-11 14-6.3-2.4-11-7-11-14V7zM11 16l3 3 7-7" /></svg>;
+}
+
+function StoreImage({ src, alt, className = "" }: { src: string; alt: string; className?: string }) {
+  return <img className={className} src={src} alt={alt} loading="eager" decoding="async" referrerPolicy="no-referrer" />;
 }
 
 export default function StorefrontApprovedDesignEnhancement() {
@@ -116,7 +129,7 @@ export default function StorefrontApprovedDesignEnhancement() {
       { key: "watches", label: ui[lang].watches, image: categoryImages.watches, category: watches?.category || "Montres", target: "catalogue" },
       { key: "jewelry", label: ui[lang].jewelry, image: categoryImages.jewelry, category: jewelry?.category || "Bijoux", target: "catalogue" },
       { key: "wallets", label: ui[lang].wallets, image: categoryImages.wallets, category: wallets?.category || "Portefeuilles", target: "catalogue" },
-      { key: "packs", label: ui[lang].packs, image: categoryImages.packs, category: "", target: "offres" },
+      { key: "packs", label: ui[lang].packs, image: "", category: "", target: "offres" },
     ];
   }, [catalog, lang]);
 
@@ -180,9 +193,25 @@ export default function StorefrontApprovedDesignEnhancement() {
     </div>, header)}
 
     {hero && createPortal(<section className="mj-native-hero" aria-label="Maison Jiya">
-      <img className="mj-generated-hero-image" src={HERO_IMAGE} alt="Maison Jiya — montres homme et femme, bijoux et portefeuilles" />
-      <div className="mj-native-hero-copy">
-        <a className="mj-cover-cta" href="#catalogue" onClick={(event) => { event.preventDefault(); goToCatalogue(); }} aria-label={t.discover}>{t.discover}</a>
+      <div className="mj-hero-stage">
+        <div className="mj-hero-side mj-hero-men" aria-hidden="true">
+          <div className="mj-hero-side-title"><span>{t.watches}</span><strong>{t.men}</strong></div>
+          <StoreImage src={showcaseImages.watchMen} alt="" className="mj-hero-photo mj-hero-photo-watch" />
+          <StoreImage src={showcaseImages.wallet} alt="" className="mj-hero-photo mj-hero-photo-wallet" />
+          <StoreImage src={showcaseImages.jewelry} alt="" className="mj-hero-photo mj-hero-photo-jewel" />
+        </div>
+        <div className="mj-hero-center">
+          <div className="mj-hero-ring" aria-hidden="true" />
+          <strong>JIYA</strong><em>Maison Jiya</em><span>L’HEURE DE BRILLER</span>
+          <p>Montres de prestige, bijoux raffinés et portefeuilles élégants.<br />L’élégance à chaque instant.</p>
+          <a className="mj-cover-cta" href="#catalogue" onClick={(event) => { event.preventDefault(); goToCatalogue(); }}>{t.discover}<b>→</b></a>
+          <div className="mj-hero-mini-cats"><i>⌚ <small>{t.watches}</small></i><i>◇ <small>{t.jewelry}</small></i><i>▣ <small>{t.wallets}</small></i></div>
+        </div>
+        <div className="mj-hero-side mj-hero-women" aria-hidden="true">
+          <div className="mj-hero-side-title"><span>{t.watches}</span><strong>{t.women}</strong></div>
+          <StoreImage src={showcaseImages.watchWomen} alt="" className="mj-hero-photo mj-hero-photo-watch" />
+          <StoreImage src={showcaseImages.jewelry} alt="" className="mj-hero-photo mj-hero-photo-jewel" />
+        </div>
       </div>
     </section>, hero)}
 
@@ -201,7 +230,11 @@ export default function StorefrontApprovedDesignEnhancement() {
         <header><h2>{t.categories}</h2><p>{t.categoriesSub}</p></header>
         <div>{categoryCards.map((card) => <button key={card.key} type="button" onClick={() => goToCategory(card.category, card.target)}>
           <span className="storefront-reference-category-media">
-            <img src={card.image} alt={card.label} loading="lazy" />
+            {card.key === "packs" ? <span className="mj-pack-collage" aria-hidden="true">
+              <StoreImage src={showcaseImages.watchMen} alt="" />
+              <StoreImage src={showcaseImages.wallet} alt="" />
+              <StoreImage src={showcaseImages.jewelry} alt="" />
+            </span> : <StoreImage src={card.image} alt={card.label} />}
             <em><b>{card.label}</b><small>{t.view}</small></em>
           </span>
         </button>)}</div>

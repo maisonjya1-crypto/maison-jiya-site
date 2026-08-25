@@ -11,12 +11,12 @@ const checks = [
   [css.includes(".mj-native-account::before"), "visible account icon"],
   [css.includes(".mj-native-cart::before"), "visible cart icon"],
   [css.includes(".mj-cover-cta") && enhancement.includes("goToCatalogue"), "Discover collection CTA is functional"],
-  [css.includes(".storefront-reference-category-media img"), "Option C category photo styling"],
-  [enhancement.includes('watches: "/storefront/montres.webp"'), "Montres card uses dedicated thematic photo"],
-  [enhancement.includes('jewelry: "/storefront/bijoux.webp"'), "Bijoux card uses dedicated thematic photo"],
-  [enhancement.includes('wallets: "/storefront/portefeuilles.webp"'), "Portefeuilles card uses dedicated thematic photo"],
-  [enhancement.includes('packs: "/storefront/packs.webp"'), "Packs card uses dedicated generated pack photo"],
-  [!enhancement.includes("catalog.offers?.[0] || firstMatching(products, [\"pack\", \"coffret\"] )"), "Packs card no longer depends on a real stock/offer image"],
+  [css.includes(".storefront-reference-category-media > img"), "Option C category photo styling"],
+  [enhancement.includes("showcaseImages.watchMen"), "Montres card uses thematic watch photo"],
+  [enhancement.includes("showcaseImages.jewelry"), "Bijoux card uses thematic jewelry photo"],
+  [enhancement.includes("showcaseImages.wallet"), "Portefeuilles card uses thematic wallet photo"],
+  [enhancement.includes("mj-pack-collage"), "Packs card uses thematic collage instead of real stock pack"],
+  [!enhancement.includes("/storefront/montres.webp") && !enhancement.includes("data:image/webp;base64"), "corrupted local storefront image references are removed"],
 ];
 
 for (const [ok, label] of checks) {
