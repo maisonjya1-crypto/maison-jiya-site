@@ -1,0 +1,11 @@
+/* Correctif final mobile : les étiquettes Homme/Femme restent dans le hero sans être rognées. */
+@media(max-width:760px){
+  .storefront-reference-clean .mj-hero-side{overflow:visible!important}
+  .storefront-reference-clean .mj-hero-side-title{
+    position:absolute!important;
+    top:auto!important;
+    bottom:calc(100% + clamp(180px,50vw,210px))!important;
+    transform:none!important;
+  }
+  .storefront-reference-clean .mj-hero-composition{overflow:hidden!important}
+}
