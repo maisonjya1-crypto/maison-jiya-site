@@ -1,0 +1,179 @@
+/* Maison Jiya — couche finale responsive et visuels propriétaires. Importée en dernier. */
+.storefront-reference-clean{overflow-x:clip!important}
+.storefront-reference-clean *,
+.storefront-reference-clean *::before,
+.storefront-reference-clean *::after{box-sizing:border-box}
+
+/* Header : conserve toutes les actions sans débordement, quelle que soit la largeur. */
+.storefront-reference-clean .storefront-v3-header{height:126px!important;min-height:126px!important;overflow:visible!important}
+.storefront-reference-clean .mj-native-header{height:126px!important;min-width:0!important;grid-template-columns:minmax(150px,1fr) minmax(150px,220px) minmax(210px,1fr)!important;grid-template-rows:82px 44px!important;padding-inline:clamp(16px,4.5vw,70px)!important;gap:0 clamp(8px,2vw,22px)!important}
+.storefront-reference-clean .mj-native-search,
+.storefront-reference-clean .mj-native-actions,
+.storefront-reference-clean .mj-native-logo{min-width:0!important}
+.storefront-reference-clean .mj-native-actions{display:flex!important;align-items:center!important;flex-wrap:nowrap!important;white-space:nowrap!important}
+.storefront-reference-clean .mj-native-logo strong{font-size:clamp(30px,3vw,40px)!important}
+.storefront-reference-clean .mj-native-nav{width:100%!important;justify-content:center!important;overflow:hidden!important}
+
+/* Hero desktop/tablette : composition équilibrée, aucun objet coupé. */
+.storefront-reference-clean .storefront-v3-hero,
+.storefront-reference-clean .mj-native-hero{height:clamp(500px,42vw,680px)!important;min-height:500px!important;max-height:680px!important}
+.storefront-reference-clean .mj-native-hero{padding:0!important;background:radial-gradient(circle at 50% 46%,rgba(199,145,54,.14),transparent 32%),linear-gradient(90deg,#070605 0%,#120c07 26%,#030303 50%,#120c07 74%,#070605 100%)!important}
+.storefront-reference-clean .mj-hero-stage{position:relative!important;display:grid!important;grid-template-columns:minmax(220px,1fr) minmax(360px,1.28fr) minmax(220px,1fr)!important;width:100%!important;height:100%!important;overflow:hidden!important}
+.storefront-reference-clean .mj-hero-side{position:relative!important;min-width:0!important;height:100%!important;overflow:hidden!important;background:#080705!important}
+.storefront-reference-clean .mj-hero-men{border-right:1px solid rgba(211,163,82,.14)!important}
+.storefront-reference-clean .mj-hero-women{border-left:1px solid rgba(211,163,82,.14)!important}
+.storefront-reference-clean .mj-hero-composition{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;display:block!important;object-fit:cover!important;object-position:center bottom!important;filter:saturate(.92) contrast(1.03)!important}
+.storefront-reference-clean .mj-hero-side::after{content:""!important;position:absolute!important;inset:0!important;pointer-events:none!important;background:linear-gradient(180deg,rgba(3,3,3,.34) 0%,transparent 28%,transparent 68%,rgba(0,0,0,.15) 100%)!important}
+.storefront-reference-clean .mj-hero-side-title{position:absolute!important;z-index:6!important;top:8%!important;left:50%!important;transform:translateX(-50%)!important;min-width:clamp(145px,14vw,195px)!important;padding:12px 18px!important;border:1px solid #b8873c!important;border-radius:12px!important;background:rgba(8,7,5,.82)!important;text-align:center!important;color:#e2bf78!important;backdrop-filter:blur(5px)!important}
+.storefront-reference-clean .mj-hero-side-title span{display:block!important;font:500 clamp(10px,1vw,14px)/1.1 Georgia,serif!important;letter-spacing:.14em!important}
+.storefront-reference-clean .mj-hero-side-title strong{display:block!important;margin-top:4px!important;font:700 clamp(20px,2.2vw,30px)/1 Georgia,serif!important}
+.storefront-reference-clean .mj-hero-center{position:relative!important;z-index:8!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;min-width:0!important;padding:46px 20px 34px!important;text-align:center!important;color:#fff!important;background:radial-gradient(circle at center,rgba(8,8,8,.14),rgba(3,3,3,.04) 68%)!important}
+.storefront-reference-clean .mj-hero-ring{position:absolute!important;z-index:-1!important;width:min(88%,530px)!important;aspect-ratio:1!important;border:2px solid rgba(203,149,60,.72)!important;border-radius:50%!important;box-shadow:0 0 0 14px rgba(203,149,60,.05),0 0 0 30px rgba(203,149,60,.025)!important}
+.storefront-reference-clean .mj-hero-center>strong{font:700 clamp(54px,6.7vw,110px)/.9 Georgia,serif!important;letter-spacing:.08em!important;color:#f7f1e7!important;white-space:nowrap!important}
+.storefront-reference-clean .mj-hero-center>em{margin-top:8px!important;font:italic 500 clamp(27px,2.9vw,48px)/1 Georgia,serif!important;color:#d8a34d!important;white-space:nowrap!important}
+.storefront-reference-clean .mj-hero-center>span{margin-top:clamp(24px,3vw,38px)!important;font:500 clamp(11px,1.25vw,18px)/1.2 Arial,sans-serif!important;letter-spacing:clamp(.23em,.42vw,.42em)!important;color:#fff!important;white-space:nowrap!important}
+.storefront-reference-clean .mj-hero-center>p{margin:22px 0 20px!important;max-width:500px!important;font:400 clamp(11px,1vw,14px)/1.6 Arial,sans-serif!important;color:rgba(255,255,255,.84)!important}
+.storefront-reference-clean .mj-cover-cta{position:relative!important;z-index:60!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:18px!important;min-width:clamp(220px,21vw,290px)!important;min-height:50px!important;padding:12px 24px!important;border:1px solid #efc66f!important;border-radius:999px!important;background:linear-gradient(180deg,#f6d58f,#dba956)!important;color:#17110a!important;font:700 clamp(11px,1vw,13px)/1.15 Arial,sans-serif!important;text-decoration:none!important;pointer-events:auto!important;cursor:pointer!important;box-shadow:0 12px 34px rgba(190,132,42,.22)!important}
+.storefront-reference-clean .mj-cover-cta b{font-size:19px!important}
+.storefront-reference-clean .mj-hero-mini-cats{display:flex!important;gap:clamp(18px,2.2vw,30px)!important;margin-top:24px!important}
+.storefront-reference-clean .mj-hero-mini-cats i{display:flex!important;flex-direction:column!important;gap:5px!important;color:#d7aa5c!important;font-style:normal!important;font-size:21px!important}
+.storefront-reference-clean .mj-hero-mini-cats small{color:#fff!important;font:600 9px/1 Arial,sans-serif!important;letter-spacing:.1em!important}
+
+/* Les hotspots Homme/Femme restent utilisables sans bloquer le CTA central. */
+.storefront-reference-clean .mj-cover-hotspot{z-index:40!important;width:30%!important;height:100%!important}
+.storefront-reference-clean .mj-cover-hotspot-men{left:0!important}
+.storefront-reference-clean .mj-cover-hotspot-women{right:0!important}
+
+/* Services : grille compacte et fluide. */
+.storefront-reference-clean .storefront-reference-services{width:min(1220px,100%)!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;padding:20px clamp(14px,4vw,54px)!important;gap:0!important}
+.storefront-reference-clean .storefront-reference-services article{min-width:0!important;padding:9px clamp(9px,1.5vw,18px)!important}
+.storefront-reference-clean .storefront-reference-services article>div{min-width:0!important}
+.storefront-reference-clean .storefront-reference-services strong,
+.storefront-reference-clean .storefront-reference-services span{overflow-wrap:anywhere!important}
+
+/* Catégories : visuels Maison Jiya, proportions adaptées à chaque écran. */
+.storefront-reference-clean .storefront-reference-categories{width:min(1220px,calc(100% - 36px))!important;max-width:1220px!important;padding:clamp(38px,5vw,64px) 0 28px!important}
+.storefront-reference-clean .storefront-reference-categories>header{margin-bottom:clamp(18px,2.4vw,28px)!important;padding-inline:8px!important}
+.storefront-reference-clean .storefront-reference-categories h2{font-size:clamp(28px,3.4vw,44px)!important;line-height:1!important}
+.storefront-reference-clean .storefront-reference-categories header p{font-size:clamp(10px,1.2vw,13px)!important;line-height:1.45!important}
+.storefront-reference-clean .storefront-reference-categories>div{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:clamp(10px,1.4vw,16px)!important}
+.storefront-reference-clean .storefront-reference-categories button{width:100%!important;min-width:0!important;padding:0!important;border:1px solid #d4bc8d!important;border-radius:16px!important;overflow:hidden!important;background:#090807!important;box-shadow:0 12px 28px rgba(0,0,0,.11)!important;cursor:pointer!important}
+.storefront-reference-clean .storefront-reference-category-media{position:relative!important;display:block!important;width:100%!important;height:auto!important;aspect-ratio:4/3!important;overflow:hidden!important;border-radius:0!important;background:#090807!important}
+.storefront-reference-clean .storefront-reference-category-media>img{display:block!important;width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important;transition:transform .3s ease!important}
+.storefront-reference-clean .storefront-reference-categories button:hover img{transform:scale(1.025)!important}
+.storefront-reference-clean .storefront-reference-category-media::after{content:""!important;position:absolute!important;inset:0!important;background:linear-gradient(180deg,transparent 40%,rgba(0,0,0,.78) 100%)!important;pointer-events:none!important}
+.storefront-reference-clean .storefront-reference-category-media em{position:absolute!important;z-index:2!important;left:16px!important;right:16px!important;bottom:14px!important;display:flex!important;flex-direction:row!important;align-items:flex-end!important;justify-content:space-between!important;gap:10px!important;font-style:normal!important;color:#fff!important;text-align:left!important}
+.storefront-reference-clean .storefront-reference-category-media b{font:700 clamp(14px,1.4vw,19px)/1 Georgia,serif!important;letter-spacing:.02em!important;color:#fff!important}
+.storefront-reference-clean .storefront-reference-category-media small{flex:0 0 auto!important;margin:0!important;padding:7px 10px!important;border:1px solid rgba(255,255,255,.75)!important;border-radius:7px!important;font:500 9px/1 Arial,sans-serif!important;color:#f3d99d!important;white-space:nowrap!important}
+
+/* Tablettes et petits laptops. */
+@media(max-width:1024px){
+  .storefront-reference-clean .mj-native-header{grid-template-columns:64px minmax(120px,1fr) auto!important;padding-inline:16px!important;gap:0 8px!important}
+  .storefront-reference-clean .mj-native-search span{display:none!important}
+  .storefront-reference-clean .mj-native-logo{min-width:0!important}
+  .storefront-reference-clean .mj-native-actions{gap:5px!important}
+  .storefront-reference-clean .mj-hero-stage{grid-template-columns:minmax(180px,.9fr) minmax(330px,1.2fr) minmax(180px,.9fr)!important}
+  .storefront-reference-clean .storefront-reference-categories>div{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .storefront-reference-clean .storefront-reference-category-media{aspect-ratio:16/9!important}
+  .storefront-reference-clean .storefront-reference-services{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .storefront-reference-clean .storefront-reference-services article:nth-child(2){border-right:0!important}
+}
+
+/* Téléphones : composition mobile dédiée, pas une version desktop simplement recadrée. */
+@media(max-width:760px){
+  .storefront-reference-clean .storefront-v3-marquee{height:27px!important;min-height:27px!important}
+  .storefront-reference-clean .storefront-v3-marquee-track{height:27px!important}
+  .storefront-reference-clean .storefront-v3-header{height:112px!important;min-height:112px!important}
+  .storefront-reference-clean .mj-native-header{height:112px!important;grid-template-columns:40px minmax(78px,1fr) auto!important;grid-template-rows:68px 44px!important;grid-template-areas:"search logo actions" "nav nav nav"!important;padding:0 9px!important;gap:0 5px!important}
+  .storefront-reference-clean .mj-native-search{width:36px!important;padding:0!important}
+  .storefront-reference-clean .mj-native-search svg{width:22px!important;height:22px!important}
+  .storefront-reference-clean .mj-native-logo{min-width:0!important;max-width:110px!important}
+  .storefront-reference-clean .mj-native-logo strong{font-size:29px!important;letter-spacing:.09em!important}
+  .storefront-reference-clean .mj-native-logo em{font-size:11px!important;margin-top:4px!important}
+  .storefront-reference-clean .mj-native-logo small{display:none!important}
+  .storefront-reference-clean .mj-native-actions{gap:4px!important}
+  .storefront-reference-clean .mj-native-langs{gap:1px!important;padding:2px!important}
+  .storefront-reference-clean .mj-native-langs button{min-width:27px!important;width:27px!important;height:28px!important;padding:0!important;font-size:9px!important}
+  .storefront-reference-clean .mj-native-account,
+  .storefront-reference-clean .mj-native-cart{display:grid!important;width:34px!important;height:34px!important;min-width:34px!important}
+  .storefront-reference-clean .mj-native-account::before,
+  .storefront-reference-clean .mj-native-cart::before{width:18px!important;height:18px!important}
+  .storefront-reference-clean .mj-native-nav{height:44px!important;gap:0!important;justify-content:space-evenly!important;overflow:hidden!important;border-top:1px solid #1c1c1c!important}
+  .storefront-reference-clean .mj-native-nav a{height:44px!important;padding-inline:6px!important;font-size:11px!important}
+
+  .storefront-reference-clean .storefront-v3-hero,
+  .storefront-reference-clean .mj-native-hero{height:clamp(430px,112vw,510px)!important;min-height:430px!important;max-height:510px!important}
+  .storefront-reference-clean .mj-hero-stage{display:block!important;position:relative!important;width:100%!important;height:100%!important}
+  .storefront-reference-clean .mj-hero-side{position:absolute!important;z-index:2!important;inset:auto!important;bottom:0!important;width:45%!important;height:45%!important;border:0!important;background:transparent!important;overflow:hidden!important}
+  .storefront-reference-clean .mj-hero-men{left:0!important}
+  .storefront-reference-clean .mj-hero-women{right:0!important}
+  .storefront-reference-clean .mj-hero-composition{width:100%!important;height:100%!important;object-fit:cover!important;object-position:center bottom!important;border-radius:18px 18px 0 0!important;opacity:.95!important}
+  .storefront-reference-clean .mj-hero-side::after{background:linear-gradient(180deg,rgba(4,3,2,.08),transparent 62%,rgba(0,0,0,.12))!important}
+  .storefront-reference-clean .mj-hero-side-title{position:fixed!important;position:absolute!important;top:auto!important;bottom:calc(100% + 208px)!important;transform:none!important;min-width:0!important;width:auto!important;padding:8px 10px!important;border-radius:10px!important;background:rgba(7,6,4,.78)!important;white-space:nowrap!important}
+  .storefront-reference-clean .mj-hero-men .mj-hero-side-title{left:14px!important}
+  .storefront-reference-clean .mj-hero-women .mj-hero-side-title{left:auto!important;right:14px!important}
+  .storefront-reference-clean .mj-hero-side-title span{font-size:9px!important;letter-spacing:.1em!important}
+  .storefront-reference-clean .mj-hero-side-title strong{font-size:18px!important;margin-top:3px!important}
+  .storefront-reference-clean .mj-hero-center{position:absolute!important;z-index:8!important;inset:0!important;display:flex!important;justify-content:flex-start!important;padding:94px 14px 112px!important;background:radial-gradient(circle at 50% 47%,rgba(205,150,62,.15),transparent 37%)!important}
+  .storefront-reference-clean .mj-hero-ring{top:38%!important;width:min(74vw,295px)!important;transform:translateY(-28%)!important}
+  .storefront-reference-clean .mj-hero-center>strong{font-size:clamp(49px,14vw,62px)!important;letter-spacing:.08em!important}
+  .storefront-reference-clean .mj-hero-center>em{margin-top:7px!important;font-size:clamp(25px,7.5vw,32px)!important}
+  .storefront-reference-clean .mj-hero-center>span{margin-top:24px!important;font-size:10px!important;letter-spacing:.28em!important}
+  .storefront-reference-clean .mj-hero-center>p{display:none!important}
+  .storefront-reference-clean .mj-cover-cta{margin-top:31px!important;min-width:220px!important;max-width:78vw!important;min-height:48px!important;padding:11px 18px!important;font-size:11px!important}
+  .storefront-reference-clean .mj-hero-mini-cats{display:none!important}
+  .storefront-reference-clean .mj-cover-hotspot{top:0!important;width:34%!important;height:44%!important}
+
+  .storefront-reference-clean .storefront-reference-services{grid-template-columns:repeat(2,minmax(0,1fr))!important;padding:10px 8px!important}
+  .storefront-reference-clean .storefront-reference-services article{justify-content:flex-start!important;gap:8px!important;min-height:76px!important;padding:10px 8px!important;border-bottom:1px solid #ece8e1!important}
+  .storefront-reference-clean .storefront-reference-services article:nth-child(odd){border-right:1px solid #e6e2dd!important}
+  .storefront-reference-clean .storefront-reference-services article:nth-child(even){border-right:0!important}
+  .storefront-reference-clean .storefront-reference-services svg{width:24px!important;height:24px!important;flex:0 0 24px!important}
+  .storefront-reference-clean .storefront-reference-services strong{font-size:10px!important;line-height:1.2!important}
+  .storefront-reference-clean .storefront-reference-services span{font-size:9px!important;line-height:1.25!important}
+
+  .storefront-reference-clean .storefront-reference-categories{width:calc(100% - 20px)!important;padding:38px 0 22px!important}
+  .storefront-reference-clean .storefront-reference-categories h2{font-size:clamp(28px,9vw,38px)!important}
+  .storefront-reference-clean .storefront-reference-categories header p{font-size:11px!important;padding-inline:12px!important}
+  .storefront-reference-clean .storefront-reference-categories>div{grid-template-columns:1fr!important;gap:11px!important}
+  .storefront-reference-clean .storefront-reference-category-media{aspect-ratio:16/7!important}
+  .storefront-reference-clean .storefront-reference-category-media em{left:15px!important;right:15px!important;bottom:12px!important;align-items:center!important}
+  .storefront-reference-clean .storefront-reference-category-media b{font-size:clamp(18px,5.2vw,23px)!important}
+  .storefront-reference-clean .storefront-reference-category-media small{padding:7px 10px!important;font-size:9px!important}
+
+  .storefront-reference-clean .storefront-v3-section{width:calc(100% - 20px)!important;padding-left:0!important;padding-right:0!important}
+  .storefront-reference-clean .storefront-v3-section-head h2{font-size:clamp(28px,9vw,40px)!important;line-height:1.02!important;overflow-wrap:anywhere!important}
+}
+
+@media(max-width:390px){
+  .storefront-reference-clean .mj-native-header{grid-template-columns:34px minmax(70px,1fr) auto!important;padding-inline:6px!important;gap:0 3px!important}
+  .storefront-reference-clean .mj-native-search{width:30px!important}
+  .storefront-reference-clean .mj-native-search svg{width:19px!important;height:19px!important}
+  .storefront-reference-clean .mj-native-logo strong{font-size:26px!important}
+  .storefront-reference-clean .mj-native-logo em{font-size:10px!important}
+  .storefront-reference-clean .mj-native-langs button{min-width:24px!important;width:24px!important;height:26px!important;font-size:8px!important}
+  .storefront-reference-clean .mj-native-account,
+  .storefront-reference-clean .mj-native-cart{width:31px!important;height:31px!important;min-width:31px!important}
+  .storefront-reference-clean .mj-native-nav a{font-size:10px!important;padding-inline:4px!important}
+  .storefront-reference-clean .storefront-v3-hero,
+  .storefront-reference-clean .mj-native-hero{height:438px!important;min-height:438px!important}
+  .storefront-reference-clean .mj-hero-center{padding-top:88px!important}
+  .storefront-reference-clean .mj-hero-center>strong{font-size:47px!important}
+  .storefront-reference-clean .mj-hero-center>em{font-size:25px!important}
+  .storefront-reference-clean .mj-hero-center>span{font-size:9px!important;letter-spacing:.22em!important}
+  .storefront-reference-clean .mj-cover-cta{min-width:205px!important;min-height:45px!important}
+  .storefront-reference-clean .mj-hero-side{width:47%!important;height:42%!important}
+  .storefront-reference-clean .mj-hero-side-title{bottom:calc(100% + 212px)!important}
+  .storefront-reference-clean .storefront-reference-category-media{aspect-ratio:16/6.8!important}
+}
+
+@media(min-width:1500px){
+  .storefront-reference-clean .storefront-reference-categories{max-width:1360px!important}
+  .storefront-reference-clean .storefront-reference-services{max-width:1360px!important}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .storefront-reference-clean .mj-native-brands{animation:none!important}
+  .storefront-reference-clean .storefront-v3-marquee-track{animation:none!important}
+  .storefront-reference-clean *{scroll-behavior:auto!important}
+}

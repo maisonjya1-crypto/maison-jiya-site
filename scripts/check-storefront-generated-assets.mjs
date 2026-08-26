@@ -1,24 +1,31 @@
 import fs from "node:fs";
 
 const enhancement = fs.readFileSync("app/boutique/storefront-approved-design-enhancement.tsx", "utf8");
-const css = fs.readFileSync("app/boutique/storefront-approved-cover.css", "utf8");
+const responsiveCss = fs.readFileSync("app/boutique/storefront-responsive-neutral.css", "utf8");
+const assets = [
+  "public/storefront/brand/hero-men.svg",
+  "public/storefront/brand/hero-women.svg",
+  "public/storefront/brand/category-watch.svg",
+  "public/storefront/brand/category-jewelry.svg",
+  "public/storefront/brand/category-wallet.svg",
+  "public/storefront/brand/category-pack.svg",
+];
 
 const checks = [
   [!enhancement.includes("HERO_IMAGE"), "legacy generated hero data image is removed"],
-  [!enhancement.includes("/storefront/montres.webp"), "corrupted local category WebP references are removed"],
-  [enhancement.includes("showcaseImages.watchMen"), "watch visual is wired"],
-  [enhancement.includes("showcaseImages.watchWomen"), "women watch visual is wired"],
-  [enhancement.includes("showcaseImages.jewelry"), "jewelry visual is wired"],
-  [enhancement.includes("showcaseImages.wallet"), "wallet visual is wired"],
-  [enhancement.includes("mj-pack-collage"), "pack collage is wired"],
+  [!enhancement.includes("/storefront/montres.webp") && !enhancement.includes("data:image/webp;base64"), "corrupted WebP references are removed"],
+  [!enhancement.includes("images.unsplash.com") && !enhancement.includes("pxhere.com"), "external showcase photography is removed"],
+  [enhancement.includes("brandVisuals.heroMen") && enhancement.includes("brandVisuals.heroWomen"), "Maison Jiya gender hero visuals are wired"],
+  [enhancement.includes("brandVisuals.watches") && enhancement.includes("brandVisuals.jewelry") && enhancement.includes("brandVisuals.wallets") && enhancement.includes("brandVisuals.packs"), "all category visuals are wired"],
+  [assets.every((asset) => fs.existsSync(asset) && fs.statSync(asset).size > 500), "all local branded storefront assets exist"],
   [enhancement.includes("mj-cover-cta"), "hero CTA is wired"],
-  [css.includes(".mj-hero-stage"), "responsive hero stage is styled"],
-  [css.includes(".storefront-reference-category-media > img"), "category images are styled as full-card photos"],
-  [css.includes("grid-template-columns:1fr !important"), "single-column mobile categories are enabled"],
+  [responsiveCss.includes(".mj-hero-stage"), "responsive hero stage is styled"],
+  [responsiveCss.includes("@media(max-width:760px)"), "phone-specific layout exists"],
+  [responsiveCss.includes("aspect-ratio:16/7"), "compact single-column mobile categories are enabled"],
 ];
 
 for (const [ok, label] of checks) {
   if (!ok) throw new Error(`Storefront image check failed: ${label}`);
   console.log(`✓ ${label}`);
 }
-console.log("✓ iPhone-safe storefront imagery and framing checks passed");
+console.log("✓ brand-safe and all-device storefront imagery checks passed");
