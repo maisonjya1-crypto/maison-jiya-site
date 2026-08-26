@@ -5,6 +5,7 @@ import { loadStorefrontCatalogFast } from "../../db/storefront-public-fast";
 import StorefrontApprovedDesignEnhancement from "./storefront-approved-design-enhancement";
 import StorefrontCoverInteractions from "./storefront-cover-interactions";
 import StorefrontClientV3 from "./storefront-client-v3";
+import StorefrontWhatsappContactHotfix from "./storefront-whatsapp-contact-hotfix";
 import type { StorefrontCatalog } from "./storefront-types";
 
 export const dynamic = "force-dynamic";
@@ -31,5 +32,6 @@ export default async function BoutiquePage() {
     <StorefrontClientV3 initialCatalog={initialCatalog} />
     <StorefrontApprovedDesignEnhancement />
     <StorefrontCoverInteractions />
+    <StorefrontWhatsappContactHotfix />
   </div>;
 }
