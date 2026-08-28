@@ -1,0 +1,81 @@
+/* Maison Jiya — couverture mobile plus compacte.
+   Cette couche ne s'applique qu'aux téléphones en portrait : desktop/tablette restent inchangés. */
+
+@media (max-width: 760px) and (orientation: portrait) {
+  .storefront-reference-clean .storefront-v3-hero,
+  .storefront-reference-clean .mj-native-hero {
+    height: clamp(395px, 104vw, 500px) !important;
+    height: clamp(395px, min(104vw, 62svh), 500px) !important;
+    min-height: 0 !important;
+  }
+
+  .storefront-reference-clean .mj-hero-center {
+    padding: clamp(62px, 16vw, 78px) 12px clamp(76px, 20vw, 96px) !important;
+  }
+
+  .storefront-reference-clean .mj-hero-ring {
+    top: 33% !important;
+    width: min(70vw, 270px) !important;
+    max-width: 270px !important;
+    transform: translateY(-24%) !important;
+  }
+
+  .storefront-reference-clean .mj-hero-center > strong {
+    font-size: clamp(40px, 12vw, 54px) !important;
+  }
+
+  .storefront-reference-clean .mj-hero-center > em {
+    margin-top: 4px !important;
+    font-size: clamp(20px, 6.4vw, 28px) !important;
+  }
+
+  .storefront-reference-clean .mj-hero-center > span {
+    margin-top: clamp(13px, 4vw, 19px) !important;
+    font-size: clamp(7px, 2.2vw, 9px) !important;
+  }
+
+  .storefront-reference-clean .mj-cover-cta {
+    min-width: min(208px, 70vw) !important;
+    max-width: 74vw !important;
+    min-height: 42px !important;
+    margin-top: clamp(16px, 5vw, 23px) !important;
+    padding: 9px 14px !important;
+  }
+
+  /* Les compositions restent entières au lieu d'être zoomées/coupées. */
+  .storefront-reference-clean .mj-hero-composition {
+    height: clamp(36%, 41vw, 44%) !important;
+    object-fit: contain !important;
+    object-position: center bottom !important;
+  }
+
+  .storefront-reference-clean .mj-hero-side-title {
+    top: clamp(9px, 2.8vw, 16px) !important;
+  }
+}
+
+/* Très petits téléphones : éviter qu'une ancienne règle fixe à 460px reprenne la main. */
+@media (max-width: 360px) and (orientation: portrait) {
+  .storefront-reference-clean .storefront-v3-hero,
+  .storefront-reference-clean .mj-native-hero {
+    height: clamp(380px, 108vw, 420px) !important;
+  }
+
+  .storefront-reference-clean .mj-hero-center {
+    padding-top: 58px !important;
+    padding-bottom: 72px !important;
+  }
+
+  .storefront-reference-clean .mj-hero-center > strong {
+    font-size: 39px !important;
+  }
+
+  .storefront-reference-clean .mj-hero-center > em {
+    font-size: 20px !important;
+  }
+
+  .storefront-reference-clean .mj-cover-cta {
+    min-width: 198px !important;
+    min-height: 40px !important;
+  }
+}
