@@ -1,9 +1,11 @@
 import fs from "node:fs";
 
 const page = fs.readFileSync("app/boutique/page.tsx", "utf8");
+const layout = fs.readFileSync("app/boutique/layout.tsx", "utf8");
 const baseCss = fs.readFileSync("app/boutique/storefront-approved-cover.css", "utf8");
 const responsiveCss = fs.readFileSync("app/boutique/storefront-responsive-neutral.css", "utf8");
 const adaptiveCss = fs.readFileSync("app/boutique/storefront-responsive-neutral-hotfix.css", "utf8");
+const compactMobileCss = fs.readFileSync("app/boutique/storefront-mobile-hero-compact.css", "utf8");
 const enhancement = fs.readFileSync("app/boutique/storefront-approved-design-enhancement.tsx", "utf8");
 
 if (!page.includes("maison-jiya-public-reference-native-v5")) throw new Error("storefront v5 marker missing");
@@ -17,4 +19,8 @@ if (!responsiveCss.includes("@media(max-width:390px)") || !responsiveCss.include
 if (!adaptiveCss.includes("72svh") || !adaptiveCss.includes("orientation: portrait") || !adaptiveCss.includes("orientation: landscape")) throw new Error("viewport shape-aware hero rules missing");
 if (!adaptiveCss.includes("max-height: 560px") || !adaptiveCss.includes("min-width: 761px")) throw new Error("short landscape and tablet hero profiles missing");
 if (/height:\s*480px\s*!important/.test(adaptiveCss) || adaptiveCss.includes("bottom:calc(100%")) throw new Error("legacy fixed mobile hero sizing remains");
-console.log("✓ storefront cover v5 + brand-safe all-device responsive checks passed");
+if (!layout.includes('storefront-mobile-hero-compact.css')) throw new Error("compact mobile hero layer missing from layout");
+if (!compactMobileCss.includes("104vw") || !compactMobileCss.includes("62svh")) throw new Error("compact phone hero sizing missing");
+if (!compactMobileCss.includes("object-fit: contain") || !compactMobileCss.includes("max-width: 760px")) throw new Error("mobile hero safe-fit rules missing");
+if (compactMobileCss.includes("min-width: 761px")) throw new Error("compact mobile layer must not change tablet/desktop layout");
+console.log("✓ storefront cover v5 + compact mobile + brand-safe all-device responsive checks passed");
