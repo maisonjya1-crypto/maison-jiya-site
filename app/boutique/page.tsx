@@ -5,6 +5,7 @@ import { loadStorefrontCatalogFast } from "../../db/storefront-public-fast";
 import StorefrontApprovedDesignEnhancement from "./storefront-approved-design-enhancement";
 import StorefrontCoverInteractions from "./storefront-cover-interactions";
 import StorefrontClientV3 from "./storefront-client-v3";
+import StorefrontMobileHeroProducts from "./storefront-mobile-hero-products";
 import StorefrontWhatsappContactHotfix from "./storefront-whatsapp-contact-hotfix";
 import type { StorefrontCatalog } from "./storefront-types";
 
@@ -31,6 +32,7 @@ export default async function BoutiquePage() {
   return <div className="storefront-approved-design storefront-reference-exact storefront-reference-clean" data-storefront-deployment={STOREFRONT_DEPLOYMENT_MARKER}>
     <StorefrontClientV3 initialCatalog={initialCatalog} />
     <StorefrontApprovedDesignEnhancement />
+    <StorefrontMobileHeroProducts />
     <StorefrontCoverInteractions />
     <StorefrontWhatsappContactHotfix />
   </div>;
