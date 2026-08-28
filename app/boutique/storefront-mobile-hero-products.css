@@ -1,0 +1,40 @@
+/* Maison Jiya — compositions produit dédiées aux téléphones portrait.
+   Les visuels desktop restent inchangés. */
+@media (max-width: 760px) and (orientation: portrait) {
+  .storefront-reference-clean .mj-hero-side {
+    overflow: hidden !important;
+  }
+
+  .storefront-reference-clean .mj-hero-composition[data-mobile-hero-product='true'] {
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    object-fit: cover !important;
+    object-position: center bottom !important;
+    border-radius: 0 !important;
+    opacity: .96 !important;
+  }
+
+  .storefront-reference-clean .mj-hero-men .mj-hero-composition[data-mobile-hero-product='true'] {
+    object-position: 48% bottom !important;
+  }
+
+  .storefront-reference-clean .mj-hero-women .mj-hero-composition[data-mobile-hero-product='true'] {
+    object-position: 52% bottom !important;
+  }
+
+  /* Le centre reste lisible mais laisse davantage respirer les produits latéraux. */
+  .storefront-reference-clean .mj-hero-center {
+    background: radial-gradient(circle at 50% 52%, rgba(4,3,2,.84) 0 24%, rgba(4,3,2,.62) 42%, rgba(4,3,2,.16) 68%, transparent 78%) !important;
+  }
+
+  .storefront-reference-clean .mj-hero-ring {
+    opacity: .82 !important;
+  }
+
+  .storefront-reference-clean .mj-hero-side-title {
+    z-index: 12 !important;
+    backdrop-filter: blur(2px) !important;
+  }
+}
