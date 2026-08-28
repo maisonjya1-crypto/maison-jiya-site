@@ -56,8 +56,8 @@ jobs:
       - name: Validate storefront cover v5
         run: node scripts/check-storefront-cover-v5.mjs
 
-      - name: Run rendered HTML tests
-        run: node --test tests/rendered-html.test.mjs
+      - name: Run all source and rendered HTML tests
+        run: node --test tests/*.test.mjs
 
       - name: Production smoke diagnostic
         continue-on-error: true

@@ -10,6 +10,7 @@ type UiCopy = {
   catalogue: string; offers: string; contact: string; search: string; categories: string; categoriesSub: string;
   watches: string; jewelry: string; wallets: string; packs: string; view: string; discover: string;
   men: string; women: string; heroLine1: string; heroLine2: string;
+  cart: string; navigation: string; brands: string; services: string;
   freeDelivery: string; freeDeliverySub: string; cod: string; codSub: string;
   customerService: string; customerServiceSub: string; satisfaction: string; satisfactionSub: string;
 };
@@ -20,6 +21,7 @@ const ui: Record<Language, UiCopy> = {
     categories: "NOS CATÉGORIES", categoriesSub: "Découvrez nos collections soigneusement sélectionnées",
     watches: "MONTRES", jewelry: "BIJOUX", wallets: "PORTEFEUILLES", packs: "PACKS", view: "Voir →", discover: "Découvrir la collection",
     men: "HOMME", women: "FEMME", heroLine1: "Montres, bijoux et portefeuilles sélectionnés avec soin.", heroLine2: "L’élégance à chaque instant.",
+    cart: "Panier", navigation: "Navigation de la boutique", brands: "Marques", services: "Services Maison Jiya",
     freeDelivery: "Livraison gratuite", freeDeliverySub: "Partout au Maroc", cod: "Paiement à la livraison", codSub: "Vous payez à la réception",
     customerService: "Service client", customerServiceSub: "À votre écoute 7j/7", satisfaction: "Satisfaction garantie", satisfactionSub: "Votre satisfaction d’abord",
   },
@@ -28,6 +30,7 @@ const ui: Record<Language, UiCopy> = {
     categories: "فئاتنا", categoriesSub: "اكتشف مجموعاتنا المختارة بعناية",
     watches: "الساعات", jewelry: "المجوهرات", wallets: "المحافظ", packs: "الباقات", view: "عرض ←", discover: "اكتشف المجموعة",
     men: "رجالية", women: "نسائية", heroLine1: "ساعات ومجوهرات ومحافظ مختارة بعناية.", heroLine2: "أناقة في كل لحظة.",
+    cart: "السلة", navigation: "التنقل في المتجر", brands: "العلامات", services: "خدمات Maison Jiya",
     freeDelivery: "توصيل مجاني", freeDeliverySub: "إلى جميع أنحاء المغرب", cod: "الدفع عند الاستلام", codSub: "تدفع عند الاستلام",
     customerService: "خدمة الزبناء", customerServiceSub: "في خدمتك 7 أيام", satisfaction: "رضاكم أولويتنا", satisfactionSub: "خدمة موثوقة قبل كل شيء",
   },
@@ -36,8 +39,9 @@ const ui: Record<Language, UiCopy> = {
     categories: "OUR CATEGORIES", categoriesSub: "Discover our carefully selected collections",
     watches: "WATCHES", jewelry: "JEWELRY", wallets: "WALLETS", packs: "PACKS", view: "View →", discover: "Discover the collection",
     men: "MEN", women: "WOMEN", heroLine1: "Carefully selected watches, jewelry and wallets.", heroLine2: "Elegance for every moment.",
+    cart: "Cart", navigation: "Store navigation", brands: "Brands", services: "Maison Jiya services",
     freeDelivery: "Free delivery", freeDeliverySub: "Across Morocco", cod: "Cash on delivery", codSub: "Pay when you receive it",
-    customerService: "Customer service", customerServiceSub: "Here for you 7 days a week", satisfaction: "Satisfaction first", satisfactionSub: "Reliable service first",
+    customerService: "Customer service", customerServiceSub: "Here for you seven days a week", satisfaction: "Your satisfaction matters", satisfactionSub: "Reliable service, every time",
   },
 };
 
@@ -55,6 +59,13 @@ const brandVisuals = {
 
 function normalize(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function documentLanguage(): Language {
+  const value = document.documentElement.lang.toLowerCase();
+  if (value.startsWith("ar")) return "ar";
+  if (value.startsWith("en")) return "en";
+  return "fr";
 }
 
 function firstMatching(items: CatalogItem[], terms: string[]) {
@@ -79,6 +90,14 @@ export default function StorefrontApprovedDesignEnhancement() {
   const [afterBrandHost, setAfterBrandHost] = useState<HTMLElement | null>(null);
   const [lang, setLang] = useState<Language>("fr");
   const [catalog, setCatalog] = useState<StorefrontCatalog | null>(null);
+
+  useEffect(() => {
+    const syncLanguage = () => setLang(documentLanguage());
+    syncLanguage();
+    const observer = new MutationObserver(syncLanguage);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     let attempts = 0;
@@ -184,9 +203,9 @@ export default function StorefrontApprovedDesignEnhancement() {
           <button className={lang === "en" ? "active" : ""} onClick={() => switchLanguage("en")}>EN</button>
         </div>
         <a className="mj-native-account" href="#contact" aria-label={t.contact}>♙</a>
-        <button className="mj-native-cart" type="button" onClick={openCart} aria-label="Panier">▢</button>
+        <button className="mj-native-cart" type="button" onClick={openCart} aria-label={t.cart}>▢</button>
       </div>
-      <nav className="mj-native-nav" aria-label="Navigation boutique">
+      <nav className="mj-native-nav" aria-label={t.navigation}>
         <a href="#catalogue">{t.catalogue}</a><a href="#offres">{t.offers}</a><a href="#contact">{t.contact}</a>
       </nav>
     </div>, header)}
@@ -211,12 +230,12 @@ export default function StorefrontApprovedDesignEnhancement() {
       </div>
     </section>, hero)}
 
-    {brandStrip && createPortal(<div className="mj-native-brands" aria-label="Marques">
+    {brandStrip && createPortal(<div className="mj-native-brands" aria-label={t.brands}>
       {[...referenceBrands, ...referenceBrands].map((brand, index) => <span key={`${brand}-${index}`}>{brand}</span>)}
     </div>, brandStrip)}
 
     {afterBrandHost && createPortal(<>
-      <section className="storefront-reference-services" aria-label="Services Maison Jiya">
+      <section className="storefront-reference-services" aria-label={t.services}>
         <article><ServiceIcon kind="delivery" /><div><strong>{t.freeDelivery}</strong><span>{t.freeDeliverySub}</span></div></article>
         <article><ServiceIcon kind="payment" /><div><strong>{t.cod}</strong><span>{t.codSub}</span></div></article>
         <article><ServiceIcon kind="support" /><div><strong>{t.customerService}</strong><span>{t.customerServiceSub}</span></div></article>

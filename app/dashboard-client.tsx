@@ -293,10 +293,12 @@ export default function DashboardClient() {
   const [printOrder, setPrintOrder] = useState<Order | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [authChecking, setAuthChecking] = useState(true);
   const [authRequired, setAuthRequired] = useState(false);
   const [authConfigured, setAuthConfigured] = useState(true);
 
   const loadData = useCallback(async () => {
+    setAuthChecking(true);
     setLoading(true);
     setError("");
     try {
@@ -317,6 +319,7 @@ export default function DashboardClient() {
       setError(caught instanceof Error ? caught.message : "Données indisponibles");
     } finally {
       setLoading(false);
+      setAuthChecking(false);
     }
   }, []);
   useEffect(() => {
@@ -542,6 +545,9 @@ export default function DashboardClient() {
   const currentTheme = safeTheme(data.settings.theme);
   const carrierNames = parseCarrierNames(data.settings);
 
+  if (authChecking) {
+    return <main className="auth-shell auth-loading-shell"><Loading /></main>;
+  }
   if (authRequired) {
     return <AuthPage configured={authConfigured} onAuthenticated={() => void loadData()} />;
   }

@@ -109,7 +109,7 @@
   .storefront-reference-clean .mj-hero-women{right:0!important}
   .storefront-reference-clean .mj-hero-composition{width:100%!important;height:100%!important;object-fit:cover!important;object-position:center bottom!important;border-radius:18px 18px 0 0!important;opacity:.95!important}
   .storefront-reference-clean .mj-hero-side::after{background:linear-gradient(180deg,rgba(4,3,2,.08),transparent 62%,rgba(0,0,0,.12))!important}
-  .storefront-reference-clean .mj-hero-side-title{position:fixed!important;position:absolute!important;top:auto!important;bottom:calc(100% + 208px)!important;transform:none!important;min-width:0!important;width:auto!important;padding:8px 10px!important;border-radius:10px!important;background:rgba(7,6,4,.78)!important;white-space:nowrap!important}
+  .storefront-reference-clean .mj-hero-side-title{position:absolute!important;top:auto!important;bottom:calc(100% + 208px)!important;transform:none!important;min-width:0!important;width:auto!important;padding:8px 10px!important;border-radius:10px!important;background:rgba(7,6,4,.78)!important;white-space:nowrap!important}
   .storefront-reference-clean .mj-hero-men .mj-hero-side-title{left:14px!important}
   .storefront-reference-clean .mj-hero-women .mj-hero-side-title{left:auto!important;right:14px!important}
   .storefront-reference-clean .mj-hero-side-title span{font-size:9px!important;letter-spacing:.1em!important}

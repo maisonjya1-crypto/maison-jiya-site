@@ -31,5 +31,7 @@ test("renders development preview metadata", async () => {
   );
   const html = await response.text();
   assert.match(html, developmentPreviewMeta);
-  assert.match(html, /Assistant IA/);
+  assert.match(html, /auth-loading-shell/);
+  assert.match(html, /Préparation de votre espace de pilotage/);
+  assert.doesNotMatch(html, /Assistant IA/);
 });

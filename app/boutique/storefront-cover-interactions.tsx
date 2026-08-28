@@ -2,6 +2,21 @@
 
 import { useEffect } from "react";
 
+type Language = "fr" | "ar" | "en";
+
+const hotspotCopy: Record<Language, { men: string; women: string }> = {
+  fr: { men: "Voir les montres homme", women: "Voir les montres femme" },
+  ar: { men: "عرض الساعات الرجالية", women: "عرض الساعات النسائية" },
+  en: { men: "View men’s watches", women: "View women’s watches" },
+};
+
+function currentLanguage(): Language {
+  const value = document.documentElement.lang.toLowerCase();
+  if (value.startsWith("ar")) return "ar";
+  if (value.startsWith("en")) return "en";
+  return "fr";
+}
+
 function normalize(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
@@ -60,6 +75,7 @@ export default function StorefrontCoverInteractions() {
     let stopped = false;
     let timer = 0;
     let cleanupHotspots: (() => void) | undefined;
+    let languageObserver: MutationObserver | undefined;
 
     const mount = () => {
       if (stopped) return;
@@ -84,9 +100,20 @@ export default function StorefrontCoverInteractions() {
         return link;
       };
 
-      const men = makeHotspot("mj-cover-hotspot-men", "Voir les montres homme", "homme");
-      const women = makeHotspot("mj-cover-hotspot-women", "Voir les montres femme", "femme");
+      const initialCopy = hotspotCopy[currentLanguage()];
+      const men = makeHotspot("mj-cover-hotspot-men", initialCopy.men, "homme");
+      const women = makeHotspot("mj-cover-hotspot-women", initialCopy.women, "femme");
+      const syncLabels = () => {
+        const translated = hotspotCopy[currentLanguage()];
+        men.textContent = translated.men;
+        men.setAttribute("aria-label", translated.men);
+        women.textContent = translated.women;
+        women.setAttribute("aria-label", translated.women);
+      };
+      languageObserver = new MutationObserver(syncLabels);
+      languageObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] });
       cleanupHotspots = () => {
+        languageObserver?.disconnect();
         men.remove();
         women.remove();
       };
@@ -96,6 +123,7 @@ export default function StorefrontCoverInteractions() {
     return () => {
       stopped = true;
       window.clearTimeout(timer);
+      languageObserver?.disconnect();
       cleanupHotspots?.();
     };
   }, []);
