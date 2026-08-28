@@ -14,6 +14,7 @@ import "./storefront-final-hotfix.css";
 import "./storefront-approved-cover.css";
 import "./storefront-responsive-neutral.css";
 import "./storefront-responsive-neutral-hotfix.css";
+import "./storefront-mobile-hero-compact.css";
 import "./storefront-whatsapp-contact-hotfix.css";
 
 export const metadata: Metadata = {
