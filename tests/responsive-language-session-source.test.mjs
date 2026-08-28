@@ -8,6 +8,7 @@ const interactions = fs.readFileSync("app/boutique/storefront-cover-interactions
 const dashboard = fs.readFileSync("app/dashboard-client.tsx", "utf8");
 const globals = fs.readFileSync("app/globals.css", "utf8");
 const responsive = fs.readFileSync("app/boutique/storefront-responsive-neutral.css", "utf8");
+const adaptiveHero = fs.readFileSync("app/boutique/storefront-responsive-neutral-hotfix.css", "utf8");
 
 test("saved storefront language and cart are restored before persistence starts", () => {
   assert.match(storefront, /const \[preferencesLoaded, setPreferencesLoaded\] = useState\(false\)/);
@@ -35,4 +36,15 @@ test("the private dashboard stays behind an authentication loading gate", () => 
 test("the final mobile hero rule has one unambiguous positioning mode", () => {
   assert.doesNotMatch(responsive, /position:fixed!important;position:absolute!important/);
   assert.match(responsive, /\.mj-hero-side-title\{position:absolute!important/);
+});
+
+test("the cover adapts to viewport height, orientation and tablet shapes", () => {
+  assert.match(adaptiveHero, /min\(42vw, 72svh\)/);
+  assert.match(adaptiveHero, /min-width: 761px/);
+  assert.match(adaptiveHero, /orientation: portrait/);
+  assert.match(adaptiveHero, /orientation: landscape/);
+  assert.match(adaptiveHero, /max-height: 560px/);
+  assert.match(adaptiveHero, /calc\(100svh - 145px\)/);
+  assert.doesNotMatch(adaptiveHero, /height:\s*480px\s*!important/);
+  assert.doesNotMatch(adaptiveHero, /bottom:calc\(100%/);
 });

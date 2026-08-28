@@ -1,11 +1,242 @@
-/* Correctif final mobile : les étiquettes Homme/Femme restent dans le hero sans être rognées. */
-@media(max-width:760px){
-  .storefront-reference-clean .mj-hero-side{overflow:visible!important}
-  .storefront-reference-clean .mj-hero-side-title{
-    position:absolute!important;
-    top:auto!important;
-    bottom:calc(100% + clamp(180px,50vw,210px))!important;
-    transform:none!important;
-  }
-  .storefront-reference-clean .mj-hero-composition{overflow:hidden!important}
+/* Maison Jiya — adaptation finale du hero à la forme réelle de l’écran.
+   Cette couche est importée en dernier et remplace les anciennes hauteurs fixes. */
+
+.storefront-reference-clean .storefront-v3-hero,
+.storefront-reference-clean .mj-native-hero {
+  height: clamp(480px, 42vw, 680px) !important;
+  height: clamp(480px, min(42vw, 72svh), 680px) !important;
+  min-height: 0 !important;
+  max-height: none !important;
 }
+
+/* Tablettes et appareils pliables : les compositions carrées restent entières. */
+@media (min-width: 761px) and (max-width: 1180px) {
+  .storefront-reference-clean .storefront-v3-hero,
+  .storefront-reference-clean .mj-native-hero {
+    height: clamp(470px, 56vw, 620px) !important;
+    height: clamp(470px, min(56vw, 72svh), 620px) !important;
+  }
+
+  .storefront-reference-clean .mj-hero-stage {
+    grid-template-columns: minmax(170px, .95fr) minmax(300px, 1.2fr) minmax(170px, .95fr) !important;
+  }
+
+  .storefront-reference-clean .mj-hero-side {
+    background: radial-gradient(circle at 50% 72%, #2b1c10, #080705 66%) !important;
+  }
+
+  .storefront-reference-clean .mj-hero-composition {
+    inset: auto 0 0 !important;
+    height: 82% !important;
+    object-fit: contain !important;
+    object-position: center bottom !important;
+  }
+
+  .storefront-reference-clean .mj-hero-center {
+    padding-inline: 14px !important;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1180px) and (orientation: portrait) {
+  .storefront-reference-clean .storefront-v3-hero,
+  .storefront-reference-clean .mj-native-hero {
+    height: clamp(540px, 75vw, 680px) !important;
+    height: clamp(540px, min(75vw, 68svh), 680px) !important;
+  }
+
+  .storefront-reference-clean .mj-hero-composition {
+    height: 72% !important;
+  }
+
+  .storefront-reference-clean .mj-hero-side-title {
+    top: clamp(24px, 5vw, 46px) !important;
+  }
+}
+
+/* Téléphones en portrait : structure dédiée, dimensionnée par largeur ET hauteur. */
+@media (max-width: 760px) and (orientation: portrait) {
+  .storefront-reference-clean .storefront-v3-hero,
+  .storefront-reference-clean .mj-native-hero {
+    height: clamp(460px, 122vw, 600px) !important;
+    height: clamp(460px, min(122vw, 72svh), 600px) !important;
+  }
+
+  .storefront-reference-clean .mj-hero-stage {
+    position: relative !important;
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  .storefront-reference-clean .mj-hero-side {
+    position: absolute !important;
+    z-index: 2 !important;
+    top: 0 !important;
+    bottom: auto !important;
+    width: 50% !important;
+    height: 100% !important;
+    overflow: visible !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  .storefront-reference-clean .mj-hero-men { left: 0 !important; right: auto !important; }
+  .storefront-reference-clean .mj-hero-women { right: 0 !important; left: auto !important; }
+
+  .storefront-reference-clean .mj-hero-composition {
+    position: absolute !important;
+    inset: auto 0 0 !important;
+    width: 100% !important;
+    height: clamp(42%, 47vw, 49%) !important;
+    object-fit: cover !important;
+    object-position: center bottom !important;
+    border-radius: 18px 18px 0 0 !important;
+  }
+
+  .storefront-reference-clean .mj-hero-side-title {
+    position: absolute !important;
+    top: clamp(12px, 3.8vw, 22px) !important;
+    bottom: auto !important;
+    min-width: clamp(82px, 27vw, 112px) !important;
+    width: auto !important;
+    padding: 7px clamp(6px, 2vw, 10px) !important;
+    transform: none !important;
+    border-radius: 9px !important;
+    white-space: nowrap !important;
+  }
+
+  .storefront-reference-clean .mj-hero-men .mj-hero-side-title { left: clamp(8px, 3vw, 15px) !important; right: auto !important; }
+  .storefront-reference-clean .mj-hero-women .mj-hero-side-title { right: clamp(8px, 3vw, 15px) !important; left: auto !important; }
+  .storefront-reference-clean .mj-hero-side-title span { font-size: clamp(7px, 2.2vw, 9px) !important; }
+  .storefront-reference-clean .mj-hero-side-title strong { font-size: clamp(14px, 4.5vw, 18px) !important; }
+
+  .storefront-reference-clean .mj-hero-center {
+    position: absolute !important;
+    z-index: 8 !important;
+    inset: 0 !important;
+    justify-content: flex-start !important;
+    padding: clamp(76px, 20vw, 94px) 12px clamp(104px, 27vw, 132px) !important;
+  }
+
+  .storefront-reference-clean .mj-hero-ring {
+    top: 34% !important;
+    width: min(76vw, 300px) !important;
+    max-width: 300px !important;
+    transform: translateY(-26%) !important;
+  }
+
+  .storefront-reference-clean .mj-hero-center > strong { font-size: clamp(46px, 14vw, 62px) !important; }
+  .storefront-reference-clean .mj-hero-center > em { margin-top: 6px !important; font-size: clamp(23px, 7.4vw, 32px) !important; }
+  .storefront-reference-clean .mj-hero-center > span {
+    margin-top: clamp(18px, 5.5vw, 26px) !important;
+    font-size: clamp(8px, 2.5vw, 10px) !important;
+    letter-spacing: clamp(.18em, .8vw, .28em) !important;
+  }
+  .storefront-reference-clean .mj-hero-center > p,
+  .storefront-reference-clean .mj-hero-mini-cats { display: none !important; }
+  .storefront-reference-clean .mj-cover-cta {
+    width: auto !important;
+    min-width: min(220px, 72vw) !important;
+    max-width: 78vw !important;
+    min-height: 46px !important;
+    margin-top: clamp(22px, 7vw, 32px) !important;
+    padding: 10px 16px !important;
+    font-size: clamp(9px, 2.8vw, 11px) !important;
+  }
+
+  .storefront-reference-clean .mj-cover-hotspot {
+    top: 0 !important;
+    width: 36% !important;
+    height: 100% !important;
+  }
+}
+
+/* Très petits téléphones : aucun texte ni CTA ne sort du hero. */
+@media (max-width: 360px) and (orientation: portrait) {
+  .storefront-reference-clean .storefront-v3-hero,
+  .storefront-reference-clean .mj-native-hero { height: 460px !important; }
+  .storefront-reference-clean .mj-hero-center { padding-top: 74px !important; }
+  .storefront-reference-clean .mj-hero-center > strong { font-size: 44px !important; }
+  .storefront-reference-clean .mj-hero-center > em { font-size: 22px !important; }
+  .storefront-reference-clean .mj-cover-cta { min-width: 204px !important; }
+}
+
+/* Paysage court (téléphone, tablette ou laptop bas) : vraie composition horizontale. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .storefront-reference-clean .storefront-v3-hero,
+  .storefront-reference-clean .mj-native-hero {
+    height: clamp(280px, 60vw, 420px) !important;
+    height: clamp(280px, calc(100svh - 145px), 420px) !important;
+  }
+
+  .storefront-reference-clean .mj-hero-stage {
+    position: relative !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(230px, 1.15fr) minmax(0, 1fr) !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  .storefront-reference-clean .mj-hero-side {
+    position: relative !important;
+    inset: auto !important;
+    width: auto !important;
+    height: 100% !important;
+    overflow: hidden !important;
+    background: #080705 !important;
+  }
+
+  .storefront-reference-clean .mj-hero-composition {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    object-position: center bottom !important;
+    border-radius: 0 !important;
+  }
+
+  .storefront-reference-clean .mj-hero-men .mj-hero-side-title,
+  .storefront-reference-clean .mj-hero-women .mj-hero-side-title {
+    top: 6% !important;
+    bottom: auto !important;
+    left: 50% !important;
+    right: auto !important;
+    min-width: clamp(86px, 14vw, 132px) !important;
+    padding: 7px 9px !important;
+    transform: translateX(-50%) !important;
+  }
+  .storefront-reference-clean .mj-hero-side-title span { font-size: 8px !important; }
+  .storefront-reference-clean .mj-hero-side-title strong { font-size: clamp(14px, 2.6vw, 20px) !important; }
+
+  .storefront-reference-clean .mj-hero-center {
+    position: relative !important;
+    inset: auto !important;
+    justify-content: center !important;
+    padding: 20px 8px 14px !important;
+  }
+  .storefront-reference-clean .mj-hero-ring {
+    top: auto !important;
+    width: min(82%, 280px) !important;
+    max-width: 280px !important;
+    transform: none !important;
+  }
+  .storefront-reference-clean .mj-hero-center > strong { font-size: clamp(40px, 7vw, 58px) !important; }
+  .storefront-reference-clean .mj-hero-center > em { margin-top: 4px !important; font-size: clamp(19px, 3.7vw, 27px) !important; }
+  .storefront-reference-clean .mj-hero-center > span { margin-top: 13px !important; font-size: 8px !important; letter-spacing: .18em !important; }
+  .storefront-reference-clean .mj-hero-center > p,
+  .storefront-reference-clean .mj-hero-mini-cats { display: none !important; }
+  .storefront-reference-clean .mj-cover-cta {
+    width: auto !important;
+    min-width: min(190px, 80%) !important;
+    min-height: 40px !important;
+    margin-top: 14px !important;
+    padding: 8px 12px !important;
+    font-size: 9px !important;
+  }
+  .storefront-reference-clean .mj-cover-hotspot { top: 0 !important; width: 30% !important; height: 100% !important; }
+}
+
+/* La langue RTL modifie les textes, jamais la composition de la couverture. */
+.storefront-v3[dir='rtl'] .mj-native-hero,
+.storefront-v3[dir='ltr'] .mj-native-hero { direction: ltr !important; transform: none !important; }
