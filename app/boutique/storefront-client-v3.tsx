@@ -102,7 +102,7 @@ const copy: Record<StorefrontLanguage, Copy> = {
   en: {
     officialStore: "Official store", catalogue: "Catalog", offers: "Offers", howToOrder: "How to order", contact: "Contact", cart: "Cart",
     discover: "Discover the collection", whatsapp: "WhatsApp", cashOnDelivery: "Cash on delivery", confirmation: "Confirmed by our team", moroccoDelivery: "Delivery across Morocco",
-    weeklyPromo: "WEEKLY PROMOTION", weeklyPromoKicker: "Current offers", bestSellers: "BEST SELLERS", bestSellersKicker: "Customer favorites", bestSellerText: "A selection of models appreciated by our customers.",
+    weeklyPromo: "WEEKLY PROMOTION", weeklyPromoKicker: "Current offers", bestSellers: "BEST SELLERS", bestSellersKicker: "Customer favorites", bestSellerText: "A selection of customer-favorite styles.",
     collections: "OUR COLLECTIONS", collectionsKicker: "Choose your style", packs: "OUR PACKS", packsKicker: "Offers selected for you", allProducts: "ALL MODELS",
     search: "Search", searchPlaceholder: "Watch, wallet, reference…", category: "Category", allCategories: "All categories", products: "items", loading: "Loading catalog…",
     unavailable: "Unavailable", addToCart: "Add to cart", viewProduct: "View product", loadMore: "Show more", yourCart: "Your cart", emptyCart: "Your cart is empty.", total: "Total", checkout: "Checkout",
@@ -187,6 +187,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const [loading, setLoading] = useState(!initialCatalog);
   const [error, setError] = useState("");
   const [lang, setLang] = useState<StorefrontLanguage>("fr");
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Tous");
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
@@ -229,6 +230,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         const savedCart = localStorage.getItem("maison-jiya-cart-v3");
         if (savedCart) setCart(JSON.parse(savedCart) as Cart);
       } catch { /* stockage facultatif */ }
+      setPreferencesLoaded(true);
       const params = new URLSearchParams(window.location.search);
       setUtm({ source: params.get("utm_source") || "", medium: params.get("utm_medium") || "", campaign: params.get("utm_campaign") || "" });
     }, 0);
@@ -238,12 +240,14 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   useEffect(() => {
     document.documentElement.lang = lang;
     document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+    if (!preferencesLoaded) return;
     try { localStorage.setItem("maison-jiya-language-v3", lang); } catch { /* facultatif */ }
-  }, [lang]);
+  }, [lang, preferencesLoaded]);
 
   useEffect(() => {
+    if (!preferencesLoaded) return;
     try { localStorage.setItem("maison-jiya-cart-v3", JSON.stringify(cart)); } catch { /* facultatif */ }
-  }, [cart]);
+  }, [cart, preferencesLoaded]);
 
   useEffect(() => {
     if (initialCatalog) {
