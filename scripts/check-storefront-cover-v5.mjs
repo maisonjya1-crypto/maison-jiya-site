@@ -3,6 +3,7 @@ import fs from "node:fs";
 const page = fs.readFileSync("app/boutique/page.tsx", "utf8");
 const baseCss = fs.readFileSync("app/boutique/storefront-approved-cover.css", "utf8");
 const responsiveCss = fs.readFileSync("app/boutique/storefront-responsive-neutral.css", "utf8");
+const adaptiveCss = fs.readFileSync("app/boutique/storefront-responsive-neutral-hotfix.css", "utf8");
 const enhancement = fs.readFileSync("app/boutique/storefront-approved-design-enhancement.tsx", "utf8");
 
 if (!page.includes("maison-jiya-public-reference-native-v5")) throw new Error("storefront v5 marker missing");
@@ -13,4 +14,7 @@ if (!responsiveCss.includes("storefront-reference-category-media>img")) throw ne
 if (!enhancement.includes("mj-hero-stage") || enhancement.includes("data:image/webp;base64")) throw new Error("stable responsive hero missing");
 if (enhancement.includes("images.unsplash.com") || enhancement.includes("pxhere.com")) throw new Error("third-party product imagery remains");
 if (!responsiveCss.includes("@media(max-width:390px)") || !responsiveCss.includes("@media(max-width:760px)")) throw new Error("small and standard phone layouts missing");
+if (!adaptiveCss.includes("72svh") || !adaptiveCss.includes("orientation: portrait") || !adaptiveCss.includes("orientation: landscape")) throw new Error("viewport shape-aware hero rules missing");
+if (!adaptiveCss.includes("max-height: 560px") || !adaptiveCss.includes("min-width: 761px")) throw new Error("short landscape and tablet hero profiles missing");
+if (/height:\s*480px\s*!important/.test(adaptiveCss) || adaptiveCss.includes("bottom:calc(100%")) throw new Error("legacy fixed mobile hero sizing remains");
 console.log("✓ storefront cover v5 + brand-safe all-device responsive checks passed");
