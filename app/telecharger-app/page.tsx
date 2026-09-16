@@ -56,7 +56,7 @@ export default function DownloadAndroidApp() {
           color: "#6f5680",
           fontSize: 12,
           fontWeight: 800,
-        }}>ANDROID · VERSION 2.3</span>
+        }}>ANDROID · VERSION 2.5</span>
 
         <h1 style={{ margin: "18px 0 10px", fontSize: "clamp(28px, 7vw, 46px)", lineHeight: 1.02 }}>
           Maison Jiya Gestion
@@ -68,7 +68,7 @@ export default function DownloadAndroidApp() {
 
         <a
           href={apkPath}
-          download="Maison-Jiya-Gestion-Android-2.3.apk"
+          download="Maison-Jiya-Gestion-Android-2.5.apk"
           style={{
             display: "flex",
             alignItems: "center",
