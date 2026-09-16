@@ -1,5 +1,6 @@
 name: Build Maison Jiya Android App
 
+# Trigger rebuild for Android 2.5 publication; this line will be removed before merge.
 on:
   pull_request:
     branches:
