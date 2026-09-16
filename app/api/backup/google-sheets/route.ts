@@ -28,6 +28,13 @@ function secureEqual(left: string, right: string) {
   return difference === 0;
 }
 
+function backupKeyFromRequest(request: Request, url: URL) {
+  const authorization = request.headers.get("authorization") || "";
+  const bearerMatch = authorization.match(/^Bearer\s+([A-Za-z0-9_-]{32,200})$/i);
+  if (bearerMatch) return bearerMatch[1];
+  return url.searchParams.get("key") || "";
+}
+
 function safeText(value: unknown) {
   if (value === null || value === undefined) return "";
   if (typeof value === "number") return String(value);
@@ -71,7 +78,7 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const dataset = url.searchParams.get("dataset") || "";
-    const key = url.searchParams.get("key") || "";
+    const key = backupKeyFromRequest(request, url);
     if (!datasetNames.has(dataset)) return Response.json({ error: "Jeu de données inconnu." }, { status: 400 });
     if (key.length < 32 || key.length > 200) return Response.json({ error: "Accès refusé." }, { status: 401 });
 
