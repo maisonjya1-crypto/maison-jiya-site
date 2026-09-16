@@ -134,28 +134,31 @@ const gradle = await readText("android/app/build.gradle");
 assert.match(gradle, /versionCode\s+7/);
 assert.match(gradle, /versionName\s+'2\.5\.0'/);
 
-// Le téléchargement public reste sur le dernier APK signé 2.3 jusqu'à publication d'un nouveau paquet signé et vérifié.
-const chunkTexts = await Promise.all([1, 2, 3, 4].map((number) => readText(`app/api/download/android/apk-chunk-${number}.ts`)));
+// Le téléchargement public doit reconstruire exactement l'APK 2.5 signé et vérifié.
+const chunkTexts = await Promise.all([1, 2, 3, 4, 5, 6, 7, 8].map((number) => readText(`app/api/download/android/apk-chunk-${number}.ts`)));
 const chunkValues = chunkTexts.map((source, index) => {
   const pieces = [...source.matchAll(/"([A-Za-z0-9+/=]{100,})"/g)].map((match) => match[1]);
   assert.ok(pieces.length > 0, `Partie APK ${index + 1} illisible.`);
   return pieces.join("");
 });
-chunkValues[3] = chunkValues[3].replace("HdlckIA", `HdlckIA${"A".repeat(24)}`);
 const apkBase64 = chunkValues.join("");
 const apkBytes = Buffer.from(apkBase64, "base64");
-assert.equal(apkBytes.length, 17087, "Taille APK 2.3 incorrecte.");
+assert.equal(apkBytes.length, 25279, "Taille APK 2.5 incorrecte.");
 assert.equal(apkBytes[0], 0x50);
 assert.equal(apkBytes[1], 0x4b);
 assert.equal(
   createHash("sha256").update(apkBytes).digest("hex"),
-  "077d1a696da9124e7ef3982ca3502f3f6982d8da716307d2dd63cb6ee925374c",
-  "Empreinte APK 2.3 incorrecte.",
+  "d494cb4910dc4ef802ea8952751ad2f7c02934bed6eb794420c8d0c54f581fb3",
+  "Empreinte APK 2.5 incorrecte.",
 );
 
 const downloadRoute = await readText("app/api/download/android/route.ts");
 assert.match(downloadRoute, /application\/vnd\.android\.package-archive/);
+assert.match(downloadRoute, /Maison-Jiya-Gestion-Android-2\.5\.apk/);
+assert.match(downloadRoute, /EXPECTED_SIZE\s*=\s*25279/);
 const downloadPage = await readText("app/telecharger-app/page.tsx");
 assert.match(downloadPage, /\/api\/download\/android/);
+assert.match(downloadPage, /ANDROID · VERSION 2\.5/);
+assert.match(downloadPage, /Maison-Jiya-Gestion-Android-2\.5\.apk/);
 
 console.log("Responsive validation (private iPhone/Android/tablet + public storefront + Android 2.5): OK");
