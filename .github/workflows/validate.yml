@@ -29,6 +29,18 @@ jobs:
       - name: Dependency audit diagnostic
         run: npm audit --json || true
 
+      - name: Dependency version diagnostic
+        run: |
+          echo "next=$(npm view next version)"
+          echo "react=$(npm view react version)"
+          echo "react-dom=$(npm view react-dom version)"
+          echo "react-server-dom-webpack=$(npm view react-server-dom-webpack version)"
+          echo "react-server-dom-webpack-19.2=$(npm view react-server-dom-webpack@19.2 version --json | tr -d '\n')"
+          echo "cloudflare-vite-plugin=$(npm view @cloudflare/vite-plugin version)"
+          echo "vite=$(npm view vite version)"
+          echo "wrangler=$(npm view wrangler version)"
+          echo "vinext=$(npm view vinext version)"
+
       - name: Typecheck
         run: npm run typecheck
 
