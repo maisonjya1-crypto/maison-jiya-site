@@ -62,9 +62,9 @@ const apkResponse = await fetchWithRetry("/api/download/android");
 const apkContentType = apkResponse.headers.get("content-type") || "";
 const apkDisposition = apkResponse.headers.get("content-disposition") || "";
 if (!apkContentType.includes("application/vnd.android.package-archive")) throw new Error(`Type APK inattendu : ${apkContentType}`);
-if (!apkDisposition.includes("Maison-Jiya-Gestion-Android-2.3.apk")) throw new Error("Nom du fichier APK de téléchargement incorrect.");
+if (!apkDisposition.includes("Maison-Jiya-Gestion-Android-2.5.apk")) throw new Error("Nom du fichier APK de téléchargement incorrect.");
 const apkBytes = new Uint8Array(await apkResponse.arrayBuffer());
-if (apkBytes.byteLength !== 17087) throw new Error(`L'APK public a une taille inattendue : ${apkBytes.byteLength}.`);
+if (apkBytes.byteLength !== 18000) throw new Error(`L'APK public a une taille inattendue : ${apkBytes.byteLength}.`);
 if (apkBytes[0] !== 0x50 || apkBytes[1] !== 0x4b) throw new Error("L'APK public n'est pas une archive Android valide.");
 
 const boutiqueResponse = await fetchWithRetry("/boutique");
@@ -103,4 +103,4 @@ if (imagePath?.startsWith("/api/storefront/media/")) {
   if (bytes.byteLength < 100) throw new Error("Le média public est vide ou corrompu.");
 }
 
-console.log(`Smoke production OK · téléchargement Android 2.3 OK · ${catalog.products.length} produit(s) · ${catalog.offers.length} offre(s) · média ${imagePath ? "OK" : "non requis"}${process.env.REQUIRE_REFERENCE_BLACK_DESIGN === "1" ? " · référence native v5 confirmée" : ""}`);
+console.log(`Smoke production OK · téléchargement Android 2.5 OK · ${catalog.products.length} produit(s) · ${catalog.offers.length} offre(s) · média ${imagePath ? "OK" : "non requis"}${process.env.REQUIRE_REFERENCE_BLACK_DESIGN === "1" ? " · référence native v5 confirmée" : ""}`);
