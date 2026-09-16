@@ -7,15 +7,17 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout
+      - name: Checkout branch for temporary lockfile commit
         uses: actions/checkout@v6
+        with:
+          ref: security/next-16.3.5-2026-09-16
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -26,13 +28,15 @@ jobs:
       - name: Refresh lockfile for Next.js security patch
         run: npm install --package-lock-only --ignore-scripts
 
-      - name: Upload generated lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: next-16.3.5-package-lock
-          path: package-lock.json
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit generated lockfile to security branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Lock Next.js 16.3.5"
+            git push origin HEAD:security/next-16.3.5-2026-09-16
+          fi
 
       - name: Install dependencies
         run: npm ci
