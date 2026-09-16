@@ -1,0 +1,131 @@
+/* Maison Jiya — zone contact/WhatsApp + panier plus claire dans le header noir. */
+.storefront-reference-clean .mj-native-actions {
+  position: relative !important;
+  isolation: isolate !important;
+}
+
+/* Une seule capsule blanche derrière les deux actions, sans toucher au sélecteur de langue. */
+.storefront-reference-clean .mj-native-actions::after {
+  content: "" !important;
+  position: absolute !important;
+  z-index: 0 !important;
+  inset-inline-end: 0 !important;
+  top: 50% !important;
+  width: 96px !important;
+  height: 48px !important;
+  transform: translateY(-50%) !important;
+  border: 1px solid rgba(213, 172, 106, .48) !important;
+  border-radius: 999px !important;
+  background: #fff !important;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, .22) !important;
+  pointer-events: none !important;
+}
+
+.storefront-reference-clean .mj-native-langs,
+.storefront-reference-clean .mj-native-account,
+.storefront-reference-clean .mj-native-cart {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+.storefront-reference-clean .mj-native-account,
+.storefront-reference-clean .mj-native-cart {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: #111 !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+  text-decoration: none !important;
+  cursor: pointer !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  transition: background-color .18s ease, transform .18s ease !important;
+}
+
+.storefront-reference-clean .mj-native-account {
+  margin-inline-start: 4px !important;
+}
+
+.storefront-reference-clean .mj-native-cart {
+  margin-inline-end: 4px !important;
+  border-inline-start: 1px solid #e9e3da !important;
+  border-start-start-radius: 0 !important;
+  border-end-start-radius: 0 !important;
+}
+
+.storefront-reference-clean .mj-native-account:hover {
+  background: #eefaf3 !important;
+  transform: translateY(-1px) !important;
+}
+
+.storefront-reference-clean .mj-native-cart:hover {
+  background: #f5f3ef !important;
+  transform: translateY(-1px) !important;
+}
+
+.storefront-reference-clean .mj-native-account:focus-visible,
+.storefront-reference-clean .mj-native-cart:focus-visible {
+  outline: 2px solid #d5ac6a !important;
+  outline-offset: 2px !important;
+}
+
+/* Contact : pictogramme vert de messagerie/téléphone, immédiatement associé à WhatsApp. */
+.storefront-reference-clean .mj-native-account::before {
+  content: "" !important;
+  display: block !important;
+  width: 25px !important;
+  height: 25px !important;
+  -webkit-mask: none !important;
+  mask: none !important;
+  background: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%2325D366'/%3E%3Cpath d='M7.7 6.9c.35-.36.93-.32 1.23.09l1.16 1.56c.25.34.23.8-.05 1.11l-.72.8c-.18.2-.21.48-.07.71.9 1.48 2.1 2.67 3.58 3.56.23.14.51.11.71-.07l.8-.72c.31-.28.77-.3 1.11-.05l1.56 1.16c.41.3.45.88.09 1.23l-.72.7c-.74.72-1.8 1.02-2.8.78-3.5-.84-6.24-3.58-7.08-7.08-.24-1 .06-2.06.78-2.8l.42-.42Z' fill='white'/%3E%3Cpath d='M5.2 18.8 4.5 21l2.25-.72' fill='%2325D366' stroke='white' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+}
+
+/* Panier : chariot classique avec roues, beaucoup plus évident qu'une corbeille abstraite. */
+.storefront-reference-clean .mj-native-cart::before {
+  content: "" !important;
+  display: block !important;
+  width: 24px !important;
+  height: 24px !important;
+  -webkit-mask: none !important;
+  mask: none !important;
+  background: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23111111' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4h2.2l2.05 9.25a2 2 0 0 0 1.95 1.57h7.7a2 2 0 0 0 1.95-1.57L20.3 7.5H6.05'/%3E%3Cpath d='M8.2 18.7h.01M17.5 18.7h.01'/%3E%3Ccircle cx='8.2' cy='18.7' r='1.55'/%3E%3Ccircle cx='17.5' cy='18.7' r='1.55'/%3E%3C/svg%3E") !important;
+}
+
+@media (max-width: 900px) {
+  .storefront-reference-clean .mj-native-actions::after {
+    width: 86px !important;
+    height: 44px !important;
+  }
+  .storefront-reference-clean .mj-native-account,
+  .storefront-reference-clean .mj-native-cart {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+  }
+  .storefront-reference-clean .mj-native-account::before { width: 22px !important; height: 22px !important; }
+  .storefront-reference-clean .mj-native-cart::before { width: 21px !important; height: 21px !important; }
+}
+
+@media (max-width: 680px) {
+  .storefront-reference-clean .mj-native-actions::after {
+    width: 70px !important;
+    height: 36px !important;
+  }
+  .storefront-reference-clean .mj-native-account,
+  .storefront-reference-clean .mj-native-cart {
+    width: 29px !important;
+    height: 29px !important;
+    min-width: 29px !important;
+  }
+  .storefront-reference-clean .mj-native-account { margin-inline-start: 2px !important; }
+  .storefront-reference-clean .mj-native-cart { margin-inline-end: 2px !important; }
+  .storefront-reference-clean .mj-native-account::before { width: 19px !important; height: 19px !important; }
+  .storefront-reference-clean .mj-native-cart::before { width: 18px !important; height: 18px !important; }
+}
