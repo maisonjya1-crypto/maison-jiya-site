@@ -64,7 +64,7 @@ const apkDisposition = apkResponse.headers.get("content-disposition") || "";
 if (!apkContentType.includes("application/vnd.android.package-archive")) throw new Error(`Type APK inattendu : ${apkContentType}`);
 if (!apkDisposition.includes("Maison-Jiya-Gestion-Android-2.5.apk")) throw new Error("Nom du fichier APK de téléchargement incorrect.");
 const apkBytes = new Uint8Array(await apkResponse.arrayBuffer());
-if (apkBytes.byteLength !== 18000) throw new Error(`L'APK public a une taille inattendue : ${apkBytes.byteLength}.`);
+if (apkBytes.byteLength !== 25279) throw new Error(`L'APK public a une taille inattendue : ${apkBytes.byteLength}.`);
 if (apkBytes[0] !== 0x50 || apkBytes[1] !== 0x4b) throw new Error("L'APK public n'est pas une archive Android valide.");
 
 const boutiqueResponse = await fetchWithRetry("/boutique");
