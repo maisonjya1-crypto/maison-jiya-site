@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Dependency audit diagnostic
+        run: npm audit --json || true
+
       - name: Typecheck
         run: npm run typecheck
 
