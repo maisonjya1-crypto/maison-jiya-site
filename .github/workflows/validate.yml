@@ -26,12 +26,16 @@ jobs:
       - name: Refresh lockfile for security dependencies
         run: npm install --package-lock-only --ignore-scripts
 
+      - name: Apply compatible npm audit fixes to lockfile
+        run: npm audit fix --package-lock-only --ignore-scripts --audit-level=critical
+
       - name: Upload generated lockfile
         uses: actions/upload-artifact@v4
         with:
           name: security-dependency-package-lock
           path: package-lock.json
           retention-days: 1
+          overwrite: true
 
       - name: Install dependencies
         run: npm ci
