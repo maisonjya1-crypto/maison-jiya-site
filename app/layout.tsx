@@ -14,6 +14,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Maison Jiya — Pilotage",
   description: "Commandes, colis, clients, publicité et rentabilité réunis au même endroit.",
+  robots: {
+    index: false,
+    follow: false,
+    noarchive: true,
+    nocache: true,
+  },
   other: {
     "codex-preview": "development",
   },
