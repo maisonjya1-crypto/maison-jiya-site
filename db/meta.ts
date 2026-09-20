@@ -168,12 +168,11 @@ export async function syncMetaAds(days = 31) {
       nativeRevenueCents: Math.max(0, Math.round(row.nativeRevenue * 100)),
     }));
     const database = await getRawDb();
-    await database.prepare("DELETE FROM ad_performance WHERE source = ?1 AND performance_date >= ?2 AND performance_date <= ?3")
-      .bind("Meta API", since, until)
-      .run();
-    for (let offset = 0; offset < importedRows.length; offset += 50) {
-      const chunk = importedRows.slice(offset, offset + 50);
-      await database.batch(chunk.map((row) => database.prepare(`
+    // Le remplacement est atomique : un import échoué conserve les anciennes lignes.
+    await database.batch([
+      database.prepare("DELETE FROM ad_performance WHERE source = ?1 AND performance_date >= ?2 AND performance_date <= ?3")
+        .bind("Meta API", since, until),
+      ...importedRows.map((row) => database.prepare(`
         INSERT INTO ad_performance (
           platform, campaign, external_id, spend, revenue, order_count,
           native_spend_cents, native_revenue_cents, native_currency, source, performance_date
@@ -189,8 +188,8 @@ export async function syncMetaAds(days = 31) {
         row.nativeRevenueCents,
         accountCurrency,
         row.performanceDate,
-      )));
-    }
+      )),
+    ]);
 
     const nativeSpendTotal = importedRows.reduce((sum, row) => sum + row.nativeSpend, 0);
     const convertedSpendTotal = importedRows.reduce((sum, row) => sum + row.spend, 0);
