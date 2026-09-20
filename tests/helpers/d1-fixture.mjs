@@ -36,7 +36,10 @@ export function memoryD1() {
         const query = numbered ? sql.replace(/\?(\d+)/g, (_, number) => { bindings.push(values[Number(number) - 1]); return '?'; }) : sql;
         const statement = sqlite.prepare(query);
         const args = numbered ? bindings : values;
-        if (statement.columns().length) return { results: statement.all(...args), success: true, meta: { changes: 0 } };
+        // Node 22.13 (version CI) n'expose pas encore StatementSync.columns().
+        const returnsRows = /^\s*(?:SELECT|PRAGMA|EXPLAIN|VALUES)\b/i.test(query)
+          || (/^\s*WITH\b/i.test(query) && !/\b(?:INSERT|UPDATE|DELETE|REPLACE)\b/i.test(query));
+        if (returnsRows) return { results: statement.all(...args), success: true, meta: { changes: 0 } };
         const result = statement.run(...args);
         return { results: [], success: true, meta: { changes: Number(result.changes), last_row_id: Number(result.lastInsertRowid) } };
       };
