@@ -5,6 +5,7 @@ import { runDailyMaintenance } from "../db/backups";
 import { syncCarrierOperations } from "../db/carriers";
 import { syncMetaAds } from "../db/meta";
 import { reconcileOrderAllocations } from "../db/allocations";
+import { processGoogleSheetsSyncQueue } from "../db/google-sheets-sync";
 import { getRawDb } from "../db";
 
 interface Env extends CloudflareEnv {
@@ -61,9 +62,29 @@ const worker = {
     }
 
     const response = await handler.fetch(request, env, ctx);
+    if (
+      url.pathname.startsWith("/api/")
+      && !["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())
+    ) {
+      ctx.waitUntil(
+        getRawDb()
+          .then((database) => processGoogleSheetsSyncQueue(database))
+          .then(() => undefined)
+          .catch((error) => console.error("Maison Jiya background Google Sheets sync failed", error instanceof Error ? error.message : String(error))),
+      );
+    }
     return withSecurityHeaders(response, url.pathname);
   },
   async scheduled(controller: ScheduledController, _env: Env, ctx: ExecutionContext) {
+    if (controller.cron === "*/5 * * * *") {
+      ctx.waitUntil(
+        getRawDb()
+          .then((database) => processGoogleSheetsSyncQueue(database))
+          .then(() => undefined)
+          .catch((error) => console.error("Maison Jiya scheduled Google Sheets sync failed", error instanceof Error ? error.message : String(error))),
+      );
+      return;
+    }
     if (controller.cron === "*/30 * * * *") {
       ctx.waitUntil(syncCarrierOperations());
       return;

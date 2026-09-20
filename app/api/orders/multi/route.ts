@@ -86,18 +86,6 @@ function allocateSale(items: Array<{ product: CatalogProduct; quantity: number }
   });
 }
 
-async function syncGoogleSheets(database: D1Database) {
-  try {
-    const row = await database.prepare("SELECT value FROM settings WHERE key = 'security_backup_webhook_url' LIMIT 1").first<{ value: string }>();
-    if (!row?.value) return;
-    const url = new URL(row.value);
-    if (url.protocol !== "https:" || url.hostname !== "script.google.com" || !/^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url.pathname)) return;
-    await fetch(url.toString(), { method: "POST", redirect: "manual", signal: AbortSignal.timeout(3500), headers: { "user-agent": "Maison-Jiya-Backup/1.0" } });
-  } catch (error) {
-    console.error("Maison Jiya order Sheets sync failed", error);
-  }
-}
-
 export async function POST(request: Request) {
   if (!validOrigin(request)) return Response.json({ error: "Origine de la requête refusée." }, { status: 403 });
   const user = await getAuthenticatedUser(request);
@@ -233,7 +221,6 @@ export async function POST(request: Request) {
       throw error;
     }
 
-    await syncGoogleSheets(database);
     return Response.json({ ok: true, orderRef, products: productLabel, totalQuantity, productCost, carrier, shippingCost, trackingNumber });
   } catch (error) {
     console.error("Maison Jiya order creation failed", error);

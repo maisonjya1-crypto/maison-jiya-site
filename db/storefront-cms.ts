@@ -1,3 +1,5 @@
+import { ensureStorefrontGoogleSheetsSyncTriggers } from "./google-sheets-sync";
+
 export type StorefrontProductSettingRow = {
   productId: number;
   productCode: string;
@@ -134,6 +136,8 @@ export async function ensureStorefrontCms(database: D1Database) {
     database.prepare("CREATE INDEX IF NOT EXISTS storefront_media_owner_idx ON storefront_media (owner_type, owner_id, sort_order, id)"),
     database.prepare("CREATE INDEX IF NOT EXISTS storefront_offer_items_offer_idx ON storefront_offer_items (offer_id)"),
   ]);
+
+  await ensureStorefrontGoogleSheetsSyncTriggers(database);
 
   const defaults = [
     ["storefront_brand_name", "Maison Jiya"],

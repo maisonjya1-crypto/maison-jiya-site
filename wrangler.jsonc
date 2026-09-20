@@ -16,7 +16,7 @@
     "binding": "AI"
   },
   "triggers": {
-    "crons": ["*/30 * * * *", "15 2 * * *"]
+    "crons": ["*/5 * * * *", "*/30 * * * *", "15 2 * * *"]
   },
   "observability": {
     "enabled": true,

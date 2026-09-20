@@ -30,3 +30,10 @@ npx wrangler deploy --dry-run
 
 Le projet utilise Cloudflare Workers, les assets statiques et une base D1 liée sous le nom `DB`. Le fichier `wrangler.jsonc` permet à Cloudflare de créer ou de lier la base `maison-jiya-pilotage-db` lors du premier déploiement.
 
+## Données et continuité
+
+- D1 reste la source de vérité de toutes les opérations métier.
+- Google Sheets est alimenté après l’écriture D1 par une file durable avec reprise automatique.
+- L’administrateur peut télécharger un export complet JSON ou une archive de CSV depuis Paramètres → Sauvegardes.
+
+Architecture, sécurité, reprise et limites externes : [docs/google-sheets-sync.md](docs/google-sheets-sync.md).
