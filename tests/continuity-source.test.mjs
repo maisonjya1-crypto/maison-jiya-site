@@ -7,9 +7,11 @@ const root = new URL("../", import.meta.url);
 test("the Apps Script URL stays on the server", async () => {
   const dashboard = await readFile(new URL("app/dashboard-client.tsx", root), "utf8");
   const route = await readFile(new URL("app/api/data/route.ts", root), "utf8");
+  const sync = await readFile(new URL("db/google-sheets-sync.ts", root), "utf8");
   assert.doesNotMatch(dashboard, /fetch\(webhookUrl/);
   assert.match(route, /security_backup_webhook_url/);
-  assert.match(route, /triggerGoogleSheetsSync/);
+  assert.match(sync, /security_backup_webhook_url/);
+  assert.match(sync, /processGoogleSheetsSyncQueue/);
 });
 
 test("deleted orders use a 90-day trash instead of immediate deletion", async () => {

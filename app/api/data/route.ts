@@ -5,6 +5,7 @@ import { dispatchAuthorizedOrder, getCarrierRuntimeStatus, syncCarrierOperations
 import { moroccanPhoneHelp, normalizeMoroccanPhone } from "../../../db/phone";
 import { getMetaRuntimeStatus, syncMetaAds } from "../../../db/meta";
 import { reconcileOrderAllocations } from "../../../db/allocations";
+import { getGoogleSheetsSyncSnapshot, markGoogleSheetsSyncPending, processGoogleSheetsSyncQueue } from "../../../db/google-sheets-sync";
 import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
@@ -111,28 +112,6 @@ function parseCarrierNames(rawValue: string | undefined, legacyValue = "") {
   return result;
 }
 
-async function triggerGoogleSheetsSync() {
-  try {
-    const db = await getDb();
-    const [setting] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, "security_backup_webhook_url")).limit(1);
-    if (!setting?.value) return;
-    const parsedUrl = new URL(setting.value);
-    if (
-      parsedUrl.protocol !== "https:"
-      || parsedUrl.hostname !== "script.google.com"
-      || !/^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(parsedUrl.pathname)
-    ) return;
-    await fetch(parsedUrl.toString(), {
-      method: "POST",
-      redirect: "manual",
-      signal: AbortSignal.timeout(3500),
-      headers: { "user-agent": "Maison-Jiya-Backup/1.0" },
-    });
-  } catch (error) {
-    console.error("Maison Jiya immediate Google Sheets sync failed", error instanceof Error ? error.message : String(error));
-  }
-}
-
 const auditLabels: Record<string, { action: string; entityType: string }> = {
   createMember: { action: "Ajout", entityType: "Partenaire" },
   resetMemberPassword: { action: "Mot de passe remplacé", entityType: "Partenaire" },
@@ -168,6 +147,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   updateBackupWebhook: { action: "Connexion", entityType: "Google Sheets" },
   createBackupNow: { action: "Création", entityType: "Sauvegarde" },
   restoreBackup: { action: "Restauration", entityType: "Sauvegarde" },
+  retryGoogleSheetsSync: { action: "Nouvelle tentative", entityType: "Google Sheets" },
   updateCarriers: { action: "Modification", entityType: "Transporteurs" },
   syncMetaNow: { action: "Synchronisation", entityType: "Meta Ads" },
   updateSetting: { action: "Modification", entityType: "Paramètre" },
@@ -268,7 +248,8 @@ function hasValidOrigin(request: Request) {
 async function snapshot(access: AccessInfo) {
   await seedIfNeeded();
   await reconcileOrderAllocations();
-  await createDailyBackup(await getRawDb());
+  const rawDatabase = await getRawDb();
+  await createDailyBackup(rawDatabase);
   const db = await getDb();
   const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, campaign: orders.campaign, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
   const [orderRows, trashRows, customerRows, purchaseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows] = await Promise.all([
@@ -296,10 +277,11 @@ async function snapshot(access: AccessInfo) {
   const publicSettings = settingRows.filter((row) => !row.key.startsWith("security_"));
   const backupConfigured = settingRows.some((row) => row.key === "security_backup_token_hash" && row.value.length === 64);
   const secureWebhook = settingRows.find((row) => row.key === "security_backup_webhook_url")?.value || "";
-  const [carrierRuntime, lastCarrierEvent, metaRuntimeConfigured] = await Promise.all([
+  const [carrierRuntime, lastCarrierEvent, metaRuntimeConfigured, googleSheetsSync] = await Promise.all([
     getCarrierRuntimeStatus(),
     db.select({ receivedAt: carrierEvents.receivedAt }).from(carrierEvents).orderBy(desc(carrierEvents.receivedAt)).limit(1),
     getMetaRuntimeStatus(),
+    getGoogleSheetsSyncSnapshot(rawDatabase),
   ]);
   return {
     orders: orderRows,
@@ -315,6 +297,7 @@ async function snapshot(access: AccessInfo) {
     orderStatusHistory: historyRows,
     auditLogs: auditRows,
     backups: backupRows,
+    googleSheetsSync,
     settings: {
       ...Object.fromEntries(publicSettings.map((row) => [row.key, row.value])),
       backup_configured: backupConfigured ? "true" : "false",
@@ -969,10 +952,12 @@ export async function POST(request: Request) {
         return Response.json({ error: "La clé privée de sauvegarde est invalide." }, { status: 400 });
       }
       const updatedAt = new Date().toISOString();
-      await db.insert(settings).values({ key: "security_backup_token_hash", value: await sha256Hex(token) }).onConflictDoUpdate({
+      const tokenHash = await sha256Hex(token);
+      await db.insert(settings).values({ key: "security_backup_token_hash", value: tokenHash }).onConflictDoUpdate({
         target: settings.key,
-        set: { value: await sha256Hex(token), updatedAt },
+        set: { value: tokenHash, updatedAt },
       });
+      await markGoogleSheetsSyncPending(await getRawDb());
     } else if (payload.action === "revokeBackupToken") {
       if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut désactiver la sauvegarde." }, { status: 403 });
       const updatedAt = new Date().toISOString();
@@ -980,6 +965,9 @@ export async function POST(request: Request) {
         target: settings.key,
         set: { value: "", updatedAt },
       });
+      const rawDatabase = await getRawDb();
+      await markGoogleSheetsSyncPending(rawDatabase);
+      await processGoogleSheetsSyncQueue(rawDatabase, { force: true });
     } else if (payload.action === "updateBackupWebhook") {
       if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut connecter la synchronisation instantanée." }, { status: 403 });
       const webhookUrl = textValue(payload.url);
@@ -1004,6 +992,14 @@ export async function POST(request: Request) {
         target: settings.key,
         set: { value: webhookUrl, updatedAt },
       });
+      const rawDatabase = await getRawDb();
+      await markGoogleSheetsSyncPending(rawDatabase);
+      const syncResult = await processGoogleSheetsSyncQueue(rawDatabase, { force: true });
+      integrationMessage = syncResult.status === "synced"
+        ? "Connexion Google Sheets vérifiée et synchronisation terminée."
+        : syncResult.status === "unconfigured"
+          ? "Adresse Apps Script enregistrée. Générez aussi la clé privée pour activer la synchronisation."
+          : "Connexion enregistrée. La synchronisation restera en attente et sera retentée automatiquement.";
       auditEntityLabel = "Synchronisation instantanée";
     } else if (payload.action === "createBackupNow") {
       if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut créer une sauvegarde complète." }, { status: 403 });
@@ -1019,6 +1015,15 @@ export async function POST(request: Request) {
       await restoreDailyBackup(await getRawDb(), backupId);
       auditEntityId = String(backupId);
       auditEntityLabel = backup.backupDate;
+    } else if (payload.action === "retryGoogleSheetsSync") {
+      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut relancer cette synchronisation." }, { status: 403 });
+      const rawDatabase = await getRawDb();
+      await markGoogleSheetsSyncPending(rawDatabase);
+      const syncResult = await processGoogleSheetsSyncQueue(rawDatabase, { force: true });
+      integrationMessage = syncResult.status === "synced"
+        ? "Google Sheets est à jour."
+        : "Google reste indisponible. La donnée est conservée dans Maison Jiya et une nouvelle tentative est programmée.";
+      auditEntityLabel = "Synchronisation Google Sheets";
     } else if (payload.action === "updateCarriers") {
       if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut gérer les agences." }, { status: 403 });
       let requestedCarriers: unknown;
@@ -1098,10 +1103,6 @@ export async function POST(request: Request) {
         || textValue(payload.key);
     }
     await writeAudit(user, textValue(payload.action), auditEntityId, auditEntityLabel);
-
-    if (!["updateBackupWebhook", "updateBackupToken", "revokeBackupToken", "createBackupNow", "restoreBackup"].includes(textValue(payload.action))) {
-      await triggerGoogleSheetsSync();
-    }
 
     const refreshedUser = await getAuthenticatedUser(request);
     if (!refreshedUser) return Response.json({ error: "Votre session a expiré." }, { status: 401 });

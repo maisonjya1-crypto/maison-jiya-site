@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./schema";
+import { ensureGoogleSheetsSyncSchema } from "./google-sheets-sync";
 
 let databaseReady: Promise<void> | null = null;
 
@@ -285,6 +286,7 @@ async function initializeDatabase(database: D1Database) {
   await ensureCapitalColumns(database);
   await ensureAdPerformanceColumns(database);
   await ensureProductColumns(database);
+  await ensureGoogleSheetsSyncSchema(database);
   await database.prepare(`
     INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_name, changed_at)
     SELECT orders.id, NULL, orders.status, 'État initial', COALESCE(orders.updated_at, orders.created_at)

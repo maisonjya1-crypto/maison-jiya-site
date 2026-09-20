@@ -154,6 +154,34 @@ type DailyBackup = {
   recordCount: number;
   createdAt: string;
 };
+type GoogleSheetsSyncLog = {
+  id: number;
+  eventId: string;
+  version: number;
+  status: "processing" | "retrying" | "synced" | "covered";
+  attemptCount: number;
+  httpStatus: number | null;
+  firstAttemptAt: string;
+  lastAttemptAt: string;
+  syncedAt: string | null;
+  nextAttemptAt: string | null;
+  lastError: string;
+};
+type GoogleSheetsSync = {
+  state: {
+    status: "pending" | "processing" | "retrying" | "synced" | "unconfigured";
+    currentVersion: number;
+    syncedVersion: number;
+    pendingChanges: number;
+    attemptCount: number;
+    lastEventAt: string | null;
+    lastAttemptAt: string | null;
+    lastSyncAt: string | null;
+    nextAttemptAt: string | null;
+    lastError: string;
+  };
+  logs: GoogleSheetsSyncLog[];
+};
 type Data = {
   orders: Order[];
   trash: Order[];
@@ -168,6 +196,7 @@ type Data = {
   orderStatusHistory: OrderStatusHistory[];
   auditLogs: AuditLog[];
   backups: DailyBackup[];
+  googleSheetsSync: GoogleSheetsSync;
   settings: Record<string, string>;
   access: {
     canEdit: boolean;
@@ -214,6 +243,10 @@ const emptyData: Data = {
   orderStatusHistory: [],
   auditLogs: [],
   backups: [],
+  googleSheetsSync: {
+    state: { status: "unconfigured", currentVersion: 0, syncedVersion: 0, pendingChanges: 0, attemptCount: 0, lastEventAt: null, lastAttemptAt: null, lastSyncAt: null, nextAttemptAt: null, lastError: "" },
+    logs: [],
+  },
   settings: {},
   access: { canEdit: false, isOwner: false, canClaimOwnership: false, passwordConfigured: true, sessionExpiresAt: null, role: "viewer", username: "", displayName: "" },
 };
@@ -825,7 +858,7 @@ function Page({
   if (active === "Rapports") return <ReportsPage data={data} />;
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
   if (active === "Corbeille") return <TrashPage orders={data.trash} canRestore={data.access.isOwner} submit={submit} />;
-  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} products={data.products} submit={submit} />;
+  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} googleSheetsSync={data.googleSheetsSync} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} products={data.products} submit={submit} />;
   const deliveryOrderCount = data.orders.filter((order) => order.fulfillmentType !== "Magasin physique").length;
   const total = Math.max(1, deliveryOrderCount);
   return (
@@ -916,7 +949,7 @@ function Page({
   );
 }
 
-function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, senditApiConfigured, senditWebhookConfigured, forceLogApiConfigured, carrierLastSyncAt, access, members, auditLogs, backups, products, submit }: {
+function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, googleSheetsSync, senditApiConfigured, senditWebhookConfigured, forceLogApiConfigured, carrierLastSyncAt, access, members, auditLogs, backups, products, submit }: {
   currentTheme: ThemeKey;
   accountName: string;
   accountEmail: string;
@@ -925,6 +958,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   backupSheetUrl: string;
   backupWebhookUrl: string;
   backupWebhookConfigured: boolean;
+  googleSheetsSync: GoogleSheetsSync;
   senditApiConfigured: boolean;
   senditWebhookConfigured: boolean;
   forceLogApiConfigured: boolean;
@@ -943,9 +977,20 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   const [savingBackup, setSavingBackup] = useState(false);
   const [savingWebhook, setSavingWebhook] = useState(false);
   const [savingFullBackup, setSavingFullBackup] = useState(false);
+  const [retryingSheets, setRetryingSheets] = useState(false);
   const [backupToken, setBackupToken] = useState("");
   const [copyState, setCopyState] = useState("");
   const selectedTheme = themeOptions.find((theme) => theme.key === currentTheme) || themeOptions[0];
+  const syncState = googleSheetsSync.state;
+  const syncStatusLabel = syncState.status === "synced"
+    ? "À jour"
+    : syncState.status === "processing"
+      ? "Synchronisation…"
+      : syncState.status === "retrying"
+        ? "Réessai programmé"
+        : syncState.status === "unconfigured"
+          ? "À configurer"
+          : "En attente";
 
   async function applyTheme(theme: ThemeKey) {
     if (!access.canEdit || theme === currentTheme || pendingTheme) return;
@@ -1028,6 +1073,16 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
       // Le message d’erreur global est affiché par le tableau de bord.
     } finally {
       setSavingWebhook(false);
+    }
+  }
+
+  async function retryGoogleSheetsSync() {
+    if (retryingSheets || !access.isOwner) return;
+    setRetryingSheets(true);
+    try {
+      await submit("retryGoogleSheetsSync", {});
+    } finally {
+      setRetryingSheets(false);
     }
   }
 
@@ -1248,6 +1303,45 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
           </form>
         </div>
 
+        <div className="sheets-sync-monitor">
+          <div className="sheets-sync-monitor-head">
+            <div>
+              <span className="card-kicker">File durable D1</span>
+              <h3>État de la synchronisation</h3>
+              <p>Chaque modification est d’abord conservée dans Maison Jiya. Google Sheets est ensuite mis à jour, avec reprise automatique en cas d’échec.</p>
+            </div>
+            <span className={`backup-status ${syncState.status === "synced" ? "active" : ""}`}>{syncStatusLabel}</span>
+          </div>
+          <div className="sheets-sync-stats">
+            <div><span>Dernière réussite</span><strong>{syncState.lastSyncAt ? dateTimeLabel(syncState.lastSyncAt) : "Pas encore"}</strong></div>
+            <div><span>Modifications en attente</span><strong>{Math.max(0, syncState.pendingChanges).toLocaleString("fr-MA")}</strong></div>
+            <div><span>Tentatives</span><strong>{syncState.attemptCount.toLocaleString("fr-MA")}</strong></div>
+            <div><span>Prochaine tentative</span><strong>{syncState.nextAttemptAt ? dateTimeLabel(syncState.nextAttemptAt) : "Automatique"}</strong></div>
+          </div>
+          {syncState.lastError && <p className="sheets-sync-error">{syncState.lastError}</p>}
+          <div className="sheets-sync-actions">
+            <button className="secondary-button" type="button" onClick={() => void retryGoogleSheetsSync()} disabled={retryingSheets || !access.isOwner || !backupConfigured || !backupWebhookConfigured}>
+              {retryingSheets ? "Nouvelle tentative…" : "Réessayer maintenant"}
+            </button>
+            <small>Les réessais continuent sans limite interne jusqu’au retour de Google ou à la désactivation de la connexion.</small>
+          </div>
+          <details className="sheets-sync-log">
+            <summary>Journal de synchronisation · {googleSheetsSync.logs.length} événement{googleSheetsSync.logs.length === 1 ? "" : "s"}</summary>
+            <div className="sheets-sync-log-list">
+              {googleSheetsSync.logs.length ? googleSheetsSync.logs.map((entry) => (
+                <article key={entry.id}>
+                  <div><strong>Version {entry.version}</strong><small>{entry.eventId}</small></div>
+                  <div>
+                    <span>{entry.status === "synced" ? "Synchronisée" : entry.status === "covered" ? "Incluse dans une version récente" : entry.status === "retrying" ? "À réessayer" : "En cours"}</span>
+                    <small>{dateTimeLabel(entry.lastAttemptAt)} · {entry.attemptCount} tentative{entry.attemptCount === 1 ? "" : "s"}</small>
+                    {entry.lastError && <small className="sheets-sync-log-error">{entry.lastError}</small>}
+                  </div>
+                </article>
+              )) : <p>Aucune tentative enregistrée pour le moment.</p>}
+            </div>
+          </details>
+        </div>
+
         <div className="backup-privacy-note">
           <strong>Données protégées</strong>
           <span>Les mots de passe, les clés de session et les codes de sécurité ne sont jamais exportés. Les partenaires apparaissent seulement avec leur nom, leur rôle et l’état du compte.</span>
@@ -1266,9 +1360,13 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
         <div className="settings-disclosure-body">
           <div className="settings-disclosure-actions">
             <p>Une copie complète des données commerciales est créée chaque jour et conservée pendant 90 jours. Les comptes, mots de passe et clés privées restent séparés.</p>
-            <button className="primary-button" type="button" onClick={() => void createFullBackup()} disabled={savingFullBackup || !access.isOwner}>
-              {savingFullBackup ? "Préparation…" : "＋ Sauvegarder maintenant"}
-            </button>
+            <div className="backup-export-actions">
+              {access.isOwner && <a className="secondary-button" href="/api/export?format=json">Exporter tout en JSON</a>}
+              {access.isOwner && <a className="secondary-button" href="/api/export?format=csv">Exporter les CSV (.zip)</a>}
+              <button className="primary-button" type="button" onClick={() => void createFullBackup()} disabled={savingFullBackup || !access.isOwner}>
+                {savingFullBackup ? "Préparation…" : "＋ Sauvegarder maintenant"}
+              </button>
+            </div>
           </div>
           {access.isOwner ? (
             <div className="backup-history-list">
