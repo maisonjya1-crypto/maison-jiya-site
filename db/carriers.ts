@@ -386,7 +386,7 @@ export async function dispatchAuthorizedOrder(orderId: number, requestedCarrier:
 
   const rawDb = await getRawDb();
   const authorizedAt = new Date().toISOString();
-  const claimed = await rawDb.prepare("UPDATE orders SET carrier = ?, carrier_dispatch_state = 'Création en cours', carrier_authorized_at = ?, updated_at = ? WHERE id = ? AND tracking_number = '' AND carrier_dispatch_state IN ('À autoriser', 'Erreur')")
+  const claimed = await rawDb.prepare("UPDATE orders SET carrier = ?, carrier_dispatch_state = 'Création en cours', carrier_authorized_at = ?, updated_at = ? WHERE id = ? AND tracking_number = '' AND carrier_dispatch_state IN ('À autoriser', 'À renseigner', 'Erreur')")
     .bind(selectedCarrier, authorizedAt, authorizedAt, order.id).run();
   if ((claimed.meta.changes ?? 0) === 0) return { attempted: false, success: false, message: "La création est déjà en cours. Actualisez dans quelques secondes." };
 

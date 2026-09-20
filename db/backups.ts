@@ -40,7 +40,7 @@ const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   stockMovements: ["id", "product_id", "order_id", "movement_type", "quantity", "note", "created_at"],
   inventoryCounts: ["id", "count_ref", "product_id", "system_quantity", "physical_quantity", "difference", "note", "counted_by_user_id", "counted_by_name", "created_at"],
   purchases: ["id", "supplier", "item", "quantity", "unit_cost", "total_cost", "payment_status", "created_at"],
-  ads: ["id", "platform", "campaign", "spend", "revenue", "order_count", "source", "performance_date", "created_at"],
+  ads: ["id", "platform", "campaign", "external_id", "spend", "revenue", "order_count", "native_spend_cents", "native_revenue_cents", "native_currency", "source", "performance_date", "created_at"],
   capital: ["id", "direction", "category", "label", "amount", "account", "order_id", "is_automatic", "auto_key", "entry_date", "created_at"],
   settings: ["key", "value", "updated_at"],
   orderStatusHistory: ["id", "order_id", "from_status", "to_status", "changed_by_user_id", "changed_by_name", "changed_at"],
@@ -120,6 +120,9 @@ function insertStatement(database: D1Database, tableKey: keyof BusinessSnapshot[
     if (column === "fulfillment_type") return row[column] ?? "Livraison";
     if (column === "items_json") return row[column] ?? "[]";
     if (column === "pack_name") return row[column] ?? "";
+    if (column === "external_id") return row[column] ?? "";
+    if (column === "native_spend_cents" || column === "native_revenue_cents") return row[column] ?? 0;
+    if (column === "native_currency") return row[column] ?? "MAD";
     if (["return_reason", "return_note", "campaign", "address", "carrier_dispatch_state", "carrier_invoice_code", "message", "proof_image", "error_message"].includes(column)) return row[column] ?? "";
     if (column === "account") return row[column] ?? "Banque";
     if (column === "is_automatic") return row[column] ?? 0;
@@ -130,19 +133,29 @@ function insertStatement(database: D1Database, tableKey: keyof BusinessSnapshot[
   return database.prepare(`INSERT INTO ${table} (${columns.join(", ")}) VALUES (${placeholders})`).bind(...values);
 }
 
-async function runBatches(database: D1Database, statements: D1PreparedStatement[]) {
-  for (let index = 0; index < statements.length; index += 50) {
-    await database.batch(statements.slice(index, index + 50));
-  }
-}
-
 export async function restoreDailyBackup(database: D1Database, backupId: number) {
   const [row] = (await database.prepare("SELECT snapshot_json FROM daily_backups WHERE id = ? LIMIT 1").bind(backupId).all<{ snapshot_json: string }>()).results;
   if (!row) throw new Error("Sauvegarde introuvable.");
 
   const snapshot = JSON.parse(row.snapshot_json) as BusinessSnapshot;
-  if (snapshot.version !== 1 || !snapshot.tables) throw new Error("Format de sauvegarde incompatible.");
+  if (!snapshot || snapshot.version !== 1 || !snapshot.tables || typeof snapshot.tables !== "object") throw new Error("Format de sauvegarde incompatible.");
 
+  const insertionOrder: Array<keyof BusinessSnapshot["tables"]> = [
+    "settings", "customers", "products", "purchases", "ads", "capital", "orders", "stockMovements", "inventoryCounts", "orderStatusHistory", "carrierEvents",
+  ];
+  const inserts = insertionOrder.flatMap((tableKey) => {
+    const rows = snapshot.tables[tableKey];
+    // Ces deux tables n'existaient pas dans les premières sauvegardes v1.
+    if (rows === undefined && (tableKey === "inventoryCounts" || tableKey === "carrierEvents")) return [];
+    if (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
+      throw new Error("Format de sauvegarde incompatible.");
+    }
+    return rows
+      .filter((item) => tableKey !== "settings" || (typeof item.key === "string" && !item.key.startsWith("security_") && item.key !== "backup_webhook_url"))
+      .map((item) => insertStatement(database, tableKey, item));
+  });
+
+  // Un seul batch D1 : toute erreur annule aussi les suppressions précédentes.
   await database.batch([
     database.prepare("DELETE FROM stock_movements"),
     database.prepare("DELETE FROM inventory_counts"),
@@ -154,15 +167,9 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
     database.prepare("DELETE FROM ad_performance"),
     database.prepare("DELETE FROM capital_ledger"),
     database.prepare("DELETE FROM products"),
-    database.prepare("DELETE FROM settings WHERE key NOT LIKE 'security_%'"),
+    database.prepare("DELETE FROM settings WHERE key NOT LIKE 'security_%' AND key <> 'backup_webhook_url'"),
+    ...inserts,
   ]);
-
-  const insertionOrder: Array<keyof BusinessSnapshot["tables"]> = [
-    "settings", "customers", "products", "purchases", "ads", "capital", "orders", "stockMovements", "inventoryCounts", "orderStatusHistory", "carrierEvents",
-  ];
-  for (const tableKey of insertionOrder) {
-    await runBatches(database, (snapshot.tables[tableKey] || []).map((item) => insertStatement(database, tableKey, item)));
-  }
 }
 
 export async function purgeExpiredTrash(database: D1Database) {
