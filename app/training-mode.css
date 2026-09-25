@@ -1,0 +1,26 @@
+.training-page{display:grid;gap:18px}
+.training-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:24px;border:1px solid var(--line);border-radius:24px;background:linear-gradient(135deg,var(--surface),var(--surface-soft))}
+.training-hero h2{margin:5px 0 8px;font-size:clamp(24px,3vw,34px)}
+.training-hero p{max-width:760px;margin:0;color:var(--muted);line-height:1.6}
+.training-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.training-notice{padding:12px 16px;border-radius:14px;background:rgba(59,130,91,.1);border:1px solid rgba(59,130,91,.25);font-weight:700}
+.training-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.training-kpis article{padding:16px;border-radius:18px;border:1px solid var(--line);background:var(--surface);display:grid;gap:7px}
+.training-kpis span{font-size:12px;color:var(--muted)}
+.training-kpis strong{font-size:18px}
+.training-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.training-card{display:grid;gap:14px}
+.training-card h3,.training-history h3{margin:0}
+.training-card form{display:grid;gap:12px}
+.training-card label{display:grid;gap:6px}
+.training-card label span{font-size:12px;font-weight:700;color:var(--muted)}
+.training-card input,.training-card select{width:100%;min-height:42px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--text);padding:10px 12px;font:inherit}
+.training-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.training-check{display:flex!important;grid-template-columns:none!important;align-items:center;gap:8px!important}
+.training-check input{width:18px!important;min-height:18px!important}
+.training-history{display:grid;gap:16px}
+.training-history-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.training-history-grid>div{border:1px solid var(--line);border-radius:16px;padding:14px;min-height:120px}
+.training-history-grid p{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
+@media(max-width:1100px){.training-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.training-history-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.training-hero{display:grid}.training-actions{justify-content:stretch}.training-actions button{flex:1}.training-kpis,.training-grid,.training-history-grid{grid-template-columns:1fr}.training-row{grid-template-columns:1fr}}
