@@ -2299,7 +2299,13 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
     purchaseValue = products.reduce((sum, product) => sum + product.stockQuantity * product.purchasePrice, 0),
     saleValue = products.reduce((sum, product) => sum + product.stockQuantity * product.salePrice, 0),
     lowStock = products.filter((product) => product.stockQuantity <= 5).length;
-  const profitability = products.map((product) => {
+  const quantityForProduct = (order: Order, product: Product) => {
+    if (order.productId === product.id) return order.quantity;
+    const linkedQuantity = movements
+      .filter((movement) => movement.orderId === order.id && movement.productId === product.id && movement.movementType === "Commande")
+      .reduce((sum, movement) => sum + movement.quantity, 0);
+    if (linkedQuantity > 0) return linkedQuantity;
+    const escapedName = product.name.replace(/[.*+?^${}()|[\]\\]/g, "\\  const profitability = products.map((product) => {
     const productOrders = orders.filter((order) => order.productId === product.id);
     const delivered = productOrders.filter((order) => order.status === "Livrée");
     const revenue = delivered.reduce((sum, order) => sum + order.saleAmount, 0);
@@ -2310,6 +2316,44 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
     return {
       product,
       deliveredUnits: delivered.reduce((sum, order) => sum + order.quantity, 0),
+      revenue,
+      costs,
+      profit,
+      margin: revenue ? (profit / revenue) * 100 : 0,
+    };
+  }).sort((left, right) => right.profit - left.profit);
+");
+    const match = order.products.match(new RegExp(`${escapedName}\\s*×\\s*(\\d+)`, "i"));
+    return match ? Math.max(0, Number(match[1]) || 0) : 0;
+  };
+  const orderShareForProduct = (order: Order, product: Product, quantity: number) => {
+    const lines = products
+      .map((candidate) => ({ candidate, quantity: quantityForProduct(order, candidate) }))
+      .filter((line) => line.quantity > 0);
+    if (lines.length <= 1) return 1;
+    const totalWeight = lines.reduce((sum, line) => sum + Math.max(0, line.candidate.salePrice) * line.quantity, 0);
+    const ownWeight = Math.max(0, product.salePrice) * quantity;
+    return totalWeight > 0 ? ownWeight / totalWeight : 1 / lines.length;
+  };
+  const profitability = products.map((product) => {
+    let deliveredUnits = 0;
+    let revenue = 0;
+    let costs = 0;
+    for (const order of orders) {
+      const quantity = quantityForProduct(order, product);
+      if (quantity <= 0) continue;
+      const share = orderShareForProduct(order, product, quantity);
+      if (order.status === "Livrée") {
+        deliveredUnits += quantity;
+        revenue += order.saleAmount * share;
+        costs += (order.productCost + order.shippingCost + order.adCost + order.fees) * share;
+      }
+      costs += order.returnCost * share;
+    }
+    const profit = revenue - costs;
+    return {
+      product,
+      deliveredUnits,
       revenue,
       costs,
       profit,
