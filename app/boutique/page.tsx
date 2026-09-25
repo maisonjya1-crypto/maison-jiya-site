@@ -4,6 +4,7 @@ import { ensureStorefrontCms } from "../../db/storefront-cms";
 import { loadStorefrontCatalogFast } from "../../db/storefront-public-fast";
 import StorefrontApprovedDesignEnhancement from "./storefront-approved-design-enhancement";
 import StorefrontCoverInteractions from "./storefront-cover-interactions";
+import StorefrontEntrance from "./storefront-entrance";
 import StorefrontClientV3 from "./storefront-client-v3";
 import StorefrontMobileHeroProducts from "./storefront-mobile-hero-products";
 import StorefrontWhatsappContactHotfix from "./storefront-whatsapp-contact-hotfix";
@@ -30,6 +31,7 @@ export default async function BoutiquePage() {
     console.error("Maison Jiya storefront preload failed", error);
   }
   return <div className="storefront-approved-design storefront-reference-exact storefront-reference-clean" data-storefront-deployment={STOREFRONT_DEPLOYMENT_MARKER}>
+    <StorefrontEntrance />
     <StorefrontClientV3 initialCatalog={initialCatalog} />
     <StorefrontApprovedDesignEnhancement />
     <StorefrontMobileHeroProducts />
