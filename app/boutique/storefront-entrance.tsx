@@ -11,8 +11,8 @@ export default function StorefrontEntrance() {
   useEffect(() => {
     try {
       if (window.sessionStorage.getItem(SESSION_KEY) === "1") {
-        setVisible(false);
-        return;
+        const seenTimer = window.setTimeout(() => setVisible(false), 0);
+        return () => window.clearTimeout(seenTimer);
       }
       window.sessionStorage.setItem(SESSION_KEY, "1");
     } catch {
