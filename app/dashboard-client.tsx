@@ -2780,6 +2780,12 @@ function ReportsPage({ data }: { data: Data }) {
   const lowStock = data.products.filter((product) => product.stockQuantity <= 3);
   const delayed = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && elapsedDays(order.updatedAt || order.createdAt) >= 4);
   const unpaid = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus !== "Encaissé" && elapsedDays(order.updatedAt || order.createdAt) >= 3);
+  const supplierDue = data.purchases.filter((purchase) => purchase.paymentStatus !== "Payé");
+  const dormantProducts = data.products.filter((product) => {
+    if (product.stockQuantity <= 0 || elapsedDays(product.createdAt) < 45) return false;
+    const recentOutbound = data.stockMovements.some((movement) => movement.productId === product.id && ["Commande", "Vente", "Inventaire -"].includes(movement.movementType) && elapsedDays(movement.createdAt) < 45);
+    return !recentOutbound;
+  });
   const storeCash = collected.filter((order) => order.fulfillmentType === "Magasin physique").reduce((sum, order) => sum + order.saleAmount - order.fees - order.returnCost, 0);
   const carrierMoney = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus === "À encaisser").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees, 0);
   const receivables = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && order.paymentStatus !== "Encaissé").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees, 0);
@@ -2795,6 +2801,8 @@ function ReportsPage({ data }: { data: Data }) {
     ...lowStock.map((product) => ({ key: `stock-${product.id}`, level: product.stockQuantity === 0 ? "danger" : "warning", title: `${product.name} : stock ${product.stockQuantity}`, detail: `SKU ${product.productCode} · seuil faible atteint` })),
     ...delayed.map((order) => ({ key: `delay-${order.id}`, level: "warning", title: `${order.orderRef} semble bloquée`, detail: `${order.carrier} · ${order.status} depuis ${elapsedDays(order.updatedAt || order.createdAt)} jours` })),
     ...unpaid.map((order) => ({ key: `unpaid-${order.id}`, level: "danger", title: `${order.orderRef} livrée mais non encaissée`, detail: `${order.carrier} · ${money(order.saleAmount - order.shippingCost - order.fees)} à vérifier` })),
+    ...supplierDue.map((purchase) => ({ key: `supplier-${purchase.id}`, level: "danger", title: `${purchase.supplier} : paiement fournisseur à prévoir`, detail: `${purchase.item} · ${money(purchase.totalCost)} à payer` })),
+    ...dormantProducts.map((product) => ({ key: `dormant-${product.id}`, level: "warning", title: `${product.name} : stock dormant`, detail: `${product.stockQuantity} unité(s) sans sortie depuis au moins 45 jours` })),
   ];
   const platformRows = groupOrderAnalysis(completed.filter((order) => ["Facebook", "Instagram", "TikTok", "WhatsApp"].includes(order.source)), (order) => order.source);
   const campaignRows = groupOrderAnalysis(completed.filter((order) => order.campaign), (order) => order.campaign);
@@ -2822,6 +2830,9 @@ function CapitalPage({
     capitalNet: number;
     netCollected: number;
     reinvest: number;
+    reinvestable: number;
+    unpaidPurchases: number;
+    safetyReserve: number;
   };
   onAdd: () => void;
   onEdit: (selection: EditableEntity) => void;
@@ -2951,7 +2962,13 @@ function CapitalPage({
               Ajustements manuels<strong>{money(metrics.capitalNet)}</strong>
             </p>
             <p>
-              Réinvestissement suggéré<strong>{money(metrics.reinvest)}</strong>
+              Réinvestissable maintenant<strong>{money(metrics.reinvestable)}</strong>
+            </p>
+            <p>
+              Fournisseurs à payer<strong>{money(metrics.unpaidPurchases)}</strong>
+            </p>
+            <p>
+              Réserve protégée<strong>{money(metrics.safetyReserve)}</strong>
             </p>
           </div>
         </article>
@@ -2972,9 +2989,9 @@ function CapitalPage({
           <article className="capital-envelope-card reinvest-envelope">
             <span className="envelope-icon">↗</span>
             <span className="envelope-label">Montant de réinvestissement</span>
-            <h3>{money(metrics.reinvest)}</h3>
-            <p>50% des gains positifs encaissés pour le stock, les achats et la croissance.</p>
-            <small>Écritures automatiques · 50%</small>
+            <h3>{money(metrics.reinvestable)}</h3>
+            <p>Montant mobilisable aujourd’hui sans consommer les factures fournisseurs dues ni la réserve de sécurité.</p>
+            <small>Affectation théorique : {money(metrics.reinvest)} · disponible protégé</small>
           </article>
           <article className="capital-envelope-card salary-envelope">
             <span className="envelope-icon">◎</span>
