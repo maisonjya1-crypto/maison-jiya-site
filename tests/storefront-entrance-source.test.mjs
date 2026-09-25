@@ -19,7 +19,7 @@ test("la boutique charge l'animation d'entrée sans toucher au dashboard", () =>
 });
 
 test("l'intro reste courte et peut être passée", () => {
-  assert.match(intro, /1650/);
-  assert.match(intro, /2250/);
+  assert.match(intro, /3000/);
+  assert.match(intro, /3800/);
   assert.match(intro, />Passer<\/button>/);
 });
