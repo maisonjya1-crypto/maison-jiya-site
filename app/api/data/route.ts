@@ -681,14 +681,14 @@ export async function POST(request: Request) {
       await db.delete(customers).where(eq(customers.id, id));
     } else if (payload.action === "addPurchase") {
       const quantity = numberValue(payload.quantity, 1);
-      const unitCost = numberValue(payload.unitCost);
+      const unitCost = moneyValue(payload.unitCost);
       await db.insert(purchases).values({ supplier: textValue(payload.supplier, "Fournisseur"), item: textValue(payload.item, "Achat"), quantity, unitCost, totalCost: quantity * unitCost, paymentStatus: textValue(payload.paymentStatus, "Payé") });
     } else if (payload.action === "updatePurchase") {
       const id = numberValue(payload.id);
       const supplier = textValue(payload.supplier);
       const item = textValue(payload.item);
       const quantity = numberValue(payload.quantity);
-      const unitCost = numberValue(payload.unitCost);
+      const unitCost = moneyValue(payload.unitCost);
       const nextPaymentStatus = textValue(payload.paymentStatus, "Payé");
       if (!id || !supplier || !item || quantity < 1 || !["Payé", "À payer"].includes(nextPaymentStatus)) return Response.json({ error: "Achat invalide." }, { status: 400 });
       const [purchase] = await db.select({ id: purchases.id }).from(purchases).where(eq(purchases.id, id)).limit(1);
@@ -701,7 +701,7 @@ export async function POST(request: Request) {
       if (!purchase) return Response.json({ error: "Achat introuvable." }, { status: 404 });
       await db.delete(purchases).where(eq(purchases.id, id));
     } else if (payload.action === "addAd") {
-      await db.insert(adPerformance).values({ platform: "Meta Ads", campaign: textValue(payload.campaign, "Campagne Meta"), spend: numberValue(payload.spend), revenue: numberValue(payload.revenue), orderCount: numberValue(payload.orderCount), source: "Saisie manuelle", performanceDate: textValue(payload.performanceDate, new Date().toISOString().slice(0, 10)) });
+      await db.insert(adPerformance).values({ platform: "Meta Ads", campaign: textValue(payload.campaign, "Campagne Meta"), spend: moneyValue(payload.spend), revenue: moneyValue(payload.revenue), orderCount: numberValue(payload.orderCount), source: "Saisie manuelle", performanceDate: textValue(payload.performanceDate, new Date().toISOString().slice(0, 10)) });
     } else if (payload.action === "updateAd") {
       const id = numberValue(payload.id);
       const campaign = textValue(payload.campaign);
@@ -709,7 +709,7 @@ export async function POST(request: Request) {
       if (!id || !campaign || !/^\d{4}-\d{2}-\d{2}$/.test(performanceDate)) return Response.json({ error: "Publicité invalide." }, { status: 400 });
       const [ad] = await db.select({ id: adPerformance.id }).from(adPerformance).where(eq(adPerformance.id, id)).limit(1);
       if (!ad) return Response.json({ error: "Publicité introuvable." }, { status: 404 });
-      await db.update(adPerformance).set({ campaign, spend: numberValue(payload.spend), revenue: numberValue(payload.revenue), orderCount: numberValue(payload.orderCount), performanceDate }).where(eq(adPerformance.id, id));
+      await db.update(adPerformance).set({ campaign, spend: moneyValue(payload.spend), revenue: moneyValue(payload.revenue), orderCount: numberValue(payload.orderCount), performanceDate }).where(eq(adPerformance.id, id));
     } else if (payload.action === "deleteAd") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Publicité invalide." }, { status: 400 });
@@ -717,7 +717,7 @@ export async function POST(request: Request) {
       if (!ad) return Response.json({ error: "Publicité introuvable." }, { status: 404 });
       await db.delete(adPerformance).where(eq(adPerformance.id, id));
     } else if (payload.action === "addCapital") {
-      await db.insert(capitalLedger).values({ direction: textValue(payload.direction, "Entrée"), category: textValue(payload.category, "Ajustement"), label: textValue(payload.label, "Mouvement de capital"), amount: numberValue(payload.amount), entryDate: textValue(payload.entryDate, new Date().toISOString().slice(0, 10)) });
+      await db.insert(capitalLedger).values({ direction: textValue(payload.direction, "Entrée"), category: textValue(payload.category, "Ajustement"), label: textValue(payload.label, "Mouvement de capital"), amount: moneyValue(payload.amount), entryDate: textValue(payload.entryDate, new Date().toISOString().slice(0, 10)) });
     } else if (payload.action === "updateCapital") {
       const id = numberValue(payload.id);
       const direction = textValue(payload.direction);
@@ -728,7 +728,7 @@ export async function POST(request: Request) {
       const [entry] = await db.select({ id: capitalLedger.id, isAutomatic: capitalLedger.isAutomatic }).from(capitalLedger).where(eq(capitalLedger.id, id)).limit(1);
       if (!entry) return Response.json({ error: "Mouvement de capital introuvable." }, { status: 404 });
       if (entry.isAutomatic) return Response.json({ error: "Une affectation automatique liée à une commande ne peut pas être modifiée manuellement." }, { status: 409 });
-      await db.update(capitalLedger).set({ direction, category, label, amount: numberValue(payload.amount), entryDate }).where(eq(capitalLedger.id, id));
+      await db.update(capitalLedger).set({ direction, category, label, amount: moneyValue(payload.amount), entryDate }).where(eq(capitalLedger.id, id));
     } else if (payload.action === "deleteCapital") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Mouvement de capital invalide." }, { status: 400 });
