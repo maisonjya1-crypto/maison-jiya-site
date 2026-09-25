@@ -2583,12 +2583,33 @@ function EmptyState({ title, text }: { title: string; text: string }) {
 }
 function PurchasesPage({ purchases, onAdd, onEdit, onDelete }: { purchases: Purchase[]; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
   const total = purchases.reduce((sum, purchase) => sum + purchase.totalCost, 0);
+  const supplierRows = Array.from(new Set(purchases.map((purchase) => purchase.supplier).filter(Boolean)))
+    .map((supplier) => {
+      const rows = purchases.filter((purchase) => purchase.supplier === supplier);
+      return {
+        supplier,
+        purchased: rows.reduce((sum, purchase) => sum + purchase.totalCost, 0),
+        due: rows.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0),
+        operations: rows.length,
+        lastPurchase: rows.reduce((latest, purchase) => purchase.createdAt > latest ? purchase.createdAt : latest, ""),
+      };
+    })
+    .sort((left, right) => right.due - left.due || right.purchased - left.purchased);
   return (
     <>
       <section className="kpi-grid three">
         <Kpi label="Total achats" value={money(total)} detail={`${purchases.length} opérations`} />
         <Kpi label="Achats payés" value={money(purchases.filter((purchase) => purchase.paymentStatus === "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail="Sorties confirmées" />
         <Kpi label="Reste à payer" value={money(purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail="À surveiller" danger />
+      </section>
+      <section className="panel report-table">
+        <PanelHead kicker="Fournisseurs" title="Suivi des engagements" total={`${supplierRows.length} fournisseur${supplierRows.length === 1 ? "" : "s"}`} />
+        <div className="table-scroll">
+          <table>
+            <thead><tr><th>Fournisseur</th><th>Achats cumulés</th><th>À payer</th><th>Opérations</th><th>Dernier achat</th></tr></thead>
+            <tbody>{supplierRows.length ? supplierRows.map((row) => <tr key={row.supplier}><td><strong>{row.supplier}</strong></td><td>{money(row.purchased)}</td><td className={moneyTone(-row.due)}><strong>{money(row.due)}</strong></td><td>{row.operations}</td><td>{row.lastPurchase ? dateLabel(row.lastPurchase) : "—"}</td></tr>) : <tr><td colSpan={5}>Aucun fournisseur enregistré.</td></tr>}</tbody>
+          </table>
+        </div>
       </section>
       <section className="panel page-panel">
         <div className="section-toolbar">
