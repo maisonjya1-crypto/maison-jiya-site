@@ -410,6 +410,7 @@ export default function DashboardClient() {
       updateBackupWebhook: "Synchronisation instantanée connectée",
       createBackupNow: "Sauvegarde complète créée",
       restoreBackup: "Sauvegarde restaurée avec succès",
+      resetBusinessValues: "Valeurs commerciales remises à zéro",
       deleteOrder: "Commande placée dans la corbeille pendant 90 jours",
       restoreOrder: "Commande restaurée",
       deleteOrderPermanently: "Commande supprimée définitivement",
@@ -988,6 +989,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   const [savingBackup, setSavingBackup] = useState(false);
   const [savingWebhook, setSavingWebhook] = useState(false);
   const [savingFullBackup, setSavingFullBackup] = useState(false);
+  const [resettingBusinessValues, setResettingBusinessValues] = useState(false);
   const [retryingSheets, setRetryingSheets] = useState(false);
   const [backupToken, setBackupToken] = useState("");
   const [copyState, setCopyState] = useState("");
@@ -1118,6 +1120,24 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
       await submit("restoreBackup", { backupId: String(backup.id) });
     } finally {
       setSavingFullBackup(false);
+    }
+  }
+
+  async function resetBusinessValues() {
+    if (resettingBusinessValues || !access.isOwner) return;
+    const typed = window.prompt(
+      "Remettre à zéro toutes les valeurs commerciales ?\n\nSeront supprimés : commandes, clients, achats, publicités, capital et historiques associés.\n\nProduits, quantités, mouvements de stock et inventaires seront conservés.\n\nUne sauvegarde restaurable sera créée juste avant.\n\nTapez REINITIALISER pour confirmer.",
+    );
+    if (typed !== "REINITIALISER") return;
+    const confirmed = window.confirm(
+      "Dernière confirmation : supprimer maintenant toutes les valeurs commerciales ?\n\nLe stock et les produits resteront inchangés.",
+    );
+    if (!confirmed) return;
+    setResettingBusinessValues(true);
+    try {
+      await submit("resetBusinessValues", { confirmation: "REINITIALISER" });
+    } finally {
+      setResettingBusinessValues(false);
     }
   }
 
@@ -1395,6 +1415,23 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
           ) : <p className="settings-readonly-note">Seul l’administrateur peut consulter et restaurer les sauvegardes.</p>}
         </div>
       </details>
+
+      <section className="settings-panel business-reset-panel" id="business-reset">
+        <div className="business-reset-copy">
+          <span className="card-kicker">Remise à zéro contrôlée</span>
+          <h2>Repartir de zéro sur les valeurs commerciales</h2>
+          <p>Supprime commandes, clients, achats, publicités, capital et historiques associés. Les produits, quantités, mouvements de stock et inventaires restent conservés.</p>
+          <small>Une sauvegarde restaurable est créée automatiquement juste avant la suppression.</small>
+        </div>
+        <button
+          className="business-reset-button"
+          type="button"
+          onClick={() => void resetBusinessValues()}
+          disabled={resettingBusinessValues || !access.isOwner}
+        >
+          {resettingBusinessValues ? "Remise à zéro…" : "Remettre les valeurs à zéro"}
+        </button>
+      </section>
 
       <details className="settings-panel settings-disclosure audit-panel" id="audit">
         <summary className="settings-disclosure-summary">

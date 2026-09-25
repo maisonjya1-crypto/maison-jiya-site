@@ -189,6 +189,62 @@ export async function purgeExpiredTrash(database: D1Database) {
   }
 }
 
+
+export type BusinessResetSummary = {
+  orders: number;
+  customers: number;
+  purchases: number;
+  ads: number;
+  capital: number;
+  orderHistory: number;
+  carrierEvents: number;
+};
+
+function countFromResult(result: D1Result<unknown> | undefined) {
+  const row = result?.results?.[0] as { count?: number } | undefined;
+  return Number(row?.count || 0);
+}
+
+export async function resetBusinessValuesPreservingStock(database: D1Database): Promise<BusinessResetSummary> {
+  const counts = await database.batch([
+    database.prepare("SELECT COUNT(*) AS count FROM orders"),
+    database.prepare("SELECT COUNT(*) AS count FROM customers"),
+    database.prepare("SELECT COUNT(*) AS count FROM purchases"),
+    database.prepare("SELECT COUNT(*) AS count FROM ad_performance"),
+    database.prepare("SELECT COUNT(*) AS count FROM capital_ledger"),
+    database.prepare("SELECT COUNT(*) AS count FROM order_status_history"),
+    database.prepare("SELECT COUNT(*) AS count FROM carrier_events"),
+  ]);
+
+  const summary: BusinessResetSummary = {
+    orders: countFromResult(counts[0]),
+    customers: countFromResult(counts[1]),
+    purchases: countFromResult(counts[2]),
+    ads: countFromResult(counts[3]),
+    capital: countFromResult(counts[4]),
+    orderHistory: countFromResult(counts[5]),
+    carrierEvents: countFromResult(counts[6]),
+  };
+
+  // Filet de sécurité : une copie restaurable est créée avant toute remise à zéro.
+  await createDailyBackup(database, "Avant remise à zéro des valeurs", true);
+
+  // Les produits, quantités, mouvements de stock et inventaires sont volontairement conservés.
+  // On détache seulement la référence vers les anciennes commandes pour permettre leur suppression.
+  await database.batch([
+    database.prepare("UPDATE stock_movements SET order_id = NULL WHERE order_id IS NOT NULL"),
+    database.prepare("DELETE FROM order_status_history"),
+    database.prepare("DELETE FROM carrier_events"),
+    database.prepare("DELETE FROM capital_ledger"),
+    database.prepare("DELETE FROM orders"),
+    database.prepare("DELETE FROM customers"),
+    database.prepare("DELETE FROM purchases"),
+    database.prepare("DELETE FROM ad_performance"),
+  ]);
+
+  return summary;
+}
+
 export async function runDailyMaintenance(database: D1Database) {
   await createDailyBackup(database);
   await purgeExpiredTrash(database);
