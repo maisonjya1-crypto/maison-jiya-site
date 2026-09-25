@@ -1,6 +1,6 @@
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb, getRawDb } from "../../../db";
-import { createDailyBackup, purgeExpiredTrash, restoreDailyBackup } from "../../../db/backups";
+import { createDailyBackup, purgeExpiredTrash, resetBusinessValuesPreservingStock, restoreDailyBackup } from "../../../db/backups";
 import { dispatchAuthorizedOrder, getCarrierRuntimeStatus, syncCarrierOperations } from "../../../db/carriers";
 import { moroccanPhoneHelp, normalizeMoroccanPhone } from "../../../db/phone";
 import { getMetaRuntimeStatus, syncMetaAds } from "../../../db/meta";
@@ -147,6 +147,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   updateBackupWebhook: { action: "Connexion", entityType: "Google Sheets" },
   createBackupNow: { action: "Création", entityType: "Sauvegarde" },
   restoreBackup: { action: "Restauration", entityType: "Sauvegarde" },
+  resetBusinessValues: { action: "Remise à zéro", entityType: "Données commerciales" },
   retryGoogleSheetsSync: { action: "Nouvelle tentative", entityType: "Google Sheets" },
   updateCarriers: { action: "Modification", entityType: "Transporteurs" },
   syncMetaNow: { action: "Synchronisation", entityType: "Meta Ads" },
@@ -1001,6 +1002,22 @@ export async function POST(request: Request) {
           ? "Adresse Apps Script enregistrée. Générez aussi la clé privée pour activer la synchronisation."
           : "Connexion enregistrée. La synchronisation restera en attente et sera retentée automatiquement.";
       auditEntityLabel = "Synchronisation instantanée";
+    } else if (payload.action === "resetBusinessValues") {
+      if (!access.isOwner) return Response.json({ error: "Seul le compte principal peut remettre les valeurs commerciales à zéro." }, { status: 403 });
+      if (textValue(payload.confirmation) !== "REINITIALISER") {
+        return Response.json({ error: "Confirmation de remise à zéro invalide." }, { status: 400 });
+      }
+      const rawDatabase = await getRawDb();
+      const summary = await resetBusinessValuesPreservingStock(rawDatabase);
+      await markGoogleSheetsSyncPending(rawDatabase);
+      auditEntityLabel = "Valeurs commerciales";
+      integrationMessage = [
+        `${summary.orders} commande(s)`,
+        `${summary.customers} client(s)`,
+        `${summary.purchases} achat(s)`,
+        `${summary.ads} ligne(s) publicité`,
+        `${summary.capital} mouvement(s) de capital`,
+      ].join(" · ") + " supprimés. Produits, quantités et historique de stock conservés.";
     } else if (payload.action === "createBackupNow") {
       if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut créer une sauvegarde complète." }, { status: 403 });
       await createDailyBackup(await getRawDb(), "Manuelle", true);
