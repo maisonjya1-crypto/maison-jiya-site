@@ -26,8 +26,8 @@ export default function StorefrontEntrance() {
       return () => window.clearTimeout(reducedTimer);
     }
 
-    const leaveTimer = window.setTimeout(() => setLeaving(true), 1650);
-    const hideTimer = window.setTimeout(() => setVisible(false), 2250);
+    const leaveTimer = window.setTimeout(() => setLeaving(true), 3000);
+    const hideTimer = window.setTimeout(() => setVisible(false), 3800);
 
     return () => {
       window.clearTimeout(leaveTimer);
