@@ -66,22 +66,25 @@ export default function TrainingPage({ onExit }: { onExit: () => void }) {
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Partial<TrainingState>;
-        setState({
-          orders: Array.isArray(parsed.orders) ? parsed.orders : [],
-          purchases: Array.isArray(parsed.purchases) ? parsed.purchases : [],
-          stock: Array.isArray(parsed.stock) ? parsed.stock : [],
-          capital: Array.isArray(parsed.capital) ? parsed.capital : [],
-        });
+    const timer = window.setTimeout(() => {
+      try {
+        const raw = window.localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as Partial<TrainingState>;
+          setState({
+            orders: Array.isArray(parsed.orders) ? parsed.orders : [],
+            purchases: Array.isArray(parsed.purchases) ? parsed.purchases : [],
+            stock: Array.isArray(parsed.stock) ? parsed.stock : [],
+            capital: Array.isArray(parsed.capital) ? parsed.capital : [],
+          });
+        }
+      } catch {
+        setState(emptyState);
+      } finally {
+        setReady(true);
       }
-    } catch {
-      setState(emptyState);
-    } finally {
-      setReady(true);
-    }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
