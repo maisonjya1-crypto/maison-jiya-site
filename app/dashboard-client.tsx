@@ -528,15 +528,18 @@ export default function DashboardClient() {
     const shippingFees = collected.reduce((s, o) => s + o.shippingCost, 0);
     const collectionFees = collected.reduce((s, o) => s + o.fees, 0);
     const netCollected = revenue - shippingFees - collectionFees;
-    const costs = delivered.reduce((s, o) => s + o.productCost + o.shippingCost + o.adCost + o.fees, 0);
+    const costs = delivered.reduce((s, o) => s + o.productCost + o.shippingCost + o.fees, 0);
     const losses = data.orders.reduce((s, o) => s + o.returnCost, 0);
     const adSpend = data.ads.reduce((s, a) => s + a.spend, 0);
     const adRevenue = data.ads.reduce((s, a) => s + a.revenue, 0);
     const purchases = data.purchases.filter((p) => p.paymentStatus === "Payé").reduce((s, p) => s + p.totalCost, 0);
+    const unpaidPurchases = data.purchases.filter((p) => p.paymentStatus !== "Payé").reduce((s, p) => s + p.totalCost, 0);
+    const safetyReserve = Math.max(0, Number(data.settings.safety_reserve) || 0);
     const capitalNet = data.capital.reduce((s, r) => s + (r.direction === "Entrée" ? r.amount : r.direction === "Sortie" ? -r.amount : 0), 0);
     const reinvest = data.capital.filter((entry) => entry.isAutomatic && entry.category === "Réinvestissement").reduce((sum, entry) => sum + entry.amount, 0);
-    const profit = deliveredRevenue - costs - losses;
+    const profit = deliveredRevenue - costs - losses - adSpend;
     const cash = capitalNet + netCollected - purchases - losses - adSpend;
+    const reinvestable = Math.max(0, Math.min(reinvest, cash - unpaidPurchases - safetyReserve));
     return {
       revenue,
       shippingFees,
@@ -550,6 +553,9 @@ export default function DashboardClient() {
       capitalNet,
       margin: deliveredRevenue ? (profit / deliveredRevenue) * 100 : 0,
       reinvest,
+      reinvestable,
+      unpaidPurchases,
+      safetyReserve,
     };
   }, [data]);
   const delivery = useMemo(() => {
@@ -836,6 +842,9 @@ function Page({
     capitalNet: number;
     margin: number;
     reinvest: number;
+    reinvestable: number;
+    unpaidPurchases: number;
+    safetyReserve: number;
   };
   delivery: { label: string; value: number; tone: string }[];
   open: (m: ModalName) => void;
@@ -891,8 +900,8 @@ function Page({
         </article>
         <article className="reinvest-card">
           <span className="card-kicker">Répartition automatique</span>
-          <h2>{money(metrics.reinvest)}</h2>
-          <p>Le capital positif disponible est réparti automatiquement : 50% réinvestissement, 30% salaire et 20% fonds d’urgence.</p>
+          <h2>{money(metrics.reinvestable)}</h2>
+          <p>Réinvestissable maintenant après protection des achats fournisseurs à payer et de la réserve de sécurité.</p>
           <div className="allocation-bar">
             <span className="stock" />
             <span className="ads" />
