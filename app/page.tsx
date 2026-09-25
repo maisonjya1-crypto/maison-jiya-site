@@ -10,6 +10,7 @@ import "./private-pwa-android.css";
 import "./mobile-native.css";
 import "./private-ios.css";
 import "./private-ui-v3.css";
+import "./training-mode.css";
 import DashboardClient from "./dashboard-client";
 import PlatformEnhancements from "./platform-enhancements";
 import CarrierModeEnhancement from "./carrier-mode-enhancement";
