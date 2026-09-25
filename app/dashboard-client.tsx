@@ -644,7 +644,7 @@ export default function DashboardClient() {
             <h1>{active}</h1>
           </div>
           <div className="top-actions">
-            <GlobalSearch data={data} setActive={setActive} openOrder={openOrder} />
+            <SectionSearch key={active} active={active} data={data} openOrder={openOrder} openEntity={openEntity} />
             {!['Assistant IA', 'Paramètres', 'Rapports'].includes(active) && (
               <>
               <button className="period-button">Toutes les données</button>
@@ -790,24 +790,102 @@ function Loading() {
   );
 }
 
-function GlobalSearch({ data, setActive, openOrder }: { data: Data; setActive: (page: string) => void; openOrder: (order: Order) => void }) {
+function SectionSearch({ active, data, openOrder, openEntity }: { active: string; data: Data; openOrder: (order: Order) => void; openEntity: (selection: EditableEntity) => void }) {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLocaleLowerCase("fr");
-  const results = useMemo<Array<{ key: string; page: string; label: string; detail: string; order?: Order }>>(() => {
+  const searchablePages = new Set(["Commandes", "Produits", "Colis", "Clients", "Achats", "Publicités", "Capital", "Corbeille"]);
+  const results = useMemo<Array<{ key: string; label: string; detail: string; order?: Order; entity?: EditableEntity }>>(() => {
     if (normalized.length < 2) return [];
     const matches = (values: Array<string | number | null | undefined>) => values.some((value) => String(value || "").toLocaleLowerCase("fr").includes(normalized));
-    return [
-      ...data.orders.filter((order) => matches([order.orderRef, order.customerName, order.phone, order.city, order.products, order.trackingNumber, order.campaign])).map((order) => ({ key: `order-${order.id}`, page: "Commandes", label: order.orderRef, detail: `${order.customerName} · ${order.products}`, order })),
-      ...data.products.filter((product) => matches([product.productCode, product.name, product.category])).map((product) => ({ key: `product-${product.id}`, page: "Produits", label: product.name, detail: `${product.productCode} · stock ${product.stockQuantity}` })),
-      ...data.customers.filter((customer) => matches([customer.name, customer.phone, customer.city])).map((customer) => ({ key: `customer-${customer.id}`, page: "Clients", label: customer.name, detail: `${customer.phone} · ${customer.city}` })),
-      ...data.purchases.filter((purchase) => matches([purchase.supplier, purchase.item])).map((purchase) => ({ key: `purchase-${purchase.id}`, page: "Achats", label: purchase.item, detail: `${purchase.supplier} · ${money(purchase.totalCost)}` })),
-      ...data.ads.filter((ad) => matches([ad.campaign, ad.platform])).map((ad) => ({ key: `ad-${ad.id}`, page: "Publicités", label: ad.campaign, detail: `${ad.platform} · ${money(ad.spend)}` })),
-    ].slice(0, 10);
-  }, [data, normalized]);
+
+    if (active === "Commandes") {
+      return data.orders
+        .filter((order) => matches([order.orderRef, order.customerName, order.phone, order.city, order.products, order.trackingNumber, order.campaign, order.source, order.status]))
+        .map((order) => ({ key: `order-${order.id}`, label: order.orderRef, detail: `${order.customerName || "Cliente"} · ${order.products}`, order }))
+        .slice(0, 10);
+    }
+    if (active === "Produits") {
+      return data.products
+        .filter((product) => matches([product.productCode, product.name, product.category, product.stockQuantity]))
+        .map((product) => ({ key: `product-${product.id}`, label: product.name, detail: `${product.productCode} · stock ${product.stockQuantity}`, entity: { kind: "product" as const, record: product } }))
+        .slice(0, 10);
+    }
+    if (active === "Colis") {
+      return data.orders
+        .filter((order) => order.fulfillmentType !== "Magasin physique")
+        .filter((order) => matches([order.orderRef, order.customerName, order.city, order.trackingNumber, order.carrier, order.status]))
+        .map((order) => ({ key: `shipment-${order.id}`, label: order.orderRef, detail: `${order.carrier} · ${order.trackingNumber || "Sans numéro"} · ${order.status}`, order }))
+        .slice(0, 10);
+    }
+    if (active === "Clients") {
+      return data.customers
+        .filter((customer) => matches([customer.name, customer.phone, customer.city]))
+        .map((customer) => ({ key: `customer-${customer.id}`, label: customer.name, detail: `${customer.phone} · ${customer.city}`, entity: { kind: "customer" as const, record: customer } }))
+        .slice(0, 10);
+    }
+    if (active === "Achats") {
+      return data.purchases
+        .filter((purchase) => matches([purchase.supplier, purchase.item, purchase.paymentStatus, purchase.totalCost, purchase.quantity]))
+        .map((purchase) => ({ key: `purchase-${purchase.id}`, label: purchase.item, detail: `${purchase.supplier} · ${money(purchase.totalCost)} · ${purchase.paymentStatus}`, entity: { kind: "purchase" as const, record: purchase } }))
+        .slice(0, 10);
+    }
+    if (active === "Publicités") {
+      return data.ads
+        .filter((ad) => matches([ad.campaign, ad.platform, ad.externalId, ad.source, ad.performanceDate]))
+        .map((ad) => ({ key: `ad-${ad.id}`, label: ad.campaign, detail: `${ad.platform} · ${money(ad.spend)} · ${ad.source}`, entity: { kind: "ad" as const, record: ad } }))
+        .slice(0, 10);
+    }
+    if (active === "Capital") {
+      return data.capital
+        .filter((entry) => matches([entry.label, entry.category, entry.account, entry.direction, entry.amount, entry.entryDate]))
+        .map((entry) => ({
+          key: `capital-${entry.id}`,
+          label: entry.label || entry.category,
+          detail: `${entry.direction} · ${money(entry.amount)} · ${entry.account}`,
+          entity: entry.isAutomatic ? undefined : ({ kind: "capital" as const, record: entry }),
+        }))
+        .slice(0, 10);
+    }
+    if (active === "Corbeille") {
+      return data.trash
+        .filter((order) => matches([order.orderRef, order.customerName, order.phone, order.city, order.products, order.trackingNumber]))
+        .map((order) => ({ key: `trash-${order.id}`, label: order.orderRef, detail: `${order.customerName || "Cliente"} · ${order.products}`, order }))
+        .slice(0, 10);
+    }
+    return [];
+  }, [active, data, normalized]);
+
+  if (!searchablePages.has(active)) return null;
+
   return (
-    <div className="global-search">
-      <label><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Rechercher partout…" aria-label="Recherche générale" /></label>
-      {normalized.length >= 2 && <div className="global-search-results">{results.length ? results.map((result) => <button type="button" key={result.key} onClick={() => { setQuery(""); if (result.order) openOrder(result.order); else setActive(result.page); }}><strong>{result.label}</strong><small>{result.page} · {result.detail}</small></button>) : <p>Aucun résultat</p>}</div>}
+    <div className="global-search section-search">
+      <label>
+        <span aria-hidden="true">⌕</span>
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={`Rechercher dans ${active}…`}
+          aria-label={`Recherche dans ${active}`}
+        />
+      </label>
+      {normalized.length >= 2 && (
+        <div className="global-search-results">
+          {results.length ? results.map((result) => (
+            <button
+              type="button"
+              key={result.key}
+              onClick={() => {
+                setQuery("");
+                if (result.order) openOrder(result.order);
+                else if (result.entity) openEntity(result.entity);
+              }}
+            >
+              <strong>{result.label}</strong>
+              <small>{result.detail}</small>
+            </button>
+          )) : <p>Aucun résultat dans {active}</p>}
+        </div>
+      )}
     </div>
   );
 }
