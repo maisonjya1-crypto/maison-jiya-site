@@ -528,15 +528,18 @@ export default function DashboardClient() {
     const shippingFees = collected.reduce((s, o) => s + o.shippingCost, 0);
     const collectionFees = collected.reduce((s, o) => s + o.fees, 0);
     const netCollected = revenue - shippingFees - collectionFees;
-    const costs = delivered.reduce((s, o) => s + o.productCost + o.shippingCost + o.adCost + o.fees, 0);
+    const costs = delivered.reduce((s, o) => s + o.productCost + o.shippingCost + o.fees, 0);
     const losses = data.orders.reduce((s, o) => s + o.returnCost, 0);
     const adSpend = data.ads.reduce((s, a) => s + a.spend, 0);
     const adRevenue = data.ads.reduce((s, a) => s + a.revenue, 0);
     const purchases = data.purchases.filter((p) => p.paymentStatus === "Payé").reduce((s, p) => s + p.totalCost, 0);
+    const unpaidPurchases = data.purchases.filter((p) => p.paymentStatus !== "Payé").reduce((s, p) => s + p.totalCost, 0);
+    const safetyReserve = Math.max(0, Number(data.settings.safety_reserve) || 0);
     const capitalNet = data.capital.reduce((s, r) => s + (r.direction === "Entrée" ? r.amount : r.direction === "Sortie" ? -r.amount : 0), 0);
     const reinvest = data.capital.filter((entry) => entry.isAutomatic && entry.category === "Réinvestissement").reduce((sum, entry) => sum + entry.amount, 0);
-    const profit = deliveredRevenue - costs - losses;
+    const profit = deliveredRevenue - costs - losses - adSpend;
     const cash = capitalNet + netCollected - purchases - losses - adSpend;
+    const reinvestable = Math.max(0, Math.min(reinvest, cash - unpaidPurchases - safetyReserve));
     return {
       revenue,
       shippingFees,
@@ -550,6 +553,9 @@ export default function DashboardClient() {
       capitalNet,
       margin: deliveredRevenue ? (profit / deliveredRevenue) * 100 : 0,
       reinvest,
+      reinvestable,
+      unpaidPurchases,
+      safetyReserve,
     };
   }, [data]);
   const delivery = useMemo(() => {
@@ -836,6 +842,9 @@ function Page({
     capitalNet: number;
     margin: number;
     reinvest: number;
+    reinvestable: number;
+    unpaidPurchases: number;
+    safetyReserve: number;
   };
   delivery: { label: string; value: number; tone: string }[];
   open: (m: ModalName) => void;
@@ -891,8 +900,8 @@ function Page({
         </article>
         <article className="reinvest-card">
           <span className="card-kicker">Répartition automatique</span>
-          <h2>{money(metrics.reinvest)}</h2>
-          <p>Le capital positif disponible est réparti automatiquement : 50% réinvestissement, 30% salaire et 20% fonds d’urgence.</p>
+          <h2>{money(metrics.reinvestable)}</h2>
+          <p>Réinvestissable maintenant après protection des achats fournisseurs à payer et de la réserve de sécurité.</p>
           <div className="allocation-bar">
             <span className="stock" />
             <span className="ads" />
@@ -2290,17 +2299,44 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
     purchaseValue = products.reduce((sum, product) => sum + product.stockQuantity * product.purchasePrice, 0),
     saleValue = products.reduce((sum, product) => sum + product.stockQuantity * product.salePrice, 0),
     lowStock = products.filter((product) => product.stockQuantity <= 5).length;
+  const quantityForProduct = (order: Order, product: Product) => {
+    if (order.productId === product.id) return order.quantity;
+    const linkedQuantity = movements
+      .filter((movement) => movement.orderId === order.id && movement.productId === product.id && movement.movementType === "Commande")
+      .reduce((sum, movement) => sum + movement.quantity, 0);
+    if (linkedQuantity > 0) return linkedQuantity;
+    const escapedName = product.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = order.products.match(new RegExp(`${escapedName}\\s*×\\s*(\\d+)`, "i"));
+    return match ? Math.max(0, Number(match[1]) || 0) : 0;
+  };
+  const orderShareForProduct = (order: Order, product: Product, quantity: number) => {
+    const lines = products
+      .map((candidate) => ({ candidate, quantity: quantityForProduct(order, candidate) }))
+      .filter((line) => line.quantity > 0);
+    if (lines.length <= 1) return 1;
+    const totalWeight = lines.reduce((sum, line) => sum + Math.max(0, line.candidate.salePrice) * line.quantity, 0);
+    const ownWeight = Math.max(0, product.salePrice) * quantity;
+    return totalWeight > 0 ? ownWeight / totalWeight : 1 / lines.length;
+  };
   const profitability = products.map((product) => {
-    const productOrders = orders.filter((order) => order.productId === product.id);
-    const delivered = productOrders.filter((order) => order.status === "Livrée");
-    const revenue = delivered.reduce((sum, order) => sum + order.saleAmount, 0);
-    const operatingCosts = delivered.reduce((sum, order) => sum + order.productCost + order.shippingCost + order.adCost + order.fees, 0);
-    const returnCosts = productOrders.reduce((sum, order) => sum + order.returnCost, 0);
-    const costs = operatingCosts + returnCosts;
+    let deliveredUnits = 0;
+    let revenue = 0;
+    let costs = 0;
+    for (const order of orders) {
+      const quantity = quantityForProduct(order, product);
+      if (quantity <= 0) continue;
+      const share = orderShareForProduct(order, product, quantity);
+      if (order.status === "Livrée") {
+        deliveredUnits += quantity;
+        revenue += order.saleAmount * share;
+        costs += (order.productCost + order.shippingCost + order.adCost + order.fees) * share;
+      }
+      costs += order.returnCost * share;
+    }
     const profit = revenue - costs;
     return {
       product,
-      deliveredUnits: delivered.reduce((sum, order) => sum + order.quantity, 0),
+      deliveredUnits,
       revenue,
       costs,
       profit,
@@ -2530,12 +2566,33 @@ function EmptyState({ title, text }: { title: string; text: string }) {
 }
 function PurchasesPage({ purchases, onAdd, onEdit, onDelete }: { purchases: Purchase[]; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
   const total = purchases.reduce((sum, purchase) => sum + purchase.totalCost, 0);
+  const supplierRows = Array.from(new Set(purchases.map((purchase) => purchase.supplier).filter(Boolean)))
+    .map((supplier) => {
+      const rows = purchases.filter((purchase) => purchase.supplier === supplier);
+      return {
+        supplier,
+        purchased: rows.reduce((sum, purchase) => sum + purchase.totalCost, 0),
+        due: rows.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0),
+        operations: rows.length,
+        lastPurchase: rows.reduce((latest, purchase) => purchase.createdAt > latest ? purchase.createdAt : latest, ""),
+      };
+    })
+    .sort((left, right) => right.due - left.due || right.purchased - left.purchased);
   return (
     <>
       <section className="kpi-grid three">
         <Kpi label="Total achats" value={money(total)} detail={`${purchases.length} opérations`} />
         <Kpi label="Achats payés" value={money(purchases.filter((purchase) => purchase.paymentStatus === "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail="Sorties confirmées" />
         <Kpi label="Reste à payer" value={money(purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail="À surveiller" danger />
+      </section>
+      <section className="panel report-table">
+        <PanelHead kicker="Fournisseurs" title="Suivi des engagements" total={`${supplierRows.length} fournisseur${supplierRows.length === 1 ? "" : "s"}`} />
+        <div className="table-scroll">
+          <table>
+            <thead><tr><th>Fournisseur</th><th>Achats cumulés</th><th>À payer</th><th>Opérations</th><th>Dernier achat</th></tr></thead>
+            <tbody>{supplierRows.length ? supplierRows.map((row) => <tr key={row.supplier}><td><strong>{row.supplier}</strong></td><td>{money(row.purchased)}</td><td className={moneyTone(-row.due)}><strong>{money(row.due)}</strong></td><td>{row.operations}</td><td>{row.lastPurchase ? dateLabel(row.lastPurchase) : "—"}</td></tr>) : <tr><td colSpan={5}>Aucun fournisseur enregistré.</td></tr>}</tbody>
+          </table>
+        </div>
       </section>
       <section className="panel page-panel">
         <div className="section-toolbar">
@@ -2706,6 +2763,12 @@ function ReportsPage({ data }: { data: Data }) {
   const lowStock = data.products.filter((product) => product.stockQuantity <= 3);
   const delayed = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && elapsedDays(order.updatedAt || order.createdAt) >= 4);
   const unpaid = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus !== "Encaissé" && elapsedDays(order.updatedAt || order.createdAt) >= 3);
+  const supplierDue = data.purchases.filter((purchase) => purchase.paymentStatus !== "Payé");
+  const dormantProducts = data.products.filter((product) => {
+    if (product.stockQuantity <= 0 || elapsedDays(product.createdAt) < 45) return false;
+    const recentOutbound = data.stockMovements.some((movement) => movement.productId === product.id && ["Commande", "Vente", "Inventaire -"].includes(movement.movementType) && elapsedDays(movement.createdAt) < 45);
+    return !recentOutbound;
+  });
   const storeCash = collected.filter((order) => order.fulfillmentType === "Magasin physique").reduce((sum, order) => sum + order.saleAmount - order.fees - order.returnCost, 0);
   const carrierMoney = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus === "À encaisser").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees, 0);
   const receivables = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && order.paymentStatus !== "Encaissé").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees, 0);
@@ -2721,6 +2784,8 @@ function ReportsPage({ data }: { data: Data }) {
     ...lowStock.map((product) => ({ key: `stock-${product.id}`, level: product.stockQuantity === 0 ? "danger" : "warning", title: `${product.name} : stock ${product.stockQuantity}`, detail: `SKU ${product.productCode} · seuil faible atteint` })),
     ...delayed.map((order) => ({ key: `delay-${order.id}`, level: "warning", title: `${order.orderRef} semble bloquée`, detail: `${order.carrier} · ${order.status} depuis ${elapsedDays(order.updatedAt || order.createdAt)} jours` })),
     ...unpaid.map((order) => ({ key: `unpaid-${order.id}`, level: "danger", title: `${order.orderRef} livrée mais non encaissée`, detail: `${order.carrier} · ${money(order.saleAmount - order.shippingCost - order.fees)} à vérifier` })),
+    ...supplierDue.map((purchase) => ({ key: `supplier-${purchase.id}`, level: "danger", title: `${purchase.supplier} : paiement fournisseur à prévoir`, detail: `${purchase.item} · ${money(purchase.totalCost)} à payer` })),
+    ...dormantProducts.map((product) => ({ key: `dormant-${product.id}`, level: "warning", title: `${product.name} : stock dormant`, detail: `${product.stockQuantity} unité(s) sans sortie depuis au moins 45 jours` })),
   ];
   const platformRows = groupOrderAnalysis(completed.filter((order) => ["Facebook", "Instagram", "TikTok", "WhatsApp"].includes(order.source)), (order) => order.source);
   const campaignRows = groupOrderAnalysis(completed.filter((order) => order.campaign), (order) => order.campaign);
@@ -2748,6 +2813,9 @@ function CapitalPage({
     capitalNet: number;
     netCollected: number;
     reinvest: number;
+    reinvestable: number;
+    unpaidPurchases: number;
+    safetyReserve: number;
   };
   onAdd: () => void;
   onEdit: (selection: EditableEntity) => void;
@@ -2877,7 +2945,13 @@ function CapitalPage({
               Ajustements manuels<strong>{money(metrics.capitalNet)}</strong>
             </p>
             <p>
-              Réinvestissement suggéré<strong>{money(metrics.reinvest)}</strong>
+              Réinvestissable maintenant<strong>{money(metrics.reinvestable)}</strong>
+            </p>
+            <p>
+              Fournisseurs à payer<strong>{money(metrics.unpaidPurchases)}</strong>
+            </p>
+            <p>
+              Réserve protégée<strong>{money(metrics.safetyReserve)}</strong>
             </p>
           </div>
         </article>
@@ -2898,9 +2972,9 @@ function CapitalPage({
           <article className="capital-envelope-card reinvest-envelope">
             <span className="envelope-icon">↗</span>
             <span className="envelope-label">Montant de réinvestissement</span>
-            <h3>{money(metrics.reinvest)}</h3>
-            <p>50% des gains positifs encaissés pour le stock, les achats et la croissance.</p>
-            <small>Écritures automatiques · 50%</small>
+            <h3>{money(metrics.reinvestable)}</h3>
+            <p>Montant mobilisable aujourd’hui sans consommer les factures fournisseurs dues ni la réserve de sécurité.</p>
+            <small>Affectation théorique : {money(metrics.reinvest)} · disponible protégé</small>
           </article>
           <article className="capital-envelope-card salary-envelope">
             <span className="envelope-icon">◎</span>

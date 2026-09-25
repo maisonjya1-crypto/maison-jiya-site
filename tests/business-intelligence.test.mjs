@@ -60,3 +60,31 @@ test("réinvestissement, salaire et fonds d’urgence sont des écritures liées
   assert.match(allocations, /Fonds d’urgence/);
   assert.match(allocations, /is_automatic = 1/);
 });
+
+
+test("le pilotage financier utilise les dépenses Meta réelles et protège le réinvestissement", () => {
+  assert.match(dashboard, /const profit = deliveredRevenue - costs - losses - adSpend/);
+  assert.match(dashboard, /const reinvestable = Math\.max\(0, Math\.min\(reinvest, cash - unpaidPurchases - safetyReserve\)\)/);
+  assert.match(dashboard, /Réinvestissable maintenant/);
+  assert.match(dashboard, /Réserve protégée/);
+});
+
+test("la rentabilité produit inclut les packs et commandes multi-produits sans doubler le total", () => {
+  assert.match(dashboard, /quantityForProduct/);
+  assert.match(dashboard, /movement\.movementType === "Commande"/);
+  assert.match(dashboard, /orderShareForProduct/);
+  assert.match(dashboard, /order\.productCost \+ order\.shippingCost \+ order\.adCost \+ order\.fees/);
+});
+
+test("les rapports surveillent les fournisseurs à payer et le stock dormant", () => {
+  assert.match(dashboard, /Suivi des engagements/);
+  assert.match(dashboard, /paiement fournisseur à prévoir/);
+  assert.match(dashboard, /stock dormant/);
+  assert.match(dashboard, /sans sortie depuis au moins 45 jours/);
+});
+
+test("les montants décimaux sont conservés pour achats, publicités et capital", () => {
+  assert.match(api, /const unitCost = moneyValue\(payload\.unitCost\)/);
+  assert.match(api, /spend: moneyValue\(payload\.spend\), revenue: moneyValue\(payload\.revenue\)/);
+  assert.match(api, /amount: moneyValue\(payload\.amount\)/);
+});
