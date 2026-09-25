@@ -14,6 +14,8 @@ test("la boutique charge l'animation d'entrée sans toucher au dashboard", () =>
   assert.match(intro, /prefers-reduced-motion/);
   assert.match(css, /mj-entry-screen/);
   assert.match(css, /z-index: 2147483000/);
+  assert.doesNotMatch(intro, /document\.documentElement/);
+  assert.doesNotMatch(css, /mj-entry-lock/);
 });
 
 test("l'intro reste courte et peut être passée", () => {

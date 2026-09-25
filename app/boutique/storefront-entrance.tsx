@@ -20,14 +20,10 @@ export default function StorefrontEntrance() {
     }
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    document.documentElement.classList.add("mj-entry-lock");
 
     if (reducedMotion) {
       const reducedTimer = window.setTimeout(() => setVisible(false), 120);
-      return () => {
-        window.clearTimeout(reducedTimer);
-        document.documentElement.classList.remove("mj-entry-lock");
-      };
+      return () => window.clearTimeout(reducedTimer);
     }
 
     const leaveTimer = window.setTimeout(() => setLeaving(true), 1650);
@@ -36,7 +32,6 @@ export default function StorefrontEntrance() {
     return () => {
       window.clearTimeout(leaveTimer);
       window.clearTimeout(hideTimer);
-      document.documentElement.classList.remove("mj-entry-lock");
     };
   }, []);
 
