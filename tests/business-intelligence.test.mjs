@@ -8,9 +8,10 @@ const schema = await readFile(new URL("../db/schema.ts", import.meta.url), "utf8
 const meta = await readFile(new URL("../db/meta.ts", import.meta.url), "utf8");
 const allocations = await readFile(new URL("../db/allocations.ts", import.meta.url), "utf8");
 
-test("la recherche générale couvre commandes, produits, clients, achats et publicités", () => {
-  assert.match(dashboard, /function GlobalSearch/);
-  for (const source of ["data.orders", "data.products", "data.customers", "data.purchases", "data.ads"]) assert.match(dashboard, new RegExp(source.replace(".", "\\.")));
+test("la recherche est limitée au bloc actif et couvre les principaux blocs métier", () => {
+  assert.match(dashboard, /function SectionSearch/);
+  assert.doesNotMatch(dashboard, /Rechercher partout/);
+  for (const source of ["data.orders", "data.products", "data.customers", "data.purchases", "data.ads", "data.capital", "data.trash"]) assert.match(dashboard, new RegExp(source.replace(".", "\\.")));
 });
 
 test("le rapport calcule le gain exact et sépare les quatre emplacements d'argent", () => {
