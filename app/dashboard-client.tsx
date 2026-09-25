@@ -2305,24 +2305,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
       .filter((movement) => movement.orderId === order.id && movement.productId === product.id && movement.movementType === "Commande")
       .reduce((sum, movement) => sum + movement.quantity, 0);
     if (linkedQuantity > 0) return linkedQuantity;
-    const escapedName = product.name.replace(/[.*+?^${}()|[\]\\]/g, "\\  const profitability = products.map((product) => {
-    const productOrders = orders.filter((order) => order.productId === product.id);
-    const delivered = productOrders.filter((order) => order.status === "Livrée");
-    const revenue = delivered.reduce((sum, order) => sum + order.saleAmount, 0);
-    const operatingCosts = delivered.reduce((sum, order) => sum + order.productCost + order.shippingCost + order.adCost + order.fees, 0);
-    const returnCosts = productOrders.reduce((sum, order) => sum + order.returnCost, 0);
-    const costs = operatingCosts + returnCosts;
-    const profit = revenue - costs;
-    return {
-      product,
-      deliveredUnits: delivered.reduce((sum, order) => sum + order.quantity, 0),
-      revenue,
-      costs,
-      profit,
-      margin: revenue ? (profit / revenue) * 100 : 0,
-    };
-  }).sort((left, right) => right.profit - left.profit);
-");
+    const escapedName = product.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const match = order.products.match(new RegExp(`${escapedName}\\s*×\\s*(\\d+)`, "i"));
     return match ? Math.max(0, Number(match[1]) || 0) : 0;
   };
