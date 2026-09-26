@@ -497,6 +497,7 @@ export default function DashboardClient() {
       case "purchase":
         action = "deletePurchase";
         label = `l’achat ${selection.record.item}`;
+        warning = selection.record.receivedQuantity > 0 ? " Cet achat a déjà alimenté le stock et ne peut pas être supprimé." : "";
         break;
       case "ad":
         action = "deleteAd";
@@ -2610,10 +2611,10 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                       <td>{dateLabel(movement.createdAt)}</td>
                       <td><strong>{movement.productName}</strong><small>{movement.productCode}</small></td>
                       <td><Status value={movement.movementType} /></td>
-                      <td className={["Entrée", "Réintégration", "Inventaire +"].includes(movement.movementType) ? "money-positive" : "money-negative"}>{["Entrée", "Réintégration", "Inventaire +"].includes(movement.movementType) ? "+" : "−"}{movement.quantity}</td>
+                      <td className={["Entrée", "Réintégration", "Inventaire +", "Réception fournisseur"].includes(movement.movementType) ? "money-positive" : "money-negative"}>{["Entrée", "Réintégration", "Inventaire +", "Réception fournisseur"].includes(movement.movementType) ? "+" : "−"}{movement.quantity}</td>
                       <td>{movement.note || "—"}</td>
                       <td className="order-actions-cell">
-                        {movement.orderId || movement.movementType.startsWith("Inventaire") ? <span className="automatic-movement">{movement.orderId ? "Automatique" : "Inventaire"}</span> : <RecordActions label="ce mouvement de stock" onEdit={() => onEdit({ kind: "movement", record: movement })} onDelete={() => onDelete({ kind: "movement", record: movement })} />}
+                        {movement.orderId || movement.purchaseId || movement.movementType.startsWith("Inventaire") ? <span className="automatic-movement">{movement.orderId ? "Commande" : movement.purchaseId ? "Fournisseur" : "Inventaire"}</span> : <RecordActions label="ce mouvement de stock" onEdit={() => onEdit({ kind: "movement", record: movement })} onDelete={() => onDelete({ kind: "movement", record: movement })} />}
                       </td>
                     </tr>
                   ))}
