@@ -10,7 +10,7 @@ test("les trois longues sections produits sont repliables indépendamment", asyn
   assert.match(dashboard, /<details className="panel product-disclosure product-profit-panel">/);
   assert.match(dashboard, /<details className="panel product-disclosure product-catalog-panel">/);
   assert.match(dashboard, /<details className="panel product-disclosure stock-history">/);
-  assert.match(dashboard, /Bénéfice par produit/);
+  assert.match(dashboard, /Marge contributive par produit/);
   assert.match(dashboard, /Catalogue & stock/);
   assert.match(dashboard, /Derniers mouvements/);
 });
