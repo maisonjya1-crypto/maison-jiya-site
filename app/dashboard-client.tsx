@@ -2868,6 +2868,77 @@ function PurchasesPage({ purchases, products, canEdit, submit, onAdd, onEdit, on
   );
 }
 
+function ExpensesPage({ expenses, onAdd, onEdit, onDelete }: { expenses: Expense[]; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+  const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const paid = expenses.filter((expense) => expense.paymentStatus === "Payé").reduce((sum, expense) => sum + expense.amount, 0);
+  const due = expenses.filter((expense) => expense.paymentStatus !== "Payé").reduce((sum, expense) => sum + expense.amount, 0);
+  const categories = Array.from(new Set(expenses.map((expense) => expense.category).filter(Boolean)))
+    .map((category) => {
+      const rows = expenses.filter((expense) => expense.category === category);
+      return { category, amount: rows.reduce((sum, expense) => sum + expense.amount, 0), count: rows.length };
+    })
+    .sort((left, right) => right.amount - left.amount);
+
+  return (
+    <>
+      <section className="kpi-grid three">
+        <Kpi label="Charges enregistrées" value={money(total)} detail={expenses.length + " dépense(s) comptabilisée(s)"} />
+        <Kpi label="Déjà payées" value={money(paid)} detail="Déduit de la trésorerie estimée" />
+        <Kpi label="À payer" value={money(due)} detail="Charge reconnue, sortie de trésorerie encore à venir" danger={due > 0} />
+      </section>
+      <section className="panel expense-explainer">
+        <div>
+          <span className="card-kicker">Charges d’exploitation</span>
+          <h2>Dépenses ≠ achats de stock</h2>
+          <p>Utilisez ce module pour le loyer, emballages hors stock, téléphone, transport, frais bancaires, outils, prestations et autres charges. Les achats destinés au stock restent dans « Achats ».</p>
+        </div>
+        <strong>{money(total)}</strong>
+      </section>
+      {categories.length > 0 && (
+        <section className="panel report-table">
+          <PanelHead kicker="Répartition" title="Dépenses par catégorie" total={String(categories.length)} />
+          <div className="expense-category-grid">
+            {categories.slice(0, 8).map((row) => (
+              <article key={row.category}>
+                <span>{row.category}</span>
+                <strong>{money(row.amount)}</strong>
+                <small>{row.count} opération(s)</small>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+      <section className="panel page-panel">
+        <div className="section-toolbar">
+          <div><h2>Registre des dépenses</h2><p>Chaque charge réduit le résultat. Seules les dépenses marquées « Payé » réduisent immédiatement la trésorerie estimée.</p></div>
+          <button className="primary-button" onClick={onAdd}>＋ Ajouter une dépense</button>
+        </div>
+        {expenses.length ? (
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Date</th><th>Catégorie</th><th>Libellé</th><th>Compte</th><th>Montant</th><th>Paiement</th><th>Note</th><th>Actions</th></tr></thead>
+              <tbody>
+                {expenses.map((expense) => (
+                  <tr key={expense.id}>
+                    <td>{dateLabel(expense.expenseDate)}</td>
+                    <td><span className="category-chip">{expense.category}</span></td>
+                    <td><strong>{expense.label}</strong></td>
+                    <td>{expense.account}</td>
+                    <td className="money-negative"><strong>{money(expense.amount)}</strong></td>
+                    <td><Status value={expense.paymentStatus} /></td>
+                    <td>{expense.note || "—"}</td>
+                    <td className="order-actions-cell"><RecordActions label={"la dépense " + expense.label} onEdit={() => onEdit({ kind: "expense", record: expense })} onDelete={() => onDelete({ kind: "expense", record: expense })} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <EmptyState title="Aucune dépense enregistrée" text="Ajoutez vos charges réelles pour que bénéfice et trésorerie reflètent mieux l’activité Maison Jiya." />}
+      </section>
+    </>
+  );
+}
+
 type AdSummary = {
   key: string;
   record: Ad;
