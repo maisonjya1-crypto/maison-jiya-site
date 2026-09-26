@@ -62,6 +62,17 @@ type Purchase = {
   receivedAt: string | null;
   createdAt: string;
 };
+type Expense = {
+  id: number;
+  category: string;
+  label: string;
+  amount: number;
+  account: string;
+  paymentStatus: string;
+  expenseDate: string;
+  note: string;
+  createdAt: string;
+};
 type Ad = {
   id: number;
   platform: string;
@@ -194,6 +205,7 @@ type Data = {
   trash: Order[];
   customers: Customer[];
   purchases: Purchase[];
+  expenses: Expense[];
   ads: Ad[];
   capital: Capital[];
   products: Product[];
@@ -216,7 +228,7 @@ type Data = {
     displayName: string;
   };
 };
-type ModalName = "order" | "purchase" | "ad" | "capital" | "product" | null;
+type ModalName = "order" | "purchase" | "expense" | "ad" | "capital" | "product" | null;
 type StockSelection = { product: Product; type: "Entrée" | "Vente" } | null;
 type InventorySelection = Product | null;
 type ThemeKey = "mauve-froid" | "rose-poudre" | "sombre-prune" | "bleu-brume" | "sable-chic";
@@ -233,6 +245,7 @@ type EditableEntity =
   | { kind: "movement"; record: StockMovement }
   | { kind: "customer"; record: Customer }
   | { kind: "purchase"; record: Purchase }
+  | { kind: "expense"; record: Expense }
   | { kind: "ad"; record: Ad }
   | { kind: "capital"; record: Capital };
 
@@ -241,6 +254,7 @@ const emptyData: Data = {
   trash: [],
   customers: [],
   purchases: [],
+  expenses: [],
   ads: [],
   capital: [],
   products: [],
@@ -274,11 +288,11 @@ const dateTimeLabel = (value: string) =>
     minute: "2-digit",
   }).format(new Date(value));
 
-const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Publicités", "Capital", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
+const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
 const navigationGroups = [
-  { label: "Opérations", items: navigation.slice(0, 6) },
-  { label: "Pilotage", items: navigation.slice(6, 10) },
-  { label: "Système", items: navigation.slice(10) },
+  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats"] },
+  { label: "Pilotage", items: ["Dépenses", "Publicités", "Capital", "Rapports", "Assistant IA"] },
+  { label: "Système", items: ["Mode entraînement", "Corbeille", "Paramètres"] },
 ];
 const sectionDescriptions: Record<string, string> = {
   "Vue d’ensemble": "Synthèse de l’activité, de la trésorerie et des opérations.",
@@ -287,6 +301,7 @@ const sectionDescriptions: Record<string, string> = {
   Colis: "Contrôlez les expéditions et le suivi des transporteurs.",
   Clients: "Centralisez les coordonnées et l’historique de vos clientes.",
   Achats: "Gérez les fournisseurs, réceptions et coûts d’approvisionnement.",
+  Dépenses: "Enregistrez les charges réelles qui réduisent le résultat et la trésorerie.",
   Publicités: "Suivez vos campagnes, dépenses et performances Meta.",
   Capital: "Suivez les mouvements, enveloppes et capacités de réinvestissement.",
   Rapports: "Analysez la performance commerciale et financière par période.",
@@ -300,6 +315,7 @@ const addActionLabels: Record<string, string> = {
   Commandes: "Nouvelle commande",
   Produits: "Nouveau produit",
   Achats: "Nouvel achat",
+  Dépenses: "Nouvelle dépense",
   Publicités: "Nouvelle campagne",
   Capital: "Nouveau mouvement",
 };
@@ -458,6 +474,9 @@ export default function DashboardClient() {
       deleteCustomer: "Client supprimé",
       updatePurchase: "Achat mis à jour",
       deletePurchase: "Achat supprimé",
+      addExpense: "Dépense enregistrée",
+      updateExpense: "Dépense mise à jour",
+      deleteExpense: "Dépense supprimée",
       receivePurchase: "Réception fournisseur ajoutée au stock",
       updateAd: "Publicité mise à jour",
       deleteAd: "Publicité supprimée",
@@ -528,6 +547,10 @@ export default function DashboardClient() {
         label = `l’achat ${selection.record.item}`;
         warning = selection.record.receivedQuantity > 0 ? " Cet achat a déjà alimenté le stock et ne peut pas être supprimé." : "";
         break;
+      case "expense":
+        action = "deleteExpense";
+        label = `la dépense ${selection.record.label}`;
+        break;
       case "ad":
         action = "deleteAd";
         label = `la campagne ${selection.record.campaign}`;
@@ -573,12 +596,15 @@ export default function DashboardClient() {
     const adRevenue = data.ads.reduce((s, a) => s + a.revenue, 0);
     const purchases = data.purchases.filter((p) => p.paymentStatus === "Payé").reduce((s, p) => s + p.totalCost, 0);
     const unpaidPurchases = data.purchases.filter((p) => p.paymentStatus !== "Payé").reduce((s, p) => s + p.totalCost, 0);
+    const operatingExpenses = data.expenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const paidOperatingExpenses = data.expenses.filter((expense) => expense.paymentStatus === "Payé").reduce((sum, expense) => sum + expense.amount, 0);
+    const unpaidOperatingExpenses = data.expenses.filter((expense) => expense.paymentStatus !== "Payé").reduce((sum, expense) => sum + expense.amount, 0);
     const safetyReserve = Math.max(0, Number(data.settings.safety_reserve) || 0);
     const capitalNet = data.capital.reduce((s, r) => s + (r.direction === "Entrée" ? r.amount : r.direction === "Sortie" ? -r.amount : 0), 0);
     const reinvest = data.capital.filter((entry) => entry.isAutomatic && entry.category === "Réinvestissement").reduce((sum, entry) => sum + entry.amount, 0);
-    const profit = deliveredRevenue - costs - losses - adSpend;
-    const cash = capitalNet + netCollected - purchases - losses - adSpend;
-    const reinvestable = Math.max(0, Math.min(reinvest, cash - unpaidPurchases - safetyReserve));
+    const profit = deliveredRevenue - costs - losses - adSpend - operatingExpenses;
+    const cash = capitalNet + netCollected - purchases - losses - adSpend - paidOperatingExpenses;
+    const reinvestable = Math.max(0, Math.min(reinvest, cash - unpaidPurchases - unpaidOperatingExpenses - safetyReserve));
     return {
       revenue,
       shippingFees,
@@ -594,6 +620,9 @@ export default function DashboardClient() {
       reinvest,
       reinvestable,
       unpaidPurchases,
+      operatingExpenses,
+      paidOperatingExpenses,
+      unpaidOperatingExpenses,
       safetyReserve,
     };
   }, [data]);
@@ -697,7 +726,7 @@ export default function DashboardClient() {
           <div className="top-actions">
             <SectionSearch key={active} active={active} data={data} openOrder={openOrder} openEntity={openEntity} />
             {addableSections.has(active) && (
-              <button className="primary-button top-primary-action" onClick={() => openEntry(active === "Produits" ? "product" : active === "Achats" ? "purchase" : active === "Publicités" ? "ad" : active === "Capital" ? "capital" : "order")}>
+              <button className="primary-button top-primary-action" onClick={() => openEntry(active === "Produits" ? "product" : active === "Achats" ? "purchase" : active === "Dépenses" ? "expense" : active === "Publicités" ? "ad" : active === "Capital" ? "capital" : "order")}>
                 <span>{data.access.canEdit ? "＋" : "🔒"}</span> {data.access.canEdit ? addActionLabels[active] : "Lecture seule"}
               </button>
             )}
@@ -841,7 +870,7 @@ function Loading() {
 function SectionSearch({ active, data, openOrder, openEntity }: { active: string; data: Data; openOrder: (order: Order) => void; openEntity: (selection: EditableEntity) => void }) {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLocaleLowerCase("fr");
-  const searchablePages = new Set(["Commandes", "Produits", "Colis", "Clients", "Achats", "Publicités", "Capital", "Corbeille"]);
+  const searchablePages = new Set(["Commandes", "Produits", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Corbeille"]);
   const results = useMemo<Array<{ key: string; label: string; detail: string; order?: Order; entity?: EditableEntity }>>(() => {
     if (normalized.length < 2) return [];
     const matches = (values: Array<string | number | null | undefined>) => values.some((value) => String(value || "").toLocaleLowerCase("fr").includes(normalized));
@@ -875,6 +904,12 @@ function SectionSearch({ active, data, openOrder, openEntity }: { active: string
       return data.purchases
         .filter((purchase) => matches([purchase.supplier, purchase.item, purchase.productCode, purchase.productName, purchase.paymentStatus, purchase.totalCost, purchase.quantity, purchase.receivedAt ? "réceptionné" : "à réceptionner"]))
         .map((purchase) => ({ key: `purchase-${purchase.id}`, label: purchase.item, detail: `${purchase.supplier} · ${money(purchase.totalCost)} · ${purchase.paymentStatus}`, entity: { kind: "purchase" as const, record: purchase } }))
+        .slice(0, 10);
+    }
+    if (active === "Dépenses") {
+      return data.expenses
+        .filter((expense) => matches([expense.category, expense.label, expense.account, expense.paymentStatus, expense.expenseDate, expense.note, expense.amount]))
+        .map((expense) => ({ key: `expense-${expense.id}`, label: expense.label, detail: `${expense.category} · ${money(expense.amount)} · ${expense.paymentStatus}`, entity: { kind: "expense" as const, record: expense } }))
         .slice(0, 10);
     }
     if (active === "Publicités") {
@@ -972,6 +1007,9 @@ function Page({
     reinvest: number;
     reinvestable: number;
     unpaidPurchases: number;
+    operatingExpenses: number;
+    paidOperatingExpenses: number;
+    unpaidOperatingExpenses: number;
     safetyReserve: number;
   };
   delivery: { label: string; value: number; tone: string }[];
@@ -990,6 +1028,7 @@ function Page({
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Achats") return <PurchasesPage purchases={data.purchases} products={data.products} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Dépenses") return <ExpensesPage expenses={data.expenses} onAdd={() => open("expense")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Rapports") return <ReportsPage data={data} />;
@@ -1030,7 +1069,7 @@ function Page({
         <article className="reinvest-card">
           <span className="card-kicker">Répartition automatique</span>
           <h2>{money(metrics.reinvestable)}</h2>
-          <p>Réinvestissable maintenant après protection des achats fournisseurs à payer et de la réserve de sécurité.</p>
+          <p>Réinvestissable maintenant après protection des achats fournisseurs, des charges à payer et de la réserve de sécurité.</p>
           <div className="allocation-bar">
             <span className="stock" />
             <span className="ads" />
@@ -1054,7 +1093,7 @@ function Page({
       </section>
       <section className="kpi-grid">
         <Kpi label="CA encaissé" value={money(metrics.revenue)} detail={`Transport et frais déduits : ${money(metrics.shippingFees + metrics.collectionFees)}`} />
-        <Kpi label="Bénéfice net estimé" value={money(metrics.profit)} detail="CA − coûts réels" />
+        <Kpi label="Bénéfice net estimé" value={money(metrics.profit)} detail={`Après ${money(metrics.operatingExpenses)} de charges d’exploitation`} />
         <Kpi label="Dépenses Meta saisies" value={money(metrics.adSpend)} detail={`ROAS · ${metrics.roas.toFixed(2)}×`} />
         <Kpi label="Pertes & retours" value={money(metrics.losses)} detail="Coûts déclarés" danger />
       </section>
@@ -1252,7 +1291,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   async function resetBusinessValues() {
     if (resettingBusinessValues || !access.isOwner) return;
     const typed = window.prompt(
-      "Remettre à zéro toutes les valeurs commerciales ?\n\nSeront supprimés : commandes, clients, achats, publicités, capital et historiques associés.\n\nProduits, quantités, mouvements de stock et inventaires seront conservés.\n\nUne sauvegarde restaurable sera créée juste avant.\n\nTapez REINITIALISER pour confirmer.",
+      "Remettre à zéro toutes les valeurs commerciales ?\n\nSeront supprimés : commandes, clients, achats, dépenses, publicités, capital et historiques associés.\n\nProduits, quantités, mouvements de stock et inventaires seront conservés.\n\nUne sauvegarde restaurable sera créée juste avant.\n\nTapez REINITIALISER pour confirmer.",
     );
     if (typed !== "REINITIALISER") return;
     const confirmed = window.confirm(
@@ -1546,7 +1585,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
         <div className="business-reset-copy">
           <span className="card-kicker">Remise à zéro contrôlée</span>
           <h2>Repartir de zéro sur les valeurs commerciales</h2>
-          <p>Supprime commandes, clients, achats, publicités, capital et historiques associés. Les produits, quantités, mouvements de stock et inventaires restent conservés.</p>
+          <p>Supprime commandes, clients, achats, dépenses, publicités, capital et historiques associés. Les produits, quantités, mouvements de stock et inventaires restent conservés.</p>
           <small>Une sauvegarde restaurable est créée automatiquement juste avant la suppression.</small>
         </div>
         <button
@@ -2829,6 +2868,77 @@ function PurchasesPage({ purchases, products, canEdit, submit, onAdd, onEdit, on
   );
 }
 
+function ExpensesPage({ expenses, onAdd, onEdit, onDelete }: { expenses: Expense[]; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+  const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const paid = expenses.filter((expense) => expense.paymentStatus === "Payé").reduce((sum, expense) => sum + expense.amount, 0);
+  const due = expenses.filter((expense) => expense.paymentStatus !== "Payé").reduce((sum, expense) => sum + expense.amount, 0);
+  const categories = Array.from(new Set(expenses.map((expense) => expense.category).filter(Boolean)))
+    .map((category) => {
+      const rows = expenses.filter((expense) => expense.category === category);
+      return { category, amount: rows.reduce((sum, expense) => sum + expense.amount, 0), count: rows.length };
+    })
+    .sort((left, right) => right.amount - left.amount);
+
+  return (
+    <>
+      <section className="kpi-grid three">
+        <Kpi label="Charges enregistrées" value={money(total)} detail={expenses.length + " dépense(s) comptabilisée(s)"} />
+        <Kpi label="Déjà payées" value={money(paid)} detail="Déduit de la trésorerie estimée" />
+        <Kpi label="À payer" value={money(due)} detail="Charge reconnue, sortie de trésorerie encore à venir" danger={due > 0} />
+      </section>
+      <section className="panel expense-explainer">
+        <div>
+          <span className="card-kicker">Charges d’exploitation</span>
+          <h2>Dépenses ≠ achats de stock</h2>
+          <p>Utilisez ce module pour le loyer, emballages hors stock, téléphone, transport, frais bancaires, outils, prestations et autres charges. Les achats destinés au stock restent dans « Achats ».</p>
+        </div>
+        <strong>{money(total)}</strong>
+      </section>
+      {categories.length > 0 && (
+        <section className="panel report-table">
+          <PanelHead kicker="Répartition" title="Dépenses par catégorie" total={String(categories.length)} />
+          <div className="expense-category-grid">
+            {categories.slice(0, 8).map((row) => (
+              <article key={row.category}>
+                <span>{row.category}</span>
+                <strong>{money(row.amount)}</strong>
+                <small>{row.count} opération(s)</small>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+      <section className="panel page-panel">
+        <div className="section-toolbar">
+          <div><h2>Registre des dépenses</h2><p>Chaque charge réduit le résultat. Seules les dépenses marquées « Payé » réduisent immédiatement la trésorerie estimée.</p></div>
+          <button className="primary-button" onClick={onAdd}>＋ Ajouter une dépense</button>
+        </div>
+        {expenses.length ? (
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Date</th><th>Catégorie</th><th>Libellé</th><th>Compte</th><th>Montant</th><th>Paiement</th><th>Note</th><th>Actions</th></tr></thead>
+              <tbody>
+                {expenses.map((expense) => (
+                  <tr key={expense.id}>
+                    <td>{dateLabel(expense.expenseDate)}</td>
+                    <td><span className="category-chip">{expense.category}</span></td>
+                    <td><strong>{expense.label}</strong></td>
+                    <td>{expense.account}</td>
+                    <td className="money-negative"><strong>{money(expense.amount)}</strong></td>
+                    <td><Status value={expense.paymentStatus} /></td>
+                    <td>{expense.note || "—"}</td>
+                    <td className="order-actions-cell"><RecordActions label={"la dépense " + expense.label} onEdit={() => onEdit({ kind: "expense", record: expense })} onDelete={() => onDelete({ kind: "expense", record: expense })} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <EmptyState title="Aucune dépense enregistrée" text="Ajoutez vos charges réelles pour que bénéfice et trésorerie reflètent mieux l’activité Maison Jiya." />}
+      </section>
+    </>
+  );
+}
+
 type AdSummary = {
   key: string;
   record: Ad;
@@ -2983,8 +3093,10 @@ function ReportsPage({ data }: { data: Data }) {
   const manualCapital = data.capital.reduce((sum, entry) => sum + (entry.direction === "Entrée" ? entry.amount : entry.direction === "Sortie" ? -entry.amount : 0), 0);
   const deliveryReceipts = collected.filter((order) => order.fulfillmentType !== "Magasin physique").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees - order.returnCost, 0);
   const paidPurchases = data.purchases.filter((purchase) => purchase.paymentStatus === "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
+  const paidExpenses = data.expenses.filter((expense) => expense.paymentStatus === "Payé").reduce((sum, expense) => sum + expense.amount, 0);
+  const unpaidExpenses = data.expenses.filter((expense) => expense.paymentStatus !== "Payé");
   const adSpend = data.ads.reduce((sum, ad) => sum + ad.spend, 0);
-  const bank = deliveryReceipts + manualCapital - paidPurchases - adSpend;
+  const bank = deliveryReceipts + manualCapital - paidPurchases - paidExpenses - adSpend;
   const automaticAllocations = data.capital.filter((entry) => entry.isAutomatic);
   const positiveProfit = automaticAllocations.reduce((sum, entry) => sum + entry.amount, 0);
   const allocationAmount = (category: string) => automaticAllocations.filter((entry) => entry.category === category).reduce((sum, entry) => sum + entry.amount, 0);
@@ -2993,14 +3105,15 @@ function ReportsPage({ data }: { data: Data }) {
     ...delayed.map((order) => ({ key: `delay-${order.id}`, level: "warning", title: `${order.orderRef} semble bloquée`, detail: `${order.carrier} · ${order.status} depuis ${elapsedDays(order.updatedAt || order.createdAt)} jours` })),
     ...unpaid.map((order) => ({ key: `unpaid-${order.id}`, level: "danger", title: `${order.orderRef} livrée mais non encaissée`, detail: `${order.carrier} · ${money(order.saleAmount - order.shippingCost - order.fees)} à vérifier` })),
     ...supplierDue.map((purchase) => ({ key: `supplier-${purchase.id}`, level: "danger", title: `${purchase.supplier} : paiement fournisseur à prévoir`, detail: `${purchase.item} · ${money(purchase.totalCost)} à payer` })),
+    ...unpaidExpenses.map((expense) => ({ key: `expense-${expense.id}`, level: "danger", title: `${expense.label} : dépense à payer`, detail: `${expense.category} · ${money(expense.amount)} à prévoir` })),
     ...dormantProducts.map((product) => ({ key: `dormant-${product.id}`, level: "warning", title: `${product.name} : stock dormant`, detail: `${product.stockQuantity} unité(s) sans sortie depuis au moins 45 jours` })),
   ];
   const platformRows = groupOrderAnalysis(completed.filter((order) => ["Facebook", "Instagram", "TikTok", "WhatsApp"].includes(order.source)), (order) => order.source);
   const campaignRows = groupOrderAnalysis(completed.filter((order) => order.campaign), (order) => order.campaign);
   return <div className="reports-page">
-    <section className="report-automation-banner"><div><span>↻</span><div><strong>Rapports automatiques actifs</strong><p>Les chiffres quotidiens, hebdomadaires et mensuels se recalculent à chaque commande, paiement, retour, achat ou publicité.</p></div></div><small>Actualisé maintenant</small></section>
+    <section className="report-automation-banner"><div><span>↻</span><div><strong>Rapports automatiques actifs</strong><p>Les chiffres quotidiens, hebdomadaires et mensuels se recalculent à chaque commande, paiement, retour, achat, dépense ou publicité.</p></div></div><small>Actualisé maintenant</small></section>
     <section className="report-period-grid">{periods.map((period) => <article key={period.label}><span>{period.label}</span><strong>{money(period.profit)}</strong><p>{period.count} commande{period.count === 1 ? "" : "s"} · CA {money(period.revenue)}</p></article>)}</section>
-    <section className="financial-account-grid"><article><span>Caisse magasin</span><strong>{money(storeCash)}</strong><small>Encaissements remis sur place</small></article><article><span>Banque estimée</span><strong className={moneyTone(bank)}>{money(bank)}</strong><small>Virements et sorties confirmées</small></article><article><span>Argent transporteurs</span><strong>{money(carrierMoney)}</strong><small>Livré, en attente de virement</small></article><article><span>Créances en cours</span><strong>{money(receivables)}</strong><small>Confirmé ou en transit</small></article></section>
+    <section className="financial-account-grid"><article><span>Caisse magasin</span><strong>{money(storeCash)}</strong><small>Encaissements remis sur place</small></article><article><span>Banque estimée</span><strong className={moneyTone(bank)}>{money(bank)}</strong><small>Virements moins achats, charges et publicités payées</small></article><article><span>Argent transporteurs</span><strong>{money(carrierMoney)}</strong><small>Livré, en attente de virement</small></article><article><span>Créances en cours</span><strong>{money(receivables)}</strong><small>Confirmé ou en transit</small></article></section>
     <section className="allocation-report"><div><span className="card-kicker">Mouvements automatiques enregistrés</span><h2>{money(positiveProfit)} affectés</h2><p>Chaque vente encaissée crée trois écritures comptables liées à la commande. Elles sont recalculées sans modifier deux fois votre solde bancaire.</p></div><div><article><span>Réinvestissement · 50%</span><strong>{money(allocationAmount("Réinvestissement"))}</strong></article><article><span>Salaire personnel · 30%</span><strong>{money(allocationAmount("Salaire personnel"))}</strong></article><article><span>Fonds d’urgence · 20%</span><strong>{money(allocationAmount("Fonds d’urgence"))}</strong></article></div></section>
     <section className="panel alerts-panel"><PanelHead kicker="Surveillance automatique" title="Alertes actives" total={String(alerts.length)} />{alerts.length ? <div className="alerts-list">{alerts.map((alert) => <article className={alert.level} key={alert.key}><span aria-hidden="true">{alert.level === "danger" ? "!" : "◷"}</span><div><strong>{alert.title}</strong><small>{alert.detail}</small></div></article>)}</div> : <div className="pending-empty">✓ Aucun stock critique, colis bloqué ou encaissement en retard détecté.</div>}</section>
     <div className="report-analysis-grid"><AnalysisTable title="Résultats par produit" rows={groupOrderAnalysis(completed, (order) => order.products)} /><AnalysisTable title="Résultats par ville" rows={groupOrderAnalysis(completed, (order) => order.city)} /><AnalysisTable title="Résultats par source" rows={groupOrderAnalysis(completed, (order) => order.source)} /><AnalysisTable title="Résultats par agence" rows={groupOrderAnalysis(completed.filter((order) => order.fulfillmentType !== "Magasin physique"), (order) => order.carrier)} /><AnalysisTable title="Facebook, Instagram, TikTok et WhatsApp" rows={platformRows} /><AnalysisTable title="Campagnes reliées aux commandes" rows={campaignRows} /></div>
@@ -3023,6 +3136,7 @@ function CapitalPage({
     reinvest: number;
     reinvestable: number;
     unpaidPurchases: number;
+    unpaidOperatingExpenses: number;
     safetyReserve: number;
   };
   onAdd: () => void;
@@ -3075,6 +3189,15 @@ function CapitalPage({
         amount: ad.spend,
         date: ad.performanceDate,
       })),
+    ...data.expenses
+      .filter((expense) => expense.paymentStatus === "Payé")
+      .map((expense) => ({
+        direction: "Sortie" as const,
+        source: `Dépenses · ${expense.category}`,
+        amount: expense.amount,
+        date: expense.expenseDate,
+      })),
+
   ];
   const manualEntries = data.capital.filter((entry) => !entry.isAutomatic);
   const manualFlows: CapitalFlow[] = manualEntries.map((entry) => ({
@@ -3125,12 +3248,13 @@ function CapitalPage({
           <span className="automation-icon">↻</span>
           <div>
             <strong>Automatisation active</strong>
-            <p>Les mouvements sont calculés depuis vos commandes, achats, publicités et retours. Aucune double saisie n’est nécessaire.</p>
+            <p>Les mouvements sont calculés depuis vos commandes, achats, dépenses, publicités et retours. Aucune double saisie n’est nécessaire.</p>
           </div>
         </div>
         <div className="automation-tags">
           <span>Ventes encaissées</span>
           <span>Achats payés</span>
+          <span>Dépenses payées</span>
           <span>Meta saisie</span>
           <span>Retours & frais</span>
         </div>
@@ -3159,6 +3283,9 @@ function CapitalPage({
               Fournisseurs à payer<strong>{money(metrics.unpaidPurchases)}</strong>
             </p>
             <p>
+              Charges à payer<strong>{money(metrics.unpaidOperatingExpenses)}</strong>
+            </p>
+            <p>
               Réserve protégée<strong>{money(metrics.safetyReserve)}</strong>
             </p>
           </div>
@@ -3181,7 +3308,7 @@ function CapitalPage({
             <span className="envelope-icon">↗</span>
             <span className="envelope-label">Montant de réinvestissement</span>
             <h3>{money(metrics.reinvestable)}</h3>
-            <p>Montant mobilisable aujourd’hui sans consommer les factures fournisseurs dues ni la réserve de sécurité.</p>
+            <p>Montant mobilisable aujourd’hui sans consommer les factures fournisseurs dues, les charges à payer ni la réserve de sécurité.</p>
             <small>Affectation théorique : {money(metrics.reinvest)} · disponible protégé</small>
           </article>
           <article className="capital-envelope-card salary-envelope">
@@ -3540,6 +3667,7 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
   const labels = {
     order: "Nouvelle commande",
     purchase: "Nouvel achat",
+    expense: "Nouvelle dépense",
     ad: "Performance Meta Ads",
     capital: "Mouvement de capital",
     product: "Nouveau produit",
@@ -3580,7 +3708,7 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
     setSaving(true);
     setFormError("");
     try {
-      await submit(kind === "order" ? "addOrder" : kind === "product" ? "addProduct" : kind === "purchase" ? "addPurchase" : kind === "ad" ? "addAd" : "addCapital", Object.fromEntries(new FormData(e.currentTarget)));
+      await submit(kind === "order" ? "addOrder" : kind === "product" ? "addProduct" : kind === "purchase" ? "addPurchase" : kind === "expense" ? "addExpense" : kind === "ad" ? "addAd" : "addCapital", Object.fromEntries(new FormData(e.currentTarget)));
     } catch (c) {
       setFormError(c instanceof Error ? c.message : "Erreur");
       setSaving(false);
@@ -3701,6 +3829,17 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
                 <Field label="Quantité achetée *" name="quantity" type="number" inputMode="numeric" defaultValue="1" min="1" required />
                 <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" required />
                 <Select label="Paiement" name="paymentStatus" options={["Payé", "À payer"]} />
+              </>
+            )}
+            {kind === "expense" && (
+              <>
+                <Select label="Catégorie *" name="category" options={["Loyer", "Emballage", "Transport", "Téléphone / Internet", "Frais bancaires", "Outils / logiciels", "Prestataire", "Matériel", "Autre"]} />
+                <Field label="Libellé *" name="label" placeholder="Ex. Loyer showroom septembre" required />
+                <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" required />
+                <Select label="Compte" name="account" options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
+                <Select label="Paiement" name="paymentStatus" options={["Payé", "À payer"]} />
+                <Field label="Date de la dépense *" name="expenseDate" type="date" required />
+                <Field label="Note" name="note" placeholder="Facultatif" maxLength={300} />
               </>
             )}
             {kind === "ad" && (
@@ -3961,6 +4100,7 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
     movement: "Modifier le mouvement de stock",
     customer: "Modifier le client",
     purchase: "Modifier l’achat",
+    expense: "Modifier la dépense",
     ad: "Modifier la publicité",
     capital: "Modifier le mouvement de capital",
   };
@@ -3969,6 +4109,7 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
     movement: "updateStockMovement",
     customer: "updateCustomer",
     purchase: "updatePurchase",
+    expense: "updateExpense",
     ad: "updateAd",
     capital: "updateCapital",
   };
@@ -4038,6 +4179,15 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
               )}
               <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.unitCost)} required />
               <Select label="Paiement" name="paymentStatus" defaultValue={selection.record.paymentStatus} options={["Payé", "À payer"]} />
+            </>}
+            {selection.kind === "expense" && <>
+              <Select label="Catégorie *" name="category" defaultValue={selection.record.category} options={["Loyer", "Emballage", "Transport", "Téléphone / Internet", "Frais bancaires", "Outils / logiciels", "Prestataire", "Matériel", "Autre"]} />
+              <Field label="Libellé *" name="label" defaultValue={selection.record.label} required />
+              <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" defaultValue={String(selection.record.amount)} required />
+              <Select label="Compte" name="account" defaultValue={selection.record.account} options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
+              <Select label="Paiement" name="paymentStatus" defaultValue={selection.record.paymentStatus} options={["Payé", "À payer"]} />
+              <Field label="Date de la dépense *" name="expenseDate" type="date" defaultValue={selection.record.expenseDate.slice(0, 10)} required />
+              <Field label="Note" name="note" defaultValue={selection.record.note} maxLength={300} />
             </>}
             {selection.kind === "ad" && <>
               <Field label="Campagne *" name="campaign" defaultValue={selection.record.campaign} required />
@@ -4190,7 +4340,7 @@ function InventoryCountModal({ product, close, submit }: { product: Product; clo
     </div>
   );
 }
-function Field({ label, ...props }: { label: string; name: string; type?: string; required?: boolean; defaultValue?: string; inputMode?: "tel" | "numeric" | "decimal"; autoComplete?: string; min?: string; placeholder?: string; maxLength?: number }) {
+function Field({ label, ...props }: { label: string; name: string; type?: string; required?: boolean; defaultValue?: string; inputMode?: "tel" | "numeric" | "decimal"; autoComplete?: string; min?: string; step?: string; placeholder?: string; maxLength?: number }) {
   return (
     <label className="field">
       <span>{label}</span>

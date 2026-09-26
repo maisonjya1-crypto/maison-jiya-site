@@ -98,6 +98,19 @@ const schemaStatements = [
     created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
     FOREIGN KEY (product_id) REFERENCES products(id)
   )`,
+  `CREATE TABLE IF NOT EXISTS expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    category TEXT NOT NULL,
+    label TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    account TEXT DEFAULT 'Banque' NOT NULL,
+    payment_status TEXT DEFAULT 'Payé' NOT NULL,
+    expense_date TEXT NOT NULL,
+    note TEXT DEFAULT '' NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS expenses_expense_date_idx ON expenses (expense_date)`,
+  `CREATE INDEX IF NOT EXISTS expenses_payment_status_idx ON expenses (payment_status)`,
   `CREATE TABLE IF NOT EXISTS ad_performance (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     platform TEXT DEFAULT 'Meta Ads' NOT NULL,

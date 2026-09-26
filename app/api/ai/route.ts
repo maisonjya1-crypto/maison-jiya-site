@@ -1,6 +1,6 @@
 import { asc, eq, gte, lte, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { adPerformance, aiUsage, capitalLedger, orders, products, purchases } from "../../../db/schema";
+import { adPerformance, aiUsage, capitalLedger, expenses, orders, products, purchases } from "../../../db/schema";
 import { getAuthenticatedUser } from "../../auth";
 
 const AI_MODEL = "@cf/zai-org/glm-4.7-flash" as const;
@@ -98,16 +98,19 @@ async function businessContext() {
     collectedRevenue: sql<number>`coalesce(sum(case when ${orders.paymentStatus} = 'Encaissé' then ${orders.saleAmount} else 0 end), 0)`,
     shipping: sql<number>`coalesce(sum(case when ${orders.paymentStatus} = 'Encaissé' then ${orders.shippingCost} else 0 end), 0)`,
     fees: sql<number>`coalesce(sum(case when ${orders.paymentStatus} = 'Encaissé' then ${orders.fees} else 0 end), 0)`,
-    deliveredCosts: sql<number>`coalesce(sum(case when ${orders.status} = 'Livrée' then ${orders.productCost} + ${orders.shippingCost} + ${orders.adCost} + ${orders.fees} else 0 end), 0)`,
+    deliveredCosts: sql<number>`coalesce(sum(case when ${orders.status} = 'Livrée' then ${orders.productCost} + ${orders.shippingCost} + ${orders.fees} else 0 end), 0)`,
     returns: sql<number>`coalesce(sum(${orders.returnCost}), 0)`,
   };
 
-  const [allOrders, monthlyOrders, statuses, sources, paidPurchases, ads, capital, lowStock] = await Promise.all([
+  const [allOrders, monthlyOrders, statuses, sources, paidPurchases, expenseTotals, paidExpenseTotals, monthlyExpenseTotals, ads, capital, lowStock] = await Promise.all([
     db.select(orderSummary).from(orders),
     db.select(orderSummary).from(orders).where(gte(orders.createdAt, start)),
     db.select({ status: orders.status, count: sql<number>`count(*)` }).from(orders).groupBy(orders.status),
     db.select({ source: orders.source, count: sql<number>`count(*)`, revenue: sql<number>`coalesce(sum(${orders.saleAmount}), 0)` }).from(orders).groupBy(orders.source),
     db.select({ total: sql<number>`coalesce(sum(${purchases.totalCost}), 0)` }).from(purchases).where(eq(purchases.paymentStatus, "Payé")),
+    db.select({ total: sql<number>`coalesce(sum(${expenses.amount}), 0)` }).from(expenses),
+    db.select({ total: sql<number>`coalesce(sum(${expenses.amount}), 0)` }).from(expenses).where(eq(expenses.paymentStatus, "Payé")),
+    db.select({ total: sql<number>`coalesce(sum(${expenses.amount}), 0)` }).from(expenses).where(gte(expenses.expenseDate, start)),
     db.select({ spend: sql<number>`coalesce(sum(${adPerformance.spend}), 0)`, revenue: sql<number>`coalesce(sum(${adPerformance.revenue}), 0)` }).from(adPerformance),
     db.select({ net: sql<number>`coalesce(sum(case when ${capitalLedger.direction} = 'Entrée' then ${capitalLedger.amount} else -${capitalLedger.amount} end), 0)` }).from(capitalLedger),
     db.select({ code: products.productCode, name: products.name, stock: products.stockQuantity }).from(products).where(lte(products.stockQuantity, 3)).orderBy(asc(products.stockQuantity)).limit(12),
@@ -120,9 +123,11 @@ async function businessContext() {
   const fees = Number(totals?.fees || 0);
   const losses = Number(totals?.returns || 0);
   const adSpend = Number(ads[0]?.spend || 0);
+  const expenseTotal = Number(expenseTotals[0]?.total || 0);
+  const paidExpenseTotal = Number(paidExpenseTotals[0]?.total || 0);
   const netCollected = collected - shipping - fees;
-  const profit = Number(totals?.deliveredRevenue || 0) - Number(totals?.deliveredCosts || 0) - losses;
-  const cash = Number(capital[0]?.net || 0) + netCollected - Number(paidPurchases[0]?.total || 0) - losses - adSpend;
+  const profit = Number(totals?.deliveredRevenue || 0) - Number(totals?.deliveredCosts || 0) - losses - adSpend - expenseTotal;
+  const cash = Number(capital[0]?.net || 0) + netCollected - Number(paidPurchases[0]?.total || 0) - losses - adSpend - paidExpenseTotal;
   const distributable = Math.max(0, cash);
 
   return JSON.stringify({
@@ -136,6 +141,8 @@ async function businessContext() {
       estimatedProfit: profit,
       cash,
       paidPurchases: Number(paidPurchases[0]?.total || 0),
+      operatingExpenses: expenseTotal,
+      paidOperatingExpenses: paidExpenseTotal,
       adSpend,
       adRevenue: Number(ads[0]?.revenue || 0),
       roas: adSpend ? Number(ads[0]?.revenue || 0) / adSpend : 0,
@@ -150,6 +157,7 @@ async function businessContext() {
       deliveredRevenue: Number(month?.deliveredRevenue || 0),
       collectedRevenue: Number(month?.collectedRevenue || 0),
       returnLosses: Number(month?.returns || 0),
+      operatingExpenses: Number(monthlyExpenseTotals[0]?.total || 0),
     },
     orderStatuses: Object.fromEntries(statuses.map((row) => [row.status, Number(row.count)])),
     orderSources: Object.fromEntries(sources.map((row) => [row.source, { orders: Number(row.count), revenue: Number(row.revenue) }])),

@@ -559,3 +559,66 @@
     max-width:100%;
   }
 }
+
+
+/* Registre des dépenses */
+.app-shell .expense-explainer {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:24px;
+  margin-top:12px;
+  padding:18px 20px;
+  border-color:color-mix(in srgb,var(--terracotta) 18%,var(--line));
+  background:linear-gradient(120deg,color-mix(in srgb,var(--terracotta) 5%,var(--paper)),var(--paper));
+}
+.app-shell .expense-explainer h2 {
+  margin:2px 0 6px;
+  font:650 18px/1.2 Georgia,serif;
+}
+.app-shell .expense-explainer p {
+  max-width:760px;
+  margin:0;
+  color:var(--muted);
+  font-size:9px;
+  line-height:1.55;
+}
+.app-shell .expense-explainer>strong {
+  flex:0 0 auto;
+  color:var(--terracotta);
+  font:650 22px/1 Georgia,serif;
+}
+.app-shell .expense-category-grid {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:9px;
+}
+.app-shell .expense-category-grid article {
+  min-width:0;
+  padding:13px;
+  border:1px solid var(--line);
+  border-radius:11px;
+  background:var(--surface-soft);
+}
+.app-shell .expense-category-grid span,
+.app-shell .expense-category-grid small {
+  display:block;
+  color:var(--muted);
+  font-size:8px;
+}
+.app-shell .expense-category-grid strong {
+  display:block;
+  margin:6px 0 4px;
+  color:var(--ink);
+  font-size:14px;
+}
+@media(max-width:1050px){
+  .app-shell .expense-category-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:720px){
+  .app-shell .expense-explainer { align-items:flex-start; flex-direction:column; padding:16px; }
+  .app-shell .expense-category-grid { grid-template-columns:1fr 1fr; }
+}
+@media(max-width:440px){
+  .app-shell .expense-category-grid { grid-template-columns:1fr; }
+}

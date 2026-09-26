@@ -11,6 +11,7 @@ type BusinessSnapshot = {
     stockMovements: SnapshotRow[];
     inventoryCounts?: SnapshotRow[];
     purchases: SnapshotRow[];
+    expenses?: SnapshotRow[];
     ads: SnapshotRow[];
     capital: SnapshotRow[];
     settings: SnapshotRow[];
@@ -26,6 +27,7 @@ const TABLES = {
   stockMovements: "stock_movements",
   inventoryCounts: "inventory_counts",
   purchases: "purchases",
+  expenses: "expenses",
   ads: "ad_performance",
   capital: "capital_ledger",
   settings: "settings",
@@ -40,6 +42,7 @@ const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   stockMovements: ["id", "product_id", "order_id", "purchase_id", "movement_type", "quantity", "note", "created_at"],
   inventoryCounts: ["id", "count_ref", "product_id", "system_quantity", "physical_quantity", "difference", "note", "counted_by_user_id", "counted_by_name", "created_at"],
   purchases: ["id", "supplier", "item", "product_id", "quantity", "unit_cost", "total_cost", "payment_status", "received_quantity", "received_at", "created_at"],
+  expenses: ["id", "category", "label", "amount", "account", "payment_status", "expense_date", "note", "created_at"],
   ads: ["id", "platform", "campaign", "external_id", "spend", "revenue", "order_count", "native_spend_cents", "native_revenue_cents", "native_currency", "source", "performance_date", "created_at"],
   capital: ["id", "direction", "category", "label", "amount", "account", "order_id", "is_automatic", "auto_key", "entry_date", "created_at"],
   settings: ["key", "value", "updated_at"],
@@ -62,13 +65,14 @@ async function readRows(database: D1Database, table: string, where = "") {
 }
 
 async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
-  const [customers, orders, products, stockMovements, inventoryCounts, purchases, ads, capital, settings, orderStatusHistory, carrierEvents] = await Promise.all([
+  const [customers, orders, products, stockMovements, inventoryCounts, purchases, expenses, ads, capital, settings, orderStatusHistory, carrierEvents] = await Promise.all([
     readRows(database, TABLES.customers),
     readRows(database, TABLES.orders),
     readRows(database, TABLES.products),
     readRows(database, TABLES.stockMovements),
     readRows(database, TABLES.inventoryCounts),
     readRows(database, TABLES.purchases),
+    readRows(database, TABLES.expenses),
     readRows(database, TABLES.ads),
     readRows(database, TABLES.capital),
     readRows(database, TABLES.settings, " WHERE key NOT LIKE 'security_%' AND key <> 'backup_webhook_url'"),
@@ -78,7 +82,7 @@ async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
   return {
     version: 1,
     createdAt: new Date().toISOString(),
-    tables: { customers, orders, products, stockMovements, inventoryCounts, purchases, ads, capital, settings, orderStatusHistory, carrierEvents },
+    tables: { customers, orders, products, stockMovements, inventoryCounts, purchases, expenses, ads, capital, settings, orderStatusHistory, carrierEvents },
   };
 }
 
@@ -142,12 +146,12 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
   if (!snapshot || snapshot.version !== 1 || !snapshot.tables || typeof snapshot.tables !== "object") throw new Error("Format de sauvegarde incompatible.");
 
   const insertionOrder: Array<keyof BusinessSnapshot["tables"]> = [
-    "settings", "customers", "products", "purchases", "ads", "capital", "orders", "stockMovements", "inventoryCounts", "orderStatusHistory", "carrierEvents",
+    "settings", "customers", "products", "purchases", "expenses", "ads", "capital", "orders", "stockMovements", "inventoryCounts", "orderStatusHistory", "carrierEvents",
   ];
   const inserts = insertionOrder.flatMap((tableKey) => {
     const rows = snapshot.tables[tableKey];
-    // Ces deux tables n'existaient pas dans les premières sauvegardes v1.
-    if (rows === undefined && (tableKey === "inventoryCounts" || tableKey === "carrierEvents")) return [];
+    // Ces tables n'existaient pas dans les premières sauvegardes v1.
+    if (rows === undefined && (tableKey === "inventoryCounts" || tableKey === "carrierEvents" || tableKey === "expenses")) return [];
     if (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
       throw new Error("Format de sauvegarde incompatible.");
     }
@@ -165,6 +169,7 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
     database.prepare("DELETE FROM orders"),
     database.prepare("DELETE FROM customers"),
     database.prepare("DELETE FROM purchases"),
+    database.prepare("DELETE FROM expenses"),
     database.prepare("DELETE FROM ad_performance"),
     database.prepare("DELETE FROM capital_ledger"),
     database.prepare("DELETE FROM products"),
@@ -195,6 +200,7 @@ export type BusinessResetSummary = {
   orders: number;
   customers: number;
   purchases: number;
+  expenses: number;
   ads: number;
   capital: number;
   orderHistory: number;
@@ -211,6 +217,7 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
     database.prepare("SELECT COUNT(*) AS count FROM orders"),
     database.prepare("SELECT COUNT(*) AS count FROM customers"),
     database.prepare("SELECT COUNT(*) AS count FROM purchases"),
+    database.prepare("SELECT COUNT(*) AS count FROM expenses"),
     database.prepare("SELECT COUNT(*) AS count FROM ad_performance"),
     database.prepare("SELECT COUNT(*) AS count FROM capital_ledger"),
     database.prepare("SELECT COUNT(*) AS count FROM order_status_history"),
@@ -221,10 +228,11 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
     orders: countFromResult(counts[0]),
     customers: countFromResult(counts[1]),
     purchases: countFromResult(counts[2]),
-    ads: countFromResult(counts[3]),
-    capital: countFromResult(counts[4]),
-    orderHistory: countFromResult(counts[5]),
-    carrierEvents: countFromResult(counts[6]),
+    expenses: countFromResult(counts[3]),
+    ads: countFromResult(counts[4]),
+    capital: countFromResult(counts[5]),
+    orderHistory: countFromResult(counts[6]),
+    carrierEvents: countFromResult(counts[7]),
   };
 
   // Filet de sécurité : une copie restaurable est créée avant toute remise à zéro.
@@ -241,6 +249,7 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
     database.prepare("DELETE FROM orders"),
     database.prepare("DELETE FROM customers"),
     database.prepare("DELETE FROM purchases"),
+    database.prepare("DELETE FROM expenses"),
     database.prepare("DELETE FROM ad_performance"),
   ]);
 

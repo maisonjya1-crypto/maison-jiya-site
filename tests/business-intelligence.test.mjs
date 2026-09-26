@@ -63,10 +63,11 @@ test("réinvestissement, salaire et fonds d’urgence sont des écritures liées
 });
 
 
-test("le pilotage financier utilise les dépenses Meta réelles et protège le réinvestissement", () => {
-  assert.match(dashboard, /const profit = deliveredRevenue - costs - losses - adSpend/);
-  assert.match(dashboard, /const reinvestable = Math\.max\(0, Math\.min\(reinvest, cash - unpaidPurchases - safetyReserve\)\)/);
+test("le pilotage financier utilise les dépenses réelles et protège le réinvestissement", () => {
+  assert.match(dashboard, /const profit = deliveredRevenue - costs - losses - adSpend - operatingExpenses/);
+  assert.match(dashboard, /const reinvestable = Math\.max\(0, Math\.min\(reinvest, cash - unpaidPurchases - unpaidOperatingExpenses - safetyReserve\)\)/);
   assert.match(dashboard, /Réinvestissable maintenant/);
+  assert.match(dashboard, /Charges à payer/);
   assert.match(dashboard, /Réserve protégée/);
 });
 
