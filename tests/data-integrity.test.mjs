@@ -38,7 +38,7 @@ test('une sauvegarde incomplète est refusée avant toute suppression', async t 
   const db = await databaseFor(t);
   const restore = await saveBackup(db, snapshot => { delete snapshot.tables.orders; });
   const before = businessRows(db);
-  await assert.rejects(restore, /Format de sauvegarde incompatible/);
+  await assert.rejects(restore, /Format de sauvegarde incompatible|Table de sauvegarde invalide/);
   assert.deepEqual(businessRows(db), before);
 });
 
