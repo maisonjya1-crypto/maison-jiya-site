@@ -98,7 +98,6 @@ const schemaStatements = [
     created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
     FOREIGN KEY (product_id) REFERENCES products(id)
   )`,
-  `CREATE INDEX IF NOT EXISTS purchases_product_id_idx ON purchases (product_id)`,
   `CREATE TABLE IF NOT EXISTS ad_performance (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     platform TEXT DEFAULT 'Meta Ads' NOT NULL,
@@ -158,7 +157,6 @@ const schemaStatements = [
     FOREIGN KEY (purchase_id) REFERENCES purchases(id)
   )`,
   `CREATE INDEX IF NOT EXISTS stock_movements_product_id_idx ON stock_movements (product_id)`,
-  `CREATE INDEX IF NOT EXISTS stock_movements_purchase_id_idx ON stock_movements (purchase_id)`,
   `CREATE TABLE IF NOT EXISTS inventory_counts (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     count_ref TEXT NOT NULL UNIQUE,
