@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import AiPage from "./ai-page";
 import TrainingPage from "./training-page";
+import { calculateBusinessFinance, calculateOperatingProfit, orderContributionBeforeGlobalAds } from "../lib/finance";
 
 type Order = {
   id: number;
@@ -328,7 +329,7 @@ const productCategoryOptions = ["Montres", "Bijoux", "Wallets", "Électronique",
 const capitalMonthLabels = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 const capitalMonthShort = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
 const capitalChartColors = ["var(--forest)", "var(--terracotta)", "var(--gold)", "#557ea4", "#8b6f9f", "#c47c8d", "#b68658", "#77869b"];
-const exactOrderProfit = (order: Order) => order.saleAmount - order.productCost - order.shippingCost - order.adCost - order.fees - order.returnCost;
+const exactOrderProfit = (order: Order) => orderContributionBeforeGlobalAds(order);
 const whatsappUrl = (phone: string | null, orderRef: string) => {
   const digits = (phone || "").replace(/\D/g, "").replace(/^0/, "212");
   return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(`Bonjour, nous vous contactons concernant votre commande Maison Jiya ${orderRef}.`)}` : "";
@@ -583,46 +584,34 @@ export default function DashboardClient() {
   }
 
   const metrics = useMemo(() => {
-    const delivered = data.orders.filter((o) => o.status === "Livrée");
-    const deliveredRevenue = delivered.reduce((s, o) => s + o.saleAmount, 0);
-    const collected = data.orders.filter((o) => o.paymentStatus === "Encaissé");
-    const revenue = collected.reduce((s, o) => s + o.saleAmount, 0);
-    const shippingFees = collected.reduce((s, o) => s + o.shippingCost, 0);
-    const collectionFees = collected.reduce((s, o) => s + o.fees, 0);
-    const netCollected = revenue - shippingFees - collectionFees;
-    const costs = delivered.reduce((s, o) => s + o.productCost + o.shippingCost + o.fees, 0);
-    const losses = data.orders.reduce((s, o) => s + o.returnCost, 0);
-    const adSpend = data.ads.reduce((s, a) => s + a.spend, 0);
-    const adRevenue = data.ads.reduce((s, a) => s + a.revenue, 0);
-    const purchases = data.purchases.filter((p) => p.paymentStatus === "Payé").reduce((s, p) => s + p.totalCost, 0);
-    const unpaidPurchases = data.purchases.filter((p) => p.paymentStatus !== "Payé").reduce((s, p) => s + p.totalCost, 0);
-    const operatingExpenses = data.expenses.reduce((sum, expense) => sum + expense.amount, 0);
-    const paidOperatingExpenses = data.expenses.filter((expense) => expense.paymentStatus === "Payé").reduce((sum, expense) => sum + expense.amount, 0);
-    const unpaidOperatingExpenses = data.expenses.filter((expense) => expense.paymentStatus !== "Payé").reduce((sum, expense) => sum + expense.amount, 0);
     const safetyReserve = Math.max(0, Number(data.settings.safety_reserve) || 0);
-    const capitalNet = data.capital.reduce((s, r) => s + (r.direction === "Entrée" ? r.amount : r.direction === "Sortie" ? -r.amount : 0), 0);
-    const reinvest = data.capital.filter((entry) => entry.isAutomatic && entry.category === "Réinvestissement").reduce((sum, entry) => sum + entry.amount, 0);
-    const profit = deliveredRevenue - costs - losses - adSpend - operatingExpenses;
-    const cash = capitalNet + netCollected - purchases - losses - adSpend - paidOperatingExpenses;
-    const reinvestable = Math.max(0, Math.min(reinvest, cash - unpaidPurchases - unpaidOperatingExpenses - safetyReserve));
+    const finance = calculateBusinessFinance({
+      orders: data.orders,
+      purchases: data.purchases,
+      expenses: data.expenses,
+      ads: data.ads,
+      capital: data.capital,
+      safetyReserve,
+    });
+    const adRevenue = data.ads.reduce((sum, ad) => sum + ad.revenue, 0);
     return {
-      revenue,
-      shippingFees,
-      collectionFees,
-      netCollected,
-      profit,
-      losses,
-      adSpend,
-      roas: adSpend ? adRevenue / adSpend : 0,
-      cash,
-      capitalNet,
-      margin: deliveredRevenue ? (profit / deliveredRevenue) * 100 : 0,
-      reinvest,
-      reinvestable,
-      unpaidPurchases,
-      operatingExpenses,
-      paidOperatingExpenses,
-      unpaidOperatingExpenses,
+      revenue: finance.collected,
+      shippingFees: finance.shippingCollected,
+      collectionFees: finance.feesCollected,
+      netCollected: finance.netCollected,
+      profit: finance.profit,
+      losses: finance.losses,
+      adSpend: finance.adSpend,
+      roas: finance.adSpend ? adRevenue / finance.adSpend : 0,
+      cash: finance.cash,
+      capitalNet: finance.manualCapitalNet,
+      margin: finance.margin,
+      reinvest: finance.reinvestAllocation,
+      reinvestable: finance.reinvestable,
+      unpaidPurchases: finance.unpaidPurchases,
+      operatingExpenses: finance.operatingExpenses,
+      paidOperatingExpenses: finance.paidOperatingExpenses,
+      unpaidOperatingExpenses: finance.unpaidOperatingExpenses,
       safetyReserve,
     };
   }, [data]);
