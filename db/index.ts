@@ -39,6 +39,18 @@ const schemaStatements = [
     PRIMARY KEY (user_id, usage_date),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`,
+  `CREATE TABLE IF NOT EXISTS mutation_receipts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    request_key TEXT NOT NULL UNIQUE,
+    user_id INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    status TEXT DEFAULT 'processing' NOT NULL,
+    message TEXT DEFAULT '' NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    completed_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS mutation_receipts_user_id_idx ON mutation_receipts (user_id)`,
+  `CREATE INDEX IF NOT EXISTS mutation_receipts_created_at_idx ON mutation_receipts (created_at)`,
   `CREATE TABLE IF NOT EXISTS customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     name TEXT NOT NULL,
