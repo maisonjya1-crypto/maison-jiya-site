@@ -1115,11 +1115,27 @@ export async function POST(request: Request) {
       if (duplicate) return Response.json({ error: "Cet ID produit existe déjà." }, { status: 409 });
       const initialQuantity = numberValue(payload.initialQuantity);
       const salePrice = moneyValue(payload.salePrice);
+      const purchasePrice = moneyValue(payload.purchasePrice);
+      const minimumSalePrice = moneyValue(payload.minimumSalePrice, salePrice);
+      const category = productCategory(payload.category);
       const duplicateProductCreation = await protectMutation("addProduct");
       if (duplicateProductCreation) return duplicateProductCreation;
-      const [product] = await db.insert(products).values({ productCode, name, category: productCategory(payload.category), purchasePrice: moneyValue(payload.purchasePrice), salePrice, minimumSalePrice: moneyValue(payload.minimumSalePrice, salePrice), stockQuantity: initialQuantity }).returning();
-      if (!product) throw new Error("Le produit n’a pas été créé.");
-      if (initialQuantity > 0) await db.insert(stockMovements).values({ productId: product.id, movementType: "Entrée", quantity: initialQuantity, note: "Stock initial" });
+      const rawDatabase = await getRawDb();
+      const productStatements = [
+        rawDatabase.prepare(`
+          INSERT INTO products (product_code, name, category, purchase_price, sale_price, minimum_sale_price, stock_quantity)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(productCode, name, category, purchasePrice, salePrice, minimumSalePrice, initialQuantity),
+      ];
+      if (initialQuantity > 0) {
+        productStatements.push(
+          rawDatabase.prepare(`
+            INSERT INTO stock_movements (product_id, movement_type, quantity, note)
+            SELECT id, 'Entrée', ?, 'Stock initial' FROM products WHERE product_code = ?
+          `).bind(initialQuantity, productCode),
+        );
+      }
+      await rawDatabase.batch(productStatements);
     } else if (payload.action === "updateProduct") {
       const id = numberValue(payload.id);
       const productCode = textValue(payload.productCode).toUpperCase();
