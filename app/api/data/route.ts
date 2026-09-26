@@ -346,7 +346,7 @@ async function snapshot(access: AccessInfo) {
   const secureWebhook = settingRows.find((row) => row.key === "security_backup_webhook_url")?.value || "";
   const [carrierRuntime, lastCarrierEvent, metaRuntimeConfigured, googleSheetsSync] = await Promise.all([
     getCarrierRuntimeStatus(),
-    db.select({ receivedAt: carrierEvents.receivedAt }).from(carrierEvents).orderBy(desc(carrierEvents.receivedAt)).limit(1),
+    db.select({ receivedAt: carrierEvents.receivedAt }).from(carrierEvents).where(sql`${carrierEvents.provider} IN ('sendit', 'forcelog')`).orderBy(desc(carrierEvents.receivedAt)).limit(1),
     getMetaRuntimeStatus(),
     getGoogleSheetsSyncSnapshot(rawDatabase),
   ]);
@@ -371,8 +371,15 @@ async function snapshot(access: AccessInfo) {
       backup_configured: backupConfigured ? "true" : "false",
       backup_webhook_configured: secureWebhook ? "true" : "false",
       sendit_api_configured: carrierRuntime.senditApiConfigured ? "true" : "false",
+      sendit_api_verified: carrierRuntime.senditApiVerified ? "true" : "false",
+      sendit_api_checked_at: carrierRuntime.senditApiCheckedAt,
+      sendit_api_last_error: carrierRuntime.senditApiLastError,
       sendit_webhook_configured: carrierRuntime.senditWebhookConfigured ? "true" : "false",
+      sendit_webhook_verified_at: carrierRuntime.senditWebhookVerifiedAt,
       forcelog_api_configured: carrierRuntime.forceLogApiConfigured ? "true" : "false",
+      forcelog_api_verified: carrierRuntime.forceLogApiVerified ? "true" : "false",
+      forcelog_api_checked_at: carrierRuntime.forceLogApiCheckedAt,
+      forcelog_api_last_error: carrierRuntime.forceLogApiLastError,
       meta_api_configured: metaRuntimeConfigured ? "true" : "false",
       carrier_last_sync_at: lastCarrierEvent[0]?.receivedAt || "",
       ...(access.isOwner ? { backup_webhook_url: secureWebhook } : {}),
@@ -765,9 +772,19 @@ export async function POST(request: Request) {
       auditEntityLabel = `${carrier} · autorisation manuelle`;
     } else if (payload.action === "syncCarriersNow") {
       if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut lancer une synchronisation complète." }, { status: 403 });
-      const updated = await syncCarrierOperations();
-      integrationMessage = updated ? `${updated} commande(s) mise(s) à jour depuis les agences.` : "Suivi vérifié : aucune nouvelle facturation pour le moment.";
-      auditEntityLabel = "Sendit et ForceLog";
+      const carrierSync = await syncCarrierOperations();
+      const configuredProviders = [carrierSync.sendit.configured ? "Sendit" : "", carrierSync.forceLog.configured ? "ForceLog" : ""].filter(Boolean);
+      if (!configuredProviders.length) return Response.json({ error: "Aucune API transporteur n’est configurée dans Cloudflare." }, { status: 409 });
+      const verifiedProviders = [carrierSync.sendit.verified ? "Sendit" : "", carrierSync.forceLog.verified ? "ForceLog" : ""].filter(Boolean);
+      const failedProviders = [
+        carrierSync.sendit.configured && !carrierSync.sendit.verified ? `Sendit : ${carrierSync.sendit.error || "connexion impossible"}` : "",
+        carrierSync.forceLog.configured && !carrierSync.forceLog.verified ? `ForceLog : ${carrierSync.forceLog.error || "connexion impossible"}` : "",
+      ].filter(Boolean);
+      if (!verifiedProviders.length) {
+        return Response.json({ error: `Aucune connexion transporteur n’a pu être vérifiée. ${failedProviders.join(" · ")}` }, { status: 502 });
+      }
+      integrationMessage = `Connexion vérifiée : ${verifiedProviders.join(" + ")} · ${carrierSync.updated} commande(s) mise(s) à jour.${failedProviders.length ? ` À corriger : ${failedProviders.join(" · ")}` : ""}`;
+      auditEntityLabel = verifiedProviders.join(" + ");
     } else if (payload.action === "syncMetaNow") {
       if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut synchroniser Meta Ads." }, { status: 403 });
       const result = await syncMetaAds();
