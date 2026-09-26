@@ -1010,45 +1010,85 @@ export async function POST(request: Request) {
       let createdCount = 0;
       let updatedCount = 0;
       let skippedCount = 0;
+
       for (const row of normalizedRows) {
         const existing = existingByCode.get(row.productCode);
-        if (existing && !updateExisting) {
-          skippedCount += 1;
-          continue;
-        }
+        if (existing && !updateExisting) skippedCount += 1;
+        else if (existing) updatedCount += 1;
+        else createdCount += 1;
+      }
+
+      const duplicateImport = await protectMutation("importProducts");
+      if (duplicateImport) return duplicateImport;
+
+      const rawDatabase = await getRawDb();
+      const statements = [] as ReturnType<typeof rawDatabase.prepare>[];
+
+      for (const row of normalizedRows) {
+        const existing = existingByCode.get(row.productCode);
+        if (existing && !updateExisting) continue;
+
         if (existing) {
           const stockDifference = row.stockQuantity - existing.stockQuantity;
-          const updateQuery = db.update(products).set({
-            name: row.name,
-            category: row.category,
-            purchasePrice: row.purchasePrice,
-            salePrice: row.salePrice,
-            minimumSalePrice: row.minimumSalePrice,
-            stockQuantity: row.stockQuantity,
-          }).where(eq(products.id, existing.id));
+          statements.push(
+            rawDatabase.prepare(`
+              UPDATE products
+              SET name = ?, category = ?, purchase_price = ?, sale_price = ?, minimum_sale_price = ?, stock_quantity = ?
+              WHERE id = ?
+            `).bind(
+              row.name,
+              row.category,
+              row.purchasePrice,
+              row.salePrice,
+              row.minimumSalePrice,
+              row.stockQuantity,
+              existing.id,
+            ),
+          );
           if (stockDifference) {
-            await db.batch([
-              updateQuery,
-              db.insert(stockMovements).values({
-                productId: existing.id,
-                movementType: stockDifference > 0 ? "Entrée" : "Vente",
-                quantity: Math.abs(stockDifference),
-                note: "Ajustement depuis import Google Sheets",
-              }),
-            ]);
-          } else await updateQuery;
-          updatedCount += 1;
+            statements.push(
+              rawDatabase.prepare(`
+                INSERT INTO stock_movements (product_id, movement_type, quantity, note)
+                VALUES (?, ?, ?, ?)
+              `).bind(
+                existing.id,
+                stockDifference > 0 ? "Entrée" : "Vente",
+                Math.abs(stockDifference),
+                "Ajustement depuis import Google Sheets",
+              ),
+            );
+          }
           continue;
         }
-        const [product] = await db.insert(products).values(row).returning();
-        if (!product) throw new Error(`Ligne ${createdCount + 2} : création du produit impossible.`);
+
+        statements.push(
+          rawDatabase.prepare(`
+            INSERT INTO products (product_code, name, category, purchase_price, sale_price, minimum_sale_price, stock_quantity)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).bind(
+            row.productCode,
+            row.name,
+            row.category,
+            row.purchasePrice,
+            row.salePrice,
+            row.minimumSalePrice,
+            row.stockQuantity,
+          ),
+        );
         if (row.stockQuantity > 0) {
-          await db.insert(stockMovements).values({ productId: product.id, movementType: "Entrée", quantity: row.stockQuantity, note: "Stock importé depuis Google Sheets" });
+          statements.push(
+            rawDatabase.prepare(`
+              INSERT INTO stock_movements (product_id, movement_type, quantity, note)
+              SELECT id, 'Entrée', ?, 'Stock importé depuis Google Sheets'
+              FROM products
+              WHERE product_code = ?
+            `).bind(row.stockQuantity, row.productCode),
+          );
         }
-        existingByCode.set(row.productCode, product);
-        createdCount += 1;
       }
-      integrationMessage = `${createdCount} produit(s) créé(s)${updatedCount ? ` · ${updatedCount} mis à jour` : ""}${skippedCount ? ` · ${skippedCount} déjà présent(s), ignoré(s)` : ""}.`;
+
+      if (statements.length) await rawDatabase.batch(statements);
+      integrationMessage = `${createdCount} produit(s) créé(s)${updatedCount ? ` · ${updatedCount} mis à jour` : ""}${skippedCount ? ` · ${skippedCount} déjà présent(s), ignoré(s)` : ""}. Import appliqué en une seule opération.`;
       auditEntityLabel = `${createdCount} créé(s), ${updatedCount} mis à jour, ${skippedCount} ignoré(s)`;
     } else if (payload.action === "addProduct") {
       const productCode = textValue(payload.productCode).toUpperCase();
