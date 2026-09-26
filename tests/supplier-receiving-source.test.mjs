@@ -53,3 +53,23 @@ test("sauvegardes et Google Sheets conservent les liens de réception fournisseu
   assert.match(sheets, /Quantité réceptionnée/);
   assert.match(sheets, /ID achat fournisseur/);
 });
+
+
+test("les index de réception sont créés seulement après l’ajout des colonnes sur une base existante", () => {
+  const schemaEnd = index.indexOf("async function ensureOrderColumns");
+  const bootstrap = index.slice(0, schemaEnd);
+  assert.doesNotMatch(bootstrap, /CREATE INDEX IF NOT EXISTS purchases_product_id_idx/);
+  assert.doesNotMatch(bootstrap, /CREATE INDEX IF NOT EXISTS stock_movements_purchase_id_idx/);
+
+  const purchaseStart = index.indexOf("async function ensurePurchaseColumns");
+  const purchaseEnd = index.indexOf("async function ensureProductColumns", purchaseStart);
+  const purchaseEnsure = index.slice(purchaseStart, purchaseEnd);
+  assert.match(purchaseEnsure, /ALTER TABLE purchases ADD COLUMN product_id/);
+  assert.match(purchaseEnsure, /CREATE INDEX IF NOT EXISTS purchases_product_id_idx/);
+
+  const movementStart = index.indexOf("async function ensureStockMovementColumns");
+  const movementEnd = index.indexOf("async function ensureCapitalColumns", movementStart);
+  const movementEnsure = index.slice(movementStart, movementEnd);
+  assert.match(movementEnsure, /ALTER TABLE stock_movements ADD COLUMN purchase_id/);
+  assert.match(movementEnsure, /CREATE INDEX IF NOT EXISTS stock_movements_purchase_id_idx/);
+});
