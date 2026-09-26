@@ -81,7 +81,8 @@ async function snapshot(database: D1Database) {
       COALESCE(s.sort_order, 0) AS sortOrder
     FROM products p
     LEFT JOIN storefront_product_settings s ON s.product_id = p.id
-    WHERE p.category NOT IN ('Électronique', 'Electronique', 'Boîtes', 'Boites')
+    WHERE p.archived_at IS NULL
+      AND p.category NOT IN ('Électronique', 'Electronique', 'Boîtes', 'Boites')
     ORDER BY COALESCE(s.sort_order, 0), p.category COLLATE NOCASE, p.name COLLATE NOCASE
   `).all<StorefrontProductSettingRow>()).results;
 
@@ -181,7 +182,7 @@ export async function POST(request: Request) {
     } else if (action === "saveProduct") {
       const productId = integer(payload.productId);
       if (productId <= 0) throw new Error("Produit invalide.");
-      const exists = await database.prepare("SELECT id, category FROM products WHERE id = ? LIMIT 1").bind(productId).first<{ id: number; category: string }>();
+      const exists = await database.prepare("SELECT id, category FROM products WHERE id = ? AND archived_at IS NULL LIMIT 1").bind(productId).first<{ id: number; category: string }>();
       if (!exists) throw new Error("Ce produit n’existe plus.");
       if (excludedPublicCategories.has(exists.category)) throw new Error("Cette catégorie n’est pas publiée sur la boutique.");
       const availabilityMode = ["auto", "available", "out_of_stock"].includes(text(payload.availabilityMode, 30)) ? text(payload.availabilityMode, 30) : "auto";
@@ -227,7 +228,9 @@ export async function POST(request: Request) {
       const productIds = [...grouped.keys()];
       const placeholders = productIds.map(() => "?").join(",");
       const check = (await database.prepare(`
-        SELECT id, category FROM products WHERE id IN (${placeholders})
+        SELECT id, category FROM products
+        WHERE id IN (${placeholders})
+          AND archived_at IS NULL
       `).bind(...productIds).all<{ id: number; category: string }>()).results;
       if (check.length !== productIds.length || check.some((row) => excludedPublicCategories.has(row.category))) {
         throw new Error("Un produit choisi n’est pas autorisé sur la boutique publique.");

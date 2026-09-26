@@ -239,17 +239,23 @@ export const settings = sqliteTable("settings", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
-export const products = sqliteTable("products", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  productCode: text("product_code").notNull().unique(),
-  name: text("name").notNull(),
-  category: text("category").notNull(),
-  purchasePrice: integer("purchase_price").notNull(),
-  salePrice: integer("sale_price").notNull(),
-  minimumSalePrice: integer("minimum_sale_price").notNull().default(0),
-  stockQuantity: integer("stock_quantity").notNull().default(0),
-  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+export const products = sqliteTable(
+  "products",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    productCode: text("product_code").notNull().unique(),
+    name: text("name").notNull(),
+    category: text("category").notNull(),
+    purchasePrice: integer("purchase_price").notNull(),
+    salePrice: integer("sale_price").notNull(),
+    minimumSalePrice: integer("minimum_sale_price").notNull().default(0),
+    stockQuantity: integer("stock_quantity").notNull().default(0),
+    archivedAt: text("archived_at"),
+    archivedByUserId: integer("archived_by_user_id"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("products_archived_at_idx").on(table.archivedAt)],
+);
 
 export const stockMovements = sqliteTable(
   "stock_movements",
