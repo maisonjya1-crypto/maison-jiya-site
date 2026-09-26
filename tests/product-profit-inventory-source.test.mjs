@@ -40,11 +40,12 @@ test("un comptage corrige le stock et crée un mouvement d’inventaire traçabl
   assert.match(dashboard, /Number\.isInteger\(rawQuantity\)/);
 });
 
-test("la page produits calcule le bénéfice et la marge depuis les commandes livrées", async () => {
+test("la page produits calcule une marge contributive sans doubler les dépenses Meta globales", async () => {
   const dashboard = await read("app/dashboard-client.tsx");
-  assert.match(dashboard, /Bénéfice par produit/);
+  assert.match(dashboard, /Marge contributive par produit/);
   assert.match(dashboard, /order\.status === "Livrée"/);
-  assert.match(dashboard, /order\.productCost \+ order\.shippingCost \+ order\.adCost \+ order\.fees/);
+  assert.match(dashboard, /order\.productCost \+ order\.shippingCost \+ order\.fees/);
+  assert.match(dashboard, /dépenses Meta réelles et charges d’exploitation sont déduites uniquement dans le bénéfice global/);
   assert.match(dashboard, /profit \/ revenue/);
   assert.match(dashboard, /function InventoryCountModal/);
   assert.match(dashboard, /Historique des inventaires/);
