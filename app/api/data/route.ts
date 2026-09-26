@@ -85,6 +85,49 @@ function commitsStock(status: string) {
   return stockCommittedStatuses.has(status);
 }
 
+type MutationReceiptState =
+  | { kind: "unprotected" }
+  | { kind: "invalid" }
+  | { kind: "reserved"; requestKey: string }
+  | { kind: "processing"; requestKey: string }
+  | { kind: "completed"; requestKey: string; message: string }
+  | { kind: "conflict"; requestKey: string };
+
+async function reserveMutationReceipt(userId: number, action: string, rawRequestKey: unknown): Promise<MutationReceiptState> {
+  const requestKey = textValue(rawRequestKey);
+  if (!requestKey) return { kind: "unprotected" };
+  if (!/^[A-Za-z0-9_-]{16,120}$/.test(requestKey)) return { kind: "invalid" };
+
+  const database = await getRawDb();
+  const inserted = await database.prepare(
+    "INSERT OR IGNORE INTO mutation_receipts (request_key, user_id, action, status) VALUES (?, ?, ?, 'processing')",
+  ).bind(requestKey, userId, action).run();
+
+  if (Number(inserted.meta?.changes || 0) === 1) return { kind: "reserved", requestKey };
+
+  const existing = await database.prepare(
+    "SELECT user_id, action, status, message FROM mutation_receipts WHERE request_key = ? LIMIT 1",
+  ).bind(requestKey).first<{ user_id: number; action: string; status: string; message: string }>();
+
+  if (!existing || existing.user_id !== userId || existing.action !== action) return { kind: "conflict", requestKey };
+  if (existing.status === "completed") return { kind: "completed", requestKey, message: existing.message || "" };
+  return { kind: "processing", requestKey };
+}
+
+async function completeMutationReceipt(requestKey: string, userId: number, action: string, message: string) {
+  const database = await getRawDb();
+  await database.prepare(
+    "UPDATE mutation_receipts SET status = 'completed', message = ?, completed_at = CURRENT_TIMESTAMP WHERE request_key = ? AND user_id = ? AND action = ?",
+  ).bind(message.slice(0, 240), requestKey, userId, action).run();
+}
+
+async function releaseMutationReceipt(requestKey: string, userId: number, action: string) {
+  const database = await getRawDb();
+  await database.prepare(
+    "DELETE FROM mutation_receipts WHERE request_key = ? AND user_id = ? AND action = ? AND status = 'processing'",
+  ).bind(requestKey, userId, action).run();
+}
+
 async function sha256Hex(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
