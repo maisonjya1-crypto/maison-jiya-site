@@ -8,7 +8,7 @@ const api = await readFile(new URL("app/api/data/route.ts", root), "utf8");
 const styles = await readFile(new URL("app/globals.css", root), "utf8");
 const meta = await readFile(new URL("db/meta.ts", root), "utf8");
 const schema = await readFile(new URL("db/schema.ts", root), "utf8");
-const database = await readFile(new URL("db/index.ts", root), "utf8");
+const database = await readFile(new URL("db/schema-compat.ts", root), "utf8");
 
 test("la corbeille propose restaurer ou supprimer définitivement dans un menu trois points", () => {
   assert.match(dashboard, /className="order-actions trash-actions"/);

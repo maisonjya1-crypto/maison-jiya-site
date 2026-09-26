@@ -62,9 +62,9 @@ export function memoryD1() {
 
 export async function fixture() {
   const database = memoryD1();
-  const source = ts.createSourceFile('index.ts', readFileSync(resolve(root, 'db/index.ts'), 'utf8'), ts.ScriptTarget.Latest, true);
+  const source = ts.createSourceFile('schema-compat.ts', readFileSync(resolve(root, 'db/schema-compat.ts'), 'utf8'), ts.ScriptTarget.Latest, true);
   function visit(node) {
-    if (ts.isVariableDeclaration(node) && node.name.getText(source) === 'schemaStatements') {
+    if (ts.isVariableDeclaration(node) && node.name.getText(source) === 'legacySchemaStatements') {
       for (const statement of node.initializer.elements) database.sqlite.exec(statement.text);
     }
     ts.forEachChild(node, visit);

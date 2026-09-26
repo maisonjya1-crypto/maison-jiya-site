@@ -15,7 +15,7 @@ test("orders select a catalog product instead of accepting a free-text product",
 
 test("stock is deducted once when an order reaches a committed status", async () => {
   const route = await readFile(new URL("app/api/data/route.ts", root), "utf8");
-  const database = await readFile(new URL("db/index.ts", root), "utf8");
+  const database = await readFile(new URL("db/schema-compat.ts", root), "utf8");
   assert.match(route, /stockCommittedStatuses/);
   assert.match(route, /!existingOrder\.stockDeducted && commitsStock\(nextStatus\)/);
   assert.match(route, /SET stock_quantity = stock_quantity - \?/);

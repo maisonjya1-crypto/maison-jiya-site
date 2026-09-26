@@ -7,7 +7,7 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("le propriétaire principal est distinct du rôle administrateur", async () => {
   const [schema, index, auth, authRoute, data] = await Promise.all([
-    read("db/schema.ts"), read("db/index.ts"), read("app/auth.ts"), read("app/api/auth/route.ts"), read("app/api/data/route.ts"),
+    read("db/schema.ts"), read("db/schema-compat.ts"), read("app/auth.ts"), read("app/api/auth/route.ts"), read("app/api/data/route.ts"),
   ]);
   assert.match(schema, /isOwner: integer\("is_owner"/);
   assert.match(index, /ALTER TABLE users ADD COLUMN is_owner/);

@@ -7,7 +7,7 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("les produits sont archivés sans suppression destructive", async () => {
   const [route, schema, runtime, backups, dashboard] = await Promise.all([
-    read("app/api/data/route.ts"), read("db/schema.ts"), read("db/index.ts"), read("db/backups.ts"), read("app/dashboard-client.tsx"),
+    read("app/api/data/route.ts"), read("db/schema.ts"), read("db/schema-compat.ts"), read("db/backups.ts"), read("app/dashboard-client.tsx"),
   ]);
   assert.match(schema, /archivedAt: text\("archived_at"\)/);
   assert.match(schema, /products_archived_at_idx/);
