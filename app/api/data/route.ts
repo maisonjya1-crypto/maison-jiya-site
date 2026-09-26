@@ -614,6 +614,9 @@ export async function POST(request: Request) {
       if (shouldDeductStock && quantity > selectedProduct.stockQuantity) {
         return Response.json({ error: `Stock insuffisant pour confirmer : ${selectedProduct.stockQuantity} unité(s) disponible(s).` }, { status: 409 });
       }
+      const duplicateOrder = await protectMutation("addOrder");
+      if (duplicateOrder) return duplicateOrder;
+
       let [customer] = await db.select().from(customers).where(eq(customers.phone, phone)).limit(1);
       if (!customer) [customer] = await db.insert(customers).values({ name, phone, city }).returning();
       else await db.update(customers).set({ name, city }).where(eq(customers.id, customer.id));
@@ -827,6 +830,9 @@ export async function POST(request: Request) {
         const [linkedProduct] = await db.select({ id: products.id }).from(products).where(eq(products.id, productId)).limit(1);
         if (!linkedProduct) return Response.json({ error: "Le produit lié à cet achat est introuvable." }, { status: 404 });
       }
+      const duplicatePurchase = await protectMutation("addPurchase");
+      if (duplicatePurchase) return duplicatePurchase;
+
       await db.insert(purchases).values({
         supplier: textValue(payload.supplier, "Fournisseur"),
         item: textValue(payload.item, "Achat"),
@@ -873,6 +879,9 @@ export async function POST(request: Request) {
       const [linkedProduct] = await db.select({ id: products.id, productCode: products.productCode, name: products.name }).from(products).where(eq(products.id, purchase.productId)).limit(1);
       if (!linkedProduct) return Response.json({ error: "Le produit lié à cet achat est introuvable." }, { status: 404 });
 
+      const duplicateReception = await protectMutation("receivePurchase");
+      if (duplicateReception) return duplicateReception;
+
       const now = new Date().toISOString();
       const remaining = purchase.quantity - purchase.receivedQuantity;
       const results = await rawDatabase.batch([
@@ -915,6 +924,8 @@ export async function POST(request: Request) {
       if (!category || !label || amount <= 0 || !["Payé", "À payer"].includes(nextPaymentStatus) || !/^\d{4}-\d{2}-\d{2}$/.test(expenseDate)) {
         return Response.json({ error: "Dépense invalide." }, { status: 400 });
       }
+      const duplicateExpense = await protectMutation("addExpense");
+      if (duplicateExpense) return duplicateExpense;
       await db.insert(expenses).values({ category, label, amount, account, paymentStatus: nextPaymentStatus, expenseDate, note });
       auditEntityLabel = `${category} · ${label}`;
     } else if (payload.action === "updateExpense") {
@@ -941,6 +952,8 @@ export async function POST(request: Request) {
       await db.delete(expenses).where(eq(expenses.id, id));
       auditEntityLabel = `${expense.category} · ${expense.label}`;
     } else if (payload.action === "addAd") {
+      const duplicateAd = await protectMutation("addAd");
+      if (duplicateAd) return duplicateAd;
       await db.insert(adPerformance).values({ platform: "Meta Ads", campaign: textValue(payload.campaign, "Campagne Meta"), spend: moneyValue(payload.spend), revenue: moneyValue(payload.revenue), orderCount: numberValue(payload.orderCount), source: "Saisie manuelle", performanceDate: textValue(payload.performanceDate, new Date().toISOString().slice(0, 10)) });
     } else if (payload.action === "updateAd") {
       const id = numberValue(payload.id);
@@ -957,6 +970,8 @@ export async function POST(request: Request) {
       if (!ad) return Response.json({ error: "Publicité introuvable." }, { status: 404 });
       await db.delete(adPerformance).where(eq(adPerformance.id, id));
     } else if (payload.action === "addCapital") {
+      const duplicateCapital = await protectMutation("addCapital");
+      if (duplicateCapital) return duplicateCapital;
       await db.insert(capitalLedger).values({ direction: textValue(payload.direction, "Entrée"), category: textValue(payload.category, "Ajustement"), label: textValue(payload.label, "Mouvement de capital"), amount: moneyValue(payload.amount), entryDate: textValue(payload.entryDate, new Date().toISOString().slice(0, 10)) });
     } else if (payload.action === "updateCapital") {
       const id = numberValue(payload.id);
@@ -1098,6 +1113,8 @@ export async function POST(request: Request) {
       if (duplicate) return Response.json({ error: "Cet ID produit existe déjà." }, { status: 409 });
       const initialQuantity = numberValue(payload.initialQuantity);
       const salePrice = moneyValue(payload.salePrice);
+      const duplicateProductCreation = await protectMutation("addProduct");
+      if (duplicateProductCreation) return duplicateProductCreation;
       const [product] = await db.insert(products).values({ productCode, name, category: productCategory(payload.category), purchasePrice: moneyValue(payload.purchasePrice), salePrice, minimumSalePrice: moneyValue(payload.minimumSalePrice, salePrice), stockQuantity: initialQuantity }).returning();
       if (!product) throw new Error("Le produit n’a pas été créé.");
       if (initialQuantity > 0) await db.insert(stockMovements).values({ productId: product.id, movementType: "Entrée", quantity: initialQuantity, note: "Stock initial" });
@@ -1135,6 +1152,8 @@ export async function POST(request: Request) {
       const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
       if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
       if (movementType === "Vente" && quantity > product.stockQuantity) return Response.json({ error: `Stock insuffisant : ${product.stockQuantity} unité(s) restante(s).` }, { status: 400 });
+      const duplicateMovement = await protectMutation("addStockMovement");
+      if (duplicateMovement) return duplicateMovement;
       const delta = movementType === "Entrée" ? quantity : -quantity;
       await db.batch([
         db.insert(stockMovements).values({ productId, movementType, quantity, note: textValue(payload.note) }),
@@ -1159,6 +1178,9 @@ export async function POST(request: Request) {
       if (product.stockQuantity !== expectedSystemQuantity) {
         return Response.json({ error: `Le stock a changé pendant le comptage (${expectedSystemQuantity} → ${product.stockQuantity}). Rechargez puis recommencez l’inventaire.` }, { status: 409 });
       }
+
+      const duplicateInventory = await protectMutation("countInventory");
+      if (duplicateInventory) return duplicateInventory;
 
       const difference = physicalQuantity - expectedSystemQuantity;
       const countRef = `INV-${Date.now().toString(36).slice(-6).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
