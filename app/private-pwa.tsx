@@ -11,7 +11,7 @@ type InstallPromptEvent = Event & {
 type PushConfig = { publicKey?: string; subscriptions?: number; error?: string };
 type AppNavigator = Navigator & { standalone?: boolean };
 type NativeOrder = { id: number; orderRef: string; customerName: string | null; products: string };
-type LiveData = { orders?: NativeOrder[] };
+type LiveData = { version?: number; orders?: NativeOrder[] };
 type NativeAndroidBridge = {
   notificationsSupported: () => boolean;
   notificationsEnabled: () => boolean;
@@ -22,7 +22,7 @@ type NativeAndroidBridge = {
 type NativeWindow = Window & { MaisonJiyaNative?: NativeAndroidBridge };
 
 const PANEL_VISIBLE_MS = 30_000;
-const APP_REFRESH_MS = 1_000;
+const APP_REFRESH_MS = 15_000;
 
 function base64UrlToBytes(value: string) {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -74,7 +74,7 @@ export default function PrivatePwa() {
   const [panelPinned, setPanelPinned] = useState(false);
   const [settingsHost, setSettingsHost] = useState<HTMLElement | null>(null);
   const hideTimer = useRef<number | null>(null);
-  const lastDataSnapshot = useRef<string>("");
+  const lastDataVersion = useRef<number | null>(null);
   const lastNativeOrderIds = useRef<Set<string> | null>(null);
   const nativePermissionPending = useRef(false);
 
@@ -258,35 +258,32 @@ export default function PrivatePwa() {
     const refreshIfChanged = async () => {
       if (cancelled || document.visibilityState !== "visible") return;
       try {
-        const response = await fetch(`/api/data?live=${Date.now()}`, { cache: "no-store" });
+        const response = await fetch("/api/platform/live", { cache: "no-store" });
         if (!response.ok) return;
-        const snapshot = await response.text();
+        const body = (await response.json()) as LiveData;
+        const orders = Array.isArray(body.orders) ? body.orders : [];
+        const currentVersion = Number(body.version || 0);
 
         if (nativeAndroid) {
-          try {
-            const body = JSON.parse(snapshot) as LiveData;
-            const orders = Array.isArray(body.orders) ? body.orders : [];
-            const currentIds = new Set(orders.map((order) => String(order.id)));
-            const previousIds = lastNativeOrderIds.current;
-            const bridge = getNativeBridge();
-            if (previousIds && bridge?.notificationsEnabled?.()) {
-              for (const order of orders) {
-                if (!previousIds.has(String(order.id))) {
-                  bridge.notifyNewOrder(order.orderRef || "Nouvelle commande", order.customerName || "", order.products || "");
-                }
+          const currentIds = new Set(orders.map((order) => String(order.id)));
+          const previousIds = lastNativeOrderIds.current;
+          const bridge = getNativeBridge();
+          if (previousIds && bridge?.notificationsEnabled?.()) {
+            for (const order of orders) {
+              if (!previousIds.has(String(order.id))) {
+                bridge.notifyNewOrder(order.orderRef || "Nouvelle commande", order.customerName || "", order.products || "");
               }
             }
-            lastNativeOrderIds.current = currentIds;
-          } catch {
-            // Une réponse non JSON ne bloque jamais l’actualisation normale.
           }
+          lastNativeOrderIds.current = currentIds;
         }
 
-        if (!lastDataSnapshot.current) {
-          lastDataSnapshot.current = snapshot;
+        if (lastDataVersion.current === null) {
+          lastDataVersion.current = currentVersion;
           return;
         }
-        if (snapshot !== lastDataSnapshot.current) {
+        if (currentVersion !== lastDataVersion.current) {
+          lastDataVersion.current = currentVersion;
           window.location.reload();
         }
       } catch {
@@ -455,7 +452,7 @@ export default function PrivatePwa() {
   const canShowPanel = nativeAndroid || authorized;
   const description = nativeAndroid
     ? nativeNotificationsAvailable
-      ? "Application Android installée. Les données sont vérifiées automatiquement chaque seconde et les notifications natives peuvent être activées sur cet appareil."
+      ? "Application Android installée. Les changements sont vérifiés automatiquement avec une requête légère et les notifications natives peuvent être activées sur cet appareil."
       : "Application Android installée. Mets à jour vers la version 2.5 pour activer les notifications Android natives."
     : ios
       ? installed
