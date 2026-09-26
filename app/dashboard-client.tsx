@@ -62,6 +62,17 @@ type Purchase = {
   receivedAt: string | null;
   createdAt: string;
 };
+type Expense = {
+  id: number;
+  category: string;
+  label: string;
+  amount: number;
+  account: string;
+  paymentStatus: string;
+  expenseDate: string;
+  note: string;
+  createdAt: string;
+};
 type Ad = {
   id: number;
   platform: string;
@@ -194,6 +205,7 @@ type Data = {
   trash: Order[];
   customers: Customer[];
   purchases: Purchase[];
+  expenses: Expense[];
   ads: Ad[];
   capital: Capital[];
   products: Product[];
@@ -216,7 +228,7 @@ type Data = {
     displayName: string;
   };
 };
-type ModalName = "order" | "purchase" | "ad" | "capital" | "product" | null;
+type ModalName = "order" | "purchase" | "expense" | "ad" | "capital" | "product" | null;
 type StockSelection = { product: Product; type: "Entrée" | "Vente" } | null;
 type InventorySelection = Product | null;
 type ThemeKey = "mauve-froid" | "rose-poudre" | "sombre-prune" | "bleu-brume" | "sable-chic";
@@ -233,6 +245,7 @@ type EditableEntity =
   | { kind: "movement"; record: StockMovement }
   | { kind: "customer"; record: Customer }
   | { kind: "purchase"; record: Purchase }
+  | { kind: "expense"; record: Expense }
   | { kind: "ad"; record: Ad }
   | { kind: "capital"; record: Capital };
 
@@ -241,6 +254,7 @@ const emptyData: Data = {
   trash: [],
   customers: [],
   purchases: [],
+  expenses: [],
   ads: [],
   capital: [],
   products: [],
@@ -274,11 +288,11 @@ const dateTimeLabel = (value: string) =>
     minute: "2-digit",
   }).format(new Date(value));
 
-const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Publicités", "Capital", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
+const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
 const navigationGroups = [
-  { label: "Opérations", items: navigation.slice(0, 6) },
-  { label: "Pilotage", items: navigation.slice(6, 10) },
-  { label: "Système", items: navigation.slice(10) },
+  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats"] },
+  { label: "Pilotage", items: ["Dépenses", "Publicités", "Capital", "Rapports", "Assistant IA"] },
+  { label: "Système", items: ["Mode entraînement", "Corbeille", "Paramètres"] },
 ];
 const sectionDescriptions: Record<string, string> = {
   "Vue d’ensemble": "Synthèse de l’activité, de la trésorerie et des opérations.",
@@ -287,6 +301,7 @@ const sectionDescriptions: Record<string, string> = {
   Colis: "Contrôlez les expéditions et le suivi des transporteurs.",
   Clients: "Centralisez les coordonnées et l’historique de vos clientes.",
   Achats: "Gérez les fournisseurs, réceptions et coûts d’approvisionnement.",
+  Dépenses: "Enregistrez les charges réelles qui réduisent le résultat et la trésorerie.",
   Publicités: "Suivez vos campagnes, dépenses et performances Meta.",
   Capital: "Suivez les mouvements, enveloppes et capacités de réinvestissement.",
   Rapports: "Analysez la performance commerciale et financière par période.",
@@ -300,6 +315,7 @@ const addActionLabels: Record<string, string> = {
   Commandes: "Nouvelle commande",
   Produits: "Nouveau produit",
   Achats: "Nouvel achat",
+  Dépenses: "Nouvelle dépense",
   Publicités: "Nouvelle campagne",
   Capital: "Nouveau mouvement",
 };
@@ -458,6 +474,9 @@ export default function DashboardClient() {
       deleteCustomer: "Client supprimé",
       updatePurchase: "Achat mis à jour",
       deletePurchase: "Achat supprimé",
+      addExpense: "Dépense enregistrée",
+      updateExpense: "Dépense mise à jour",
+      deleteExpense: "Dépense supprimée",
       receivePurchase: "Réception fournisseur ajoutée au stock",
       updateAd: "Publicité mise à jour",
       deleteAd: "Publicité supprimée",
@@ -528,6 +547,10 @@ export default function DashboardClient() {
         label = `l’achat ${selection.record.item}`;
         warning = selection.record.receivedQuantity > 0 ? " Cet achat a déjà alimenté le stock et ne peut pas être supprimé." : "";
         break;
+      case "expense":
+        action = "deleteExpense";
+        label = `la dépense ${selection.record.label}`;
+        break;
       case "ad":
         action = "deleteAd";
         label = `la campagne ${selection.record.campaign}`;
@@ -573,11 +596,14 @@ export default function DashboardClient() {
     const adRevenue = data.ads.reduce((s, a) => s + a.revenue, 0);
     const purchases = data.purchases.filter((p) => p.paymentStatus === "Payé").reduce((s, p) => s + p.totalCost, 0);
     const unpaidPurchases = data.purchases.filter((p) => p.paymentStatus !== "Payé").reduce((s, p) => s + p.totalCost, 0);
+    const operatingExpenses = data.expenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const paidOperatingExpenses = data.expenses.filter((expense) => expense.paymentStatus === "Payé").reduce((sum, expense) => sum + expense.amount, 0);
+    const unpaidOperatingExpenses = data.expenses.filter((expense) => expense.paymentStatus !== "Payé").reduce((sum, expense) => sum + expense.amount, 0);
     const safetyReserve = Math.max(0, Number(data.settings.safety_reserve) || 0);
     const capitalNet = data.capital.reduce((s, r) => s + (r.direction === "Entrée" ? r.amount : r.direction === "Sortie" ? -r.amount : 0), 0);
     const reinvest = data.capital.filter((entry) => entry.isAutomatic && entry.category === "Réinvestissement").reduce((sum, entry) => sum + entry.amount, 0);
-    const profit = deliveredRevenue - costs - losses - adSpend;
-    const cash = capitalNet + netCollected - purchases - losses - adSpend;
+    const profit = deliveredRevenue - costs - losses - adSpend - operatingExpenses;
+    const cash = capitalNet + netCollected - purchases - losses - adSpend - paidOperatingExpenses;
     const reinvestable = Math.max(0, Math.min(reinvest, cash - unpaidPurchases - safetyReserve));
     return {
       revenue,
@@ -594,6 +620,9 @@ export default function DashboardClient() {
       reinvest,
       reinvestable,
       unpaidPurchases,
+      operatingExpenses,
+      paidOperatingExpenses,
+      unpaidOperatingExpenses,
       safetyReserve,
     };
   }, [data]);
@@ -697,7 +726,7 @@ export default function DashboardClient() {
           <div className="top-actions">
             <SectionSearch key={active} active={active} data={data} openOrder={openOrder} openEntity={openEntity} />
             {addableSections.has(active) && (
-              <button className="primary-button top-primary-action" onClick={() => openEntry(active === "Produits" ? "product" : active === "Achats" ? "purchase" : active === "Publicités" ? "ad" : active === "Capital" ? "capital" : "order")}>
+              <button className="primary-button top-primary-action" onClick={() => openEntry(active === "Produits" ? "product" : active === "Achats" ? "purchase" : active === "Dépenses" ? "expense" : active === "Publicités" ? "ad" : active === "Capital" ? "capital" : "order")}>
                 <span>{data.access.canEdit ? "＋" : "🔒"}</span> {data.access.canEdit ? addActionLabels[active] : "Lecture seule"}
               </button>
             )}
@@ -841,7 +870,7 @@ function Loading() {
 function SectionSearch({ active, data, openOrder, openEntity }: { active: string; data: Data; openOrder: (order: Order) => void; openEntity: (selection: EditableEntity) => void }) {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLocaleLowerCase("fr");
-  const searchablePages = new Set(["Commandes", "Produits", "Colis", "Clients", "Achats", "Publicités", "Capital", "Corbeille"]);
+  const searchablePages = new Set(["Commandes", "Produits", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Corbeille"]);
   const results = useMemo<Array<{ key: string; label: string; detail: string; order?: Order; entity?: EditableEntity }>>(() => {
     if (normalized.length < 2) return [];
     const matches = (values: Array<string | number | null | undefined>) => values.some((value) => String(value || "").toLocaleLowerCase("fr").includes(normalized));
@@ -875,6 +904,12 @@ function SectionSearch({ active, data, openOrder, openEntity }: { active: string
       return data.purchases
         .filter((purchase) => matches([purchase.supplier, purchase.item, purchase.productCode, purchase.productName, purchase.paymentStatus, purchase.totalCost, purchase.quantity, purchase.receivedAt ? "réceptionné" : "à réceptionner"]))
         .map((purchase) => ({ key: `purchase-${purchase.id}`, label: purchase.item, detail: `${purchase.supplier} · ${money(purchase.totalCost)} · ${purchase.paymentStatus}`, entity: { kind: "purchase" as const, record: purchase } }))
+        .slice(0, 10);
+    }
+    if (active === "Dépenses") {
+      return data.expenses
+        .filter((expense) => matches([expense.category, expense.label, expense.account, expense.paymentStatus, expense.expenseDate, expense.note, expense.amount]))
+        .map((expense) => ({ key: `expense-${expense.id}`, label: expense.label, detail: `${expense.category} · ${money(expense.amount)} · ${expense.paymentStatus}`, entity: { kind: "expense" as const, record: expense } }))
         .slice(0, 10);
     }
     if (active === "Publicités") {
@@ -972,6 +1007,9 @@ function Page({
     reinvest: number;
     reinvestable: number;
     unpaidPurchases: number;
+    operatingExpenses: number;
+    paidOperatingExpenses: number;
+    unpaidOperatingExpenses: number;
     safetyReserve: number;
   };
   delivery: { label: string; value: number; tone: string }[];
@@ -990,6 +1028,7 @@ function Page({
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Achats") return <PurchasesPage purchases={data.purchases} products={data.products} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Dépenses") return <ExpensesPage expenses={data.expenses} onAdd={() => open("expense")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Rapports") return <ReportsPage data={data} />;
