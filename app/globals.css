@@ -769,3 +769,16 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,select:focus-vis
 .business-reset-button:hover{background:color-mix(in srgb,var(--danger) 12%,var(--paper))}
 .business-reset-button:disabled{opacity:.55;cursor:not-allowed}
 @media(max-width:760px){.business-reset-panel{display:grid}.business-reset-button{width:100%}}
+
+
+.supplier-receiving-guide{display:flex;align-items:center;justify-content:space-between;gap:18px}
+.supplier-receiving-guide>div{display:grid;gap:6px}
+.supplier-receiving-guide h2{margin:0;font:500 20px Georgia,serif}
+.supplier-receiving-guide p{margin:0;max-width:780px;color:var(--muted);line-height:1.55}
+.supplier-receiving-guide>strong{min-width:max-content;padding:10px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface-soft);font-size:12px}
+.purchase-received{display:grid;gap:2px}
+.purchase-received strong{color:var(--forest)}
+.purchase-received small,.purchase-unlinked{color:var(--muted);font-size:11px}
+.purchase-receive-button{min-height:36px;padding:0 11px;white-space:nowrap}
+.field small{color:var(--muted);font-size:10px;line-height:1.45}
+@media(max-width:760px){.supplier-receiving-guide{display:grid}.supplier-receiving-guide>strong{width:max-content}}
