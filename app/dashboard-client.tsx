@@ -833,7 +833,7 @@ function SectionSearch({ active, data, openOrder, openEntity }: { active: string
     }
     if (active === "Achats") {
       return data.purchases
-        .filter((purchase) => matches([purchase.supplier, purchase.item, purchase.paymentStatus, purchase.totalCost, purchase.quantity]))
+        .filter((purchase) => matches([purchase.supplier, purchase.item, purchase.productCode, purchase.productName, purchase.paymentStatus, purchase.totalCost, purchase.quantity, purchase.receivedAt ? "réceptionné" : "à réceptionner"]))
         .map((purchase) => ({ key: `purchase-${purchase.id}`, label: purchase.item, detail: `${purchase.supplier} · ${money(purchase.totalCost)} · ${purchase.paymentStatus}`, entity: { kind: "purchase" as const, record: purchase } }))
         .slice(0, 10);
     }
