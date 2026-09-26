@@ -392,6 +392,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  let mutationReceiptKey = "";
+  let mutationReceiptAction = "";
+  let mutationReceiptUserId = 0;
+  let mutationReceiptReserved = false;
+  let businessMutationCommitted = false;
+
   try {
     if (!hasValidOrigin(request)) return Response.json({ error: "Origine de la requête refusée." }, { status: 403 });
     const user = await getAuthenticatedUser(request);
@@ -406,6 +412,29 @@ export async function POST(request: Request) {
     if (!access.canEdit) {
       return Response.json({ error: "Votre compte est en lecture seule." }, { status: 403 });
     }
+
+    const protectMutation = async (actionName: string) => {
+      const state = await reserveMutationReceipt(user.id, actionName, payload.requestKey);
+      if (state.kind === "unprotected") return null;
+      if (state.kind === "invalid") {
+        return Response.json({ error: "Identifiant de requête invalide." }, { status: 400 });
+      }
+      if (state.kind === "conflict") {
+        return Response.json({ error: "Cette requête ne correspond pas à l’opération attendue." }, { status: 409 });
+      }
+      if (state.kind === "processing") {
+        return Response.json({ error: "Cette opération est déjà en cours. Maison Jiya vérifie avant de la rejouer.", code: "MUTATION_IN_PROGRESS" }, { status: 409 });
+      }
+      if (state.kind === "completed") {
+        const responseData = await snapshot(access);
+        return Response.json({ ...responseData, message: state.message || "Cette opération avait déjà été enregistrée. Aucun doublon n’a été créé." });
+      }
+      mutationReceiptKey = state.requestKey;
+      mutationReceiptAction = actionName;
+      mutationReceiptUserId = user.id;
+      mutationReceiptReserved = true;
+      return null;
+    };
 
     let auditEntityId = textValue(payload.id) || textValue(payload.memberId) || null;
     let auditEntityLabel = "";
