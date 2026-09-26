@@ -166,6 +166,25 @@ export const purchases = sqliteTable(
   (table) => [index("purchases_product_id_idx").on(table.productId)],
 );
 
+export const expenses = sqliteTable(
+  "expenses",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    category: text("category").notNull(),
+    label: text("label").notNull(),
+    amount: integer("amount").notNull(),
+    account: text("account").notNull().default("Banque"),
+    paymentStatus: text("payment_status").notNull().default("Payé"),
+    expenseDate: text("expense_date").notNull(),
+    note: text("note").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("expenses_expense_date_idx").on(table.expenseDate),
+    index("expenses_payment_status_idx").on(table.paymentStatus),
+  ],
+);
+
 export const adPerformance = sqliteTable("ad_performance", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   platform: text("platform").notNull().default("Meta Ads"),
