@@ -2688,8 +2688,11 @@ function EmptyState({ title, text }: { title: string; text: string }) {
     </div>
   );
 }
-function PurchasesPage({ purchases, onAdd, onEdit, onDelete }: { purchases: Purchase[]; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+function PurchasesPage({ purchases, products, canEdit, submit, onAdd, onEdit, onDelete }: { purchases: Purchase[]; products: Product[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+  const [receivingId, setReceivingId] = useState<number | null>(null);
   const total = purchases.reduce((sum, purchase) => sum + purchase.totalCost, 0);
+  const waitingReceipt = purchases.filter((purchase) => purchase.productId && purchase.receivedQuantity < purchase.quantity);
+  const receivedCount = purchases.filter((purchase) => purchase.receivedQuantity >= purchase.quantity && purchase.quantity > 0).length;
   const supplierRows = Array.from(new Set(purchases.map((purchase) => purchase.supplier).filter(Boolean)))
     .map((supplier) => {
       const rows = purchases.filter((purchase) => purchase.supplier === supplier);
@@ -2702,12 +2705,36 @@ function PurchasesPage({ purchases, onAdd, onEdit, onDelete }: { purchases: Purc
       };
     })
     .sort((left, right) => right.due - left.due || right.purchased - left.purchased);
+
+  async function receive(purchase: Purchase) {
+    if (!canEdit || receivingId || !purchase.productId || purchase.receivedQuantity >= purchase.quantity) return;
+    const remaining = purchase.quantity - purchase.receivedQuantity;
+    const confirmed = window.confirm(
+      `Réceptionner ${remaining} unité(s) de ${purchase.productName || purchase.item} ?\n\nLe stock du produit sera augmenté automatiquement. Cette réception restera dans l’historique.`,
+    );
+    if (!confirmed) return;
+    setReceivingId(purchase.id);
+    try {
+      await submit("receivePurchase", { id: String(purchase.id) });
+    } finally {
+      setReceivingId(null);
+    }
+  }
+
   return (
     <>
       <section className="kpi-grid three">
-        <Kpi label="Total achats" value={money(total)} detail={`${purchases.length} opérations`} />
-        <Kpi label="Achats payés" value={money(purchases.filter((purchase) => purchase.paymentStatus === "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail="Sorties confirmées" />
-        <Kpi label="Reste à payer" value={money(purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail="À surveiller" danger />
+        <Kpi label="Total achats" value={money(total)} detail={`${purchases.length} opérations · ${products.length} produits catalogue`} />
+        <Kpi label="Achats payés" value={money(purchases.filter((purchase) => purchase.paymentStatus === "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail={`${receivedCount} réception(s) terminée(s)`} />
+        <Kpi label="Reste à payer" value={money(purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail={`${waitingReceipt.length} réception(s) stock en attente`} danger />
+      </section>
+      <section className="panel supplier-receiving-guide">
+        <div>
+          <span className="card-kicker">Réception fournisseur</span>
+          <h2>Achat ≠ stock reçu</h2>
+          <p>Enregistrez d’abord l’achat. Si vous le reliez à un produit du catalogue, le stock ne bouge pas tant que vous ne cliquez pas sur « Réceptionner le stock ».</p>
+        </div>
+        <strong>{waitingReceipt.length} à réceptionner</strong>
       </section>
       <section className="panel report-table">
         <PanelHead kicker="Fournisseurs" title="Suivi des engagements" total={`${supplierRows.length} fournisseur${supplierRows.length === 1 ? "" : "s"}`} />
@@ -2720,24 +2747,39 @@ function PurchasesPage({ purchases, onAdd, onEdit, onDelete }: { purchases: Purc
       </section>
       <section className="panel page-panel">
         <div className="section-toolbar">
-          <div><h2>Achats fournisseurs</h2><p>Stock, tissu, emballages et autres coûts.</p></div>
+          <div><h2>Achats fournisseurs</h2><p>Stock, tissu, emballages et autres coûts. Une réception liée au catalogue augmente automatiquement le stock.</p></div>
           <button className="primary-button" onClick={onAdd}>＋ Ajouter un achat</button>
         </div>
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Date</th><th>Fournisseur</th><th>Achat</th><th>Qté</th><th>Total</th><th>Paiement</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Date</th><th>Fournisseur</th><th>Achat</th><th>Produit stock</th><th>Qté</th><th>Total</th><th>Paiement</th><th>Réception</th><th>Actions</th></tr></thead>
             <tbody>
-              {purchases.map((purchase) => (
-                <tr key={purchase.id}>
-                  <td>{dateLabel(purchase.createdAt)}</td>
-                  <td><strong>{purchase.supplier}</strong></td>
-                  <td>{purchase.item}</td>
-                  <td>{purchase.quantity}</td>
-                  <td><strong>{money(purchase.totalCost)}</strong></td>
-                  <td><Status value={purchase.paymentStatus} /></td>
-                  <td className="order-actions-cell"><RecordActions label={`l’achat ${purchase.item}`} onEdit={() => onEdit({ kind: "purchase", record: purchase })} onDelete={() => onDelete({ kind: "purchase", record: purchase })} /></td>
-                </tr>
-              ))}
+              {purchases.map((purchase) => {
+                const received = purchase.receivedQuantity >= purchase.quantity && purchase.quantity > 0;
+                return (
+                  <tr key={purchase.id}>
+                    <td>{dateLabel(purchase.createdAt)}</td>
+                    <td><strong>{purchase.supplier}</strong></td>
+                    <td>{purchase.item}</td>
+                    <td>{purchase.productId ? <><strong>{purchase.productName || "Produit"}</strong><small>{purchase.productCode || `#${purchase.productId}`}</small></> : <small>Non lié au stock</small>}</td>
+                    <td>{purchase.quantity}</td>
+                    <td><strong>{money(purchase.totalCost)}</strong></td>
+                    <td><Status value={purchase.paymentStatus} /></td>
+                    <td>
+                      {received ? (
+                        <span className="purchase-received"><strong>✓ +{purchase.receivedQuantity}</strong><small>{purchase.receivedAt ? dateLabel(purchase.receivedAt) : "Réceptionné"}</small></span>
+                      ) : purchase.productId ? (
+                        <button className="secondary-button purchase-receive-button" type="button" disabled={!canEdit || receivingId === purchase.id} onClick={() => void receive(purchase)}>
+                          {receivingId === purchase.id ? "Réception…" : `Réceptionner +${purchase.quantity - purchase.receivedQuantity}`}
+                        </button>
+                      ) : (
+                        <span className="purchase-unlinked">Modifier pour lier un produit</span>
+                      )}
+                    </td>
+                    <td className="order-actions-cell"><RecordActions label={`l’achat ${purchase.item}`} onEdit={() => onEdit({ kind: "purchase", record: purchase })} onDelete={() => onDelete({ kind: "purchase", record: purchase })} /></td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -2745,6 +2787,7 @@ function PurchasesPage({ purchases, onAdd, onEdit, onDelete }: { purchases: Purc
     </>
   );
 }
+
 type AdSummary = {
   key: string;
   record: Ad;
