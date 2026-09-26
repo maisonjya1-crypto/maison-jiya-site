@@ -604,7 +604,7 @@ export default function DashboardClient() {
     const reinvest = data.capital.filter((entry) => entry.isAutomatic && entry.category === "Réinvestissement").reduce((sum, entry) => sum + entry.amount, 0);
     const profit = deliveredRevenue - costs - losses - adSpend - operatingExpenses;
     const cash = capitalNet + netCollected - purchases - losses - adSpend - paidOperatingExpenses;
-    const reinvestable = Math.max(0, Math.min(reinvest, cash - unpaidPurchases - safetyReserve));
+    const reinvestable = Math.max(0, Math.min(reinvest, cash - unpaidPurchases - unpaidOperatingExpenses - safetyReserve));
     return {
       revenue,
       shippingFees,
@@ -1069,7 +1069,7 @@ function Page({
         <article className="reinvest-card">
           <span className="card-kicker">Répartition automatique</span>
           <h2>{money(metrics.reinvestable)}</h2>
-          <p>Réinvestissable maintenant après protection des achats fournisseurs à payer et de la réserve de sécurité.</p>
+          <p>Réinvestissable maintenant après protection des achats fournisseurs, des charges à payer et de la réserve de sécurité.</p>
           <div className="allocation-bar">
             <span className="stock" />
             <span className="ads" />
@@ -3136,6 +3136,7 @@ function CapitalPage({
     reinvest: number;
     reinvestable: number;
     unpaidPurchases: number;
+    unpaidOperatingExpenses: number;
     safetyReserve: number;
   };
   onAdd: () => void;
@@ -3253,6 +3254,7 @@ function CapitalPage({
         <div className="automation-tags">
           <span>Ventes encaissées</span>
           <span>Achats payés</span>
+          <span>Dépenses payées</span>
           <span>Meta saisie</span>
           <span>Retours & frais</span>
         </div>
@@ -3281,6 +3283,9 @@ function CapitalPage({
               Fournisseurs à payer<strong>{money(metrics.unpaidPurchases)}</strong>
             </p>
             <p>
+              Charges à payer<strong>{money(metrics.unpaidOperatingExpenses)}</strong>
+            </p>
+            <p>
               Réserve protégée<strong>{money(metrics.safetyReserve)}</strong>
             </p>
           </div>
@@ -3303,7 +3308,7 @@ function CapitalPage({
             <span className="envelope-icon">↗</span>
             <span className="envelope-label">Montant de réinvestissement</span>
             <h3>{money(metrics.reinvestable)}</h3>
-            <p>Montant mobilisable aujourd’hui sans consommer les factures fournisseurs dues ni la réserve de sécurité.</p>
+            <p>Montant mobilisable aujourd’hui sans consommer les factures fournisseurs dues, les charges à payer ni la réserve de sécurité.</p>
             <small>Affectation théorique : {money(metrics.reinvest)} · disponible protégé</small>
           </article>
           <article className="capital-envelope-card salary-envelope">
