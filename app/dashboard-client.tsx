@@ -4113,8 +4113,13 @@ function InventoryCountModal({ product, close, submit }: { product: Product; clo
           setSaving(true);
           setFormError("");
           try {
+            const rawQuantity = Number(physicalQuantity);
+            if (!Number.isInteger(rawQuantity) || rawQuantity < 0) {
+              throw new Error("La quantité physique doit être un nombre entier positif ou nul.");
+            }
             await submit("countInventory", {
               productId: String(product.id),
+              expectedSystemQuantity: String(product.stockQuantity),
               ...Object.fromEntries(new FormData(event.currentTarget)),
             });
           } catch (caught) {
