@@ -1462,13 +1462,36 @@ export async function POST(request: Request) {
         || textValue(payload.carrierName)
         || textValue(payload.key);
     }
-    await writeAudit(user, textValue(payload.action), auditEntityId, auditEntityLabel);
+    if (mutationReceiptReserved) {
+      businessMutationCommitted = true;
+      try {
+        await completeMutationReceipt(
+          mutationReceiptKey,
+          mutationReceiptUserId,
+          mutationReceiptAction,
+          integrationMessage || "Enregistré avec succès",
+        );
+      } catch (receiptError) {
+        console.error("Maison Jiya mutation receipt completion failed", errorDetails(receiptError));
+      }
+    }
 
-    const refreshedUser = await getAuthenticatedUser(request);
-    if (!refreshedUser) return Response.json({ error: "Votre session a expiré." }, { status: 401 });
-    const responseData = await snapshot(await securityAccess(request, refreshedUser));
+    try {
+      await writeAudit(user, textValue(payload.action), auditEntityId, auditEntityLabel);
+    } catch (auditError) {
+      console.error("Maison Jiya audit write failed after committed mutation", errorDetails(auditError));
+    }
+
+    const responseData = await snapshot(access);
     return Response.json(integrationMessage ? { ...responseData, message: integrationMessage } : responseData);
   } catch (error) {
+    if (mutationReceiptReserved && !businessMutationCommitted) {
+      try {
+        await releaseMutationReceipt(mutationReceiptKey, mutationReceiptUserId, mutationReceiptAction);
+      } catch (receiptError) {
+        console.error("Maison Jiya mutation receipt cleanup failed", errorDetails(receiptError));
+      }
+    }
     console.error("Maison Jiya data POST failed", errorDetails(error));
     const errorMessage = error instanceof Error ? error.message : "";
     if (errorMessage.includes("Stock insuffisant")) {
