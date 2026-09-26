@@ -6,7 +6,7 @@ import { moroccanPhoneHelp, normalizeMoroccanPhone } from "../../../db/phone";
 import { getMetaRuntimeStatus, syncMetaAds } from "../../../db/meta";
 import { reconcileOrderAllocations } from "../../../db/allocations";
 import { getGoogleSheetsSyncSnapshot, markGoogleSheetsSyncPending, processGoogleSheetsSyncQueue } from "../../../db/google-sheets-sync";
-import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
+import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, expenses, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
 type ActionPayload = Record<string, unknown> & { action?: string };
@@ -129,6 +129,9 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   updatePurchase: { action: "Modification", entityType: "Achat" },
   deletePurchase: { action: "Suppression", entityType: "Achat" },
   receivePurchase: { action: "Réception", entityType: "Achat fournisseur" },
+  addExpense: { action: "Ajout", entityType: "Dépense" },
+  updateExpense: { action: "Modification", entityType: "Dépense" },
+  deleteExpense: { action: "Suppression", entityType: "Dépense" },
   addAd: { action: "Ajout", entityType: "Publicité" },
   updateAd: { action: "Modification", entityType: "Publicité" },
   deleteAd: { action: "Suppression", entityType: "Publicité" },
@@ -254,7 +257,7 @@ async function snapshot(access: AccessInfo) {
   await createDailyBackup(rawDatabase);
   const db = await getDb();
   const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, campaign: orders.campaign, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
-  const [orderRows, trashRows, customerRows, purchaseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows] = await Promise.all([
+  const [orderRows, trashRows, customerRows, purchaseRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
       ? db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNotNull(orders.deletedAt)).orderBy(desc(orders.deletedAt))
@@ -275,6 +278,7 @@ async function snapshot(access: AccessInfo) {
       receivedAt: purchases.receivedAt,
       createdAt: purchases.createdAt,
     }).from(purchases).leftJoin(products, eq(purchases.productId, products.id)).orderBy(desc(purchases.createdAt)),
+    db.select().from(expenses).orderBy(desc(expenses.expenseDate), desc(expenses.createdAt)),
     db.select().from(adPerformance).orderBy(desc(adPerformance.performanceDate)),
     db.select().from(capitalLedger).orderBy(desc(capitalLedger.entryDate)),
     db.select().from(products).orderBy(desc(products.createdAt)),
@@ -304,6 +308,7 @@ async function snapshot(access: AccessInfo) {
     trash: trashRows,
     customers: customerRows,
     purchases: purchaseRows,
+    expenses: expenseRows,
     ads: adRows,
     capital: capitalRows,
     products: productRows,
@@ -782,6 +787,42 @@ export async function POST(request: Request) {
       if (!purchase) return Response.json({ error: "Achat introuvable." }, { status: 404 });
       if (purchase.receivedQuantity > 0) return Response.json({ error: "Cet achat a déjà alimenté le stock et doit rester dans l’historique." }, { status: 409 });
       await db.delete(purchases).where(eq(purchases.id, id));
+    } else if (payload.action === "addExpense") {
+      const category = textValue(payload.category).slice(0, 80);
+      const label = textValue(payload.label).slice(0, 160);
+      const amount = moneyValue(payload.amount);
+      const account = textValue(payload.account, "Banque").slice(0, 60);
+      const nextPaymentStatus = textValue(payload.paymentStatus, "Payé");
+      const expenseDate = textValue(payload.expenseDate, new Date().toISOString().slice(0, 10));
+      const note = textValue(payload.note).slice(0, 300);
+      if (!category || !label || amount <= 0 || !["Payé", "À payer"].includes(nextPaymentStatus) || !/^\d{4}-\d{2}-\d{2}$/.test(expenseDate)) {
+        return Response.json({ error: "Dépense invalide." }, { status: 400 });
+      }
+      await db.insert(expenses).values({ category, label, amount, account, paymentStatus: nextPaymentStatus, expenseDate, note });
+      auditEntityLabel = `${category} · ${label}`;
+    } else if (payload.action === "updateExpense") {
+      const id = numberValue(payload.id);
+      const category = textValue(payload.category).slice(0, 80);
+      const label = textValue(payload.label).slice(0, 160);
+      const amount = moneyValue(payload.amount);
+      const account = textValue(payload.account, "Banque").slice(0, 60);
+      const nextPaymentStatus = textValue(payload.paymentStatus, "Payé");
+      const expenseDate = textValue(payload.expenseDate);
+      const note = textValue(payload.note).slice(0, 300);
+      if (!id || !category || !label || amount <= 0 || !["Payé", "À payer"].includes(nextPaymentStatus) || !/^\d{4}-\d{2}-\d{2}$/.test(expenseDate)) {
+        return Response.json({ error: "Dépense invalide." }, { status: 400 });
+      }
+      const [expense] = await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.id, id)).limit(1);
+      if (!expense) return Response.json({ error: "Dépense introuvable." }, { status: 404 });
+      await db.update(expenses).set({ category, label, amount, account, paymentStatus: nextPaymentStatus, expenseDate, note }).where(eq(expenses.id, id));
+      auditEntityLabel = `${category} · ${label}`;
+    } else if (payload.action === "deleteExpense") {
+      const id = numberValue(payload.id);
+      if (!id) return Response.json({ error: "Dépense invalide." }, { status: 400 });
+      const [expense] = await db.select({ id: expenses.id, category: expenses.category, label: expenses.label }).from(expenses).where(eq(expenses.id, id)).limit(1);
+      if (!expense) return Response.json({ error: "Dépense introuvable." }, { status: 404 });
+      await db.delete(expenses).where(eq(expenses.id, id));
+      auditEntityLabel = `${expense.category} · ${expense.label}`;
     } else if (payload.action === "addAd") {
       await db.insert(adPerformance).values({ platform: "Meta Ads", campaign: textValue(payload.campaign, "Campagne Meta"), spend: moneyValue(payload.spend), revenue: moneyValue(payload.revenue), orderCount: numberValue(payload.orderCount), source: "Saisie manuelle", performanceDate: textValue(payload.performanceDate, new Date().toISOString().slice(0, 10)) });
     } else if (payload.action === "updateAd") {
@@ -1136,6 +1177,7 @@ export async function POST(request: Request) {
         `${summary.orders} commande(s)`,
         `${summary.customers} client(s)`,
         `${summary.purchases} achat(s)`,
+        `${summary.expenses} dépense(s)`,
         `${summary.ads} ligne(s) publicité`,
         `${summary.capital} mouvement(s) de capital`,
       ].join(" · ") + " supprimés. Produits, quantités et historique de stock conservés.";
@@ -1233,6 +1275,7 @@ export async function POST(request: Request) {
         || textValue(payload.customerName)
         || textValue(payload.name)
         || textValue(payload.item)
+        || textValue(payload.category)
         || textValue(payload.campaign)
         || textValue(payload.label)
         || textValue(payload.productCode)
