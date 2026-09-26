@@ -148,16 +148,23 @@ export const dailyBackups = sqliteTable("daily_backups", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
-export const purchases = sqliteTable("purchases", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  supplier: text("supplier").notNull(),
-  item: text("item").notNull(),
-  quantity: integer("quantity").notNull(),
-  unitCost: integer("unit_cost").notNull(),
-  totalCost: integer("total_cost").notNull(),
-  paymentStatus: text("payment_status").notNull().default("Payé"),
-  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+export const purchases = sqliteTable(
+  "purchases",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    supplier: text("supplier").notNull(),
+    item: text("item").notNull(),
+    productId: integer("product_id").references(() => products.id),
+    quantity: integer("quantity").notNull(),
+    unitCost: integer("unit_cost").notNull(),
+    totalCost: integer("total_cost").notNull(),
+    paymentStatus: text("payment_status").notNull().default("Payé"),
+    receivedQuantity: integer("received_quantity").notNull().default(0),
+    receivedAt: text("received_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("purchases_product_id_idx").on(table.productId)],
+);
 
 export const adPerformance = sqliteTable("ad_performance", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -213,6 +220,7 @@ export const stockMovements = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     productId: integer("product_id").notNull().references(() => products.id),
     orderId: integer("order_id").references(() => orders.id),
+    purchaseId: integer("purchase_id").references(() => purchases.id),
     movementType: text("movement_type").notNull(),
     quantity: integer("quantity").notNull(),
     note: text("note").notNull().default(""),
@@ -221,6 +229,7 @@ export const stockMovements = sqliteTable(
   (table) => [
     index("stock_movements_product_id_idx").on(table.productId),
     index("stock_movements_order_id_idx").on(table.orderId),
+    index("stock_movements_purchase_id_idx").on(table.purchaseId),
   ],
 );
 
