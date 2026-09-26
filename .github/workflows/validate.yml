@@ -32,6 +32,15 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Validate D1 migration discipline
+        run: node scripts/check-d1-migration-discipline.mjs
+
+      - name: Apply D1 migrations locally
+        run: npm run db:migrations:apply:local
+
+      - name: Verify D1 baseline locally
+        run: npx wrangler d1 execute maison-jiya-pilotage-db --local --command "SELECT baseline FROM d1_schema_baseline WHERE id = 1"
+
       - name: Build
         run: npm run build
 

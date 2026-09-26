@@ -8,7 +8,7 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 test("les motifs de retour sont stockés et restaurables", async () => {
   const [schema, database, backups, migration] = await Promise.all([
     read("db/schema.ts"),
-    read("db/index.ts"),
+    read("db/schema-compat.ts"),
     read("db/backups.ts"),
     read("drizzle/0007_return_reasons_print_slip.sql"),
   ]);

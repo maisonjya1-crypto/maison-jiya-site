@@ -6,7 +6,7 @@ const root = new URL("../", import.meta.url);
 const dashboard = await readFile(new URL("app/dashboard-client.tsx", root), "utf8");
 const api = await readFile(new URL("app/api/data/route.ts", root), "utf8");
 const schema = await readFile(new URL("db/schema.ts", root), "utf8");
-const database = await readFile(new URL("db/index.ts", root), "utf8");
+const database = await readFile(new URL("db/schema-compat.ts", root), "utf8");
 const backups = await readFile(new URL("db/backups.ts", root), "utf8");
 
 test("le fichier Products Database est reconnu et les lignes vides sont ignorées", () => {

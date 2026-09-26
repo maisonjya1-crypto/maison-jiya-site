@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [schema, index, route, dashboard, backups, sheets] = await Promise.all([
+const [schema, compat, route, dashboard, backups, sheets] = await Promise.all([
   readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
-  readFile(new URL("../db/index.ts", import.meta.url), "utf8"),
+  readFile(new URL("../db/schema-compat.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/data/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/dashboard-client.tsx", import.meta.url), "utf8"),
   readFile(new URL("../db/backups.ts", import.meta.url), "utf8"),
@@ -16,8 +16,8 @@ test("les achats peuvent être liés à un produit et mémorisent leur réceptio
   assert.match(schema, /receivedQuantity: integer\("received_quantity"\).*default\(0\)/);
   assert.match(schema, /receivedAt: text\("received_at"\)/);
   assert.match(schema, /purchaseId: integer\("purchase_id"\).*purchases\.id/);
-  assert.match(index, /ensurePurchaseColumns/);
-  assert.match(index, /stock_movements_purchase_id_idx/);
+  assert.match(compat, /ensurePurchaseColumns/);
+  assert.match(compat, /stock_movements_purchase_id_idx/);
 });
 
 test("la réception fournisseur ajoute le stock une seule fois et crée un mouvement traçable", () => {
@@ -56,20 +56,20 @@ test("sauvegardes et Google Sheets conservent les liens de réception fournisseu
 
 
 test("les index de réception sont créés seulement après l’ajout des colonnes sur une base existante", () => {
-  const schemaEnd = index.indexOf("async function ensureOrderColumns");
-  const bootstrap = index.slice(0, schemaEnd);
+  const schemaEnd = compat.indexOf("async function ensureOrderColumns");
+  const bootstrap = compat.slice(0, schemaEnd);
   assert.doesNotMatch(bootstrap, /CREATE INDEX IF NOT EXISTS purchases_product_id_idx/);
   assert.doesNotMatch(bootstrap, /CREATE INDEX IF NOT EXISTS stock_movements_purchase_id_idx/);
 
-  const purchaseStart = index.indexOf("async function ensurePurchaseColumns");
-  const purchaseEnd = index.indexOf("async function ensureProductColumns", purchaseStart);
-  const purchaseEnsure = index.slice(purchaseStart, purchaseEnd);
+  const purchaseStart = compat.indexOf("async function ensurePurchaseColumns");
+  const purchaseEnd = compat.indexOf("async function ensureProductColumns", purchaseStart);
+  const purchaseEnsure = compat.slice(purchaseStart, purchaseEnd);
   assert.match(purchaseEnsure, /ALTER TABLE purchases ADD COLUMN product_id/);
   assert.match(purchaseEnsure, /CREATE INDEX IF NOT EXISTS purchases_product_id_idx/);
 
-  const movementStart = index.indexOf("async function ensureStockMovementColumns");
-  const movementEnd = index.indexOf("async function ensureCapitalColumns", movementStart);
-  const movementEnsure = index.slice(movementStart, movementEnd);
+  const movementStart = compat.indexOf("async function ensureStockMovementColumns");
+  const movementEnd = compat.indexOf("async function ensureCapitalColumns", movementStart);
+  const movementEnsure = compat.slice(movementStart, movementEnd);
   assert.match(movementEnsure, /ALTER TABLE stock_movements ADD COLUMN purchase_id/);
   assert.match(movementEnsure, /CREATE INDEX IF NOT EXISTS stock_movements_purchase_id_idx/);
 });
