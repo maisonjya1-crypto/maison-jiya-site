@@ -150,8 +150,8 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
   ];
   const inserts = insertionOrder.flatMap((tableKey) => {
     const rows = snapshot.tables[tableKey];
-    // Ces deux tables n'existaient pas dans les premières sauvegardes v1.
-    if (rows === undefined && (tableKey === "inventoryCounts" || tableKey === "carrierEvents")) return [];
+    // Ces tables n'existaient pas dans les premières sauvegardes v1.
+    if (rows === undefined && (tableKey === "inventoryCounts" || tableKey === "carrierEvents" || tableKey === "expenses")) return [];
     if (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
       throw new Error("Format de sauvegarde incompatible.");
     }
