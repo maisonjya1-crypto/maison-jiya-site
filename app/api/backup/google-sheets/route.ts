@@ -158,10 +158,24 @@ export async function GET(request: Request) {
     }
 
     if (dataset === "purchases") {
-      const rows = await db.select().from(purchases).orderBy(desc(purchases.createdAt));
+      const rows = await db.select({
+        id: purchases.id,
+        supplier: purchases.supplier,
+        item: purchases.item,
+        productId: purchases.productId,
+        productCode: products.productCode,
+        productName: products.name,
+        quantity: purchases.quantity,
+        unitCost: purchases.unitCost,
+        totalCost: purchases.totalCost,
+        paymentStatus: purchases.paymentStatus,
+        receivedQuantity: purchases.receivedQuantity,
+        receivedAt: purchases.receivedAt,
+        createdAt: purchases.createdAt,
+      }).from(purchases).leftJoin(products, eq(purchases.productId, products.id)).orderBy(desc(purchases.createdAt));
       return csvResponse(
-        ["ID", "Fournisseur", "Article", "Quantité", "Coût unitaire (MAD)", "Coût total (MAD)", "Statut paiement", "Créé le"],
-        rows.map((row) => [row.id, row.supplier, row.item, row.quantity, row.unitCost, row.totalCost, row.paymentStatus, row.createdAt]),
+        ["ID", "Fournisseur", "Article", "ID produit", "SKU", "Produit", "Quantité achetée", "Coût unitaire (MAD)", "Coût total (MAD)", "Statut paiement", "Quantité réceptionnée", "Réceptionné le", "Créé le"],
+        rows.map((row) => [row.id, row.supplier, row.item, row.productId, row.productCode, row.productName, row.quantity, row.unitCost, row.totalCost, row.paymentStatus, row.receivedQuantity, row.receivedAt, row.createdAt]),
       );
     }
 
@@ -185,6 +199,7 @@ export async function GET(request: Request) {
       const rows = await db.select({
         id: stockMovements.id,
         productId: stockMovements.productId,
+        purchaseId: stockMovements.purchaseId,
         productCode: products.productCode,
         productName: products.name,
         movementType: stockMovements.movementType,
@@ -193,8 +208,8 @@ export async function GET(request: Request) {
         createdAt: stockMovements.createdAt,
       }).from(stockMovements).leftJoin(products, eq(stockMovements.productId, products.id)).orderBy(desc(stockMovements.createdAt));
       return csvResponse(
-        ["ID", "ID produit", "ID produit / SKU", "Nom du produit", "Type de mouvement", "Quantité", "Note", "Créé le"],
-        rows.map((row) => [row.id, row.productId, row.productCode, row.productName, row.movementType, row.quantity, row.note, row.createdAt]),
+        ["ID", "ID produit", "ID achat fournisseur", "ID produit / SKU", "Nom du produit", "Type de mouvement", "Quantité", "Note", "Créé le"],
+        rows.map((row) => [row.id, row.productId, row.purchaseId, row.productCode, row.productName, row.movementType, row.quantity, row.note, row.createdAt]),
       );
     }
 

@@ -51,10 +51,15 @@ type Purchase = {
   id: number;
   supplier: string;
   item: string;
+  productId: number | null;
+  productCode: string | null;
+  productName: string | null;
   quantity: number;
   unitCost: number;
   totalCost: number;
   paymentStatus: string;
+  receivedQuantity: number;
+  receivedAt: string | null;
   createdAt: string;
 };
 type Ad = {
@@ -98,6 +103,7 @@ type StockMovement = {
   id: number;
   productId: number;
   orderId: number | null;
+  purchaseId: number | null;
   orderRef: string | null;
   productCode: string | null;
   productName: string | null;
@@ -423,6 +429,7 @@ export default function DashboardClient() {
       deleteCustomer: "Client supprimé",
       updatePurchase: "Achat mis à jour",
       deletePurchase: "Achat supprimé",
+      receivePurchase: "Réception fournisseur ajoutée au stock",
       updateAd: "Publicité mise à jour",
       deleteAd: "Publicité supprimée",
       updateCapital: "Mouvement de capital mis à jour",
@@ -490,6 +497,7 @@ export default function DashboardClient() {
       case "purchase":
         action = "deletePurchase";
         label = `l’achat ${selection.record.item}`;
+        warning = selection.record.receivedQuantity > 0 ? " Cet achat a déjà alimenté le stock et ne peut pas être supprimé." : "";
         break;
       case "ad":
         action = "deleteAd";
@@ -682,7 +690,7 @@ export default function DashboardClient() {
       </section>
       {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products} ads={data.ads} close={() => setModal(null)} submit={submit} />}
       {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} ads={data.ads} close={() => setSelectedOrder(null)} print={() => printOrderSlip(selectedOrder)} submit={submit} />}
-      {selectedEntity && <EntityModal selection={selectedEntity} close={() => setSelectedEntity(null)} submit={submit} />}
+      {selectedEntity && <EntityModal selection={selectedEntity} products={data.products} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
       {inventorySelection && <InventoryCountModal product={inventorySelection} close={() => setInventorySelection(null)} submit={submit} />}
       {printOrder && <PrintOrderSheet order={printOrder} />}
@@ -825,7 +833,7 @@ function SectionSearch({ active, data, openOrder, openEntity }: { active: string
     }
     if (active === "Achats") {
       return data.purchases
-        .filter((purchase) => matches([purchase.supplier, purchase.item, purchase.paymentStatus, purchase.totalCost, purchase.quantity]))
+        .filter((purchase) => matches([purchase.supplier, purchase.item, purchase.productCode, purchase.productName, purchase.paymentStatus, purchase.totalCost, purchase.quantity, purchase.receivedAt ? "réceptionné" : "à réceptionner"]))
         .map((purchase) => ({ key: `purchase-${purchase.id}`, label: purchase.item, detail: `${purchase.supplier} · ${money(purchase.totalCost)} · ${purchase.paymentStatus}`, entity: { kind: "purchase" as const, record: purchase } }))
         .slice(0, 10);
     }
@@ -941,7 +949,7 @@ function Page({
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
-  if (active === "Achats") return <PurchasesPage purchases={data.purchases} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Achats") return <PurchasesPage purchases={data.purchases} products={data.products} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Rapports") return <ReportsPage data={data} />;
@@ -2603,10 +2611,10 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                       <td>{dateLabel(movement.createdAt)}</td>
                       <td><strong>{movement.productName}</strong><small>{movement.productCode}</small></td>
                       <td><Status value={movement.movementType} /></td>
-                      <td className={["Entrée", "Réintégration", "Inventaire +"].includes(movement.movementType) ? "money-positive" : "money-negative"}>{["Entrée", "Réintégration", "Inventaire +"].includes(movement.movementType) ? "+" : "−"}{movement.quantity}</td>
+                      <td className={["Entrée", "Réintégration", "Inventaire +", "Réception fournisseur"].includes(movement.movementType) ? "money-positive" : "money-negative"}>{["Entrée", "Réintégration", "Inventaire +", "Réception fournisseur"].includes(movement.movementType) ? "+" : "−"}{movement.quantity}</td>
                       <td>{movement.note || "—"}</td>
                       <td className="order-actions-cell">
-                        {movement.orderId || movement.movementType.startsWith("Inventaire") ? <span className="automatic-movement">{movement.orderId ? "Automatique" : "Inventaire"}</span> : <RecordActions label="ce mouvement de stock" onEdit={() => onEdit({ kind: "movement", record: movement })} onDelete={() => onDelete({ kind: "movement", record: movement })} />}
+                        {movement.orderId || movement.purchaseId || movement.movementType.startsWith("Inventaire") ? <span className="automatic-movement">{movement.orderId ? "Commande" : movement.purchaseId ? "Fournisseur" : "Inventaire"}</span> : <RecordActions label="ce mouvement de stock" onEdit={() => onEdit({ kind: "movement", record: movement })} onDelete={() => onDelete({ kind: "movement", record: movement })} />}
                       </td>
                     </tr>
                   ))}
@@ -2681,8 +2689,11 @@ function EmptyState({ title, text }: { title: string; text: string }) {
     </div>
   );
 }
-function PurchasesPage({ purchases, onAdd, onEdit, onDelete }: { purchases: Purchase[]; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+function PurchasesPage({ purchases, products, canEdit, submit, onAdd, onEdit, onDelete }: { purchases: Purchase[]; products: Product[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+  const [receivingId, setReceivingId] = useState<number | null>(null);
   const total = purchases.reduce((sum, purchase) => sum + purchase.totalCost, 0);
+  const waitingReceipt = purchases.filter((purchase) => purchase.productId && purchase.receivedQuantity < purchase.quantity);
+  const receivedCount = purchases.filter((purchase) => purchase.receivedQuantity >= purchase.quantity && purchase.quantity > 0).length;
   const supplierRows = Array.from(new Set(purchases.map((purchase) => purchase.supplier).filter(Boolean)))
     .map((supplier) => {
       const rows = purchases.filter((purchase) => purchase.supplier === supplier);
@@ -2695,12 +2706,36 @@ function PurchasesPage({ purchases, onAdd, onEdit, onDelete }: { purchases: Purc
       };
     })
     .sort((left, right) => right.due - left.due || right.purchased - left.purchased);
+
+  async function receive(purchase: Purchase) {
+    if (!canEdit || receivingId || !purchase.productId || purchase.receivedQuantity >= purchase.quantity) return;
+    const remaining = purchase.quantity - purchase.receivedQuantity;
+    const confirmed = window.confirm(
+      `Réceptionner ${remaining} unité(s) de ${purchase.productName || purchase.item} ?\n\nLe stock du produit sera augmenté automatiquement. Cette réception restera dans l’historique.`,
+    );
+    if (!confirmed) return;
+    setReceivingId(purchase.id);
+    try {
+      await submit("receivePurchase", { id: String(purchase.id) });
+    } finally {
+      setReceivingId(null);
+    }
+  }
+
   return (
     <>
       <section className="kpi-grid three">
-        <Kpi label="Total achats" value={money(total)} detail={`${purchases.length} opérations`} />
-        <Kpi label="Achats payés" value={money(purchases.filter((purchase) => purchase.paymentStatus === "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail="Sorties confirmées" />
-        <Kpi label="Reste à payer" value={money(purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail="À surveiller" danger />
+        <Kpi label="Total achats" value={money(total)} detail={`${purchases.length} opérations · ${products.length} produits catalogue`} />
+        <Kpi label="Achats payés" value={money(purchases.filter((purchase) => purchase.paymentStatus === "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail={`${receivedCount} réception(s) terminée(s)`} />
+        <Kpi label="Reste à payer" value={money(purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail={`${waitingReceipt.length} réception(s) stock en attente`} danger />
+      </section>
+      <section className="panel supplier-receiving-guide">
+        <div>
+          <span className="card-kicker">Réception fournisseur</span>
+          <h2>Achat ≠ stock reçu</h2>
+          <p>Enregistrez d’abord l’achat. Si vous le reliez à un produit du catalogue, le stock ne bouge pas tant que vous ne cliquez pas sur « Réceptionner le stock ».</p>
+        </div>
+        <strong>{waitingReceipt.length} à réceptionner</strong>
       </section>
       <section className="panel report-table">
         <PanelHead kicker="Fournisseurs" title="Suivi des engagements" total={`${supplierRows.length} fournisseur${supplierRows.length === 1 ? "" : "s"}`} />
@@ -2713,24 +2748,39 @@ function PurchasesPage({ purchases, onAdd, onEdit, onDelete }: { purchases: Purc
       </section>
       <section className="panel page-panel">
         <div className="section-toolbar">
-          <div><h2>Achats fournisseurs</h2><p>Stock, tissu, emballages et autres coûts.</p></div>
+          <div><h2>Achats fournisseurs</h2><p>Stock, tissu, emballages et autres coûts. Une réception liée au catalogue augmente automatiquement le stock.</p></div>
           <button className="primary-button" onClick={onAdd}>＋ Ajouter un achat</button>
         </div>
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Date</th><th>Fournisseur</th><th>Achat</th><th>Qté</th><th>Total</th><th>Paiement</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Date</th><th>Fournisseur</th><th>Achat</th><th>Produit stock</th><th>Qté</th><th>Total</th><th>Paiement</th><th>Réception</th><th>Actions</th></tr></thead>
             <tbody>
-              {purchases.map((purchase) => (
-                <tr key={purchase.id}>
-                  <td>{dateLabel(purchase.createdAt)}</td>
-                  <td><strong>{purchase.supplier}</strong></td>
-                  <td>{purchase.item}</td>
-                  <td>{purchase.quantity}</td>
-                  <td><strong>{money(purchase.totalCost)}</strong></td>
-                  <td><Status value={purchase.paymentStatus} /></td>
-                  <td className="order-actions-cell"><RecordActions label={`l’achat ${purchase.item}`} onEdit={() => onEdit({ kind: "purchase", record: purchase })} onDelete={() => onDelete({ kind: "purchase", record: purchase })} /></td>
-                </tr>
-              ))}
+              {purchases.map((purchase) => {
+                const received = purchase.receivedQuantity >= purchase.quantity && purchase.quantity > 0;
+                return (
+                  <tr key={purchase.id}>
+                    <td>{dateLabel(purchase.createdAt)}</td>
+                    <td><strong>{purchase.supplier}</strong></td>
+                    <td>{purchase.item}</td>
+                    <td>{purchase.productId ? <><strong>{purchase.productName || "Produit"}</strong><small>{purchase.productCode || `#${purchase.productId}`}</small></> : <small>Non lié au stock</small>}</td>
+                    <td>{purchase.quantity}</td>
+                    <td><strong>{money(purchase.totalCost)}</strong></td>
+                    <td><Status value={purchase.paymentStatus} /></td>
+                    <td>
+                      {received ? (
+                        <span className="purchase-received"><strong>✓ +{purchase.receivedQuantity}</strong><small>{purchase.receivedAt ? dateLabel(purchase.receivedAt) : "Réceptionné"}</small></span>
+                      ) : purchase.productId ? (
+                        <button className="secondary-button purchase-receive-button" type="button" disabled={!canEdit || receivingId === purchase.id} onClick={() => void receive(purchase)}>
+                          {receivingId === purchase.id ? "Réception…" : `Réceptionner +${purchase.quantity - purchase.receivedQuantity}`}
+                        </button>
+                      ) : (
+                        <span className="purchase-unlinked">Modifier pour lier un produit</span>
+                      )}
+                    </td>
+                    <td className="order-actions-cell"><RecordActions label={`l’achat ${purchase.item}`} onEdit={() => onEdit({ kind: "purchase", record: purchase })} onDelete={() => onDelete({ kind: "purchase", record: purchase })} /></td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -2738,6 +2788,7 @@ function PurchasesPage({ purchases, onAdd, onEdit, onDelete }: { purchases: Purc
     </>
   );
 }
+
 type AdSummary = {
   key: string;
   record: Ad;
@@ -3598,8 +3649,16 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
             {kind === "purchase" && (
               <>
                 <Field label="Fournisseur *" name="supplier" required />
-                <Field label="Article / motif *" name="item" required />
-                <Field label="Quantité *" name="quantity" type="number" inputMode="numeric" defaultValue="1" min="1" required />
+                <Field label="Article / motif *" name="item" placeholder="Ex. Réassort montre dorée" required />
+                <label className="field">
+                  <span>Produit lié au stock</span>
+                  <select name="productId" defaultValue="">
+                    <option value="">Aucun — achat non stock / emballage / autre</option>
+                    {products.map((product) => <option key={product.id} value={product.id}>{product.productCode} · {product.name} · stock {product.stockQuantity}</option>)}
+                  </select>
+                  <small>Si vous choisissez un produit, l’achat pourra être réceptionné ensuite et ajouter automatiquement la quantité au stock.</small>
+                </label>
+                <Field label="Quantité achetée *" name="quantity" type="number" inputMode="numeric" defaultValue="1" min="1" required />
                 <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" required />
                 <Select label="Paiement" name="paymentStatus" options={["Payé", "À payer"]} />
               </>
@@ -3854,7 +3913,7 @@ function PrintOrderSheet({ order }: { order: Order }) {
     </section>
   );
 }
-function EntityModal({ selection, close, submit }: { selection: EditableEntity; close: () => void; submit: (action: string, values: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function EntityModal({ selection, products, close, submit }: { selection: EditableEntity; products: Product[]; close: () => void; submit: (action: string, values: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const titles = {
@@ -3916,7 +3975,27 @@ function EntityModal({ selection, close, submit }: { selection: EditableEntity; 
             {selection.kind === "purchase" && <>
               <Field label="Fournisseur *" name="supplier" defaultValue={selection.record.supplier} required />
               <Field label="Article / motif *" name="item" defaultValue={selection.record.item} required />
-              <Field label="Quantité *" name="quantity" type="number" inputMode="numeric" min="1" defaultValue={String(selection.record.quantity)} required />
+              {selection.record.receivedQuantity > 0 ? (
+                <>
+                  <input type="hidden" name="productId" value={selection.record.productId || ""} />
+                  <input type="hidden" name="quantity" value={selection.record.quantity} />
+                  <div className="movement-edit-note">
+                    <strong>{selection.record.productName || selection.record.item} · {selection.record.quantity} unité(s)</strong>
+                    <small>Réception déjà enregistrée : le produit et la quantité sont verrouillés pour préserver l’historique du stock.</small>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <label className="field">
+                    <span>Produit lié au stock</span>
+                    <select name="productId" defaultValue={selection.record.productId || ""}>
+                      <option value="">Aucun — achat non stock / emballage / autre</option>
+                      {products.map((product) => <option key={product.id} value={product.id}>{product.productCode} · {product.name} · stock {product.stockQuantity}</option>)}
+                    </select>
+                  </label>
+                  <Field label="Quantité *" name="quantity" type="number" inputMode="numeric" min="1" defaultValue={String(selection.record.quantity)} required />
+                </>
+              )}
               <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.unitCost)} required />
               <Select label="Paiement" name="paymentStatus" defaultValue={selection.record.paymentStatus} options={["Payé", "À payer"]} />
             </>}

@@ -88,12 +88,17 @@ const schemaStatements = [
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     supplier TEXT NOT NULL,
     item TEXT NOT NULL,
+    product_id INTEGER,
     quantity INTEGER NOT NULL,
     unit_cost INTEGER NOT NULL,
     total_cost INTEGER NOT NULL,
     payment_status TEXT DEFAULT 'Payé' NOT NULL,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+    received_quantity INTEGER DEFAULT 0 NOT NULL,
+    received_at TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    FOREIGN KEY (product_id) REFERENCES products(id)
   )`,
+  `CREATE INDEX IF NOT EXISTS purchases_product_id_idx ON purchases (product_id)`,
   `CREATE TABLE IF NOT EXISTS ad_performance (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     platform TEXT DEFAULT 'Meta Ads' NOT NULL,
@@ -143,14 +148,17 @@ const schemaStatements = [
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     product_id INTEGER NOT NULL,
     order_id INTEGER,
+    purchase_id INTEGER,
     movement_type TEXT NOT NULL,
     quantity INTEGER NOT NULL,
     note TEXT DEFAULT '' NOT NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
     FOREIGN KEY (product_id) REFERENCES products(id),
-    FOREIGN KEY (order_id) REFERENCES orders(id)
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (purchase_id) REFERENCES purchases(id)
   )`,
   `CREATE INDEX IF NOT EXISTS stock_movements_product_id_idx ON stock_movements (product_id)`,
+  `CREATE INDEX IF NOT EXISTS stock_movements_purchase_id_idx ON stock_movements (purchase_id)`,
   `CREATE TABLE IF NOT EXISTS inventory_counts (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     count_ref TEXT NOT NULL UNIQUE,
@@ -242,10 +250,14 @@ async function ensureOrderColumns(database: D1Database) {
 async function ensureStockMovementColumns(database: D1Database) {
   const info = await database.prepare("PRAGMA table_info(stock_movements)").all<{ name: string }>();
   const columns = new Set(info.results.map((column) => column.name));
-  if (!columns.has("order_id")) {
-    await database.prepare("ALTER TABLE stock_movements ADD COLUMN order_id INTEGER REFERENCES orders(id)").run();
-  }
-  await database.prepare("CREATE INDEX IF NOT EXISTS stock_movements_order_id_idx ON stock_movements (order_id)").run();
+  const statements: D1PreparedStatement[] = [];
+  if (!columns.has("order_id")) statements.push(database.prepare("ALTER TABLE stock_movements ADD COLUMN order_id INTEGER REFERENCES orders(id)"));
+  if (!columns.has("purchase_id")) statements.push(database.prepare("ALTER TABLE stock_movements ADD COLUMN purchase_id INTEGER REFERENCES purchases(id)"));
+  if (statements.length) await database.batch(statements);
+  await database.batch([
+    database.prepare("CREATE INDEX IF NOT EXISTS stock_movements_order_id_idx ON stock_movements (order_id)"),
+    database.prepare("CREATE INDEX IF NOT EXISTS stock_movements_purchase_id_idx ON stock_movements (purchase_id)"),
+  ]);
 }
 
 async function ensureCapitalColumns(database: D1Database) {
@@ -271,6 +283,17 @@ async function ensureAdPerformanceColumns(database: D1Database) {
   if (statements.length) await database.batch(statements);
 }
 
+async function ensurePurchaseColumns(database: D1Database) {
+  const info = await database.prepare("PRAGMA table_info(purchases)").all<{ name: string }>();
+  const columns = new Set(info.results.map((column) => column.name));
+  const statements: D1PreparedStatement[] = [];
+  if (!columns.has("product_id")) statements.push(database.prepare("ALTER TABLE purchases ADD COLUMN product_id INTEGER REFERENCES products(id)"));
+  if (!columns.has("received_quantity")) statements.push(database.prepare("ALTER TABLE purchases ADD COLUMN received_quantity INTEGER DEFAULT 0 NOT NULL"));
+  if (!columns.has("received_at")) statements.push(database.prepare("ALTER TABLE purchases ADD COLUMN received_at TEXT"));
+  if (statements.length) await database.batch(statements);
+  await database.prepare("CREATE INDEX IF NOT EXISTS purchases_product_id_idx ON purchases (product_id)").run();
+}
+
 async function ensureProductColumns(database: D1Database) {
   const info = await database.prepare("PRAGMA table_info(products)").all<{ name: string }>();
   const columns = new Set(info.results.map((column) => column.name));
@@ -285,6 +308,7 @@ async function initializeDatabase(database: D1Database) {
   await ensureStockMovementColumns(database);
   await ensureCapitalColumns(database);
   await ensureAdPerformanceColumns(database);
+  await ensurePurchaseColumns(database);
   await ensureProductColumns(database);
   await ensureGoogleSheetsSyncSchema(database);
   await database.prepare(`

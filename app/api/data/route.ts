@@ -128,6 +128,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   addPurchase: { action: "Ajout", entityType: "Achat" },
   updatePurchase: { action: "Modification", entityType: "Achat" },
   deletePurchase: { action: "Suppression", entityType: "Achat" },
+  receivePurchase: { action: "Réception", entityType: "Achat fournisseur" },
   addAd: { action: "Ajout", entityType: "Publicité" },
   updateAd: { action: "Modification", entityType: "Publicité" },
   deleteAd: { action: "Suppression", entityType: "Publicité" },
@@ -259,11 +260,25 @@ async function snapshot(access: AccessInfo) {
       ? db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNotNull(orders.deletedAt)).orderBy(desc(orders.deletedAt))
       : Promise.resolve([]),
     db.select().from(customers).orderBy(desc(customers.createdAt)),
-    db.select().from(purchases).orderBy(desc(purchases.createdAt)),
+    db.select({
+      id: purchases.id,
+      supplier: purchases.supplier,
+      item: purchases.item,
+      productId: purchases.productId,
+      productCode: products.productCode,
+      productName: products.name,
+      quantity: purchases.quantity,
+      unitCost: purchases.unitCost,
+      totalCost: purchases.totalCost,
+      paymentStatus: purchases.paymentStatus,
+      receivedQuantity: purchases.receivedQuantity,
+      receivedAt: purchases.receivedAt,
+      createdAt: purchases.createdAt,
+    }).from(purchases).leftJoin(products, eq(purchases.productId, products.id)).orderBy(desc(purchases.createdAt)),
     db.select().from(adPerformance).orderBy(desc(adPerformance.performanceDate)),
     db.select().from(capitalLedger).orderBy(desc(capitalLedger.entryDate)),
     db.select().from(products).orderBy(desc(products.createdAt)),
-    db.select({ id: stockMovements.id, productId: stockMovements.productId, orderId: stockMovements.orderId, orderRef: orders.orderRef, productCode: products.productCode, productName: products.name, movementType: stockMovements.movementType, quantity: stockMovements.quantity, note: stockMovements.note, createdAt: stockMovements.createdAt }).from(stockMovements).leftJoin(products, eq(stockMovements.productId, products.id)).leftJoin(orders, eq(stockMovements.orderId, orders.id)).orderBy(desc(stockMovements.createdAt)),
+    db.select({ id: stockMovements.id, productId: stockMovements.productId, orderId: stockMovements.orderId, purchaseId: stockMovements.purchaseId, orderRef: orders.orderRef, productCode: products.productCode, productName: products.name, movementType: stockMovements.movementType, quantity: stockMovements.quantity, note: stockMovements.note, createdAt: stockMovements.createdAt }).from(stockMovements).leftJoin(products, eq(stockMovements.productId, products.id)).leftJoin(orders, eq(stockMovements.orderId, orders.id)).orderBy(desc(stockMovements.createdAt)),
     db.select({ id: inventoryCounts.id, countRef: inventoryCounts.countRef, productId: inventoryCounts.productId, productCode: products.productCode, productName: products.name, systemQuantity: inventoryCounts.systemQuantity, physicalQuantity: inventoryCounts.physicalQuantity, difference: inventoryCounts.difference, note: inventoryCounts.note, countedByUserId: inventoryCounts.countedByUserId, countedByName: inventoryCounts.countedByName, createdAt: inventoryCounts.createdAt }).from(inventoryCounts).leftJoin(products, eq(inventoryCounts.productId, products.id)).orderBy(desc(inventoryCounts.createdAt)).limit(500),
     db.select().from(settings),
     access.isOwner
@@ -683,23 +698,89 @@ export async function POST(request: Request) {
     } else if (payload.action === "addPurchase") {
       const quantity = numberValue(payload.quantity, 1);
       const unitCost = moneyValue(payload.unitCost);
-      await db.insert(purchases).values({ supplier: textValue(payload.supplier, "Fournisseur"), item: textValue(payload.item, "Achat"), quantity, unitCost, totalCost: quantity * unitCost, paymentStatus: textValue(payload.paymentStatus, "Payé") });
+      const productId = numberValue(payload.productId) || null;
+      const nextPaymentStatus = textValue(payload.paymentStatus, "Payé");
+      if (quantity < 1 || !["Payé", "À payer"].includes(nextPaymentStatus)) return Response.json({ error: "Achat invalide." }, { status: 400 });
+      if (productId) {
+        const [linkedProduct] = await db.select({ id: products.id }).from(products).where(eq(products.id, productId)).limit(1);
+        if (!linkedProduct) return Response.json({ error: "Le produit lié à cet achat est introuvable." }, { status: 404 });
+      }
+      await db.insert(purchases).values({
+        supplier: textValue(payload.supplier, "Fournisseur"),
+        item: textValue(payload.item, "Achat"),
+        productId,
+        quantity,
+        unitCost,
+        totalCost: quantity * unitCost,
+        paymentStatus: nextPaymentStatus,
+        receivedQuantity: 0,
+      });
     } else if (payload.action === "updatePurchase") {
       const id = numberValue(payload.id);
       const supplier = textValue(payload.supplier);
       const item = textValue(payload.item);
+      const productId = numberValue(payload.productId) || null;
       const quantity = numberValue(payload.quantity);
       const unitCost = moneyValue(payload.unitCost);
       const nextPaymentStatus = textValue(payload.paymentStatus, "Payé");
       if (!id || !supplier || !item || quantity < 1 || !["Payé", "À payer"].includes(nextPaymentStatus)) return Response.json({ error: "Achat invalide." }, { status: 400 });
-      const [purchase] = await db.select({ id: purchases.id }).from(purchases).where(eq(purchases.id, id)).limit(1);
+      const [purchase] = await db.select({ id: purchases.id, productId: purchases.productId, quantity: purchases.quantity, receivedQuantity: purchases.receivedQuantity }).from(purchases).where(eq(purchases.id, id)).limit(1);
       if (!purchase) return Response.json({ error: "Achat introuvable." }, { status: 404 });
-      await db.update(purchases).set({ supplier, item, quantity, unitCost, totalCost: quantity * unitCost, paymentStatus: nextPaymentStatus }).where(eq(purchases.id, id));
+      if (productId) {
+        const [linkedProduct] = await db.select({ id: products.id }).from(products).where(eq(products.id, productId)).limit(1);
+        if (!linkedProduct) return Response.json({ error: "Le produit lié à cet achat est introuvable." }, { status: 404 });
+      }
+      if (purchase.receivedQuantity > 0 && (purchase.productId !== productId || purchase.quantity !== quantity)) {
+        return Response.json({ error: "Cet achat a déjà été réceptionné. Le produit et la quantité doivent rester inchangés pour préserver l’historique du stock." }, { status: 409 });
+      }
+      await db.update(purchases).set({ supplier, item, productId, quantity, unitCost, totalCost: quantity * unitCost, paymentStatus: nextPaymentStatus }).where(eq(purchases.id, id));
+    } else if (payload.action === "receivePurchase") {
+      const id = numberValue(payload.id);
+      if (!id) return Response.json({ error: "Achat invalide." }, { status: 400 });
+      const rawDatabase = await getRawDb();
+      const purchase = await rawDatabase.prepare(`
+        SELECT id, supplier, item, product_id AS productId, quantity, received_quantity AS receivedQuantity
+        FROM purchases
+        WHERE id = ?
+        LIMIT 1
+      `).bind(id).first<{ id: number; supplier: string; item: string; productId: number | null; quantity: number; receivedQuantity: number }>();
+      if (!purchase) return Response.json({ error: "Achat introuvable." }, { status: 404 });
+      if (!purchase.productId) return Response.json({ error: "Reliez d’abord cet achat à un produit du catalogue." }, { status: 409 });
+      if (purchase.receivedQuantity >= purchase.quantity) return Response.json({ error: "Cet achat a déjà été réceptionné dans le stock." }, { status: 409 });
+
+      const [linkedProduct] = await db.select({ id: products.id, productCode: products.productCode, name: products.name }).from(products).where(eq(products.id, purchase.productId)).limit(1);
+      if (!linkedProduct) return Response.json({ error: "Le produit lié à cet achat est introuvable." }, { status: 404 });
+
+      const now = new Date().toISOString();
+      const remaining = purchase.quantity - purchase.receivedQuantity;
+      const results = await rawDatabase.batch([
+        rawDatabase.prepare("UPDATE purchases SET received_quantity = quantity, received_at = ? WHERE id = ? AND product_id = ? AND received_quantity < quantity").bind(now, id, purchase.productId),
+        rawDatabase.prepare(`
+          UPDATE products
+          SET stock_quantity = stock_quantity + ?
+          WHERE id = ?
+            AND EXISTS (
+              SELECT 1 FROM purchases WHERE id = ? AND product_id = ? AND received_at = ?
+            )
+        `).bind(remaining, purchase.productId, id, purchase.productId, now),
+        rawDatabase.prepare(`
+          INSERT INTO stock_movements (product_id, purchase_id, movement_type, quantity, note, created_at)
+          SELECT ?, ?, 'Réception fournisseur', ?, ?, ?
+          WHERE EXISTS (
+            SELECT 1 FROM purchases WHERE id = ? AND product_id = ? AND received_at = ?
+          )
+        `).bind(purchase.productId, id, remaining, `Réception fournisseur · ${purchase.supplier} · ${purchase.item}`, now, id, purchase.productId, now),
+      ]);
+      if (!results[0]?.meta?.changes) return Response.json({ error: "Cet achat vient déjà d’être réceptionné." }, { status: 409 });
+      auditEntityId = String(id);
+      auditEntityLabel = `${purchase.supplier} · ${purchase.item}`;
+      integrationMessage = `${remaining} unité(s) de ${linkedProduct.name} ajoutée(s) au stock depuis la réception fournisseur.`;
     } else if (payload.action === "deletePurchase") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Achat invalide." }, { status: 400 });
-      const [purchase] = await db.select({ id: purchases.id }).from(purchases).where(eq(purchases.id, id)).limit(1);
+      const [purchase] = await db.select({ id: purchases.id, receivedQuantity: purchases.receivedQuantity }).from(purchases).where(eq(purchases.id, id)).limit(1);
       if (!purchase) return Response.json({ error: "Achat introuvable." }, { status: 404 });
+      if (purchase.receivedQuantity > 0) return Response.json({ error: "Cet achat a déjà alimenté le stock et doit rester dans l’historique." }, { status: 409 });
       await db.delete(purchases).where(eq(purchases.id, id));
     } else if (payload.action === "addAd") {
       await db.insert(adPerformance).values({ platform: "Meta Ads", campaign: textValue(payload.campaign, "Campagne Meta"), spend: moneyValue(payload.spend), revenue: moneyValue(payload.revenue), orderCount: numberValue(payload.orderCount), source: "Saisie manuelle", performanceDate: textValue(payload.performanceDate, new Date().toISOString().slice(0, 10)) });
@@ -842,6 +923,8 @@ export async function POST(request: Request) {
       if (linkedOrder) return Response.json({ error: "Ce produit est lié à une commande et doit être conservé dans l’historique." }, { status: 409 });
       const [linkedInventory] = await db.select({ id: inventoryCounts.id }).from(inventoryCounts).where(eq(inventoryCounts.productId, id)).limit(1);
       if (linkedInventory) return Response.json({ error: "Ce produit possède un historique d’inventaire et doit être conservé." }, { status: 409 });
+      const [linkedPurchase] = await db.select({ id: purchases.id }).from(purchases).where(eq(purchases.productId, id)).limit(1);
+      if (linkedPurchase) return Response.json({ error: "Ce produit possède un historique d’achats fournisseur et doit être conservé." }, { status: 409 });
       await db.batch([
         db.delete(stockMovements).where(eq(stockMovements.productId, id)),
         db.delete(products).where(eq(products.id, id)),
