@@ -614,12 +614,6 @@ export async function POST(request: Request) {
       if (shouldDeductStock && quantity > selectedProduct.stockQuantity) {
         return Response.json({ error: `Stock insuffisant pour confirmer : ${selectedProduct.stockQuantity} unité(s) disponible(s).` }, { status: 409 });
       }
-      const duplicateOrder = await protectMutation("addOrder");
-      if (duplicateOrder) return duplicateOrder;
-
-      let [customer] = await db.select().from(customers).where(eq(customers.phone, phone)).limit(1);
-      if (!customer) [customer] = await db.insert(customers).values({ name, phone, city }).returning();
-      else await db.update(customers).set({ name, city }).where(eq(customers.id, customer.id));
       const carrierSettings = await db.select({ key: settings.key, value: settings.value }).from(settings);
       const carrierNames = parseCarrierNames(
         carrierSettings.find((setting) => setting.key === "carrier_names")?.value,
@@ -643,10 +637,18 @@ export async function POST(request: Request) {
       const selectedTrackingNumber = isStoreSale ? "" : textValue(payload.trackingNumber);
       const selectedDispatchState = isStoreSale ? "Non requis" : "À autoriser";
       const selectedPaidAt = isStoreSale ? now : null;
+      const duplicateOrder = await protectMutation("addOrder");
+      if (duplicateOrder) return duplicateOrder;
+
       const rawDb = await getRawDb();
       const statements = [
+        rawDb.prepare(`
+          INSERT INTO customers (name, phone, city)
+          VALUES (?, ?, ?)
+          ON CONFLICT(phone) DO UPDATE SET name = excluded.name, city = excluded.city
+        `).bind(name, phone, city),
         rawDb.prepare(`INSERT INTO orders (order_ref, customer_id, product_id, city, address, products, quantity, sale_amount, product_cost, shipping_cost, ad_cost, fees, return_cost, return_reason, return_note, source, campaign, fulfillment_type, status, payment_status, carrier, tracking_number, carrier_dispatch_state, stock_deducted, paid_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(orderRef, customer.id, productId, city, address, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, selectedShippingCost, numberValue(payload.adCost), numberValue(payload.fees), selectedReturnReason, selectedReturnNote, selectedSource, selectedCampaign, selectedFulfillmentType, selectedStatus, selectedPaymentStatus, selectedCarrier, selectedTrackingNumber, selectedDispatchState, shouldDeductStock ? 1 : 0, selectedPaidAt, now),
+          VALUES (?, (SELECT id FROM customers WHERE phone = ? LIMIT 1), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(orderRef, phone, productId, city, address, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, selectedShippingCost, numberValue(payload.adCost), numberValue(payload.fees), selectedReturnReason, selectedReturnNote, selectedSource, selectedCampaign, selectedFulfillmentType, selectedStatus, selectedPaymentStatus, selectedCarrier, selectedTrackingNumber, selectedDispatchState, shouldDeductStock ? 1 : 0, selectedPaidAt, now),
         rawDb.prepare(`INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at)
           SELECT id, NULL, ?, ?, ?, ? FROM orders WHERE order_ref = ?`).bind(selectedStatus, user.id, user.displayName, now, orderRef),
       ];
