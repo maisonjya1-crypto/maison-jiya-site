@@ -14,8 +14,21 @@ type JsonRecord = Record<string, unknown>;
 
 export type CarrierRuntimeStatus = {
   forceLogApiConfigured: boolean;
+  forceLogApiVerified: boolean;
+  forceLogApiCheckedAt: string;
+  forceLogApiLastError: string;
   senditApiConfigured: boolean;
+  senditApiVerified: boolean;
+  senditApiCheckedAt: string;
+  senditApiLastError: string;
   senditWebhookConfigured: boolean;
+  senditWebhookVerifiedAt: string;
+};
+
+export type CarrierSyncResult = {
+  forceLog: { configured: boolean; verified: boolean; error: string };
+  sendit: { configured: boolean; verified: boolean; error: string };
+  updated: number;
 };
 
 export type CarrierDispatchResult = {
@@ -48,6 +61,7 @@ export type CarrierStatusUpdateResult = {
 const SENDIT_API_BASE = "https://app.sendit.ma/api/v1";
 const FORCELOG_API_BASE = "https://api.forcelog.ma/customer";
 const MAX_PROVIDER_RESPONSE_BYTES = 256 * 1024;
+const CONNECTION_HEALTH_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const stockCommittedStatuses = new Set(["Confirmée", "Expédiée", "En livraison", "Livrée", "Retour"]);
 
 function asRecord(value: unknown): JsonRecord | null {
@@ -70,12 +84,59 @@ async function runtimeSecrets() {
   return env as CloudflareEnv & CarrierSecrets;
 }
 
+function healthIsFresh(checkedAt: string) {
+  const timestamp = Date.parse(checkedAt);
+  return Number.isFinite(timestamp) && Date.now() - timestamp <= CONNECTION_HEALTH_MAX_AGE_MS;
+}
+
+async function recordCarrierHealth(provider: "sendit" | "forcelog", verified: boolean, error = "") {
+  const database = await getRawDb();
+  const checkedAt = new Date().toISOString();
+  const prefix = `carrier_health_${provider}`;
+  const values = [
+    [`${prefix}_status`, verified ? "verified" : "error"],
+    [`${prefix}_checked_at`, checkedAt],
+    [`${prefix}_last_error`, verified ? "" : error.slice(0, 300)],
+  ] as const;
+  await database.batch(values.map(([key, value]) => database.prepare(`
+    INSERT INTO settings (key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).bind(key, value, checkedAt)));
+}
+
 export async function getCarrierRuntimeStatus(): Promise<CarrierRuntimeStatus> {
   const env = await runtimeSecrets();
+  const database = await getRawDb();
+  const healthRows = (await database.prepare(`
+    SELECT key, value
+    FROM settings
+    WHERE key LIKE 'carrier_health_%'
+  `).all<{ key: string; value: string }>()).results;
+  const health = Object.fromEntries(healthRows.map((row) => [row.key, row.value]));
+  const webhook = await database.prepare(`
+    SELECT received_at AS receivedAt
+    FROM carrier_events
+    WHERE provider = 'sendit' AND event_type = 'delivery.status.update'
+    ORDER BY received_at DESC
+    LIMIT 1
+  `).first<{ receivedAt: string }>();
+  const forceLogApiConfigured = Boolean(env.FORCELOG_API_KEY?.trim());
+  const senditApiConfigured = Boolean(env.SENDIT_PUBLIC_KEY?.trim() && env.SENDIT_PRIVATE_KEY?.trim());
+  const senditWebhookConfigured = Boolean(env.SENDIT_WEBHOOK_SECRET?.trim() || env.SENDIT_PRIVATE_KEY?.trim());
+  const forceLogApiCheckedAt = health.carrier_health_forcelog_checked_at || "";
+  const senditApiCheckedAt = health.carrier_health_sendit_checked_at || "";
   return {
-    forceLogApiConfigured: Boolean(env.FORCELOG_API_KEY?.trim()),
-    senditApiConfigured: Boolean(env.SENDIT_PUBLIC_KEY?.trim() && env.SENDIT_PRIVATE_KEY?.trim()),
-    senditWebhookConfigured: Boolean(env.SENDIT_WEBHOOK_SECRET?.trim() || env.SENDIT_PRIVATE_KEY?.trim()),
+    forceLogApiConfigured,
+    forceLogApiVerified: forceLogApiConfigured && health.carrier_health_forcelog_status === "verified" && healthIsFresh(forceLogApiCheckedAt),
+    forceLogApiCheckedAt,
+    forceLogApiLastError: health.carrier_health_forcelog_last_error || "",
+    senditApiConfigured,
+    senditApiVerified: senditApiConfigured && health.carrier_health_sendit_status === "verified" && healthIsFresh(senditApiCheckedAt),
+    senditApiCheckedAt,
+    senditApiLastError: health.carrier_health_sendit_last_error || "",
+    senditWebhookConfigured,
+    senditWebhookVerifiedAt: senditWebhookConfigured ? webhook?.receivedAt || "" : "",
   };
 }
 
@@ -509,8 +570,8 @@ async function syncForceLog(apiKey: string) {
   return updated;
 }
 
-async function syncSendit(publicKey: string, privateKey: string) {
-  const token = await senditToken(publicKey, privateKey);
+async function syncSendit(publicKey: string, privateKey: string, verifiedToken = "") {
+  const token = verifiedToken || await senditToken(publicKey, privateKey);
   const start = new Date();
   start.setUTCDate(start.getUTCDate() - 90);
   const invoicesResponse = await fetch(`${SENDIT_API_BASE}/invoices?startDate=${start.toISOString().slice(0, 10)}&endDate=${new Date().toISOString().slice(0, 10)}`, {
@@ -551,19 +612,50 @@ async function syncSendit(publicKey: string, privateKey: string) {
   return updated;
 }
 
-export async function syncCarrierOperations() {
+export async function syncCarrierOperations(): Promise<CarrierSyncResult> {
   const env = await runtimeSecrets();
+  const forceLogKey = env.FORCELOG_API_KEY?.trim() || "";
+  const senditPublic = env.SENDIT_PUBLIC_KEY?.trim() || "";
+  const senditPrivate = env.SENDIT_PRIVATE_KEY?.trim() || "";
+  const result: CarrierSyncResult = {
+    forceLog: { configured: Boolean(forceLogKey), verified: false, error: "" },
+    sendit: { configured: Boolean(senditPublic && senditPrivate), verified: false, error: "" },
+    updated: 0,
+  };
+
+  let senditVerifiedToken = "";
+  if (result.sendit.configured) {
+    try {
+      senditVerifiedToken = await senditToken(senditPublic, senditPrivate);
+      result.sendit.verified = true;
+      await recordCarrierHealth("sendit", true);
+    } catch (error) {
+      result.sendit.error = shortError(error);
+      await recordCarrierHealth("sendit", false, result.sendit.error);
+    }
+  }
+
+  if (result.forceLog.configured) {
+    try {
+      const response = await fetch(`${FORCELOG_API_BASE}/Cities`, {
+        headers: { accept: "application/json", "X-API-Key": forceLogKey },
+        signal: AbortSignal.timeout(8_000),
+      });
+      await smallJsonResponse(response, "ForceLog");
+      result.forceLog.verified = true;
+      await recordCarrierHealth("forcelog", true);
+    } catch (error) {
+      result.forceLog.error = shortError(error);
+      await recordCarrierHealth("forcelog", false, result.forceLog.error);
+    }
+  }
+
   const tasks: Promise<number>[] = [];
-  if (env.FORCELOG_API_KEY?.trim()) tasks.push(syncForceLog(env.FORCELOG_API_KEY.trim()));
-  if (env.SENDIT_PUBLIC_KEY?.trim() && env.SENDIT_PRIVATE_KEY?.trim()) tasks.push(syncSendit(env.SENDIT_PUBLIC_KEY.trim(), env.SENDIT_PRIVATE_KEY.trim()));
-  const results = await Promise.allSettled(tasks);
-  const updated = results.reduce((total, result) => total + (result.status === "fulfilled" ? result.value : 0), 0);
-  const now = new Date().toISOString();
-  const hash = await sha256Hex(`carriers:sync:${now.slice(0, 16)}`);
-  const rawDb = await getRawDb();
-  await rawDb.prepare("INSERT OR IGNORE INTO carrier_events (provider, event_type, external_code, external_status, payload_hash, message, processed, received_at) VALUES ('system', 'sync.completed', ?, 'OK', ?, ?, 1, ?)")
-    .bind(now.slice(0, 16), hash, `${updated} commande(s) mise(s) à jour`, now).run();
-  return updated;
+  if (result.forceLog.verified) tasks.push(syncForceLog(forceLogKey));
+  if (result.sendit.verified) tasks.push(syncSendit(senditPublic, senditPrivate, senditVerifiedToken));
+  const operations = await Promise.allSettled(tasks);
+  result.updated = operations.reduce((total, operation) => total + (operation.status === "fulfilled" ? operation.value : 0), 0);
+  return result;
 }
 
 export async function applySenditStatusUpdate(input: {

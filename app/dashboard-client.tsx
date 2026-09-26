@@ -1089,7 +1089,7 @@ function Page({
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
   if (active === "Mode entraînement") return <TrainingPage onExit={() => setActive("Vue d’ensemble")} />;
   if (active === "Corbeille") return <TrashPage orders={data.trash} canRestore={data.access.isOwner} submit={submit} />;
-  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} googleSheetsSync={data.googleSheetsSync} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} products={data.products} submit={submit} />;
+  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} googleSheetsSync={data.googleSheetsSync} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditApiVerified={data.settings.sendit_api_verified === "true"} senditApiCheckedAt={data.settings.sendit_api_checked_at || ""} senditApiLastError={data.settings.sendit_api_last_error || ""} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} senditWebhookVerifiedAt={data.settings.sendit_webhook_verified_at || ""} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} forceLogApiVerified={data.settings.forcelog_api_verified === "true"} forceLogApiCheckedAt={data.settings.forcelog_api_checked_at || ""} forceLogApiLastError={data.settings.forcelog_api_last_error || ""} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} products={data.products} submit={submit} />;
   const deliveryOrderCount = data.orders.filter((order) => order.fulfillmentType !== "Magasin physique").length;
   const total = Math.max(1, deliveryOrderCount);
   return (
@@ -1180,7 +1180,7 @@ function Page({
   );
 }
 
-function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, googleSheetsSync, senditApiConfigured, senditWebhookConfigured, forceLogApiConfigured, carrierLastSyncAt, access, members, auditLogs, backups, products, submit }: {
+function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, googleSheetsSync, senditApiConfigured, senditApiVerified, senditApiCheckedAt, senditApiLastError, senditWebhookConfigured, senditWebhookVerifiedAt, forceLogApiConfigured, forceLogApiVerified, forceLogApiCheckedAt, forceLogApiLastError, carrierLastSyncAt, access, members, auditLogs, backups, products, submit }: {
   currentTheme: ThemeKey;
   accountName: string;
   accountEmail: string;
@@ -1191,8 +1191,15 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   backupWebhookConfigured: boolean;
   googleSheetsSync: GoogleSheetsSync;
   senditApiConfigured: boolean;
+  senditApiVerified: boolean;
+  senditApiCheckedAt: string;
+  senditApiLastError: string;
   senditWebhookConfigured: boolean;
+  senditWebhookVerifiedAt: string;
   forceLogApiConfigured: boolean;
+  forceLogApiVerified: boolean;
+  forceLogApiCheckedAt: string;
+  forceLogApiLastError: string;
   carrierLastSyncAt: string;
   access: Data["access"];
   members: Member[];
@@ -1457,31 +1464,33 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
           </div>
         </div>
         <div className="carrier-api-grid">
-          <article className={`carrier-api-card ${senditApiConfigured && senditWebhookConfigured ? "active" : ""}`}>
-            <div><span className="carrier-api-logo">S</span><div><strong>Sendit automatique</strong><small>{senditApiConfigured ? "Création des colis prête" : "Clés API à ajouter dans Cloudflare"}</small></div></div>
-            <span className={`backup-status ${senditApiConfigured && senditWebhookConfigured ? "active" : ""}`}>{senditApiConfigured && senditWebhookConfigured ? "Connecté" : "À terminer"}</span>
+          <article className={`carrier-api-card ${senditApiVerified ? "active" : ""}`}>
+            <div><span className="carrier-api-logo">S</span><div><strong>Sendit automatique</strong><small>{!senditApiConfigured ? "Clés API à ajouter dans Cloudflare" : senditApiVerified ? `API vérifiée${senditApiCheckedAt ? ` · ${dateTimeLabel(senditApiCheckedAt)}` : ""}` : senditApiLastError ? "Clés présentes · dernière vérification en erreur" : "Clés présentes · vérification en attente"}</small></div></div>
+            <span className={`backup-status ${senditApiVerified ? "active" : ""}`}>{!senditApiConfigured ? "À configurer" : senditApiVerified ? "API vérifiée" : senditApiLastError ? "Erreur" : "À vérifier"}</span>
             <ul>
-              <li className={senditApiConfigured ? "done" : ""}>Tarif comparé depuis Casablanca avant votre choix</li>
-              <li className={senditApiConfigured ? "done" : ""}>Création uniquement après « Autoriser et créer le colis »</li>
-              <li className={senditWebhookConfigured ? "done" : ""}>Statuts reçus automatiquement et signature vérifiée</li>
+              <li className={senditApiVerified ? "done" : ""}>{senditApiVerified ? "Authentification Sendit vérifiée en direct" : "Authentification Sendit non encore vérifiée"}</li>
+              <li className={senditApiVerified ? "done" : ""}>Création de colis uniquement après « Autoriser et créer le colis »</li>
+              <li className={senditWebhookVerifiedAt ? "done" : ""}>{senditWebhookVerifiedAt ? `Webhook signé réellement reçu · ${dateTimeLabel(senditWebhookVerifiedAt)}` : senditWebhookConfigured ? "Secret webhook configuré · aucun événement signé reçu pour l’instant" : "Secret webhook à configurer"}</li>
             </ul>
+            {senditApiLastError && <small className="meta-sync-error">{senditApiLastError}</small>}
             <label><span>URL à mettre dans le webhook Sendit</span><input readOnly value="https://maison-jiya-site.maisonjya1.workers.dev/api/integrations/sendit/webhook" onFocus={(event) => event.currentTarget.select()} /></label>
-            <small>Événement : Mise à jour du statut du colis. Choisissez la même clé API que celle utilisée pour l’intégration.</small>
+            <small>Le badge webhook passe au vert seulement après réception réelle d’un événement Sendit avec signature valide.</small>
           </article>
-          <article className={`carrier-api-card ${forceLogApiConfigured ? "active" : ""}`}>
-            <div><span className="carrier-api-logo">F</span><div><strong>ForceLog automatique</strong><small>{forceLogApiConfigured ? "Création des colis prête" : "Clé API à ajouter dans Cloudflare"}</small></div></div>
-            <span className={`backup-status ${forceLogApiConfigured ? "active" : ""}`}>{forceLogApiConfigured ? "Connecté" : "À terminer"}</span>
+          <article className={`carrier-api-card ${forceLogApiVerified ? "active" : ""}`}>
+            <div><span className="carrier-api-logo">F</span><div><strong>ForceLog automatique</strong><small>{!forceLogApiConfigured ? "Clé API à ajouter dans Cloudflare" : forceLogApiVerified ? `API vérifiée${forceLogApiCheckedAt ? ` · ${dateTimeLabel(forceLogApiCheckedAt)}` : ""}` : forceLogApiLastError ? "Clé présente · dernière vérification en erreur" : "Clé présente · vérification en attente"}</small></div></div>
+            <span className={`backup-status ${forceLogApiVerified ? "active" : ""}`}>{!forceLogApiConfigured ? "À configurer" : forceLogApiVerified ? "API vérifiée" : forceLogApiLastError ? "Erreur" : "À vérifier"}</span>
             <ul>
-              <li className={forceLogApiConfigured ? "done" : ""}>Tarif comparé depuis Casablanca avant votre choix</li>
-              <li className={forceLogApiConfigured ? "done" : ""}>Création uniquement après votre autorisation</li>
-              <li>Suivi et paiement vérifiés automatiquement toutes les 30 minutes</li>
+              <li className={forceLogApiVerified ? "done" : ""}>{forceLogApiVerified ? "Clé ForceLog vérifiée sur l’API Cities" : "Connexion ForceLog non encore vérifiée"}</li>
+              <li className={forceLogApiVerified ? "done" : ""}>Création de colis uniquement après votre autorisation</li>
+              <li className={forceLogApiVerified ? "done" : ""}>Suivi et paiement contrôlés automatiquement toutes les 30 minutes</li>
             </ul>
-            <small>La clé reste chiffrée dans Cloudflare et n’apparaît jamais dans le site ni dans Google Sheets.</small>
+            {forceLogApiLastError && <small className="meta-sync-error">{forceLogApiLastError}</small>}
+            <small>La clé reste dans Cloudflare et n’apparaît jamais dans le site ni dans Google Sheets.</small>
           </article>
         </div>
         <div className="carrier-sync-actions">
-          {carrierLastSyncAt && <p className="carrier-sync-stamp">Dernier événement agence reçu : {dateTimeLabel(carrierLastSyncAt)}</p>}
-          {access.isOwner && <button type="button" className="secondary-button" onClick={() => void submit("syncCarriersNow", {})}>Actualiser suivi et facturation</button>}
+          {carrierLastSyncAt && <p className="carrier-sync-stamp">Dernière activité transporteur enregistrée : {dateTimeLabel(carrierLastSyncAt)}</p>}
+          {access.isOwner && <button type="button" className="secondary-button" onClick={() => void submit("syncCarriersNow", {})}>Vérifier les connexions et actualiser</button>}
         </div>
       </section>
 
@@ -3081,11 +3090,16 @@ function AdsPage({ ads, settings, access, submit, onAdd, onEdit, onDelete }: { a
   const summaries = summarizeAds(ads);
   const metaConfigured = settings.meta_api_configured === "true";
   const metaStatus = metaConfigured ? settings.meta_status || "À connecter" : settings.meta_last_sync_at ? "À reconnecter" : "À connecter";
-  const metaMessage = metaConfigured
-    ? `Synchronisation API prête${settings.meta_last_sync_at ? ` · dernière mise à jour ${dateTimeLabel(settings.meta_last_sync_at)}` : ""}.`
-    : settings.meta_last_sync_at
-      ? "Les dernières données sont conservées, mais cette version Cloudflare ne reçoit pas les trois secrets Meta."
-      : "Ajoutez les trois secrets Meta dans Cloudflare pour activer la synchronisation.";
+  const metaVerified = metaConfigured && metaStatus === "Connecté" && Boolean(settings.meta_last_sync_at);
+  const metaMessage = !metaConfigured
+    ? settings.meta_last_sync_at
+      ? "Les dernières données sont conservées, mais les trois secrets Meta ne sont plus présents dans Cloudflare."
+      : "Ajoutez les trois secrets Meta dans Cloudflare pour pouvoir vérifier la connexion."
+    : metaVerified
+      ? `Connexion Meta vérifiée lors de la dernière synchronisation · ${dateTimeLabel(settings.meta_last_sync_at)}.`
+      : settings.meta_last_error
+        ? "Secrets Meta présents, mais la dernière vérification API a échoué."
+        : "Secrets Meta présents. Lancez une synchronisation pour vérifier réellement l’accès au compte publicitaire.";
   const syncPeriod = settings.meta_sync_since && settings.meta_sync_until
     ? `${dateLabel(settings.meta_sync_since)} → ${dateLabel(settings.meta_sync_until)}`
     : "Période synchronisée depuis Meta";
