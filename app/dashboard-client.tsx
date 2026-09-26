@@ -3650,6 +3650,7 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
   const labels = {
     order: "Nouvelle commande",
     purchase: "Nouvel achat",
+    expense: "Nouvelle dépense",
     ad: "Performance Meta Ads",
     capital: "Mouvement de capital",
     product: "Nouveau produit",
@@ -3690,7 +3691,7 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
     setSaving(true);
     setFormError("");
     try {
-      await submit(kind === "order" ? "addOrder" : kind === "product" ? "addProduct" : kind === "purchase" ? "addPurchase" : kind === "ad" ? "addAd" : "addCapital", Object.fromEntries(new FormData(e.currentTarget)));
+      await submit(kind === "order" ? "addOrder" : kind === "product" ? "addProduct" : kind === "purchase" ? "addPurchase" : kind === "expense" ? "addExpense" : kind === "ad" ? "addAd" : "addCapital", Object.fromEntries(new FormData(e.currentTarget)));
     } catch (c) {
       setFormError(c instanceof Error ? c.message : "Erreur");
       setSaving(false);
@@ -3811,6 +3812,17 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
                 <Field label="Quantité achetée *" name="quantity" type="number" inputMode="numeric" defaultValue="1" min="1" required />
                 <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" required />
                 <Select label="Paiement" name="paymentStatus" options={["Payé", "À payer"]} />
+              </>
+            )}
+            {kind === "expense" && (
+              <>
+                <Select label="Catégorie *" name="category" options={["Loyer", "Emballage", "Transport", "Téléphone / Internet", "Frais bancaires", "Outils / logiciels", "Prestataire", "Matériel", "Autre"]} />
+                <Field label="Libellé *" name="label" placeholder="Ex. Loyer showroom septembre" required />
+                <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" required />
+                <Select label="Compte" name="account" options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
+                <Select label="Paiement" name="paymentStatus" options={["Payé", "À payer"]} />
+                <Field label="Date de la dépense *" name="expenseDate" type="date" required />
+                <Field label="Note" name="note" placeholder="Facultatif" maxLength={300} />
               </>
             )}
             {kind === "ad" && (
@@ -4071,6 +4083,7 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
     movement: "Modifier le mouvement de stock",
     customer: "Modifier le client",
     purchase: "Modifier l’achat",
+    expense: "Modifier la dépense",
     ad: "Modifier la publicité",
     capital: "Modifier le mouvement de capital",
   };
@@ -4079,6 +4092,7 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
     movement: "updateStockMovement",
     customer: "updateCustomer",
     purchase: "updatePurchase",
+    expense: "updateExpense",
     ad: "updateAd",
     capital: "updateCapital",
   };
@@ -4148,6 +4162,15 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
               )}
               <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.unitCost)} required />
               <Select label="Paiement" name="paymentStatus" defaultValue={selection.record.paymentStatus} options={["Payé", "À payer"]} />
+            </>}
+            {selection.kind === "expense" && <>
+              <Select label="Catégorie *" name="category" defaultValue={selection.record.category} options={["Loyer", "Emballage", "Transport", "Téléphone / Internet", "Frais bancaires", "Outils / logiciels", "Prestataire", "Matériel", "Autre"]} />
+              <Field label="Libellé *" name="label" defaultValue={selection.record.label} required />
+              <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" defaultValue={String(selection.record.amount)} required />
+              <Select label="Compte" name="account" defaultValue={selection.record.account} options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
+              <Select label="Paiement" name="paymentStatus" defaultValue={selection.record.paymentStatus} options={["Payé", "À payer"]} />
+              <Field label="Date de la dépense *" name="expenseDate" type="date" defaultValue={selection.record.expenseDate.slice(0, 10)} required />
+              <Field label="Note" name="note" defaultValue={selection.record.note} maxLength={300} />
             </>}
             {selection.kind === "ad" && <>
               <Field label="Campagne *" name="campaign" defaultValue={selection.record.campaign} required />
