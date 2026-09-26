@@ -10,6 +10,7 @@ const schemaStatements = [
     username TEXT NOT NULL UNIQUE,
     display_name TEXT NOT NULL,
     role TEXT DEFAULT 'viewer' NOT NULL,
+    is_owner INTEGER DEFAULT 0 NOT NULL,
     password_hash TEXT NOT NULL,
     password_salt TEXT NOT NULL,
     is_active INTEGER DEFAULT 1 NOT NULL,
@@ -253,6 +254,22 @@ const schemaStatements = [
   )`,
 ];
 
+async function ensureUserColumns(database: D1Database) {
+  const info = await database.prepare("PRAGMA table_info(users)").all<{ name: string }>();
+  const columns = new Set(info.results.map((column) => column.name));
+  if (!columns.has("is_owner")) {
+    await database.prepare("ALTER TABLE users ADD COLUMN is_owner INTEGER DEFAULT 0 NOT NULL").run();
+  }
+  await database.prepare(`
+    UPDATE users
+    SET is_owner = 1, role = 'admin', updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)
+    WHERE id = (SELECT id FROM users ORDER BY id ASC LIMIT 1)
+      AND NOT EXISTS (SELECT 1 FROM users WHERE is_owner = 1)
+  `).run();
+  await database.prepare("UPDATE users SET role = 'admin' WHERE is_owner = 1 AND role <> 'admin'").run();
+  await database.prepare("CREATE UNIQUE INDEX IF NOT EXISTS users_single_owner_unique ON users (is_owner) WHERE is_owner = 1").run();
+}
+
 async function ensureOrderColumns(database: D1Database) {
   const info = await database.prepare("PRAGMA table_info(orders)").all<{ name: string }>();
   const columns = new Set(info.results.map((column) => column.name));
@@ -332,6 +349,7 @@ async function ensureProductColumns(database: D1Database) {
 
 async function initializeDatabase(database: D1Database) {
   await database.batch(schemaStatements.map((statement) => database.prepare(statement)));
+  await ensureUserColumns(database);
   await ensureOrderColumns(database);
   await ensureStockMovementColumns(database);
   await ensureCapitalColumns(database);

@@ -7,6 +7,7 @@ export type AppUser = {
   username: string;
   displayName: string;
   role: "admin" | "editor" | "viewer";
+  isOwner: boolean;
 };
 
 export const SESSION_COOKIE = "mj_session";
@@ -89,7 +90,7 @@ export async function usersExist() {
   return Number(row?.count || 0) > 0;
 }
 
-export async function createUser(input: { username: string; displayName: string; password: string; role: AppUser["role"] }) {
+export async function createUser(input: { username: string; displayName: string; password: string; role: AppUser["role"]; isOwner: boolean }) {
   const db = await getDb();
   const username = normalizeUsername(input.username);
   const displayName = input.displayName.trim().replace(/\s+/g, " ");
@@ -100,6 +101,7 @@ export async function createUser(input: { username: string; displayName: string;
     throw new Error("Le mot de passe doit contenir au moins 9 caractères, une lettre et un chiffre.");
   }
   if (!["admin", "editor", "viewer"].includes(input.role)) throw new Error("Rôle invalide.");
+  if (input.isOwner && input.role !== "admin") throw new Error("Le propriétaire principal doit conserver le rôle administrateur.");
   const salt = new Uint8Array(16);
   crypto.getRandomValues(salt);
   const hash = await passwordHash(input.password, salt);
@@ -107,10 +109,11 @@ export async function createUser(input: { username: string; displayName: string;
     username,
     displayName,
     role: input.role,
+    isOwner: input.isOwner,
     passwordHash: hash,
     passwordSalt: bytesToBase64Url(salt),
     isActive: true,
-  }).returning({ id: users.id, username: users.username, displayName: users.displayName, role: users.role });
+  }).returning({ id: users.id, username: users.username, displayName: users.displayName, role: users.role, isOwner: users.isOwner });
   if (!created) throw new Error("Le compte n’a pas été créé.");
   return { ...created, role: created.role as AppUser["role"] };
 }
@@ -171,7 +174,7 @@ export async function verifyLogin(rawUsername: string, password: string) {
     throw new Error(newBlock > Date.now() ? "Trop d’essais incorrects. Accès bloqué pendant 15 minutes." : "Nom d’utilisateur ou mot de passe incorrect.");
   }
   await db.delete(loginAttempts).where(eq(loginAttempts.username, username));
-  return { id: row.id, username: row.username, displayName: row.displayName, role: row.role as AppUser["role"] };
+  return { id: row.id, username: row.username, displayName: row.displayName, role: row.role as AppUser["role"], isOwner: Boolean(row.isOwner) };
 }
 
 export async function createSession(userId: number) {
@@ -195,13 +198,14 @@ export async function getAuthenticatedUser(request: Request): Promise<AppUser | 
     username: users.username,
     displayName: users.displayName,
     role: users.role,
+    isOwner: users.isOwner,
     isActive: users.isActive,
   }).from(userSessions).innerJoin(users, eq(userSessions.userId, users.id)).where(eq(userSessions.tokenHash, tokenHash)).limit(1);
   if (!row || !row.isActive || new Date(row.expiresAt).getTime() <= Date.now()) {
     if (row) await db.delete(userSessions).where(eq(userSessions.id, row.sessionId));
     return null;
   }
-  return { id: row.id, username: row.username, displayName: row.displayName, role: row.role as AppUser["role"] };
+  return { id: row.id, username: row.username, displayName: row.displayName, role: row.role as AppUser["role"], isOwner: Boolean(row.isOwner) };
 }
 
 export async function destroySession(request: Request) {

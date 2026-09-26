@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) return Response.json({ error: "Connexion requise." }, { status: 401 });
-    if (user.role !== "admin") return Response.json({ error: "Seul l’administrateur peut exporter toutes les données." }, { status: 403 });
+    if (!user.isOwner) return Response.json({ error: "Seul le propriétaire principal peut exporter toutes les données." }, { status: 403 });
 
     const database = await getRawDb();
     await ensureStorefrontCms(database);
