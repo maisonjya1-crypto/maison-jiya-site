@@ -1,6 +1,15 @@
 type SnapshotValue = string | number | null;
 type SnapshotRow = Record<string, SnapshotValue>;
 
+export type BackupVerification = {
+  ok: boolean;
+  backupId: number | null;
+  backupCreatedAt: string;
+  checkedAt: string;
+  recordCount: number;
+  error: string;
+};
+
 type BusinessSnapshot = {
   version: 1;
   createdAt: string;
@@ -90,6 +99,95 @@ function countRecords(snapshot: BusinessSnapshot) {
   return Object.values(snapshot.tables).reduce((total, rows) => total + (rows?.length || 0), 0);
 }
 
+const requiredSnapshotTables: Array<keyof BusinessSnapshot["tables"]> = [
+  "customers", "orders", "products", "stockMovements", "purchases", "ads", "capital", "settings", "orderStatusHistory",
+];
+
+function inspectSnapshot(raw: string, expectedRecordCount?: number) {
+  let snapshot: BusinessSnapshot;
+  try {
+    snapshot = JSON.parse(raw) as BusinessSnapshot;
+  } catch {
+    throw new Error("Le JSON de sauvegarde est illisible.");
+  }
+  if (!snapshot || snapshot.version !== 1 || !snapshot.tables || typeof snapshot.tables !== "object") {
+    throw new Error("Format de sauvegarde incompatible.");
+  }
+  for (const tableKey of requiredSnapshotTables) {
+    const rows = snapshot.tables[tableKey];
+    if (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
+      throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
+    }
+  }
+  for (const tableKey of ["inventoryCounts", "expenses", "carrierEvents"] as const) {
+    const rows = snapshot.tables[tableKey];
+    if (rows !== undefined && (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item)))) {
+      throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
+    }
+  }
+  if (!Number.isFinite(Date.parse(snapshot.createdAt))) throw new Error("Date de sauvegarde invalide.");
+  const recordCount = countRecords(snapshot);
+  if (expectedRecordCount !== undefined && recordCount !== expectedRecordCount) {
+    throw new Error(`Nombre d’enregistrements incohérent : ${recordCount} au lieu de ${expectedRecordCount}.`);
+  }
+  return { snapshot, recordCount };
+}
+
+async function storeBackupHealth(database: D1Database, result: BackupVerification) {
+  const values = [
+    ["backup_health_status", result.ok ? "verified" : "error"],
+    ["backup_health_checked_at", result.checkedAt],
+    ["backup_health_backup_created_at", result.backupCreatedAt],
+    ["backup_health_backup_id", result.backupId ? String(result.backupId) : ""],
+    ["backup_health_record_count", String(result.recordCount)],
+    ["backup_health_last_error", result.error],
+  ] as const;
+  await database.batch(values.map(([key, value]) => database.prepare(`
+    INSERT INTO settings (key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).bind(key, value, result.checkedAt)));
+}
+
+export async function verifyLatestBackup(database: D1Database): Promise<BackupVerification> {
+  const checkedAt = new Date().toISOString();
+  const row = await database.prepare(`
+    SELECT id, snapshot_json AS snapshotJson, record_count AS recordCount, created_at AS createdAt
+    FROM daily_backups
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1
+  `).first<{ id: number; snapshotJson: string; recordCount: number; createdAt: string }>();
+  if (!row) {
+    const result: BackupVerification = { ok: false, backupId: null, backupCreatedAt: "", checkedAt, recordCount: 0, error: "Aucune sauvegarde quotidienne disponible." };
+    await storeBackupHealth(database, result);
+    return result;
+  }
+  try {
+    const inspected = inspectSnapshot(row.snapshotJson, Number(row.recordCount));
+    const result: BackupVerification = {
+      ok: true,
+      backupId: row.id,
+      backupCreatedAt: row.createdAt,
+      checkedAt,
+      recordCount: inspected.recordCount,
+      error: "",
+    };
+    await storeBackupHealth(database, result);
+    return result;
+  } catch (error) {
+    const result: BackupVerification = {
+      ok: false,
+      backupId: row.id,
+      backupCreatedAt: row.createdAt,
+      checkedAt,
+      recordCount: Number(row.recordCount || 0),
+      error: error instanceof Error ? error.message.slice(0, 300) : "Contrôle de sauvegarde impossible.",
+    };
+    await storeBackupHealth(database, result);
+    return result;
+  }
+}
+
 export async function createDailyBackup(database: D1Database, reason = "Automatique", force = false) {
   const now = new Date();
   const timeSuffix = now.toISOString().slice(11, 19).replace(/:/g, "");
@@ -142,8 +240,7 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
   const [row] = (await database.prepare("SELECT snapshot_json FROM daily_backups WHERE id = ? LIMIT 1").bind(backupId).all<{ snapshot_json: string }>()).results;
   if (!row) throw new Error("Sauvegarde introuvable.");
 
-  const snapshot = JSON.parse(row.snapshot_json) as BusinessSnapshot;
-  if (!snapshot || snapshot.version !== 1 || !snapshot.tables || typeof snapshot.tables !== "object") throw new Error("Format de sauvegarde incompatible.");
+  const { snapshot } = inspectSnapshot(row.snapshot_json);
 
   const insertionOrder: Array<keyof BusinessSnapshot["tables"]> = [
     "settings", "customers", "products", "purchases", "expenses", "ads", "capital", "orders", "stockMovements", "inventoryCounts", "orderStatusHistory", "carrierEvents",
@@ -258,5 +355,6 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
 
 export async function runDailyMaintenance(database: D1Database) {
   await createDailyBackup(database);
+  await verifyLatestBackup(database);
   await purgeExpiredTrash(database);
 }

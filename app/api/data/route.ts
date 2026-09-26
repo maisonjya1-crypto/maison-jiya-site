@@ -1,6 +1,6 @@
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb, getRawDb } from "../../../db";
-import { createDailyBackup, purgeExpiredTrash, resetBusinessValuesPreservingStock, restoreDailyBackup } from "../../../db/backups";
+import { createDailyBackup, purgeExpiredTrash, resetBusinessValuesPreservingStock, restoreDailyBackup, verifyLatestBackup } from "../../../db/backups";
 import { dispatchAuthorizedOrder, getCarrierRuntimeStatus, syncCarrierOperations } from "../../../db/carriers";
 import { moroccanPhoneHelp, normalizeMoroccanPhone } from "../../../db/phone";
 import { getMetaRuntimeStatus, syncMetaAds } from "../../../db/meta";
@@ -197,6 +197,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   revokeBackupToken: { action: "Désactivation", entityType: "Sauvegarde" },
   updateBackupWebhook: { action: "Connexion", entityType: "Google Sheets" },
   createBackupNow: { action: "Création", entityType: "Sauvegarde" },
+  verifyBackupNow: { action: "Vérification", entityType: "Sauvegarde" },
   restoreBackup: { action: "Restauration", entityType: "Sauvegarde" },
   resetBusinessValues: { action: "Remise à zéro", entityType: "Données commerciales" },
   retryGoogleSheetsSync: { action: "Nouvelle tentative", entityType: "Google Sheets" },
@@ -1448,8 +1449,19 @@ export async function POST(request: Request) {
       ].join(" · ") + " supprimés. Produits, quantités et historique de stock conservés.";
     } else if (payload.action === "createBackupNow") {
       if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut créer une sauvegarde complète." }, { status: 403 });
-      await createDailyBackup(await getRawDb(), "Manuelle", true);
+      const rawDatabase = await getRawDb();
+      await createDailyBackup(rawDatabase, "Manuelle", true);
+      const verification = await verifyLatestBackup(rawDatabase);
+      if (!verification.ok) return Response.json({ error: `La sauvegarde a été créée mais son contrôle a échoué : ${verification.error}` }, { status: 500 });
+      integrationMessage = `Sauvegarde créée et contrôlée · ${verification.recordCount} enregistrement(s) lisibles.`;
       auditEntityLabel = "Sauvegarde manuelle";
+    } else if (payload.action === "verifyBackupNow") {
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut vérifier les sauvegardes." }, { status: 403 });
+      const verification = await verifyLatestBackup(await getRawDb());
+      if (!verification.ok) return Response.json({ error: verification.error }, { status: 409 });
+      integrationMessage = `Dernière sauvegarde contrôlée sans modifier la production · ${verification.recordCount} enregistrement(s) · ${verification.backupCreatedAt.slice(0, 10)}.`;
+      auditEntityId = verification.backupId ? String(verification.backupId) : null;
+      auditEntityLabel = "Contrôle de restaurabilité";
     } else if (payload.action === "restoreBackup") {
       if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut restaurer une sauvegarde." }, { status: 403 });
       const backupId = numberValue(payload.backupId);
