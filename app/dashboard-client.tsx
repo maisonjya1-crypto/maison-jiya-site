@@ -3,6 +3,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import AiPage from "./ai-page";
 import TrainingPage from "./training-page";
+import { calculateBusinessFinance, calculateOperatingProfit, orderContributionBeforeGlobalAds } from "../lib/finance";
+import { businessDateKey, deliveryRecognitionDate } from "../lib/accounting-dates";
 
 type Order = {
   id: number;
@@ -328,7 +330,7 @@ const productCategoryOptions = ["Montres", "Bijoux", "Wallets", "Électronique",
 const capitalMonthLabels = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 const capitalMonthShort = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
 const capitalChartColors = ["var(--forest)", "var(--terracotta)", "var(--gold)", "#557ea4", "#8b6f9f", "#c47c8d", "#b68658", "#77869b"];
-const exactOrderProfit = (order: Order) => order.saleAmount - order.productCost - order.shippingCost - order.adCost - order.fees - order.returnCost;
+const exactOrderProfit = (order: Order) => orderContributionBeforeGlobalAds(order);
 const whatsappUrl = (phone: string | null, orderRef: string) => {
   const digits = (phone || "").replace(/\D/g, "").replace(/^0/, "212");
   return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(`Bonjour, nous vous contactons concernant votre commande Maison Jiya ${orderRef}.`)}` : "";
@@ -583,46 +585,34 @@ export default function DashboardClient() {
   }
 
   const metrics = useMemo(() => {
-    const delivered = data.orders.filter((o) => o.status === "Livrée");
-    const deliveredRevenue = delivered.reduce((s, o) => s + o.saleAmount, 0);
-    const collected = data.orders.filter((o) => o.paymentStatus === "Encaissé");
-    const revenue = collected.reduce((s, o) => s + o.saleAmount, 0);
-    const shippingFees = collected.reduce((s, o) => s + o.shippingCost, 0);
-    const collectionFees = collected.reduce((s, o) => s + o.fees, 0);
-    const netCollected = revenue - shippingFees - collectionFees;
-    const costs = delivered.reduce((s, o) => s + o.productCost + o.shippingCost + o.fees, 0);
-    const losses = data.orders.reduce((s, o) => s + o.returnCost, 0);
-    const adSpend = data.ads.reduce((s, a) => s + a.spend, 0);
-    const adRevenue = data.ads.reduce((s, a) => s + a.revenue, 0);
-    const purchases = data.purchases.filter((p) => p.paymentStatus === "Payé").reduce((s, p) => s + p.totalCost, 0);
-    const unpaidPurchases = data.purchases.filter((p) => p.paymentStatus !== "Payé").reduce((s, p) => s + p.totalCost, 0);
-    const operatingExpenses = data.expenses.reduce((sum, expense) => sum + expense.amount, 0);
-    const paidOperatingExpenses = data.expenses.filter((expense) => expense.paymentStatus === "Payé").reduce((sum, expense) => sum + expense.amount, 0);
-    const unpaidOperatingExpenses = data.expenses.filter((expense) => expense.paymentStatus !== "Payé").reduce((sum, expense) => sum + expense.amount, 0);
     const safetyReserve = Math.max(0, Number(data.settings.safety_reserve) || 0);
-    const capitalNet = data.capital.reduce((s, r) => s + (r.direction === "Entrée" ? r.amount : r.direction === "Sortie" ? -r.amount : 0), 0);
-    const reinvest = data.capital.filter((entry) => entry.isAutomatic && entry.category === "Réinvestissement").reduce((sum, entry) => sum + entry.amount, 0);
-    const profit = deliveredRevenue - costs - losses - adSpend - operatingExpenses;
-    const cash = capitalNet + netCollected - purchases - losses - adSpend - paidOperatingExpenses;
-    const reinvestable = Math.max(0, Math.min(reinvest, cash - unpaidPurchases - unpaidOperatingExpenses - safetyReserve));
+    const finance = calculateBusinessFinance({
+      orders: data.orders,
+      purchases: data.purchases,
+      expenses: data.expenses,
+      ads: data.ads,
+      capital: data.capital,
+      safetyReserve,
+    });
+    const adRevenue = data.ads.reduce((sum, ad) => sum + ad.revenue, 0);
     return {
-      revenue,
-      shippingFees,
-      collectionFees,
-      netCollected,
-      profit,
-      losses,
-      adSpend,
-      roas: adSpend ? adRevenue / adSpend : 0,
-      cash,
-      capitalNet,
-      margin: deliveredRevenue ? (profit / deliveredRevenue) * 100 : 0,
-      reinvest,
-      reinvestable,
-      unpaidPurchases,
-      operatingExpenses,
-      paidOperatingExpenses,
-      unpaidOperatingExpenses,
+      revenue: finance.collected,
+      shippingFees: finance.shippingCollected,
+      collectionFees: finance.feesCollected,
+      netCollected: finance.netCollected,
+      profit: finance.profit,
+      losses: finance.losses,
+      adSpend: finance.adSpend,
+      roas: finance.adSpend ? adRevenue / finance.adSpend : 0,
+      cash: finance.cash,
+      capitalNet: finance.manualCapitalNet,
+      margin: finance.margin,
+      reinvest: finance.reinvestAllocation,
+      reinvestable: finance.reinvestable,
+      unpaidPurchases: finance.unpaidPurchases,
+      operatingExpenses: finance.operatingExpenses,
+      paidOperatingExpenses: finance.paidOperatingExpenses,
+      unpaidOperatingExpenses: finance.unpaidOperatingExpenses,
       safetyReserve,
     };
   }, [data]);
@@ -2533,7 +2523,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
       if (order.status === "Livrée") {
         deliveredUnits += quantity;
         revenue += order.saleAmount * share;
-        costs += (order.productCost + order.shippingCost + order.adCost + order.fees) * share;
+        costs += (order.productCost + order.shippingCost + order.fees) * share;
       }
       costs += order.returnCost * share;
     }
@@ -2568,12 +2558,12 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
       <ImportProductsPanel products={products} canEdit={canEdit} submit={submit} />
       <details className="panel product-disclosure product-profit-panel">
         <summary className="product-disclosure-summary">
-          <div><span className="card-kicker">Rentabilité</span><h2>Bénéfice par produit</h2><p>Cliquez pour rechercher, filtrer et afficher les bénéfices.</p></div>
+          <div><span className="card-kicker">Rentabilité</span><h2>Marge contributive par produit</h2><p>Cliquez pour rechercher, filtrer et comparer les produits.</p></div>
           <div className="product-disclosure-meta"><strong>{money(filteredProfit)}</strong><span className="product-disclosure-toggle" aria-hidden="true">⌄</span></div>
         </summary>
         <div className="product-disclosure-body">
           <ProductFilterBar search={profitSearch} category={profitCategory} categories={productCategories} resultCount={filteredProfitability.length} totalCount={products.length} onSearch={setProfitSearch} onCategory={setProfitCategory} />
-          <p className="profitability-note">Calcul automatique sur les commandes livrées, selon les coûts saisis : produit, livraison, publicité, frais et retours.</p>
+          <p className="profitability-note">Marge des commandes livrées après produit, livraison, frais et retours. Les dépenses Meta réelles et charges d’exploitation sont déduites uniquement dans le bénéfice global pour éviter un double comptage.</p>
           {products.length === 0 ? (
             <EmptyState title="Aucune rentabilité à calculer" text="Ajoutez un produit puis rattachez-le à vos commandes." />
           ) : filteredProfitability.length === 0 ? (
@@ -2581,7 +2571,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
           ) : (
             <div className="table-scroll profitability-table">
               <table>
-                <thead><tr><th>Produit</th><th>Unités livrées</th><th>CA livré</th><th>Coûts</th><th>Bénéfice net</th><th>Marge</th></tr></thead>
+                <thead><tr><th>Produit</th><th>Unités livrées</th><th>CA livré</th><th>Coûts directs</th><th>Marge contributive</th><th>Taux</th></tr></thead>
                 <tbody>
                   {filteredProfitability.map((row) => (
                     <tr key={row.product.id}>
@@ -3064,20 +3054,47 @@ function groupOrderAnalysis(orders: Order[], label: (order: Order) => string): A
   return [...grouped.values()].sort((left, right) => right.profit - left.profit);
 }
 function AnalysisTable({ title, rows }: { title: string; rows: AnalysisRow[] }) {
-  return <section className="panel report-table"><PanelHead kicker="Analyse automatique" title={title} total={`${rows.length} ligne${rows.length === 1 ? "" : "s"}`} /><div className="table-scroll"><table><thead><tr><th>Élément</th><th>Commandes</th><th>CA</th><th>Gain exact</th><th>Marge</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={row.label}><td><strong>{row.label}</strong></td><td>{row.orders}</td><td>{money(row.revenue)}</td><td className={moneyTone(row.profit)}>{money(row.profit)}</td><td>{row.revenue ? `${((row.profit / row.revenue) * 100).toFixed(1)}%` : "0%"}</td></tr>) : <tr><td colSpan={5}>Aucune donnée pour le moment.</td></tr>}</tbody></table></div></section>;
+  return <section className="panel report-table"><PanelHead kicker="Analyse automatique" title={title} total={`${rows.length} ligne${rows.length === 1 ? "" : "s"}`} /><div className="table-scroll"><table><thead><tr><th>Élément</th><th>Commandes</th><th>CA</th><th>Marge commandes</th><th>Taux</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={row.label}><td><strong>{row.label}</strong></td><td>{row.orders}</td><td>{money(row.revenue)}</td><td className={moneyTone(row.profit)}>{money(row.profit)}</td><td>{row.revenue ? `${((row.profit / row.revenue) * 100).toFixed(1)}%` : "0%"}</td></tr>) : <tr><td colSpan={5}>Aucune donnée pour le moment.</td></tr>}</tbody></table></div></section>;
 }
 function ReportsPage({ data }: { data: Data }) {
   const now = new Date();
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Casablanca", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-  const weekStart = new Date(now.getTime() - 6 * 86_400_000);
+  const today = businessDateKey(now);
+  const weekStartKey = businessDateKey(new Date(now.getTime() - 6 * 86_400_000));
   const monthKey = today.slice(0, 7);
+  const monthStartKey = `${monthKey}-01`;
   const completed = data.orders.filter((order) => order.status === "Livrée");
   const collected = data.orders.filter((order) => order.paymentStatus === "Encaissé");
-  const daily = completed.filter((order) => order.createdAt.slice(0, 10) === today);
-  const weekly = completed.filter((order) => new Date(order.createdAt) >= weekStart);
-  const monthly = completed.filter((order) => order.createdAt.slice(0, 7) === monthKey);
-  const periodCard = (label: string, orders: Order[]) => ({ label, count: orders.length, revenue: orders.reduce((sum, order) => sum + order.saleAmount, 0), profit: orders.reduce((sum, order) => sum + exactOrderProfit(order), 0) });
-  const periods = [periodCard("Aujourd’hui", daily), periodCard("7 derniers jours", weekly), periodCard("Mois en cours", monthly)];
+  const deliveredBetween = (startKey: string, endKey: string) => completed.filter((order) => {
+    const recognizedAt = deliveryRecognitionDate(order, data.orderStatusHistory);
+    if (!recognizedAt) return false;
+    const key = businessDateKey(recognizedAt);
+    return key >= startKey && key <= endKey;
+  });
+  const periodCard = (label: string, startKey: string, endKey: string) => {
+    const periodOrders = deliveredBetween(startKey, endKey);
+    const periodAds = data.ads.filter((ad) => {
+      const key = businessDateKey(ad.performanceDate);
+      return key >= startKey && key <= endKey;
+    });
+    const periodExpenses = data.expenses.filter((expense) => {
+      const key = businessDateKey(expense.expenseDate);
+      return key >= startKey && key <= endKey;
+    });
+    const finance = calculateOperatingProfit(periodOrders, periodAds, periodExpenses);
+    return {
+      label,
+      count: periodOrders.length,
+      revenue: finance.deliveredRevenue,
+      profit: finance.profit,
+      adSpend: finance.adSpend,
+      operatingExpenses: finance.operatingExpenses,
+    };
+  };
+  const periods = [
+    periodCard("Aujourd’hui", today, today),
+    periodCard("7 derniers jours", weekStartKey, today),
+    periodCard("Mois en cours", monthStartKey, today),
+  ];
   const lowStock = data.products.filter((product) => product.stockQuantity <= 3);
   const delayed = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && elapsedDays(order.updatedAt || order.createdAt) >= 4);
   const unpaid = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus !== "Encaissé" && elapsedDays(order.updatedAt || order.createdAt) >= 3);
@@ -3090,7 +3107,7 @@ function ReportsPage({ data }: { data: Data }) {
   const storeCash = collected.filter((order) => order.fulfillmentType === "Magasin physique").reduce((sum, order) => sum + order.saleAmount - order.fees - order.returnCost, 0);
   const carrierMoney = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus === "À encaisser").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees, 0);
   const receivables = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && order.paymentStatus !== "Encaissé").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees, 0);
-  const manualCapital = data.capital.reduce((sum, entry) => sum + (entry.direction === "Entrée" ? entry.amount : entry.direction === "Sortie" ? -entry.amount : 0), 0);
+  const manualCapital = data.capital.filter((entry) => !entry.isAutomatic).reduce((sum, entry) => sum + (entry.direction === "Entrée" ? entry.amount : entry.direction === "Sortie" ? -entry.amount : 0), 0);
   const deliveryReceipts = collected.filter((order) => order.fulfillmentType !== "Magasin physique").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees - order.returnCost, 0);
   const paidPurchases = data.purchases.filter((purchase) => purchase.paymentStatus === "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
   const paidExpenses = data.expenses.filter((expense) => expense.paymentStatus === "Payé").reduce((sum, expense) => sum + expense.amount, 0);
@@ -3112,12 +3129,12 @@ function ReportsPage({ data }: { data: Data }) {
   const campaignRows = groupOrderAnalysis(completed.filter((order) => order.campaign), (order) => order.campaign);
   return <div className="reports-page">
     <section className="report-automation-banner"><div><span>↻</span><div><strong>Rapports automatiques actifs</strong><p>Les chiffres quotidiens, hebdomadaires et mensuels se recalculent à chaque commande, paiement, retour, achat, dépense ou publicité.</p></div></div><small>Actualisé maintenant</small></section>
-    <section className="report-period-grid">{periods.map((period) => <article key={period.label}><span>{period.label}</span><strong>{money(period.profit)}</strong><p>{period.count} commande{period.count === 1 ? "" : "s"} · CA {money(period.revenue)}</p></article>)}</section>
+    <section className="report-period-grid">{periods.map((period) => <article key={period.label}><span>{period.label}</span><strong>{money(period.profit)}</strong><p>{period.count} livrée{period.count === 1 ? "" : "s"} · CA {money(period.revenue)}</p><small>Meta {money(period.adSpend)} · charges {money(period.operatingExpenses)}</small></article>)}</section>
     <section className="financial-account-grid"><article><span>Caisse magasin</span><strong>{money(storeCash)}</strong><small>Encaissements remis sur place</small></article><article><span>Banque estimée</span><strong className={moneyTone(bank)}>{money(bank)}</strong><small>Virements moins achats, charges et publicités payées</small></article><article><span>Argent transporteurs</span><strong>{money(carrierMoney)}</strong><small>Livré, en attente de virement</small></article><article><span>Créances en cours</span><strong>{money(receivables)}</strong><small>Confirmé ou en transit</small></article></section>
-    <section className="allocation-report"><div><span className="card-kicker">Mouvements automatiques enregistrés</span><h2>{money(positiveProfit)} affectés</h2><p>Chaque vente encaissée crée trois écritures comptables liées à la commande. Elles sont recalculées sans modifier deux fois votre solde bancaire.</p></div><div><article><span>Réinvestissement · 50%</span><strong>{money(allocationAmount("Réinvestissement"))}</strong></article><article><span>Salaire personnel · 30%</span><strong>{money(allocationAmount("Salaire personnel"))}</strong></article><article><span>Fonds d’urgence · 20%</span><strong>{money(allocationAmount("Fonds d’urgence"))}</strong></article></div></section>
+    <section className="allocation-report"><div><span className="card-kicker">Mouvements automatiques enregistrés</span><h2>{money(positiveProfit)} affectés</h2><p>Chaque vente encaissée crée trois enveloppes théoriques à partir de la marge commande. Les dépenses Meta réelles et charges restent déduites globalement pour éviter le double comptage.</p></div><div><article><span>Réinvestissement · 50%</span><strong>{money(allocationAmount("Réinvestissement"))}</strong></article><article><span>Salaire personnel · 30%</span><strong>{money(allocationAmount("Salaire personnel"))}</strong></article><article><span>Fonds d’urgence · 20%</span><strong>{money(allocationAmount("Fonds d’urgence"))}</strong></article></div></section>
     <section className="panel alerts-panel"><PanelHead kicker="Surveillance automatique" title="Alertes actives" total={String(alerts.length)} />{alerts.length ? <div className="alerts-list">{alerts.map((alert) => <article className={alert.level} key={alert.key}><span aria-hidden="true">{alert.level === "danger" ? "!" : "◷"}</span><div><strong>{alert.title}</strong><small>{alert.detail}</small></div></article>)}</div> : <div className="pending-empty">✓ Aucun stock critique, colis bloqué ou encaissement en retard détecté.</div>}</section>
-    <div className="report-analysis-grid"><AnalysisTable title="Résultats par produit" rows={groupOrderAnalysis(completed, (order) => order.products)} /><AnalysisTable title="Résultats par ville" rows={groupOrderAnalysis(completed, (order) => order.city)} /><AnalysisTable title="Résultats par source" rows={groupOrderAnalysis(completed, (order) => order.source)} /><AnalysisTable title="Résultats par agence" rows={groupOrderAnalysis(completed.filter((order) => order.fulfillmentType !== "Magasin physique"), (order) => order.carrier)} /><AnalysisTable title="Facebook, Instagram, TikTok et WhatsApp" rows={platformRows} /><AnalysisTable title="Campagnes reliées aux commandes" rows={campaignRows} /></div>
-    <section className="panel exact-profit-panel"><PanelHead kicker="Rentabilité" title="Gain exact par commande" total={`${completed.length} livrée${completed.length === 1 ? "" : "s"}`} /><div className="table-scroll"><table><thead><tr><th>Commande</th><th>Produit</th><th>Source / campagne</th><th>Vente</th><th>Produit</th><th>Livraison</th><th>Ads + frais</th><th>Retour</th><th>Gain exact</th></tr></thead><tbody>{completed.slice(0, 200).map((order) => <tr key={order.id}><td><strong>{order.orderRef}</strong><small>{dateLabel(order.createdAt)}</small></td><td>{order.products}</td><td>{order.source}<small>{order.campaign || "Sans campagne"}</small></td><td>{money(order.saleAmount)}</td><td>{money(order.productCost)}</td><td>{money(order.shippingCost)}</td><td>{money(order.adCost + order.fees)}</td><td>{money(order.returnCost)}</td><td className={moneyTone(exactOrderProfit(order))}><strong>{money(exactOrderProfit(order))}</strong></td></tr>)}</tbody></table></div></section>
+    <div className="report-analysis-grid"><AnalysisTable title="Marge commandes par produit" rows={groupOrderAnalysis(completed, (order) => order.products)} /><AnalysisTable title="Marge commandes par ville" rows={groupOrderAnalysis(completed, (order) => order.city)} /><AnalysisTable title="Marge commandes par source" rows={groupOrderAnalysis(completed, (order) => order.source)} /><AnalysisTable title="Marge commandes par agence" rows={groupOrderAnalysis(completed.filter((order) => order.fulfillmentType !== "Magasin physique"), (order) => order.carrier)} /><AnalysisTable title="Facebook, Instagram, TikTok et WhatsApp" rows={platformRows} /><AnalysisTable title="Campagnes reliées aux commandes" rows={campaignRows} /></div>
+    <section className="panel exact-profit-panel"><PanelHead kicker="Rentabilité" title="Marge par commande avant dépenses globales" total={`${completed.length} livrée${completed.length === 1 ? "" : "s"}`} /><p className="profitability-note">Cette marge retire le produit, la livraison, les frais et les retours. La dépense Meta réelle et les charges d’exploitation sont déduites au niveau global, pas artificiellement réparties sur chaque commande.</p><div className="table-scroll"><table><thead><tr><th>Commande</th><th>Produit</th><th>Source / campagne</th><th>Vente</th><th>Produit</th><th>Livraison</th><th>Frais</th><th>Pub attribuée*</th><th>Retour</th><th>Marge commande</th></tr></thead><tbody>{completed.slice(0, 200).map((order) => <tr key={order.id}><td><strong>{order.orderRef}</strong><small>{dateLabel(deliveryRecognitionDate(order, data.orderStatusHistory) || order.createdAt)}</small></td><td>{order.products}</td><td>{order.source}<small>{order.campaign || "Sans campagne"}</small></td><td>{money(order.saleAmount)}</td><td>{money(order.productCost)}</td><td>{money(order.shippingCost)}</td><td>{money(order.fees)}</td><td>{money(order.adCost)}</td><td>{money(order.returnCost)}</td><td className={moneyTone(exactOrderProfit(order))}><strong>{money(exactOrderProfit(order))}</strong></td></tr>)}</tbody></table></div></section>
   </div>;
 }
 
@@ -3301,7 +3318,7 @@ function CapitalPage({
         <div className="capital-envelope-head">
           <span className="card-kicker">Répartition personnelle</span>
           <h2>Vos trois enveloppes</h2>
-          <p>Chaque commande encaissée crée automatiquement trois écritures liées à son gain exact. Les enveloppes restent séparées du solde bancaire pour éviter un double débit.</p>
+          <p>Chaque commande encaissée crée automatiquement trois écritures liées à sa marge commande. Le montant réellement mobilisable reste plafonné par la trésorerie après fournisseurs, charges, Meta et réserve.</p>
         </div>
         <div className="capital-envelope-grid">
           <article className="capital-envelope-card reinvest-envelope">
@@ -3315,14 +3332,14 @@ function CapitalPage({
             <span className="envelope-icon">◎</span>
             <span className="envelope-label">Salaire personnel</span>
             <h3>{money(personalSalary)}</h3>
-            <p>30% des gains positifs encaissés affectés à votre rémunération personnelle.</p>
+            <p>30% de la marge commande positive encaissée affectés à votre rémunération personnelle.</p>
             <small>Écritures automatiques · 30%</small>
           </article>
           <article className="capital-envelope-card emergency-envelope">
             <span className="envelope-icon">◇</span>
             <span className="envelope-label">Fonds d’urgence</span>
             <h3>{money(emergencyFund)}</h3>
-            <p>20% des gains positifs encaissés conservés pour les imprévus.</p>
+            <p>20% de la marge commande positive encaissée conservés pour les imprévus.</p>
             <small>Écritures automatiques · 20%</small>
           </article>
         </div>

@@ -1,6 +1,7 @@
 import { desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { adPerformance, capitalLedger, customers, orders, products, purchases, settings, stockMovements, users } from "../../../../db/schema";
+import { adPerformance, capitalLedger, customers, expenses, orders, products, purchases, settings, stockMovements, users } from "../../../../db/schema";
+import { orderContributionBeforeGlobalAds } from "../../../../lib/finance";
 
 const datasetNames = new Set([
   "orders",
@@ -8,6 +9,7 @@ const datasetNames = new Set([
   "shipments",
   "customers",
   "purchases",
+  "expenses",
   "ads",
   "capital",
   "stock-movements",
@@ -127,8 +129,8 @@ export async function GET(request: Request) {
       const customerNumbers = new Map([...customerRows].reverse().map((customer, index) => [customer.id, index + 1]));
 
       if (dataset === "orders") return csvResponse(
-        ["N° commande", "Référence commande", "N° client", "Cliente", "Téléphone", "Ville", "Adresse", "Produits", "Quantité", "Prix de vente (MAD)", "Coût produit (MAD)", "Frais livraison (MAD)", "Coût publicité (MAD)", "Autres frais (MAD)", "Coût retour (MAD)", "Motif du retour", "Détail du retour", "Source", "Campagne", "Mode de vente", "Statut", "Paiement", "Agence", "Numéro de suivi", "État création agence", "Autorisé le", "Facture agence", "Date encaissée", "Créée le", "Modifiée le", "Gain exact (MAD)", "ID technique commande", "ID technique client"],
-        orderRows.map((row) => [orderNumbers.get(row.id), row.orderRef, customerNumbers.get(row.customerId), row.customerName, row.phone, row.city, row.address, row.products, row.quantity, row.saleAmount, row.productCost, row.shippingCost, row.adCost, row.fees, row.returnCost, row.returnReason, row.returnNote, row.source, row.campaign, row.fulfillmentType, row.status, row.paymentStatus, row.carrier, row.trackingNumber, row.carrierDispatchState, row.carrierAuthorizedAt, row.carrierInvoiceCode, row.paidAt, row.createdAt, row.updatedAt, row.saleAmount - row.productCost - row.shippingCost - row.adCost - row.fees - row.returnCost, row.id, row.customerId]),
+        ["N° commande", "Référence commande", "N° client", "Cliente", "Téléphone", "Ville", "Adresse", "Produits", "Quantité", "Prix de vente (MAD)", "Coût produit (MAD)", "Frais livraison (MAD)", "Coût publicité attribué (MAD)", "Autres frais (MAD)", "Coût retour (MAD)", "Motif du retour", "Détail du retour", "Source", "Campagne", "Mode de vente", "Statut", "Paiement", "Agence", "Numéro de suivi", "État création agence", "Autorisé le", "Facture agence", "Date encaissée", "Créée le", "Modifiée le", "Marge commande avant dépenses globales (MAD)", "ID technique commande", "ID technique client"],
+        orderRows.map((row) => [orderNumbers.get(row.id), row.orderRef, customerNumbers.get(row.customerId), row.customerName, row.phone, row.city, row.address, row.products, row.quantity, row.saleAmount, row.productCost, row.shippingCost, row.adCost, row.fees, row.returnCost, row.returnReason, row.returnNote, row.source, row.campaign, row.fulfillmentType, row.status, row.paymentStatus, row.carrier, row.trackingNumber, row.carrierDispatchState, row.carrierAuthorizedAt, row.carrierInvoiceCode, row.paidAt, row.createdAt, row.updatedAt, orderContributionBeforeGlobalAds(row), row.id, row.customerId]),
       );
 
       if (dataset === "shipments") return csvResponse(
@@ -176,6 +178,14 @@ export async function GET(request: Request) {
       return csvResponse(
         ["ID", "Fournisseur", "Article", "ID produit", "SKU", "Produit", "Quantité achetée", "Coût unitaire (MAD)", "Coût total (MAD)", "Statut paiement", "Quantité réceptionnée", "Réceptionné le", "Créé le"],
         rows.map((row) => [row.id, row.supplier, row.item, row.productId, row.productCode, row.productName, row.quantity, row.unitCost, row.totalCost, row.paymentStatus, row.receivedQuantity, row.receivedAt, row.createdAt]),
+      );
+    }
+
+    if (dataset === "expenses") {
+      const rows = await db.select().from(expenses).orderBy(desc(expenses.expenseDate), desc(expenses.createdAt));
+      return csvResponse(
+        ["ID", "Catégorie", "Libellé", "Montant (MAD)", "Compte", "Paiement", "Date de dépense", "Note", "Créé le"],
+        rows.map((row) => [row.id, row.category, row.label, row.amount, row.account, row.paymentStatus, row.expenseDate, row.note, row.createdAt]),
       );
     }
 

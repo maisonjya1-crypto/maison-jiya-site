@@ -19,13 +19,17 @@ test("le registre des dépenses existe dans le schéma et l'API privée", async 
   assert.match(route, /expenses: expenseRows/);
 });
 
-test("les dépenses impactent résultat et trésorerie sans être confondues avec le stock", async () => {
-  const dashboard = await read("app/dashboard-client.tsx");
+test("les dépenses impactent résultat et trésorerie via le moteur financier central", async () => {
+  const [dashboard, finance] = await Promise.all([
+    read("app/dashboard-client.tsx"),
+    read("lib/finance.ts"),
+  ]);
 
-  assert.match(dashboard, /const operatingExpenses = data\.expenses\.reduce/);
-  assert.match(dashboard, /const paidOperatingExpenses = data\.expenses\.filter/);
-  assert.match(dashboard, /profit = deliveredRevenue - costs - losses - adSpend - operatingExpenses/);
-  assert.match(dashboard, /cash = capitalNet \+ netCollected - purchases - losses - adSpend - paidOperatingExpenses/);
+  assert.match(dashboard, /calculateBusinessFinance\(\{/);
+  assert.match(finance, /operatingExpenses/);
+  assert.match(finance, /paidOperatingExpenses/);
+  assert.match(finance, /- amount\(input\.operatingExpenses\)/);
+  assert.match(finance, /- amount\(input\.paidOperatingExpenses\)/);
   assert.match(dashboard, /Dépenses ≠ achats de stock/);
   assert.doesNotMatch(dashboard, /stockQuantity.*expense\.amount/);
 });
@@ -43,13 +47,13 @@ test("sauvegardes, export et Google Sheets couvrent les dépenses", async () => 
   assert.match(sync, /"expenses"/);
 });
 
-test("l'assistant IA tient compte des charges d'exploitation", async () => {
+test("l'assistant IA tient compte des charges d'exploitation via le moteur partagé", async () => {
   const ai = await read("app/api/ai/route.ts");
 
-  assert.match(ai, /operatingExpenses: expenseTotal/);
-  assert.match(ai, /paidOperatingExpenses: paidExpenseTotal/);
-  assert.match(ai, /- adSpend - expenseTotal/);
-  assert.match(ai, /- adSpend - paidExpenseTotal/);
+  assert.match(ai, /calculateBusinessFinanceFromTotals/);
+  assert.match(ai, /operatingExpenses: Number\(expenseTotals\[0\]\?\.total/);
+  assert.match(ai, /paidOperatingExpenses: Number\(paidExpenseTotals\[0\]\?\.total/);
+  assert.match(ai, /unpaidOperatingExpenses: Number\(unpaidExpenseTotals\[0\]\?\.total/);
 });
 
 test("le site privé expose une page Dépenses et des formulaires dédiés", async () => {
