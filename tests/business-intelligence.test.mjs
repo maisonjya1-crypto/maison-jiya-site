@@ -14,13 +14,14 @@ test("la recherche est limitée au bloc actif et couvre les principaux blocs mé
   for (const source of ["data.orders", "data.products", "data.customers", "data.purchases", "data.ads", "data.capital", "data.trash"]) assert.match(dashboard, new RegExp(source.replace(".", "\\.")));
 });
 
-test("le rapport calcule le gain exact et sépare les quatre emplacements d'argent", () => {
+test("le rapport sépare les quatre emplacements d’argent et distingue la marge commande du bénéfice global", () => {
   assert.match(dashboard, /function ReportsPage/);
   assert.match(dashboard, /Caisse magasin/);
   assert.match(dashboard, /Banque estimée/);
   assert.match(dashboard, /Argent transporteurs/);
   assert.match(dashboard, /Créances en cours/);
-  assert.match(dashboard, /Gain exact par commande/);
+  assert.match(dashboard, /Marge par commande avant dépenses globales/);
+  assert.match(dashboard, /dépense Meta réelle et les charges d’exploitation/);
 });
 
 test("chaque commande peut être liée à une campagne et contactée par WhatsApp", () => {
@@ -63,9 +64,13 @@ test("réinvestissement, salaire et fonds d’urgence sont des écritures liées
 });
 
 
-test("le pilotage financier utilise les dépenses réelles et protège le réinvestissement", () => {
-  assert.match(dashboard, /const profit = deliveredRevenue - costs - losses - adSpend - operatingExpenses/);
-  assert.match(dashboard, /const reinvestable = Math\.max\(0, Math\.min\(reinvest, cash - unpaidPurchases - unpaidOperatingExpenses - safetyReserve\)\)/);
+test("le pilotage financier passe par le moteur financier central", async () => {
+  const finance = await readFile(new URL("../lib/finance.ts", import.meta.url), "utf8");
+  assert.match(dashboard, /calculateBusinessFinance\(\{/);
+  assert.match(finance, /calculateBusinessFinanceFromTotals/);
+  assert.match(finance, /- amount\(input\.adSpend\)/);
+  assert.match(finance, /- amount\(input\.operatingExpenses\)/);
+  assert.match(finance, /- amount\(input\.unpaidOperatingExpenses\)/);
   assert.match(dashboard, /Réinvestissable maintenant/);
   assert.match(dashboard, /Charges à payer/);
   assert.match(dashboard, /Réserve protégée/);
@@ -75,7 +80,8 @@ test("la rentabilité produit inclut les packs et commandes multi-produits sans 
   assert.match(dashboard, /quantityForProduct/);
   assert.match(dashboard, /movement\.movementType === "Commande"/);
   assert.match(dashboard, /orderShareForProduct/);
-  assert.match(dashboard, /order\.productCost \+ order\.shippingCost \+ order\.adCost \+ order\.fees/);
+  assert.match(dashboard, /order\.productCost \+ order\.shippingCost \+ order\.fees/);
+  assert.doesNotMatch(dashboard, /costs \+= \(order\.productCost \+ order\.shippingCost \+ order\.adCost \+ order\.fees\)/);
 });
 
 test("les rapports surveillent les fournisseurs à payer et le stock dormant", () => {
