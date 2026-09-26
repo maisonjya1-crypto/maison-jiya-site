@@ -322,6 +322,19 @@ const addActionLabels: Record<string, string> = {
   Capital: "Nouveau mouvement",
 };
 const addableSections = new Set(Object.keys(addActionLabels));
+const retrySafeMutationActions = new Set([
+  "addOrder",
+  "importOrders",
+  "addPurchase",
+  "receivePurchase",
+  "addExpense",
+  "addAd",
+  "addCapital",
+  "importProducts",
+  "addProduct",
+  "addStockMovement",
+  "countInventory",
+]);
 const orderStatusOptions = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
 const returnReasonOptions = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
 const orderSourceOptions = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre"];
@@ -434,12 +447,34 @@ export default function DashboardClient() {
 
   async function submit(action: string, values: Record<string, FormDataEntryValue>) {
     setError("");
-    const response = await fetch("/api/data", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action, ...values }),
-    });
-    const body = (await response.json()) as Data & { error?: string; message?: string };
+    const requestKey = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `mj-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+    const retrySafe = retrySafeMutationActions.has(action);
+
+    const send = async (attempt = 0): Promise<{ response: Response; body: Data & { error?: string; message?: string; code?: string } }> => {
+      try {
+        const response = await fetch("/api/data", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action, requestKey, ...values }),
+        });
+        const body = (await response.json()) as Data & { error?: string; message?: string; code?: string };
+        if (!response.ok && retrySafe && body.code === "MUTATION_IN_PROGRESS" && attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 450 * (attempt + 1)));
+          return send(attempt + 1);
+        }
+        return { response, body };
+      } catch (networkError) {
+        if (retrySafe && attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 450 * (attempt + 1)));
+          return send(attempt + 1);
+        }
+        throw networkError;
+      }
+    };
+
+    const { response, body } = await send();
     if (!response.ok) {
       const message = body.error || "Enregistrement impossible";
       setError(message);
