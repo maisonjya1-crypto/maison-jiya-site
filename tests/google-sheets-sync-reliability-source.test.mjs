@@ -65,5 +65,5 @@ test("les anciens appels directs à Apps Script sont supprimés des routes méti
 test("le journal et la relance manuelle restent réservés au logiciel privé", () => {
   assert.match(dataRoute, /getGoogleSheetsSyncSnapshot/);
   assert.match(dataRoute, /retryGoogleSheetsSync/);
-  assert.match(dataRoute, /Seul l’administrateur peut relancer/);
+  assert.match(dataRoute, /Seul le propriétaire principal peut relancer/);
 });
