@@ -51,10 +51,15 @@ type Purchase = {
   id: number;
   supplier: string;
   item: string;
+  productId: number | null;
+  productCode: string | null;
+  productName: string | null;
   quantity: number;
   unitCost: number;
   totalCost: number;
   paymentStatus: string;
+  receivedQuantity: number;
+  receivedAt: string | null;
   createdAt: string;
 };
 type Ad = {
@@ -98,6 +103,7 @@ type StockMovement = {
   id: number;
   productId: number;
   orderId: number | null;
+  purchaseId: number | null;
   orderRef: string | null;
   productCode: string | null;
   productName: string | null;
@@ -423,6 +429,7 @@ export default function DashboardClient() {
       deleteCustomer: "Client supprimé",
       updatePurchase: "Achat mis à jour",
       deletePurchase: "Achat supprimé",
+      receivePurchase: "Réception fournisseur ajoutée au stock",
       updateAd: "Publicité mise à jour",
       deleteAd: "Publicité supprimée",
       updateCapital: "Mouvement de capital mis à jour",
@@ -682,7 +689,7 @@ export default function DashboardClient() {
       </section>
       {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products} ads={data.ads} close={() => setModal(null)} submit={submit} />}
       {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} ads={data.ads} close={() => setSelectedOrder(null)} print={() => printOrderSlip(selectedOrder)} submit={submit} />}
-      {selectedEntity && <EntityModal selection={selectedEntity} close={() => setSelectedEntity(null)} submit={submit} />}
+      {selectedEntity && <EntityModal selection={selectedEntity} products={data.products} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
       {inventorySelection && <InventoryCountModal product={inventorySelection} close={() => setInventorySelection(null)} submit={submit} />}
       {printOrder && <PrintOrderSheet order={printOrder} />}
@@ -941,7 +948,7 @@ function Page({
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
-  if (active === "Achats") return <PurchasesPage purchases={data.purchases} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Achats") return <PurchasesPage purchases={data.purchases} products={data.products} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Rapports") return <ReportsPage data={data} />;
