@@ -123,6 +123,24 @@ export const carrierEvents = sqliteTable(
   ],
 );
 
+export const mutationReceipts = sqliteTable(
+  "mutation_receipts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    requestKey: text("request_key").notNull().unique(),
+    userId: integer("user_id").notNull(),
+    action: text("action").notNull(),
+    status: text("status").notNull().default("processing"),
+    message: text("message").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    completedAt: text("completed_at"),
+  },
+  (table) => [
+    index("mutation_receipts_user_id_idx").on(table.userId),
+    index("mutation_receipts_created_at_idx").on(table.createdAt),
+  ],
+);
+
 export const auditLogs = sqliteTable(
   "audit_logs",
   {

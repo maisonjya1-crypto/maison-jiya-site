@@ -85,6 +85,50 @@ function commitsStock(status: string) {
   return stockCommittedStatuses.has(status);
 }
 
+type MutationReceiptState =
+  | { kind: "unprotected" }
+  | { kind: "invalid" }
+  | { kind: "reserved"; requestKey: string }
+  | { kind: "processing"; requestKey: string }
+  | { kind: "completed"; requestKey: string; message: string }
+  | { kind: "conflict"; requestKey: string };
+
+async function reserveMutationReceipt(userId: number, action: string, rawRequestKey: unknown): Promise<MutationReceiptState> {
+  const requestKey = textValue(rawRequestKey);
+  if (!requestKey) return { kind: "unprotected" };
+  if (!/^[A-Za-z0-9_-]{16,120}$/.test(requestKey)) return { kind: "invalid" };
+
+  const database = await getRawDb();
+  await database.prepare("DELETE FROM mutation_receipts WHERE status = 'completed' AND completed_at < datetime('now', '-30 days')").run();
+  const inserted = await database.prepare(
+    "INSERT OR IGNORE INTO mutation_receipts (request_key, user_id, action, status) VALUES (?, ?, ?, 'processing')",
+  ).bind(requestKey, userId, action).run();
+
+  if (Number(inserted.meta?.changes || 0) === 1) return { kind: "reserved", requestKey };
+
+  const existing = await database.prepare(
+    "SELECT user_id, action, status, message FROM mutation_receipts WHERE request_key = ? LIMIT 1",
+  ).bind(requestKey).first<{ user_id: number; action: string; status: string; message: string }>();
+
+  if (!existing || existing.user_id !== userId || existing.action !== action) return { kind: "conflict", requestKey };
+  if (existing.status === "completed") return { kind: "completed", requestKey, message: existing.message || "" };
+  return { kind: "processing", requestKey };
+}
+
+async function completeMutationReceipt(requestKey: string, userId: number, action: string, message: string) {
+  const database = await getRawDb();
+  await database.prepare(
+    "UPDATE mutation_receipts SET status = 'completed', message = ?, completed_at = CURRENT_TIMESTAMP WHERE request_key = ? AND user_id = ? AND action = ?",
+  ).bind(message.slice(0, 240), requestKey, userId, action).run();
+}
+
+async function releaseMutationReceipt(requestKey: string, userId: number, action: string) {
+  const database = await getRawDb();
+  await database.prepare(
+    "DELETE FROM mutation_receipts WHERE request_key = ? AND user_id = ? AND action = ? AND status = 'processing'",
+  ).bind(requestKey, userId, action).run();
+}
+
 async function sha256Hex(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -349,6 +393,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  let mutationReceiptKey = "";
+  let mutationReceiptAction = "";
+  let mutationReceiptUserId = 0;
+  let mutationReceiptReserved = false;
+  let businessMutationCommitted = false;
+
   try {
     if (!hasValidOrigin(request)) return Response.json({ error: "Origine de la requête refusée." }, { status: 403 });
     const user = await getAuthenticatedUser(request);
@@ -363,6 +413,29 @@ export async function POST(request: Request) {
     if (!access.canEdit) {
       return Response.json({ error: "Votre compte est en lecture seule." }, { status: 403 });
     }
+
+    const protectMutation = async (actionName: string) => {
+      const state = await reserveMutationReceipt(user.id, actionName, payload.requestKey);
+      if (state.kind === "unprotected") return null;
+      if (state.kind === "invalid") {
+        return Response.json({ error: "Identifiant de requête invalide." }, { status: 400 });
+      }
+      if (state.kind === "conflict") {
+        return Response.json({ error: "Cette requête ne correspond pas à l’opération attendue." }, { status: 409 });
+      }
+      if (state.kind === "processing") {
+        return Response.json({ error: "Cette opération est déjà en cours. Maison Jiya vérifie avant de la rejouer.", code: "MUTATION_IN_PROGRESS" }, { status: 409 });
+      }
+      if (state.kind === "completed") {
+        const responseData = await snapshot(access);
+        return Response.json({ ...responseData, message: state.message || "Cette opération avait déjà été enregistrée. Aucun doublon n’a été créé." });
+      }
+      mutationReceiptKey = state.requestKey;
+      mutationReceiptAction = actionName;
+      mutationReceiptUserId = user.id;
+      mutationReceiptReserved = true;
+      return null;
+    };
 
     let auditEntityId = textValue(payload.id) || textValue(payload.memberId) || null;
     let auditEntityLabel = "";
@@ -430,50 +503,95 @@ export async function POST(request: Request) {
         const product = catalog.find((item) => item.id === productId)!;
         if (required > product.stockQuantity) return Response.json({ error: `Stock insuffisant pour ${product.productCode} : ${required} demandée(s), ${product.stockQuantity} disponible(s).` }, { status: 409 });
       }
-      let imported = 0;
+      const duplicateImport = await protectMutation("importOrders");
+      if (duplicateImport) return duplicateImport;
+
+      const rawDatabase = await getRawDb();
+      const now = new Date().toISOString();
+      const statements = [] as ReturnType<typeof rawDatabase.prepare>[];
+
+      for (const [productId, required] of committedByProduct) {
+        statements.push(
+          rawDatabase.prepare("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?").bind(required, productId),
+        );
+      }
+
       for (const item of normalizedRows) {
         const { row, product, phone, quantity, status, city, address, selectedFulfillment, isStoreSale } = item;
         const customerName = textValue(row.customerName);
-        let [customer] = await db.select().from(customers).where(eq(customers.phone, phone)).limit(1);
-        if (!customer) [customer] = await db.insert(customers).values({ name: customerName, phone, city }).returning();
-        else await db.update(customers).set({ name: customerName, city }).where(eq(customers.id, customer.id));
-        const now = new Date().toISOString();
         const orderRef = `MJ-I${Date.now().toString(36).slice(-4).toUpperCase()}${crypto.randomUUID().slice(0, 3).toUpperCase()}`;
         const shouldDeduct = commitsStock(status);
-        const [created] = await db.insert(orders).values({
-          orderRef,
-          customerId: customer.id,
-          productId: product.id,
-          city,
-          address,
-          products: `${product.name} · ${product.productCode}`,
-          quantity,
-          saleAmount: numberValue(row.saleAmount, product.salePrice * quantity),
-          productCost: product.purchasePrice * quantity,
-          shippingCost: isStoreSale ? 0 : numberValue(row.shippingCost),
-          adCost: numberValue(row.adCost),
-          fees: numberValue(row.fees),
-          source: isStoreSale ? "Magasin physique" : orderSource(row.source),
-          campaign: isStoreSale ? "" : textValue(row.campaign).slice(0, 120),
-          fulfillmentType: selectedFulfillment,
-          status,
-          paymentStatus: isStoreSale ? "Encaissé" : paymentStatus(row.paymentStatus, "À encaisser"),
-          carrier: isStoreSale ? "Magasin physique" : textValue(row.carrier, "Non affecté"),
-          carrierDispatchState: isStoreSale ? "Non requis" : "À autoriser",
-          stockDeducted: shouldDeduct,
-          paidAt: isStoreSale ? now : null,
-          updatedAt: now,
-        }).returning();
-        await db.insert(orderStatusHistory).values({ orderId: created.id, toStatus: status, changedByUserId: user.id, changedByName: `${user.displayName} · import`, changedAt: now });
+        const saleAmount = numberValue(row.saleAmount, product.salePrice * quantity);
+        const shippingCost = isStoreSale ? 0 : numberValue(row.shippingCost);
+        const adCost = numberValue(row.adCost);
+        const fees = numberValue(row.fees);
+        const source = isStoreSale ? "Magasin physique" : orderSource(row.source);
+        const campaign = isStoreSale ? "" : textValue(row.campaign).slice(0, 120);
+        const nextPaymentStatus = isStoreSale ? "Encaissé" : paymentStatus(row.paymentStatus, "À encaisser");
+        const carrier = isStoreSale ? "Magasin physique" : textValue(row.carrier, "Non affecté");
+        const dispatchState = isStoreSale ? "Non requis" : "À autoriser";
+        const paidAt = isStoreSale ? now : null;
+
+        statements.push(
+          rawDatabase.prepare(`
+            INSERT INTO customers (name, phone, city)
+            VALUES (?, ?, ?)
+            ON CONFLICT(phone) DO UPDATE SET name = excluded.name, city = excluded.city
+          `).bind(customerName, phone, city),
+          rawDatabase.prepare(`
+            INSERT INTO orders (
+              order_ref, customer_id, product_id, city, address, products, quantity,
+              sale_amount, product_cost, shipping_cost, ad_cost, fees, source, campaign,
+              fulfillment_type, status, payment_status, carrier, carrier_dispatch_state,
+              stock_deducted, paid_at, updated_at
+            )
+            VALUES (
+              ?, (SELECT id FROM customers WHERE phone = ? LIMIT 1), ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+          `).bind(
+            orderRef,
+            phone,
+            product.id,
+            city,
+            address,
+            `${product.name} · ${product.productCode}`,
+            quantity,
+            saleAmount,
+            product.purchasePrice * quantity,
+            shippingCost,
+            adCost,
+            fees,
+            source,
+            campaign,
+            selectedFulfillment,
+            status,
+            nextPaymentStatus,
+            carrier,
+            dispatchState,
+            shouldDeduct ? 1 : 0,
+            paidAt,
+            now,
+          ),
+          rawDatabase.prepare(`
+            INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at)
+            SELECT id, NULL, ?, ?, ?, ? FROM orders WHERE order_ref = ?
+          `).bind(status, user.id, `${user.displayName} · import`, now, orderRef),
+        );
+
         if (shouldDeduct) {
-          await db.batch([
-            db.update(products).set({ stockQuantity: sql`${products.stockQuantity} - ${quantity}` }).where(eq(products.id, product.id)),
-            db.insert(stockMovements).values({ productId: product.id, orderId: created.id, movementType: "Commande", quantity, note: `Déduction automatique · import ${orderRef}`, createdAt: now }),
-          ]);
+          statements.push(
+            rawDatabase.prepare(`
+              INSERT INTO stock_movements (product_id, order_id, movement_type, quantity, note, created_at)
+              SELECT ?, id, 'Commande', ?, ?, ? FROM orders WHERE order_ref = ?
+            `).bind(product.id, quantity, `Déduction automatique · import ${orderRef}`, now, orderRef),
+          );
         }
-        imported += 1;
       }
-      integrationMessage = `${imported} commande(s) importée(s). Stock, clients et historique ont été actualisés.`;
+
+      await rawDatabase.batch(statements);
+      const imported = normalizedRows.length;
+      integrationMessage = `${imported} commande(s) importée(s) en une seule opération. Stock, clients et historique ont été actualisés.`;
       auditEntityLabel = `${imported} commande(s)`;
     } else if (payload.action === "addOrder") {
       const selectedFulfillmentType = fulfillmentType(payload.fulfillmentType);
@@ -497,9 +615,6 @@ export async function POST(request: Request) {
       if (shouldDeductStock && quantity > selectedProduct.stockQuantity) {
         return Response.json({ error: `Stock insuffisant pour confirmer : ${selectedProduct.stockQuantity} unité(s) disponible(s).` }, { status: 409 });
       }
-      let [customer] = await db.select().from(customers).where(eq(customers.phone, phone)).limit(1);
-      if (!customer) [customer] = await db.insert(customers).values({ name, phone, city }).returning();
-      else await db.update(customers).set({ name, city }).where(eq(customers.id, customer.id));
       const carrierSettings = await db.select({ key: settings.key, value: settings.value }).from(settings);
       const carrierNames = parseCarrierNames(
         carrierSettings.find((setting) => setting.key === "carrier_names")?.value,
@@ -523,10 +638,18 @@ export async function POST(request: Request) {
       const selectedTrackingNumber = isStoreSale ? "" : textValue(payload.trackingNumber);
       const selectedDispatchState = isStoreSale ? "Non requis" : "À autoriser";
       const selectedPaidAt = isStoreSale ? now : null;
+      const duplicateOrder = await protectMutation("addOrder");
+      if (duplicateOrder) return duplicateOrder;
+
       const rawDb = await getRawDb();
       const statements = [
+        rawDb.prepare(`
+          INSERT INTO customers (name, phone, city)
+          VALUES (?, ?, ?)
+          ON CONFLICT(phone) DO UPDATE SET name = excluded.name, city = excluded.city
+        `).bind(name, phone, city),
         rawDb.prepare(`INSERT INTO orders (order_ref, customer_id, product_id, city, address, products, quantity, sale_amount, product_cost, shipping_cost, ad_cost, fees, return_cost, return_reason, return_note, source, campaign, fulfillment_type, status, payment_status, carrier, tracking_number, carrier_dispatch_state, stock_deducted, paid_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(orderRef, customer.id, productId, city, address, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, selectedShippingCost, numberValue(payload.adCost), numberValue(payload.fees), selectedReturnReason, selectedReturnNote, selectedSource, selectedCampaign, selectedFulfillmentType, selectedStatus, selectedPaymentStatus, selectedCarrier, selectedTrackingNumber, selectedDispatchState, shouldDeductStock ? 1 : 0, selectedPaidAt, now),
+          VALUES (?, (SELECT id FROM customers WHERE phone = ? LIMIT 1), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(orderRef, phone, productId, city, address, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, selectedShippingCost, numberValue(payload.adCost), numberValue(payload.fees), selectedReturnReason, selectedReturnNote, selectedSource, selectedCampaign, selectedFulfillmentType, selectedStatus, selectedPaymentStatus, selectedCarrier, selectedTrackingNumber, selectedDispatchState, shouldDeductStock ? 1 : 0, selectedPaidAt, now),
         rawDb.prepare(`INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at)
           SELECT id, NULL, ?, ?, ?, ? FROM orders WHERE order_ref = ?`).bind(selectedStatus, user.id, user.displayName, now, orderRef),
       ];
@@ -710,6 +833,9 @@ export async function POST(request: Request) {
         const [linkedProduct] = await db.select({ id: products.id }).from(products).where(eq(products.id, productId)).limit(1);
         if (!linkedProduct) return Response.json({ error: "Le produit lié à cet achat est introuvable." }, { status: 404 });
       }
+      const duplicatePurchase = await protectMutation("addPurchase");
+      if (duplicatePurchase) return duplicatePurchase;
+
       await db.insert(purchases).values({
         supplier: textValue(payload.supplier, "Fournisseur"),
         item: textValue(payload.item, "Achat"),
@@ -756,6 +882,9 @@ export async function POST(request: Request) {
       const [linkedProduct] = await db.select({ id: products.id, productCode: products.productCode, name: products.name }).from(products).where(eq(products.id, purchase.productId)).limit(1);
       if (!linkedProduct) return Response.json({ error: "Le produit lié à cet achat est introuvable." }, { status: 404 });
 
+      const duplicateReception = await protectMutation("receivePurchase");
+      if (duplicateReception) return duplicateReception;
+
       const now = new Date().toISOString();
       const remaining = purchase.quantity - purchase.receivedQuantity;
       const results = await rawDatabase.batch([
@@ -798,6 +927,8 @@ export async function POST(request: Request) {
       if (!category || !label || amount <= 0 || !["Payé", "À payer"].includes(nextPaymentStatus) || !/^\d{4}-\d{2}-\d{2}$/.test(expenseDate)) {
         return Response.json({ error: "Dépense invalide." }, { status: 400 });
       }
+      const duplicateExpense = await protectMutation("addExpense");
+      if (duplicateExpense) return duplicateExpense;
       await db.insert(expenses).values({ category, label, amount, account, paymentStatus: nextPaymentStatus, expenseDate, note });
       auditEntityLabel = `${category} · ${label}`;
     } else if (payload.action === "updateExpense") {
@@ -824,6 +955,8 @@ export async function POST(request: Request) {
       await db.delete(expenses).where(eq(expenses.id, id));
       auditEntityLabel = `${expense.category} · ${expense.label}`;
     } else if (payload.action === "addAd") {
+      const duplicateAd = await protectMutation("addAd");
+      if (duplicateAd) return duplicateAd;
       await db.insert(adPerformance).values({ platform: "Meta Ads", campaign: textValue(payload.campaign, "Campagne Meta"), spend: moneyValue(payload.spend), revenue: moneyValue(payload.revenue), orderCount: numberValue(payload.orderCount), source: "Saisie manuelle", performanceDate: textValue(payload.performanceDate, new Date().toISOString().slice(0, 10)) });
     } else if (payload.action === "updateAd") {
       const id = numberValue(payload.id);
@@ -840,6 +973,8 @@ export async function POST(request: Request) {
       if (!ad) return Response.json({ error: "Publicité introuvable." }, { status: 404 });
       await db.delete(adPerformance).where(eq(adPerformance.id, id));
     } else if (payload.action === "addCapital") {
+      const duplicateCapital = await protectMutation("addCapital");
+      if (duplicateCapital) return duplicateCapital;
       await db.insert(capitalLedger).values({ direction: textValue(payload.direction, "Entrée"), category: textValue(payload.category, "Ajustement"), label: textValue(payload.label, "Mouvement de capital"), amount: moneyValue(payload.amount), entryDate: textValue(payload.entryDate, new Date().toISOString().slice(0, 10)) });
     } else if (payload.action === "updateCapital") {
       const id = numberValue(payload.id);
@@ -893,45 +1028,85 @@ export async function POST(request: Request) {
       let createdCount = 0;
       let updatedCount = 0;
       let skippedCount = 0;
+
       for (const row of normalizedRows) {
         const existing = existingByCode.get(row.productCode);
-        if (existing && !updateExisting) {
-          skippedCount += 1;
-          continue;
-        }
+        if (existing && !updateExisting) skippedCount += 1;
+        else if (existing) updatedCount += 1;
+        else createdCount += 1;
+      }
+
+      const duplicateImport = await protectMutation("importProducts");
+      if (duplicateImport) return duplicateImport;
+
+      const rawDatabase = await getRawDb();
+      const statements = [] as ReturnType<typeof rawDatabase.prepare>[];
+
+      for (const row of normalizedRows) {
+        const existing = existingByCode.get(row.productCode);
+        if (existing && !updateExisting) continue;
+
         if (existing) {
           const stockDifference = row.stockQuantity - existing.stockQuantity;
-          const updateQuery = db.update(products).set({
-            name: row.name,
-            category: row.category,
-            purchasePrice: row.purchasePrice,
-            salePrice: row.salePrice,
-            minimumSalePrice: row.minimumSalePrice,
-            stockQuantity: row.stockQuantity,
-          }).where(eq(products.id, existing.id));
+          statements.push(
+            rawDatabase.prepare(`
+              UPDATE products
+              SET name = ?, category = ?, purchase_price = ?, sale_price = ?, minimum_sale_price = ?, stock_quantity = ?
+              WHERE id = ?
+            `).bind(
+              row.name,
+              row.category,
+              row.purchasePrice,
+              row.salePrice,
+              row.minimumSalePrice,
+              row.stockQuantity,
+              existing.id,
+            ),
+          );
           if (stockDifference) {
-            await db.batch([
-              updateQuery,
-              db.insert(stockMovements).values({
-                productId: existing.id,
-                movementType: stockDifference > 0 ? "Entrée" : "Vente",
-                quantity: Math.abs(stockDifference),
-                note: "Ajustement depuis import Google Sheets",
-              }),
-            ]);
-          } else await updateQuery;
-          updatedCount += 1;
+            statements.push(
+              rawDatabase.prepare(`
+                INSERT INTO stock_movements (product_id, movement_type, quantity, note)
+                VALUES (?, ?, ?, ?)
+              `).bind(
+                existing.id,
+                stockDifference > 0 ? "Entrée" : "Vente",
+                Math.abs(stockDifference),
+                "Ajustement depuis import Google Sheets",
+              ),
+            );
+          }
           continue;
         }
-        const [product] = await db.insert(products).values(row).returning();
-        if (!product) throw new Error(`Ligne ${createdCount + 2} : création du produit impossible.`);
+
+        statements.push(
+          rawDatabase.prepare(`
+            INSERT INTO products (product_code, name, category, purchase_price, sale_price, minimum_sale_price, stock_quantity)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).bind(
+            row.productCode,
+            row.name,
+            row.category,
+            row.purchasePrice,
+            row.salePrice,
+            row.minimumSalePrice,
+            row.stockQuantity,
+          ),
+        );
         if (row.stockQuantity > 0) {
-          await db.insert(stockMovements).values({ productId: product.id, movementType: "Entrée", quantity: row.stockQuantity, note: "Stock importé depuis Google Sheets" });
+          statements.push(
+            rawDatabase.prepare(`
+              INSERT INTO stock_movements (product_id, movement_type, quantity, note)
+              SELECT id, 'Entrée', ?, 'Stock importé depuis Google Sheets'
+              FROM products
+              WHERE product_code = ?
+            `).bind(row.stockQuantity, row.productCode),
+          );
         }
-        existingByCode.set(row.productCode, product);
-        createdCount += 1;
       }
-      integrationMessage = `${createdCount} produit(s) créé(s)${updatedCount ? ` · ${updatedCount} mis à jour` : ""}${skippedCount ? ` · ${skippedCount} déjà présent(s), ignoré(s)` : ""}.`;
+
+      if (statements.length) await rawDatabase.batch(statements);
+      integrationMessage = `${createdCount} produit(s) créé(s)${updatedCount ? ` · ${updatedCount} mis à jour` : ""}${skippedCount ? ` · ${skippedCount} déjà présent(s), ignoré(s)` : ""}. Import appliqué en une seule opération.`;
       auditEntityLabel = `${createdCount} créé(s), ${updatedCount} mis à jour, ${skippedCount} ignoré(s)`;
     } else if (payload.action === "addProduct") {
       const productCode = textValue(payload.productCode).toUpperCase();
@@ -941,9 +1116,27 @@ export async function POST(request: Request) {
       if (duplicate) return Response.json({ error: "Cet ID produit existe déjà." }, { status: 409 });
       const initialQuantity = numberValue(payload.initialQuantity);
       const salePrice = moneyValue(payload.salePrice);
-      const [product] = await db.insert(products).values({ productCode, name, category: productCategory(payload.category), purchasePrice: moneyValue(payload.purchasePrice), salePrice, minimumSalePrice: moneyValue(payload.minimumSalePrice, salePrice), stockQuantity: initialQuantity }).returning();
-      if (!product) throw new Error("Le produit n’a pas été créé.");
-      if (initialQuantity > 0) await db.insert(stockMovements).values({ productId: product.id, movementType: "Entrée", quantity: initialQuantity, note: "Stock initial" });
+      const purchasePrice = moneyValue(payload.purchasePrice);
+      const minimumSalePrice = moneyValue(payload.minimumSalePrice, salePrice);
+      const category = productCategory(payload.category);
+      const duplicateProductCreation = await protectMutation("addProduct");
+      if (duplicateProductCreation) return duplicateProductCreation;
+      const rawDatabase = await getRawDb();
+      const productStatements = [
+        rawDatabase.prepare(`
+          INSERT INTO products (product_code, name, category, purchase_price, sale_price, minimum_sale_price, stock_quantity)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(productCode, name, category, purchasePrice, salePrice, minimumSalePrice, initialQuantity),
+      ];
+      if (initialQuantity > 0) {
+        productStatements.push(
+          rawDatabase.prepare(`
+            INSERT INTO stock_movements (product_id, movement_type, quantity, note)
+            SELECT id, 'Entrée', ?, 'Stock initial' FROM products WHERE product_code = ?
+          `).bind(initialQuantity, productCode),
+        );
+      }
+      await rawDatabase.batch(productStatements);
     } else if (payload.action === "updateProduct") {
       const id = numberValue(payload.id);
       const productCode = textValue(payload.productCode).toUpperCase();
@@ -978,6 +1171,8 @@ export async function POST(request: Request) {
       const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
       if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
       if (movementType === "Vente" && quantity > product.stockQuantity) return Response.json({ error: `Stock insuffisant : ${product.stockQuantity} unité(s) restante(s).` }, { status: 400 });
+      const duplicateMovement = await protectMutation("addStockMovement");
+      if (duplicateMovement) return duplicateMovement;
       const delta = movementType === "Entrée" ? quantity : -quantity;
       await db.batch([
         db.insert(stockMovements).values({ productId, movementType, quantity, note: textValue(payload.note) }),
@@ -1002,6 +1197,9 @@ export async function POST(request: Request) {
       if (product.stockQuantity !== expectedSystemQuantity) {
         return Response.json({ error: `Le stock a changé pendant le comptage (${expectedSystemQuantity} → ${product.stockQuantity}). Rechargez puis recommencez l’inventaire.` }, { status: 409 });
       }
+
+      const duplicateInventory = await protectMutation("countInventory");
+      if (duplicateInventory) return duplicateInventory;
 
       const difference = physicalQuantity - expectedSystemQuantity;
       const countRef = `INV-${Date.now().toString(36).slice(-6).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
@@ -1283,13 +1481,36 @@ export async function POST(request: Request) {
         || textValue(payload.carrierName)
         || textValue(payload.key);
     }
-    await writeAudit(user, textValue(payload.action), auditEntityId, auditEntityLabel);
+    if (mutationReceiptReserved) {
+      businessMutationCommitted = true;
+      try {
+        await completeMutationReceipt(
+          mutationReceiptKey,
+          mutationReceiptUserId,
+          mutationReceiptAction,
+          integrationMessage || "Enregistré avec succès",
+        );
+      } catch (receiptError) {
+        console.error("Maison Jiya mutation receipt completion failed", errorDetails(receiptError));
+      }
+    }
 
-    const refreshedUser = await getAuthenticatedUser(request);
-    if (!refreshedUser) return Response.json({ error: "Votre session a expiré." }, { status: 401 });
-    const responseData = await snapshot(await securityAccess(request, refreshedUser));
+    try {
+      await writeAudit(user, textValue(payload.action), auditEntityId, auditEntityLabel);
+    } catch (auditError) {
+      console.error("Maison Jiya audit write failed after committed mutation", errorDetails(auditError));
+    }
+
+    const responseData = await snapshot(access);
     return Response.json(integrationMessage ? { ...responseData, message: integrationMessage } : responseData);
   } catch (error) {
+    if (mutationReceiptReserved && !businessMutationCommitted) {
+      try {
+        await releaseMutationReceipt(mutationReceiptKey, mutationReceiptUserId, mutationReceiptAction);
+      } catch (receiptError) {
+        console.error("Maison Jiya mutation receipt cleanup failed", errorDetails(receiptError));
+      }
+    }
     console.error("Maison Jiya data POST failed", errorDetails(error));
     const errorMessage = error instanceof Error ? error.message : "";
     if (errorMessage.includes("Stock insuffisant")) {
