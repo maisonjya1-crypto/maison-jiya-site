@@ -944,36 +944,74 @@ export async function POST(request: Request) {
       ]);
     } else if (payload.action === "countInventory") {
       const productId = numberValue(payload.productId);
-      const physicalQuantity = numberValue(payload.physicalQuantity);
+      const physicalRaw = Number(payload.physicalQuantity);
+      const expectedRaw = Number(payload.expectedSystemQuantity);
       const note = textValue(payload.note).slice(0, 240);
       if (!productId) return Response.json({ error: "Produit d’inventaire invalide." }, { status: 400 });
+      if (!Number.isInteger(physicalRaw) || physicalRaw < 0 || physicalRaw > 1_000_000) {
+        return Response.json({ error: "La quantité physique doit être un nombre entier positif ou nul." }, { status: 400 });
+      }
+      if (!Number.isInteger(expectedRaw) || expectedRaw < 0 || expectedRaw > 1_000_000) {
+        return Response.json({ error: "Le stock de référence de cet inventaire est invalide. Rechargez la page." }, { status: 400 });
+      }
+      const physicalQuantity = physicalRaw;
+      const expectedSystemQuantity = expectedRaw;
       const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
       if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
-      const difference = physicalQuantity - product.stockQuantity;
+      if (product.stockQuantity !== expectedSystemQuantity) {
+        return Response.json({ error: `Le stock a changé pendant le comptage (${expectedSystemQuantity} → ${product.stockQuantity}). Rechargez puis recommencez l’inventaire.` }, { status: 409 });
+      }
+
+      const difference = physicalQuantity - expectedSystemQuantity;
       const countRef = `INV-${Date.now().toString(36).slice(-6).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
-      const countValues = {
+      const rawDatabase = await getRawDb();
+      const inventoryInsert = rawDatabase.prepare(`
+        INSERT INTO inventory_counts (
+          count_ref, product_id, system_quantity, physical_quantity, difference,
+          note, counted_by_user_id, counted_by_name
+        )
+        SELECT ?, id, stock_quantity, ?, ?, ?, ?, ?
+        FROM products
+        WHERE id = ? AND stock_quantity = ?
+      `).bind(
         countRef,
-        productId,
-        systemQuantity: product.stockQuantity,
         physicalQuantity,
         difference,
         note,
-        countedByUserId: user.id,
-        countedByName: user.displayName,
-      };
+        user.id,
+        user.displayName,
+        productId,
+        expectedSystemQuantity,
+      );
+
+      const statements = [inventoryInsert];
       if (difference !== 0) {
-        await db.batch([
-          db.insert(inventoryCounts).values(countValues),
-          db.update(products).set({ stockQuantity: physicalQuantity }).where(eq(products.id, productId)),
-          db.insert(stockMovements).values({
+        statements.push(
+          rawDatabase.prepare(`
+            UPDATE products
+            SET stock_quantity = ?
+            WHERE id = ?
+              AND stock_quantity = ?
+              AND EXISTS (SELECT 1 FROM inventory_counts WHERE count_ref = ?)
+          `).bind(physicalQuantity, productId, expectedSystemQuantity, countRef),
+          rawDatabase.prepare(`
+            INSERT INTO stock_movements (product_id, movement_type, quantity, note)
+            SELECT ?, ?, ?, ?
+            WHERE EXISTS (SELECT 1 FROM inventory_counts WHERE count_ref = ?)
+          `).bind(
             productId,
-            movementType: difference > 0 ? "Inventaire +" : "Inventaire -",
-            quantity: Math.abs(difference),
-            note: `Inventaire ${countRef} · ${note || "Comptage physique"}`,
-          }),
-        ]);
-      } else {
-        await db.insert(inventoryCounts).values(countValues);
+            difference > 0 ? "Inventaire +" : "Inventaire -",
+            Math.abs(difference),
+            `Inventaire ${countRef} · ${note || "Comptage physique"}`,
+            countRef,
+          ),
+        );
+      }
+
+      const inventoryResults = await rawDatabase.batch(statements);
+      const insertedCount = Number((inventoryResults[0]?.meta as { changes?: number } | undefined)?.changes || 0);
+      if (insertedCount !== 1) {
+        return Response.json({ error: "Le stock a changé pendant la validation. Aucun inventaire n’a été enregistré. Rechargez puis recommencez." }, { status: 409 });
       }
       auditEntityId = countRef;
       auditEntityLabel = `${product.productCode} · ${countRef}`;
