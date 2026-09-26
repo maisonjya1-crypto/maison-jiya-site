@@ -1093,7 +1093,7 @@ function Page({
       </section>
       <section className="kpi-grid">
         <Kpi label="CA encaissé" value={money(metrics.revenue)} detail={`Transport et frais déduits : ${money(metrics.shippingFees + metrics.collectionFees)}`} />
-        <Kpi label="Bénéfice net estimé" value={money(metrics.profit)} detail="CA − coûts réels" />
+        <Kpi label="Bénéfice net estimé" value={money(metrics.profit)} detail={`Après ${money(metrics.operatingExpenses)} de charges d’exploitation`} />
         <Kpi label="Dépenses Meta saisies" value={money(metrics.adSpend)} detail={`ROAS · ${metrics.roas.toFixed(2)}×`} />
         <Kpi label="Pertes & retours" value={money(metrics.losses)} detail="Coûts déclarés" danger />
       </section>
@@ -1291,7 +1291,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   async function resetBusinessValues() {
     if (resettingBusinessValues || !access.isOwner) return;
     const typed = window.prompt(
-      "Remettre à zéro toutes les valeurs commerciales ?\n\nSeront supprimés : commandes, clients, achats, publicités, capital et historiques associés.\n\nProduits, quantités, mouvements de stock et inventaires seront conservés.\n\nUne sauvegarde restaurable sera créée juste avant.\n\nTapez REINITIALISER pour confirmer.",
+      "Remettre à zéro toutes les valeurs commerciales ?\n\nSeront supprimés : commandes, clients, achats, dépenses, publicités, capital et historiques associés.\n\nProduits, quantités, mouvements de stock et inventaires seront conservés.\n\nUne sauvegarde restaurable sera créée juste avant.\n\nTapez REINITIALISER pour confirmer.",
     );
     if (typed !== "REINITIALISER") return;
     const confirmed = window.confirm(
@@ -1585,7 +1585,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
         <div className="business-reset-copy">
           <span className="card-kicker">Remise à zéro contrôlée</span>
           <h2>Repartir de zéro sur les valeurs commerciales</h2>
-          <p>Supprime commandes, clients, achats, publicités, capital et historiques associés. Les produits, quantités, mouvements de stock et inventaires restent conservés.</p>
+          <p>Supprime commandes, clients, achats, dépenses, publicités, capital et historiques associés. Les produits, quantités, mouvements de stock et inventaires restent conservés.</p>
           <small>Une sauvegarde restaurable est créée automatiquement juste avant la suppression.</small>
         </div>
         <button
@@ -3093,8 +3093,10 @@ function ReportsPage({ data }: { data: Data }) {
   const manualCapital = data.capital.reduce((sum, entry) => sum + (entry.direction === "Entrée" ? entry.amount : entry.direction === "Sortie" ? -entry.amount : 0), 0);
   const deliveryReceipts = collected.filter((order) => order.fulfillmentType !== "Magasin physique").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees - order.returnCost, 0);
   const paidPurchases = data.purchases.filter((purchase) => purchase.paymentStatus === "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
+  const paidExpenses = data.expenses.filter((expense) => expense.paymentStatus === "Payé").reduce((sum, expense) => sum + expense.amount, 0);
+  const unpaidExpenses = data.expenses.filter((expense) => expense.paymentStatus !== "Payé");
   const adSpend = data.ads.reduce((sum, ad) => sum + ad.spend, 0);
-  const bank = deliveryReceipts + manualCapital - paidPurchases - adSpend;
+  const bank = deliveryReceipts + manualCapital - paidPurchases - paidExpenses - adSpend;
   const automaticAllocations = data.capital.filter((entry) => entry.isAutomatic);
   const positiveProfit = automaticAllocations.reduce((sum, entry) => sum + entry.amount, 0);
   const allocationAmount = (category: string) => automaticAllocations.filter((entry) => entry.category === category).reduce((sum, entry) => sum + entry.amount, 0);
@@ -3103,14 +3105,15 @@ function ReportsPage({ data }: { data: Data }) {
     ...delayed.map((order) => ({ key: `delay-${order.id}`, level: "warning", title: `${order.orderRef} semble bloquée`, detail: `${order.carrier} · ${order.status} depuis ${elapsedDays(order.updatedAt || order.createdAt)} jours` })),
     ...unpaid.map((order) => ({ key: `unpaid-${order.id}`, level: "danger", title: `${order.orderRef} livrée mais non encaissée`, detail: `${order.carrier} · ${money(order.saleAmount - order.shippingCost - order.fees)} à vérifier` })),
     ...supplierDue.map((purchase) => ({ key: `supplier-${purchase.id}`, level: "danger", title: `${purchase.supplier} : paiement fournisseur à prévoir`, detail: `${purchase.item} · ${money(purchase.totalCost)} à payer` })),
+    ...unpaidExpenses.map((expense) => ({ key: `expense-${expense.id}`, level: "danger", title: `${expense.label} : dépense à payer`, detail: `${expense.category} · ${money(expense.amount)} à prévoir` })),
     ...dormantProducts.map((product) => ({ key: `dormant-${product.id}`, level: "warning", title: `${product.name} : stock dormant`, detail: `${product.stockQuantity} unité(s) sans sortie depuis au moins 45 jours` })),
   ];
   const platformRows = groupOrderAnalysis(completed.filter((order) => ["Facebook", "Instagram", "TikTok", "WhatsApp"].includes(order.source)), (order) => order.source);
   const campaignRows = groupOrderAnalysis(completed.filter((order) => order.campaign), (order) => order.campaign);
   return <div className="reports-page">
-    <section className="report-automation-banner"><div><span>↻</span><div><strong>Rapports automatiques actifs</strong><p>Les chiffres quotidiens, hebdomadaires et mensuels se recalculent à chaque commande, paiement, retour, achat ou publicité.</p></div></div><small>Actualisé maintenant</small></section>
+    <section className="report-automation-banner"><div><span>↻</span><div><strong>Rapports automatiques actifs</strong><p>Les chiffres quotidiens, hebdomadaires et mensuels se recalculent à chaque commande, paiement, retour, achat, dépense ou publicité.</p></div></div><small>Actualisé maintenant</small></section>
     <section className="report-period-grid">{periods.map((period) => <article key={period.label}><span>{period.label}</span><strong>{money(period.profit)}</strong><p>{period.count} commande{period.count === 1 ? "" : "s"} · CA {money(period.revenue)}</p></article>)}</section>
-    <section className="financial-account-grid"><article><span>Caisse magasin</span><strong>{money(storeCash)}</strong><small>Encaissements remis sur place</small></article><article><span>Banque estimée</span><strong className={moneyTone(bank)}>{money(bank)}</strong><small>Virements et sorties confirmées</small></article><article><span>Argent transporteurs</span><strong>{money(carrierMoney)}</strong><small>Livré, en attente de virement</small></article><article><span>Créances en cours</span><strong>{money(receivables)}</strong><small>Confirmé ou en transit</small></article></section>
+    <section className="financial-account-grid"><article><span>Caisse magasin</span><strong>{money(storeCash)}</strong><small>Encaissements remis sur place</small></article><article><span>Banque estimée</span><strong className={moneyTone(bank)}>{money(bank)}</strong><small>Virements moins achats, charges et publicités payées</small></article><article><span>Argent transporteurs</span><strong>{money(carrierMoney)}</strong><small>Livré, en attente de virement</small></article><article><span>Charges à payer</span><strong className={moneyTone(-unpaidExpenses.reduce((sum, expense) => sum + expense.amount, 0))}>{money(unpaidExpenses.reduce((sum, expense) => sum + expense.amount, 0))}</strong><small>Dépenses enregistrées non encore payées</small></article></section>
     <section className="allocation-report"><div><span className="card-kicker">Mouvements automatiques enregistrés</span><h2>{money(positiveProfit)} affectés</h2><p>Chaque vente encaissée crée trois écritures comptables liées à la commande. Elles sont recalculées sans modifier deux fois votre solde bancaire.</p></div><div><article><span>Réinvestissement · 50%</span><strong>{money(allocationAmount("Réinvestissement"))}</strong></article><article><span>Salaire personnel · 30%</span><strong>{money(allocationAmount("Salaire personnel"))}</strong></article><article><span>Fonds d’urgence · 20%</span><strong>{money(allocationAmount("Fonds d’urgence"))}</strong></article></div></section>
     <section className="panel alerts-panel"><PanelHead kicker="Surveillance automatique" title="Alertes actives" total={String(alerts.length)} />{alerts.length ? <div className="alerts-list">{alerts.map((alert) => <article className={alert.level} key={alert.key}><span aria-hidden="true">{alert.level === "danger" ? "!" : "◷"}</span><div><strong>{alert.title}</strong><small>{alert.detail}</small></div></article>)}</div> : <div className="pending-empty">✓ Aucun stock critique, colis bloqué ou encaissement en retard détecté.</div>}</section>
     <div className="report-analysis-grid"><AnalysisTable title="Résultats par produit" rows={groupOrderAnalysis(completed, (order) => order.products)} /><AnalysisTable title="Résultats par ville" rows={groupOrderAnalysis(completed, (order) => order.city)} /><AnalysisTable title="Résultats par source" rows={groupOrderAnalysis(completed, (order) => order.source)} /><AnalysisTable title="Résultats par agence" rows={groupOrderAnalysis(completed.filter((order) => order.fulfillmentType !== "Magasin physique"), (order) => order.carrier)} /><AnalysisTable title="Facebook, Instagram, TikTok et WhatsApp" rows={platformRows} /><AnalysisTable title="Campagnes reliées aux commandes" rows={campaignRows} /></div>
@@ -3185,6 +3188,15 @@ function CapitalPage({
         amount: ad.spend,
         date: ad.performanceDate,
       })),
+    ...data.expenses
+      .filter((expense) => expense.paymentStatus === "Payé")
+      .map((expense) => ({
+        direction: "Sortie" as const,
+        source: `Dépenses · ${expense.category}`,
+        amount: expense.amount,
+        date: expense.expenseDate,
+      })),
+
   ];
   const manualEntries = data.capital.filter((entry) => !entry.isAutomatic);
   const manualFlows: CapitalFlow[] = manualEntries.map((entry) => ({
@@ -3235,7 +3247,7 @@ function CapitalPage({
           <span className="automation-icon">↻</span>
           <div>
             <strong>Automatisation active</strong>
-            <p>Les mouvements sont calculés depuis vos commandes, achats, publicités et retours. Aucune double saisie n’est nécessaire.</p>
+            <p>Les mouvements sont calculés depuis vos commandes, achats, dépenses, publicités et retours. Aucune double saisie n’est nécessaire.</p>
           </div>
         </div>
         <div className="automation-tags">
@@ -4323,7 +4335,7 @@ function InventoryCountModal({ product, close, submit }: { product: Product; clo
     </div>
   );
 }
-function Field({ label, ...props }: { label: string; name: string; type?: string; required?: boolean; defaultValue?: string; inputMode?: "tel" | "numeric" | "decimal"; autoComplete?: string; min?: string; placeholder?: string; maxLength?: number }) {
+function Field({ label, ...props }: { label: string; name: string; type?: string; required?: boolean; defaultValue?: string; inputMode?: "tel" | "numeric" | "decimal"; autoComplete?: string; min?: string; step?: string; placeholder?: string; maxLength?: number }) {
   return (
     <label className="field">
       <span>{label}</span>
