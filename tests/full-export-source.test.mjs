@@ -7,9 +7,9 @@ const route = await readFile(new URL("app/api/export/route.ts", root), "utf8");
 const exporter = await readFile(new URL("db/data-export.ts", root), "utf8");
 const dashboard = await readFile(new URL("app/dashboard-client.tsx", root), "utf8");
 
-test("l’export complet exige une session administrateur et interdit le cache", () => {
+test("l’export complet exige le propriétaire principal et interdit le cache", () => {
   assert.match(route, /getAuthenticatedUser/);
-  assert.match(route, /user\.role !== "admin"/);
+  assert.match(route, /!user\.isOwner/);
   assert.match(route, /private, no-store/);
 });
 

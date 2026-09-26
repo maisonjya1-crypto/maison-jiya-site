@@ -51,14 +51,14 @@ export async function GET(request: Request) {
   const database = await getRawDb();
   await ensurePlatformUpgrades(database);
   const row = await database.prepare("SELECT value FROM settings WHERE key = 'whatsapp_numbers' LIMIT 1").first<{ value: string }>();
-  return Response.json({ numbers: parseNumbers(row?.value || "[]"), canEdit: user.role === "admin" });
+  return Response.json({ numbers: parseNumbers(row?.value || "[]"), canEdit: user.isOwner });
 }
 
 export async function POST(request: Request) {
   if (!validOrigin(request)) return Response.json({ error: "Origine de la requête refusée." }, { status: 403 });
   const user = await getAuthenticatedUser(request);
   if (!user) return Response.json({ error: "Connexion requise." }, { status: 401 });
-  if (user.role !== "admin") return Response.json({ error: "Seul l’administrateur peut modifier les numéros WhatsApp." }, { status: 403 });
+  if (!user.isOwner) return Response.json({ error: "Seul le propriétaire principal peut modifier les numéros WhatsApp." }, { status: 403 });
 
   let payload: { numbers?: unknown };
   try {

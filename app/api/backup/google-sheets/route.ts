@@ -233,10 +233,10 @@ export async function GET(request: Request) {
     }
 
     if (dataset === "members") {
-      const rows = await db.select({ id: users.id, username: users.username, displayName: users.displayName, role: users.role, isActive: users.isActive, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt));
+      const rows = await db.select({ id: users.id, username: users.username, displayName: users.displayName, role: users.role, isOwner: users.isOwner, isActive: users.isActive, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt));
       return csvResponse(
-        ["ID", "Nom d’utilisateur", "Nom affiché", "Rôle", "Compte actif", "Créé le"],
-        rows.map((row) => [row.id, row.username, row.displayName, row.role, row.isActive, row.createdAt]),
+        ["ID", "Nom d’utilisateur", "Nom affiché", "Rôle", "Propriétaire principal", "Compte actif", "Créé le"],
+        rows.map((row) => [row.id, row.username, row.displayName, row.role, row.isOwner ? "Oui" : "Non", row.isActive, row.createdAt]),
       );
     }
 

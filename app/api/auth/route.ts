@@ -38,6 +38,7 @@ export async function POST(request: Request) {
         displayName: payload.displayName || "Maison Jiya",
         password: payload.password || "",
         role: "admin",
+        isOwner: true,
       });
       const session = await createSession(user.id);
       return Response.json({ configured: true, user }, { headers: { "set-cookie": sessionCookie(session.token) } });

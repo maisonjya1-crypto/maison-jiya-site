@@ -276,7 +276,7 @@ async function seedIfNeeded() {
 async function securityAccess(_request: Request, user: AppUser): Promise<AccessInfo> {
   return {
     canEdit: user.role === "admin" || user.role === "editor",
-    isOwner: user.role === "admin",
+    isOwner: user.isOwner,
     canClaimOwnership: false,
     passwordConfigured: true,
     sessionExpiresAt: null,
@@ -333,7 +333,7 @@ async function snapshot(access: AccessInfo) {
     db.select({ id: inventoryCounts.id, countRef: inventoryCounts.countRef, productId: inventoryCounts.productId, productCode: products.productCode, productName: products.name, systemQuantity: inventoryCounts.systemQuantity, physicalQuantity: inventoryCounts.physicalQuantity, difference: inventoryCounts.difference, note: inventoryCounts.note, countedByUserId: inventoryCounts.countedByUserId, countedByName: inventoryCounts.countedByName, createdAt: inventoryCounts.createdAt }).from(inventoryCounts).leftJoin(products, eq(inventoryCounts.productId, products.id)).orderBy(desc(inventoryCounts.createdAt)).limit(500),
     db.select().from(settings),
     access.isOwner
-      ? db.select({ id: users.id, username: users.username, displayName: users.displayName, role: users.role, isActive: users.isActive, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt))
+      ? db.select({ id: users.id, username: users.username, displayName: users.displayName, role: users.role, isOwner: users.isOwner, isActive: users.isActive, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt))
       : Promise.resolve([]),
     db.select().from(orderStatusHistory).orderBy(desc(orderStatusHistory.changedAt)).limit(1000),
     access.isOwner ? db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(200) : Promise.resolve([]),
@@ -445,7 +445,7 @@ export async function POST(request: Request) {
     let integrationMessage = "";
 
     if (payload.action === "createMember") {
-      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut créer un partenaire." }, { status: 403 });
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut créer un partenaire." }, { status: 403 });
       const username = normalizeUsername(textValue(payload.username));
       const [existingMember] = await db.select({ id: users.id }).from(users).where(eq(users.username, username)).limit(1);
       if (existingMember) return Response.json({ error: "Ce nom d’utilisateur existe déjà." }, { status: 409 });
@@ -455,9 +455,10 @@ export async function POST(request: Request) {
         displayName: textValue(payload.displayName),
         password: textValue(payload.password),
         role,
+        isOwner: false,
       });
     } else if (payload.action === "resetMemberPassword") {
-      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut remplacer ce mot de passe." }, { status: 403 });
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut remplacer ce mot de passe." }, { status: 403 });
       const memberId = numberValue(payload.memberId);
       const password = textValue(payload.password);
       const confirmation = textValue(payload.confirmation);
@@ -465,12 +466,14 @@ export async function POST(request: Request) {
       if (password !== confirmation) return Response.json({ error: "Les deux mots de passe ne correspondent pas." }, { status: 400 });
       await updateUserPassword(memberId, password);
     } else if (payload.action === "updateMember") {
-      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut modifier un partenaire." }, { status: 403 });
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut modifier un partenaire." }, { status: 403 });
       const memberId = numberValue(payload.memberId);
       const role = textValue(payload.role, "viewer");
       const isActive = textValue(payload.isActive, "true") === "true";
       if (!memberId || !["admin", "editor", "viewer"].includes(role)) return Response.json({ error: "Compte partenaire invalide." }, { status: 400 });
-      if (memberId === user.id && (!isActive || role !== "admin")) return Response.json({ error: "Le compte principal ne peut pas retirer ses propres droits administrateur." }, { status: 400 });
+      const [targetMember] = await db.select({ id: users.id, isOwner: users.isOwner }).from(users).where(eq(users.id, memberId)).limit(1);
+      if (!targetMember) return Response.json({ error: "Compte partenaire introuvable." }, { status: 404 });
+      if (targetMember.isOwner) return Response.json({ error: "Le propriétaire principal ne peut pas être rétrogradé, suspendu ou remplacé par un rôle partenaire." }, { status: 409 });
       await db.update(users).set({ role, isActive, updatedAt: new Date().toISOString() }).where(eq(users.id, memberId));
     } else if (payload.action === "importOrders") {
       let parsedRows: unknown;
@@ -761,12 +764,12 @@ export async function POST(request: Request) {
       auditEntityId = String(id);
       auditEntityLabel = `${carrier} · autorisation manuelle`;
     } else if (payload.action === "syncCarriersNow") {
-      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut lancer une synchronisation complète." }, { status: 403 });
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut lancer une synchronisation complète." }, { status: 403 });
       const updated = await syncCarrierOperations();
       integrationMessage = updated ? `${updated} commande(s) mise(s) à jour depuis les agences.` : "Suivi vérifié : aucune nouvelle facturation pour le moment.";
       auditEntityLabel = "Sendit et ForceLog";
     } else if (payload.action === "syncMetaNow") {
-      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut synchroniser Meta Ads." }, { status: 403 });
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut synchroniser Meta Ads." }, { status: 403 });
       const result = await syncMetaAds();
       if (!result.configured) return Response.json({ error: result.message }, { status: 409 });
       if (result.failed) return Response.json({ error: result.message }, { status: 502 });
@@ -787,7 +790,7 @@ export async function POST(request: Request) {
       await db.update(orders).set({ deletedAt: null, deletedByUserId: null, updatedAt: new Date().toISOString() }).where(eq(orders.id, id));
       auditEntityLabel = existingOrder.orderRef;
     } else if (payload.action === "deleteOrderPermanently") {
-      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut supprimer définitivement une commande." }, { status: 403 });
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut supprimer définitivement une commande." }, { status: 403 });
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
       const [existingOrder] = await db.select({ id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId }).from(orders).where(and(eq(orders.id, id), isNotNull(orders.deletedAt))).limit(1);
@@ -1354,7 +1357,7 @@ export async function POST(request: Request) {
         db.update(users).set({ username, displayName, updatedAt }).where(eq(users.id, user.id)),
       ]);
     } else if (payload.action === "updateBackupToken") {
-      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut configurer la sauvegarde." }, { status: 403 });
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut configurer la sauvegarde." }, { status: 403 });
       const token = textValue(payload.token);
       if (token.length < 32 || token.length > 200 || !/^[A-Za-z0-9_-]+$/.test(token)) {
         return Response.json({ error: "La clé privée de sauvegarde est invalide." }, { status: 400 });
@@ -1367,7 +1370,7 @@ export async function POST(request: Request) {
       });
       await markGoogleSheetsSyncPending(await getRawDb());
     } else if (payload.action === "revokeBackupToken") {
-      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut désactiver la sauvegarde." }, { status: 403 });
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut désactiver la sauvegarde." }, { status: 403 });
       const updatedAt = new Date().toISOString();
       await db.insert(settings).values({ key: "security_backup_token_hash", value: "" }).onConflictDoUpdate({
         target: settings.key,
@@ -1377,7 +1380,7 @@ export async function POST(request: Request) {
       await markGoogleSheetsSyncPending(rawDatabase);
       await processGoogleSheetsSyncQueue(rawDatabase, { force: true });
     } else if (payload.action === "updateBackupWebhook") {
-      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut connecter la synchronisation instantanée." }, { status: 403 });
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut connecter la synchronisation instantanée." }, { status: 403 });
       const webhookUrl = textValue(payload.url);
       let parsedWebhookUrl: URL;
       try {
@@ -1427,11 +1430,11 @@ export async function POST(request: Request) {
         `${summary.capital} mouvement(s) de capital`,
       ].join(" · ") + " supprimés. Produits, quantités et historique de stock conservés.";
     } else if (payload.action === "createBackupNow") {
-      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut créer une sauvegarde complète." }, { status: 403 });
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut créer une sauvegarde complète." }, { status: 403 });
       await createDailyBackup(await getRawDb(), "Manuelle", true);
       auditEntityLabel = "Sauvegarde manuelle";
     } else if (payload.action === "restoreBackup") {
-      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut restaurer une sauvegarde." }, { status: 403 });
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut restaurer une sauvegarde." }, { status: 403 });
       const backupId = numberValue(payload.backupId);
       if (!backupId) return Response.json({ error: "Sauvegarde invalide." }, { status: 400 });
       const [backup] = await db.select({ id: dailyBackups.id, backupDate: dailyBackups.backupDate }).from(dailyBackups).where(eq(dailyBackups.id, backupId)).limit(1);
@@ -1441,7 +1444,7 @@ export async function POST(request: Request) {
       auditEntityId = String(backupId);
       auditEntityLabel = backup.backupDate;
     } else if (payload.action === "retryGoogleSheetsSync") {
-      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut relancer cette synchronisation." }, { status: 403 });
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut relancer cette synchronisation." }, { status: 403 });
       const rawDatabase = await getRawDb();
       await markGoogleSheetsSyncPending(rawDatabase);
       const syncResult = await processGoogleSheetsSyncQueue(rawDatabase, { force: true });
@@ -1450,7 +1453,7 @@ export async function POST(request: Request) {
         : "Google reste indisponible. La donnée est conservée dans Maison Jiya et une nouvelle tentative est programmée.";
       auditEntityLabel = "Synchronisation Google Sheets";
     } else if (payload.action === "updateCarriers") {
-      if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut gérer les agences." }, { status: 403 });
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut gérer les agences." }, { status: 403 });
       let requestedCarriers: unknown;
       try {
         requestedCarriers = JSON.parse(textValue(payload.carriers, "[]"));
@@ -1500,7 +1503,7 @@ export async function POST(request: Request) {
       if (key === "theme" && !themeOptions.includes(value)) return Response.json({ error: "Thème invalide." }, { status: 400 });
       const updatedAt = new Date().toISOString();
       if (key === "carrier_name") {
-        if (!access.isOwner) return Response.json({ error: "Seul l’administrateur peut modifier le transporteur." }, { status: 403 });
+        if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut modifier le transporteur." }, { status: 403 });
         if (value.length < 2 || value.length > 80 || value === "À configurer") return Response.json({ error: "Le nom de l’agence doit contenir entre 2 et 80 caractères." }, { status: 400 });
         await db.batch([
           db.insert(settings).values({ key: "carrier_name", value }).onConflictDoUpdate({ target: settings.key, set: { value, updatedAt } }),
