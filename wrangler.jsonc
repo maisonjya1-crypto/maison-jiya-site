@@ -9,7 +9,9 @@
     {
       "binding": "DB",
       "database_name": "maison-jiya-pilotage-db",
-      "database_id": "67e99a76-643b-4454-88c7-6ae9706e2d8f"
+      "database_id": "67e99a76-643b-4454-88c7-6ae9706e2d8f",
+      "migrations_table": "d1_migrations",
+      "migrations_dir": "migrations"
     }
   ],
   "ai": {
