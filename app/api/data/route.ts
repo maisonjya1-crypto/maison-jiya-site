@@ -502,50 +502,95 @@ export async function POST(request: Request) {
         const product = catalog.find((item) => item.id === productId)!;
         if (required > product.stockQuantity) return Response.json({ error: `Stock insuffisant pour ${product.productCode} : ${required} demandée(s), ${product.stockQuantity} disponible(s).` }, { status: 409 });
       }
-      let imported = 0;
+      const duplicateImport = await protectMutation("importOrders");
+      if (duplicateImport) return duplicateImport;
+
+      const rawDatabase = await getRawDb();
+      const now = new Date().toISOString();
+      const statements = [] as ReturnType<typeof rawDatabase.prepare>[];
+
+      for (const [productId, required] of committedByProduct) {
+        statements.push(
+          rawDatabase.prepare("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?").bind(required, productId),
+        );
+      }
+
       for (const item of normalizedRows) {
         const { row, product, phone, quantity, status, city, address, selectedFulfillment, isStoreSale } = item;
         const customerName = textValue(row.customerName);
-        let [customer] = await db.select().from(customers).where(eq(customers.phone, phone)).limit(1);
-        if (!customer) [customer] = await db.insert(customers).values({ name: customerName, phone, city }).returning();
-        else await db.update(customers).set({ name: customerName, city }).where(eq(customers.id, customer.id));
-        const now = new Date().toISOString();
         const orderRef = `MJ-I${Date.now().toString(36).slice(-4).toUpperCase()}${crypto.randomUUID().slice(0, 3).toUpperCase()}`;
         const shouldDeduct = commitsStock(status);
-        const [created] = await db.insert(orders).values({
-          orderRef,
-          customerId: customer.id,
-          productId: product.id,
-          city,
-          address,
-          products: `${product.name} · ${product.productCode}`,
-          quantity,
-          saleAmount: numberValue(row.saleAmount, product.salePrice * quantity),
-          productCost: product.purchasePrice * quantity,
-          shippingCost: isStoreSale ? 0 : numberValue(row.shippingCost),
-          adCost: numberValue(row.adCost),
-          fees: numberValue(row.fees),
-          source: isStoreSale ? "Magasin physique" : orderSource(row.source),
-          campaign: isStoreSale ? "" : textValue(row.campaign).slice(0, 120),
-          fulfillmentType: selectedFulfillment,
-          status,
-          paymentStatus: isStoreSale ? "Encaissé" : paymentStatus(row.paymentStatus, "À encaisser"),
-          carrier: isStoreSale ? "Magasin physique" : textValue(row.carrier, "Non affecté"),
-          carrierDispatchState: isStoreSale ? "Non requis" : "À autoriser",
-          stockDeducted: shouldDeduct,
-          paidAt: isStoreSale ? now : null,
-          updatedAt: now,
-        }).returning();
-        await db.insert(orderStatusHistory).values({ orderId: created.id, toStatus: status, changedByUserId: user.id, changedByName: `${user.displayName} · import`, changedAt: now });
+        const saleAmount = numberValue(row.saleAmount, product.salePrice * quantity);
+        const shippingCost = isStoreSale ? 0 : numberValue(row.shippingCost);
+        const adCost = numberValue(row.adCost);
+        const fees = numberValue(row.fees);
+        const source = isStoreSale ? "Magasin physique" : orderSource(row.source);
+        const campaign = isStoreSale ? "" : textValue(row.campaign).slice(0, 120);
+        const nextPaymentStatus = isStoreSale ? "Encaissé" : paymentStatus(row.paymentStatus, "À encaisser");
+        const carrier = isStoreSale ? "Magasin physique" : textValue(row.carrier, "Non affecté");
+        const dispatchState = isStoreSale ? "Non requis" : "À autoriser";
+        const paidAt = isStoreSale ? now : null;
+
+        statements.push(
+          rawDatabase.prepare(`
+            INSERT INTO customers (name, phone, city)
+            VALUES (?, ?, ?)
+            ON CONFLICT(phone) DO UPDATE SET name = excluded.name, city = excluded.city
+          `).bind(customerName, phone, city),
+          rawDatabase.prepare(`
+            INSERT INTO orders (
+              order_ref, customer_id, product_id, city, address, products, quantity,
+              sale_amount, product_cost, shipping_cost, ad_cost, fees, source, campaign,
+              fulfillment_type, status, payment_status, carrier, carrier_dispatch_state,
+              stock_deducted, paid_at, updated_at
+            )
+            VALUES (
+              ?, (SELECT id FROM customers WHERE phone = ? LIMIT 1), ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+          `).bind(
+            orderRef,
+            phone,
+            product.id,
+            city,
+            address,
+            `${product.name} · ${product.productCode}`,
+            quantity,
+            saleAmount,
+            product.purchasePrice * quantity,
+            shippingCost,
+            adCost,
+            fees,
+            source,
+            campaign,
+            selectedFulfillment,
+            status,
+            nextPaymentStatus,
+            carrier,
+            dispatchState,
+            shouldDeduct ? 1 : 0,
+            paidAt,
+            now,
+          ),
+          rawDatabase.prepare(`
+            INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at)
+            SELECT id, NULL, ?, ?, ?, ? FROM orders WHERE order_ref = ?
+          `).bind(status, user.id, `${user.displayName} · import`, now, orderRef),
+        );
+
         if (shouldDeduct) {
-          await db.batch([
-            db.update(products).set({ stockQuantity: sql`${products.stockQuantity} - ${quantity}` }).where(eq(products.id, product.id)),
-            db.insert(stockMovements).values({ productId: product.id, orderId: created.id, movementType: "Commande", quantity, note: `Déduction automatique · import ${orderRef}`, createdAt: now }),
-          ]);
+          statements.push(
+            rawDatabase.prepare(`
+              INSERT INTO stock_movements (product_id, order_id, movement_type, quantity, note, created_at)
+              SELECT ?, id, 'Commande', ?, ?, ? FROM orders WHERE order_ref = ?
+            `).bind(product.id, quantity, `Déduction automatique · import ${orderRef}`, now, orderRef),
+          );
         }
-        imported += 1;
       }
-      integrationMessage = `${imported} commande(s) importée(s). Stock, clients et historique ont été actualisés.`;
+
+      await rawDatabase.batch(statements);
+      const imported = normalizedRows.length;
+      integrationMessage = `${imported} commande(s) importée(s) en une seule opération. Stock, clients et historique ont été actualisés.`;
       auditEntityLabel = `${imported} commande(s)`;
     } else if (payload.action === "addOrder") {
       const selectedFulfillmentType = fulfillmentType(payload.fulfillmentType);
