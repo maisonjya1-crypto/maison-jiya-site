@@ -99,6 +99,7 @@ async function reserveMutationReceipt(userId: number, action: string, rawRequest
   if (!/^[A-Za-z0-9_-]{16,120}$/.test(requestKey)) return { kind: "invalid" };
 
   const database = await getRawDb();
+  await database.prepare("DELETE FROM mutation_receipts WHERE status = 'completed' AND completed_at < datetime('now', '-30 days')").run();
   const inserted = await database.prepare(
     "INSERT OR IGNORE INTO mutation_receipts (request_key, user_id, action, status) VALUES (?, ?, ?, 'processing')",
   ).bind(requestKey, userId, action).run();
