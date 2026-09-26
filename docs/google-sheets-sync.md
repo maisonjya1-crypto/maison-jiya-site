@@ -6,7 +6,7 @@ La base D1 `maison-jiya-pilotage-db` reste la source principale. Une panne Googl
 
 Le classeur existant reste inchangé : `https://docs.google.com/spreadsheets/d/1hQIwOKBBhhZIQN6AsmVwUCH_7T-WE8GlsCfrmb2H7Us/edit`.
 
-Les jeux de données déjà servis au classeur sont : commandes, produits, colis, clients, achats, publicités, capital, mouvements de stock, agences, partenaires et paramètres. Les onglets de configuration et d’installation existants ne sont pas recréés.
+Les jeux de données servis par l’endpoint de sauvegarde sont : commandes, produits, colis, clients, achats, dépenses, publicités, capital, mouvements de stock, agences, partenaires et paramètres. Les onglets de configuration et d’installation existants ne sont pas recréés.
 
 ## Flux
 
