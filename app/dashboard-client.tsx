@@ -275,6 +275,35 @@ const dateTimeLabel = (value: string) =>
   }).format(new Date(value));
 
 const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Publicités", "Capital", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
+const navigationGroups = [
+  { label: "Opérations", items: navigation.slice(0, 6) },
+  { label: "Pilotage", items: navigation.slice(6, 10) },
+  { label: "Système", items: navigation.slice(10) },
+];
+const sectionDescriptions: Record<string, string> = {
+  "Vue d’ensemble": "Synthèse de l’activité, de la trésorerie et des opérations.",
+  Commandes: "Suivez les ventes, statuts, paiements et expéditions.",
+  Produits: "Pilotez le catalogue, les coûts, les marges et le stock.",
+  Colis: "Contrôlez les expéditions et le suivi des transporteurs.",
+  Clients: "Centralisez les coordonnées et l’historique de vos clientes.",
+  Achats: "Gérez les fournisseurs, réceptions et coûts d’approvisionnement.",
+  Publicités: "Suivez vos campagnes, dépenses et performances Meta.",
+  Capital: "Suivez les mouvements, enveloppes et capacités de réinvestissement.",
+  Rapports: "Analysez la performance commerciale et financière par période.",
+  "Assistant IA": "Interrogez les données Maison Jiya et préparez vos actions.",
+  "Mode entraînement": "Testez le logiciel sans toucher aux données réelles.",
+  Corbeille: "Restaurez ou supprimez définitivement les commandes archivées.",
+  Paramètres: "Gérez les accès, sauvegardes, intégrations et préférences.",
+};
+const addActionLabels: Record<string, string> = {
+  "Vue d’ensemble": "Nouvelle commande",
+  Commandes: "Nouvelle commande",
+  Produits: "Nouveau produit",
+  Achats: "Nouvel achat",
+  Publicités: "Nouvelle campagne",
+  Capital: "Nouveau mouvement",
+};
+const addableSections = new Set(Object.keys(addActionLabels));
 const orderStatusOptions = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
 const returnReasonOptions = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
 const orderSourceOptions = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre"];
@@ -612,15 +641,25 @@ export default function DashboardClient() {
           </span>
           <div>
             <strong>Maison Jiya</strong>
-            <small>Pilotage</small>
+            <small>Gestion & opérations</small>
           </div>
         </div>
         <nav aria-label="Navigation principale">
-          {navigation.map((item, index) => (
-            <button key={item} className={active === item ? "nav-item active" : "nav-item"} onClick={() => setActive(item)}>
-              <span className="nav-index">{String(index + 1).padStart(2, "0")}</span>
-              <span className="nav-label">{item}</span>
-            </button>
+          {navigationGroups.map((group) => (
+            <div className="nav-group" key={group.label}>
+              <span className="nav-group-label">{group.label}</span>
+              <div className="nav-group-items">
+                {group.items.map((item) => {
+                  const index = navigation.indexOf(item);
+                  return (
+                    <button key={item} className={active === item ? "nav-item active" : "nav-item"} onClick={() => setActive(item)}>
+                      <span className="nav-index">{String(index + 1).padStart(2, "0")}</span>
+                      <span className="nav-label">{item}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           ))}
         </nav>
         <button
@@ -647,19 +686,20 @@ export default function DashboardClient() {
 
       <section className="workspace">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">Pilotage Maison Jiya · MAD</p>
-            <h1>{active}</h1>
+          <div className="topbar-copy">
+            <p className="eyebrow">Maison Jiya · Gestion privée · MAD</p>
+            <div className="topbar-title-row">
+              <h1>{active}</h1>
+              <span className="workspace-live-status"><i /> Données actives</span>
+            </div>
+            <p className="section-subtitle">{sectionDescriptions[active]}</p>
           </div>
           <div className="top-actions">
             <SectionSearch key={active} active={active} data={data} openOrder={openOrder} openEntity={openEntity} />
-            {!['Assistant IA', 'Paramètres', 'Rapports'].includes(active) && (
-              <>
-              <button className="period-button">Toutes les données</button>
-              <button className="primary-button" onClick={() => openEntry(active === "Produits" ? "product" : active === "Achats" ? "purchase" : active === "Publicités" ? "ad" : active === "Capital" ? "capital" : "order")}>
-                <span>{data.access.canEdit ? "＋" : "🔒"}</span> {data.access.canEdit ? "Ajouter" : "Lecture seule"}
+            {addableSections.has(active) && (
+              <button className="primary-button top-primary-action" onClick={() => openEntry(active === "Produits" ? "product" : active === "Achats" ? "purchase" : active === "Publicités" ? "ad" : active === "Capital" ? "capital" : "order")}>
+                <span>{data.access.canEdit ? "＋" : "🔒"}</span> {data.access.canEdit ? addActionLabels[active] : "Lecture seule"}
               </button>
-              </>
             )}
           </div>
         </header>
