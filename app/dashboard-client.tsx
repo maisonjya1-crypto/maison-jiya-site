@@ -457,7 +457,7 @@ export default function DashboardClient() {
         const response = await fetch("/api/data", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action, requestKey, ...values }),
+          body: JSON.stringify({ action, ...values, requestKey }),
         });
         const body = (await response.json()) as Data & { error?: string; message?: string; code?: string };
         if (!response.ok && retrySafe && body.code === "MUTATION_IN_PROGRESS" && attempt < 3) {
