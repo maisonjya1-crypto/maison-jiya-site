@@ -1,6 +1,7 @@
 import { asc, eq, gte, lte, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { adPerformance, aiUsage, capitalLedger, expenses, orders, products, purchases } from "../../../db/schema";
+import { calculateBusinessFinanceFromTotals } from "../../../lib/finance";
 import { getAuthenticatedUser } from "../../auth";
 
 const AI_MODEL = "@cf/zai-org/glm-4.7-flash" as const;
@@ -102,33 +103,43 @@ async function businessContext() {
     returns: sql<number>`coalesce(sum(${orders.returnCost}), 0)`,
   };
 
-  const [allOrders, monthlyOrders, statuses, sources, paidPurchases, expenseTotals, paidExpenseTotals, monthlyExpenseTotals, ads, capital, lowStock] = await Promise.all([
+  const [allOrders, monthlyOrders, statuses, sources, paidPurchases, unpaidPurchases, expenseTotals, paidExpenseTotals, unpaidExpenseTotals, monthlyExpenseTotals, ads, manualCapital, reinvestAllocation, lowStock] = await Promise.all([
     db.select(orderSummary).from(orders),
     db.select(orderSummary).from(orders).where(gte(orders.createdAt, start)),
     db.select({ status: orders.status, count: sql<number>`count(*)` }).from(orders).groupBy(orders.status),
     db.select({ source: orders.source, count: sql<number>`count(*)`, revenue: sql<number>`coalesce(sum(${orders.saleAmount}), 0)` }).from(orders).groupBy(orders.source),
     db.select({ total: sql<number>`coalesce(sum(${purchases.totalCost}), 0)` }).from(purchases).where(eq(purchases.paymentStatus, "Payé")),
+    db.select({ total: sql<number>`coalesce(sum(${purchases.totalCost}), 0)` }).from(purchases).where(sql`${purchases.paymentStatus} <> 'Payé'`),
     db.select({ total: sql<number>`coalesce(sum(${expenses.amount}), 0)` }).from(expenses),
     db.select({ total: sql<number>`coalesce(sum(${expenses.amount}), 0)` }).from(expenses).where(eq(expenses.paymentStatus, "Payé")),
+    db.select({ total: sql<number>`coalesce(sum(${expenses.amount}), 0)` }).from(expenses).where(sql`${expenses.paymentStatus} <> 'Payé'`),
     db.select({ total: sql<number>`coalesce(sum(${expenses.amount}), 0)` }).from(expenses).where(gte(expenses.expenseDate, start)),
     db.select({ spend: sql<number>`coalesce(sum(${adPerformance.spend}), 0)`, revenue: sql<number>`coalesce(sum(${adPerformance.revenue}), 0)` }).from(adPerformance),
-    db.select({ net: sql<number>`coalesce(sum(case when ${capitalLedger.direction} = 'Entrée' then ${capitalLedger.amount} else -${capitalLedger.amount} end), 0)` }).from(capitalLedger),
+    db.select({ net: sql<number>`coalesce(sum(case when ${capitalLedger.direction} = 'Entrée' then ${capitalLedger.amount} else -${capitalLedger.amount} end), 0)` }).from(capitalLedger).where(eq(capitalLedger.isAutomatic, false)),
+    db.select({ total: sql<number>`coalesce(sum(${capitalLedger.amount}), 0)` }).from(capitalLedger).where(sql`${capitalLedger.isAutomatic} = 1 and ${capitalLedger.category} = 'Réinvestissement'`),
     db.select({ code: products.productCode, name: products.name, stock: products.stockQuantity }).from(products).where(lte(products.stockQuantity, 3)).orderBy(asc(products.stockQuantity)).limit(12),
   ]);
 
   const totals = allOrders[0];
   const month = monthlyOrders[0];
-  const collected = Number(totals?.collectedRevenue || 0);
-  const shipping = Number(totals?.shipping || 0);
-  const fees = Number(totals?.fees || 0);
-  const losses = Number(totals?.returns || 0);
-  const adSpend = Number(ads[0]?.spend || 0);
-  const expenseTotal = Number(expenseTotals[0]?.total || 0);
-  const paidExpenseTotal = Number(paidExpenseTotals[0]?.total || 0);
-  const netCollected = collected - shipping - fees;
-  const profit = Number(totals?.deliveredRevenue || 0) - Number(totals?.deliveredCosts || 0) - losses - adSpend - expenseTotal;
-  const cash = Number(capital[0]?.net || 0) + netCollected - Number(paidPurchases[0]?.total || 0) - losses - adSpend - paidExpenseTotal;
-  const distributable = Math.max(0, cash);
+  const finance = calculateBusinessFinanceFromTotals({
+    deliveredRevenue: Number(totals?.deliveredRevenue || 0),
+    deliveredOrderCosts: Number(totals?.deliveredCosts || 0),
+    losses: Number(totals?.returns || 0),
+    adSpend: Number(ads[0]?.spend || 0),
+    operatingExpenses: Number(expenseTotals[0]?.total || 0),
+    collected: Number(totals?.collectedRevenue || 0),
+    shippingCollected: Number(totals?.shipping || 0),
+    feesCollected: Number(totals?.fees || 0),
+    paidPurchases: Number(paidPurchases[0]?.total || 0),
+    unpaidPurchases: Number(unpaidPurchases[0]?.total || 0),
+    paidOperatingExpenses: Number(paidExpenseTotals[0]?.total || 0),
+    unpaidOperatingExpenses: Number(unpaidExpenseTotals[0]?.total || 0),
+    manualCapitalNet: Number(manualCapital[0]?.net || 0),
+    reinvestAllocation: Number(reinvestAllocation[0]?.total || 0),
+    safetyReserve: 0,
+  });
+  const distributable = Math.max(0, finance.cash);
 
   return JSON.stringify({
     currency: "MAD",
@@ -136,18 +147,21 @@ async function businessContext() {
     allTime: {
       orders: Number(totals?.count || 0),
       deliveredRevenue: Number(totals?.deliveredRevenue || 0),
-      collectedRevenue: collected,
-      netCollected,
-      estimatedProfit: profit,
-      cash,
-      paidPurchases: Number(paidPurchases[0]?.total || 0),
-      operatingExpenses: expenseTotal,
-      paidOperatingExpenses: paidExpenseTotal,
-      adSpend,
+      collectedRevenue: finance.collected,
+      netCollected: finance.netCollected,
+      estimatedProfit: finance.profit,
+      cash: finance.cash,
+      paidPurchases: finance.paidPurchases,
+      unpaidPurchases: finance.unpaidPurchases,
+      operatingExpenses: finance.operatingExpenses,
+      paidOperatingExpenses: finance.paidOperatingExpenses,
+      unpaidOperatingExpenses: finance.unpaidOperatingExpenses,
+      adSpend: finance.adSpend,
       adRevenue: Number(ads[0]?.revenue || 0),
-      roas: adSpend ? Number(ads[0]?.revenue || 0) / adSpend : 0,
-      returnLosses: losses,
-      capitalNet: Number(capital[0]?.net || 0),
+      roas: finance.adSpend ? Number(ads[0]?.revenue || 0) / finance.adSpend : 0,
+      returnLosses: finance.losses,
+      capitalNet: finance.manualCapitalNet,
+      reinvestableNow: finance.reinvestable,
       suggestedReinvestment: Math.round(distributable * 0.5),
       suggestedSalary: Math.round(distributable * 0.3),
       suggestedEmergencyFund: Math.round(distributable * 0.2),
