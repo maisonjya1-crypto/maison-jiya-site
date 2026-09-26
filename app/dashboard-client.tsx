@@ -110,6 +110,8 @@ type Product = {
   salePrice: number;
   minimumSalePrice: number;
   stockQuantity: number;
+  archivedAt: string | null;
+  archivedByUserId: number | null;
   createdAt: string;
 };
 type StockMovement = {
@@ -334,6 +336,8 @@ const retrySafeMutationActions = new Set([
   "addProduct",
   "addStockMovement",
   "countInventory",
+  "archiveProduct",
+  "restoreProduct",
 ]);
 const orderStatusOptions = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
 const returnReasonOptions = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
@@ -503,7 +507,8 @@ export default function DashboardClient() {
       restoreOrder: "Commande restaurée",
       deleteOrderPermanently: "Commande supprimée définitivement",
       updateProduct: "Produit mis à jour",
-      deleteProduct: "Produit et historique de stock supprimés",
+      archiveProduct: "Produit archivé sans supprimer son historique",
+      restoreProduct: "Produit restauré dans le catalogue interne",
       updateStockMovement: "Mouvement de stock mis à jour",
       deleteStockMovement: "Mouvement de stock supprimé",
       countInventory: "Inventaire enregistré et stock corrigé",
@@ -560,15 +565,23 @@ export default function DashboardClient() {
 
   async function deleteEntity(selection: EditableEntity) {
     if (!requireEditAccess()) return;
+    if (selection.kind === "product") {
+      if (selection.record.archivedAt) return;
+      const confirmed = window.confirm(
+        `Archiver le produit ${selection.record.name} ?\n\nSon historique sera conservé. L’archivage est refusé tant que son stock n’est pas à 0 ou qu’une réception fournisseur reste en attente. La boutique et les packs concernés seront désactivés.`,
+      );
+      if (!confirmed) return;
+      try {
+        await submit("archiveProduct", { id: String(selection.record.id) });
+      } catch {
+        // Le message d’erreur global est affiché par le tableau de bord.
+      }
+      return;
+    }
     let action = "";
     let label = "";
     let warning = "";
     switch (selection.kind) {
-      case "product":
-        action = "deleteProduct";
-        label = `le produit ${selection.record.name}`;
-        warning = " Son historique de stock sera également supprimé.";
-        break;
       case "movement":
         action = "deleteStockMovement";
         label = `ce mouvement de stock de ${selection.record.quantity} unité(s)`;
@@ -601,6 +614,19 @@ export default function DashboardClient() {
     if (!confirmed) return;
     try {
       await submit(action, { id: String(selection.record.id) });
+    } catch {
+      // Le message d’erreur global est affiché par le tableau de bord.
+    }
+  }
+
+  async function restoreProduct(product: Product) {
+    if (!requireEditAccess() || !product.archivedAt) return;
+    const confirmed = window.confirm(
+      `Restaurer ${product.name} dans le catalogue interne ?\n\nIl ne sera pas republié automatiquement sur la boutique et les packs resteront désactivés.`,
+    );
+    if (!confirmed) return;
+    try {
+      await submit("restoreProduct", { id: String(product.id) });
     } catch {
       // Le message d’erreur global est affiché par le tableau de bord.
     }
@@ -780,11 +806,11 @@ export default function DashboardClient() {
             <button onClick={() => void loadData()}>Réessayer</button>
           </div>
         )}
-        {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} print={printOrderSlip} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} moveStock={openStock} countInventory={openInventory} submit={submit} />}
+        {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} print={printOrderSlip} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} restoreProduct={restoreProduct} moveStock={openStock} countInventory={openInventory} submit={submit} />}
       </section>
-      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products} ads={data.ads} close={() => setModal(null)} submit={submit} />}
+      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products.filter((product) => !product.archivedAt)} ads={data.ads} close={() => setModal(null)} submit={submit} />}
       {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} ads={data.ads} close={() => setSelectedOrder(null)} print={() => printOrderSlip(selectedOrder)} submit={submit} />}
-      {selectedEntity && <EntityModal selection={selectedEntity} products={data.products} close={() => setSelectedEntity(null)} submit={submit} />}
+      {selectedEntity && <EntityModal selection={selectedEntity} products={data.products.filter((product) => !product.archivedAt)} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
       {inventorySelection && <InventoryCountModal product={inventorySelection} close={() => setInventorySelection(null)} submit={submit} />}
       {printOrder && <PrintOrderSheet order={printOrder} />}
@@ -1010,6 +1036,7 @@ function Page({
   remove,
   editEntity,
   removeEntity,
+  restoreProduct,
   moveStock,
   countInventory,
   submit,
@@ -1044,15 +1071,16 @@ function Page({
   remove: (o: Order) => void;
   editEntity: (selection: EditableEntity) => void;
   removeEntity: (selection: EditableEntity) => void;
+  restoreProduct: (product: Product) => void;
   moveStock: (selection: StockSelection) => void;
   countInventory: (product: Product) => void;
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
 }) {
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
-  if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} onRestore={restoreProduct} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
-  if (active === "Achats") return <PurchasesPage purchases={data.purchases} products={data.products} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Achats") return <PurchasesPage purchases={data.purchases} products={data.products.filter((product) => !product.archivedAt)} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Dépenses") return <ExpensesPage expenses={data.expenses} onAdd={() => open("expense")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
@@ -2519,15 +2547,18 @@ function ImportProductsPanel({ products, canEdit, submit }: { products: Product[
   );
 }
 
-function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, submit, onAdd, onMove, onCount, onEdit, onDelete }: { products: Product[]; orders: Order[]; movements: StockMovement[]; inventoryCounts: InventoryCount[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onMove: (selection: StockSelection) => void; onCount: (product: Product) => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, submit, onAdd, onMove, onCount, onEdit, onDelete, onRestore }: { products: Product[]; orders: Order[]; movements: StockMovement[]; inventoryCounts: InventoryCount[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onMove: (selection: StockSelection) => void; onCount: (product: Product) => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void; onRestore: (product: Product) => void }) {
   const [profitSearch, setProfitSearch] = useState("");
   const [profitCategory, setProfitCategory] = useState("");
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogCategory, setCatalogCategory] = useState("");
-  const units = products.reduce((sum, product) => sum + product.stockQuantity, 0),
-    purchaseValue = products.reduce((sum, product) => sum + product.stockQuantity * product.purchasePrice, 0),
-    saleValue = products.reduce((sum, product) => sum + product.stockQuantity * product.salePrice, 0),
-    lowStock = products.filter((product) => product.stockQuantity <= 5).length;
+  const [showArchived, setShowArchived] = useState(false);
+  const activeProducts = products.filter((product) => !product.archivedAt);
+  const archivedProducts = products.filter((product) => product.archivedAt);
+  const units = activeProducts.reduce((sum, product) => sum + product.stockQuantity, 0),
+    purchaseValue = activeProducts.reduce((sum, product) => sum + product.stockQuantity * product.purchasePrice, 0),
+    saleValue = activeProducts.reduce((sum, product) => sum + product.stockQuantity * product.salePrice, 0),
+    lowStock = activeProducts.filter((product) => product.stockQuantity <= 5).length;
   const quantityForProduct = (order: Order, product: Product) => {
     if (order.productId === product.id) return order.quantity;
     const linkedQuantity = movements
@@ -2580,12 +2611,13 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
     return (!category || product.category === category) && (!query || searchable.includes(query));
   };
   const filteredProfitability = profitability.filter((row) => productMatches(row.product, profitSearch, profitCategory));
-  const filteredProducts = products.filter((product) => productMatches(product, catalogSearch, catalogCategory));
+  const catalogProducts = showArchived ? archivedProducts : activeProducts;
+  const filteredProducts = catalogProducts.filter((product) => productMatches(product, catalogSearch, catalogCategory));
   const filteredProfit = filteredProfitability.reduce((sum, row) => sum + row.profit, 0);
   return (
     <>
       <section className="kpi-grid stock-kpis">
-        <Kpi label="Produits" value={String(products.length)} detail={`${lowStock} stock(s) faible(s)`} />
+        <Kpi label="Produits actifs" value={String(activeProducts.length)} detail={`${lowStock} stock(s) faible(s) · ${archivedProducts.length} archivé(s)`} />
         <Kpi label="Unités restantes" value={String(units)} detail="Stock disponible" />
         <Kpi label="Valeur d’achat" value={money(purchaseValue)} detail="Au prix d’achat" />
         <Kpi label="Valeur de vente" value={money(saleValue)} detail="Potentiel du stock" />
@@ -2631,12 +2663,17 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
         </summary>
         <div className="product-disclosure-body">
           <div className="product-catalog-actions">
-            <p>Les commandes confirmées déduisent le stock. Utilisez « Sortie » seulement pour une correction manuelle.</p>
-            <button className="primary-button" onClick={onAdd}>＋ Ajouter un produit</button>
+            <p>{showArchived ? "Les produits archivés restent dans l’historique mais ne sont plus utilisables dans les nouvelles opérations." : "Les commandes confirmées déduisent le stock. Utilisez « Sortie » seulement pour une correction manuelle."}</p>
+            <div className="entity-actions-row">
+              <button className="secondary-button" type="button" onClick={() => setShowArchived((value) => !value)}>
+                {showArchived ? `Voir les actifs (${activeProducts.length})` : `Archives (${archivedProducts.length})`}
+              </button>
+              {!showArchived && <button className="primary-button" onClick={onAdd}>＋ Ajouter un produit</button>}
+            </div>
           </div>
-          <ProductFilterBar search={catalogSearch} category={catalogCategory} categories={productCategories} resultCount={filteredProducts.length} totalCount={products.length} onSearch={setCatalogSearch} onCategory={setCatalogCategory} />
-          {products.length === 0 ? (
-            <EmptyState title="Aucun produit" text="Ajoutez votre premier produit pour commencer le suivi du stock." />
+          <ProductFilterBar search={catalogSearch} category={catalogCategory} categories={productCategories} resultCount={filteredProducts.length} totalCount={catalogProducts.length} onSearch={setCatalogSearch} onCategory={setCatalogCategory} />
+          {catalogProducts.length === 0 ? (
+            <EmptyState title={showArchived ? "Aucun produit archivé" : "Aucun produit actif"} text={showArchived ? "Les produits archivés apparaîtront ici sans perdre leur historique." : "Ajoutez votre premier produit pour commencer le suivi du stock."} />
           ) : filteredProducts.length === 0 ? (
             <EmptyState title="Aucun produit trouvé" text="Modifiez la recherche ou choisissez une autre catégorie." />
           ) : (
@@ -2648,7 +2685,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                     {filteredProducts.map((product) => (
                       <tr key={product.id}>
                         <td><strong>{product.productCode}</strong></td>
-                        <td>{product.name}</td>
+                        <td>{product.name}{product.archivedAt && <small>Archivé le {dateLabel(product.archivedAt)}</small>}</td>
                         <td><span className="category-chip">{product.category}</span></td>
                         <td>{money(product.purchasePrice)}</td>
                         <td><strong>{money(product.salePrice)}</strong></td>
@@ -2656,12 +2693,21 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                         <td><StockLevel quantity={product.stockQuantity} /></td>
                         <td>
                           <div className="entity-actions-row">
-                            <div className="stock-actions">
-                              <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Stock</button>
-                              <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Sortie</button>
-                              <button className="inventory-button" onClick={() => onCount(product)}>≋ Inventaire</button>
-                            </div>
-                            <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />
+                            {product.archivedAt ? (
+                              <>
+                                <Status value="Archivé" />
+                                <button className="secondary-button" type="button" disabled={!canEdit} onClick={() => onRestore(product)}>Restaurer</button>
+                              </>
+                            ) : (
+                              <>
+                                <div className="stock-actions">
+                                  <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Stock</button>
+                                  <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Sortie</button>
+                                  <button className="inventory-button" onClick={() => onCount(product)}>≋ Inventaire</button>
+                                </div>
+                                <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -2676,7 +2722,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                       <div><span>{product.productCode}</span><h3>{product.name}</h3></div>
                       <div className="product-card-actions">
                         <StockLevel quantity={product.stockQuantity} />
-                        <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />
+                        {product.archivedAt ? <Status value="Archivé" /> : <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />}
                       </div>
                     </div>
                     <span className="category-chip">{product.category}</span>
@@ -2685,11 +2731,17 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                       <p>Prix de vente<strong>{money(product.salePrice)}</strong></p>
                       <p>Prix minimum<strong>{money(product.minimumSalePrice || product.salePrice)}</strong></p>
                     </div>
-                    <div className="stock-actions">
-                      <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Ajouter du stock</button>
-                      <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Sortie manuelle</button>
-                      <button className="inventory-button" onClick={() => onCount(product)}>≋ Faire l’inventaire</button>
-                    </div>
+                    {product.archivedAt ? (
+                      <div className="stock-actions">
+                        <button className="secondary-button" type="button" disabled={!canEdit} onClick={() => onRestore(product)}>Restaurer dans le catalogue</button>
+                      </div>
+                    ) : (
+                      <div className="stock-actions">
+                        <button className="stock-in" onClick={() => onMove({ product, type: "Entrée" })}>＋ Ajouter du stock</button>
+                        <button className="stock-out" disabled={product.stockQuantity === 0} onClick={() => onMove({ product, type: "Vente" })}>− Sortie manuelle</button>
+                        <button className="inventory-button" onClick={() => onCount(product)}>≋ Faire l’inventaire</button>
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>

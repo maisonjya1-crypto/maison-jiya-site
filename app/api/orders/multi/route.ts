@@ -108,7 +108,9 @@ export async function POST(request: Request) {
     const productRows = (await database.prepare(`
       SELECT id, product_code AS productCode, name, purchase_price AS purchasePrice,
              sale_price AS salePrice, stock_quantity AS stockQuantity
-      FROM products WHERE id IN (${placeholders})
+      FROM products
+      WHERE id IN (${placeholders})
+        AND archived_at IS NULL
     `).bind(...requestedItems.map((item) => item.productId)).all<CatalogProduct>()).results;
     if (productRows.length !== requestedItems.length) throw new Error("Un des produits sélectionnés n’existe plus dans le catalogue.");
     const byId = new Map(productRows.map((product) => [product.id, product]));

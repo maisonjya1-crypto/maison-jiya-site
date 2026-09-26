@@ -17,6 +17,7 @@ type OfferItemRow = {
   productId: number;
   category: string;
   availabilityMode: string;
+  archivedAt: string | null;
 };
 type MediaRow = { id: number; ownerType: string; ownerId: number; kind: string };
 type SettingRow = { key: string; value: string };
@@ -67,6 +68,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       FROM products p
       JOIN storefront_product_settings s ON s.product_id = p.id
       WHERE s.is_visible = 1
+        AND p.archived_at IS NULL
         AND p.category NOT IN ('Électronique', 'Electronique', 'Boîtes', 'Boites')
       ORDER BY COALESCE(s.sort_order, 0), p.category COLLATE NOCASE, name COLLATE NOCASE
       LIMIT 500
@@ -81,7 +83,8 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     database.prepare(`
       SELECT i.offer_id AS offerId, i.product_id AS productId,
              p.category AS category,
-             COALESCE(s.availability_mode, 'available') AS availabilityMode
+             COALESCE(s.availability_mode, 'available') AS availabilityMode,
+             p.archived_at AS archivedAt
       FROM storefront_offer_items i
       JOIN products p ON p.id = i.product_id
       LEFT JOIN storefront_product_settings s ON s.product_id = p.id
@@ -171,7 +174,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
 
   const publicOffers = offers.flatMap((offer) => {
     const components = itemsByOffer.get(offer.id) || [];
-    if (!components.length || components.some((item) => excludedPublicCategories.has(item.category))) return [];
+    if (!components.length || components.some((item) => excludedPublicCategories.has(item.category) || item.archivedAt)) return [];
     const available = components.every((item) => item.availabilityMode !== "out_of_stock");
     const firstImage = mediaByOwner.get(`offer:${offer.id}`);
     return [{

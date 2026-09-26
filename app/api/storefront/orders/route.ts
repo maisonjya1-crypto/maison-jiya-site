@@ -154,6 +154,7 @@ export async function POST(request: Request) {
       FROM products p
       LEFT JOIN storefront_product_settings s ON s.product_id = p.id
       WHERE p.id IN (${productPlaceholders})
+        AND p.archived_at IS NULL
     `).bind(...productIds).all<ProductRow>()).results;
     if (rows.length !== productIds.length) throw new Error("Un article du panier n’est plus disponible.");
     if (rows.some((product) => excludedPublicCategories.has(product.category))) throw new Error("Un article du panier n’est pas disponible sur la boutique publique.");

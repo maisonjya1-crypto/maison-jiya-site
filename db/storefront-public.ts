@@ -28,6 +28,7 @@ type OfferItemRow = {
   quantity: number;
   stockQuantity: number;
   category: string;
+  archivedAt: string | null;
 };
 
 type MediaRow = {
@@ -77,6 +78,7 @@ export async function loadStorefrontCatalog(database: D1Database): Promise<Store
       FROM products p
       LEFT JOIN storefront_product_settings s ON s.product_id = p.id
       WHERE COALESCE(s.is_visible, 1) = 1
+        AND p.archived_at IS NULL
         AND p.category NOT IN ('Électronique', 'Electronique', 'Boîtes', 'Boites')
       ORDER BY COALESCE(s.sort_order, 0), p.category COLLATE NOCASE, name COLLATE NOCASE
       LIMIT 500
@@ -90,7 +92,8 @@ export async function loadStorefrontCatalog(database: D1Database): Promise<Store
     `),
     database.prepare(`
       SELECT i.offer_id AS offerId, i.product_id AS productId, i.quantity,
-             p.stock_quantity AS stockQuantity, p.category AS category
+             p.stock_quantity AS stockQuantity, p.category AS category,
+             p.archived_at AS archivedAt
       FROM storefront_offer_items i
       JOIN products p ON p.id = i.product_id
       ORDER BY i.offer_id, i.product_id
@@ -165,7 +168,7 @@ export async function loadStorefrontCatalog(database: D1Database): Promise<Store
 
   const publicOffers = offers.flatMap((offer) => {
     const components = itemsByOffer.get(offer.id) || [];
-    if (!components.length || components.some((item) => excludedPublicCategories.has(item.category))) return [];
+    if (!components.length || components.some((item) => excludedPublicCategories.has(item.category) || item.archivedAt)) return [];
     const available = components.every((item) => item.stockQuantity >= item.quantity);
     return [{
       id: offer.id,

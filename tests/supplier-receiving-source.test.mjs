@@ -35,7 +35,7 @@ test("la réception fournisseur ajoute le stock une seule fois et crée un mouve
 test("un achat réceptionné ne peut plus être supprimé ni changer de produit ou quantité", () => {
   assert.match(route, /Cet achat a déjà été réceptionné\. Le produit et la quantité doivent rester inchangés/);
   assert.match(route, /Cet achat a déjà alimenté le stock et doit rester dans l’historique/);
-  assert.match(route, /historique d’achats fournisseur/);
+  assert.match(route, /Ce produit a encore une réception fournisseur en attente/);
 });
 
 test("l’interface sépare l’achat de la réception réelle du stock", () => {

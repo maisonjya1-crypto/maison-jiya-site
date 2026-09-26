@@ -165,6 +165,8 @@ const schemaStatements = [
     sale_price INTEGER NOT NULL,
     minimum_sale_price INTEGER DEFAULT 0 NOT NULL,
     stock_quantity INTEGER DEFAULT 0 NOT NULL,
+    archived_at TEXT,
+    archived_by_user_id INTEGER,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS products_product_code_unique ON products (product_code)`,
@@ -320,9 +322,12 @@ async function ensurePurchaseColumns(database: D1Database) {
 async function ensureProductColumns(database: D1Database) {
   const info = await database.prepare("PRAGMA table_info(products)").all<{ name: string }>();
   const columns = new Set(info.results.map((column) => column.name));
-  if (!columns.has("minimum_sale_price")) {
-    await database.prepare("ALTER TABLE products ADD COLUMN minimum_sale_price INTEGER DEFAULT 0 NOT NULL").run();
-  }
+  const statements: D1PreparedStatement[] = [];
+  if (!columns.has("minimum_sale_price")) statements.push(database.prepare("ALTER TABLE products ADD COLUMN minimum_sale_price INTEGER DEFAULT 0 NOT NULL"));
+  if (!columns.has("archived_at")) statements.push(database.prepare("ALTER TABLE products ADD COLUMN archived_at TEXT"));
+  if (!columns.has("archived_by_user_id")) statements.push(database.prepare("ALTER TABLE products ADD COLUMN archived_by_user_id INTEGER"));
+  if (statements.length) await database.batch(statements);
+  await database.prepare("CREATE INDEX IF NOT EXISTS products_archived_at_idx ON products (archived_at)").run();
 }
 
 async function initializeDatabase(database: D1Database) {

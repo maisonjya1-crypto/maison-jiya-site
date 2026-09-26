@@ -6,6 +6,7 @@ import { moroccanPhoneHelp, normalizeMoroccanPhone } from "../../../db/phone";
 import { getMetaRuntimeStatus, syncMetaAds } from "../../../db/meta";
 import { reconcileOrderAllocations } from "../../../db/allocations";
 import { getGoogleSheetsSyncSnapshot, markGoogleSheetsSyncPending, processGoogleSheetsSyncQueue } from "../../../db/google-sheets-sync";
+import { ensureStorefrontCms } from "../../../db/storefront-cms";
 import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, expenses, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
@@ -184,7 +185,9 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   deleteCapital: { action: "Suppression", entityType: "Capital" },
   addProduct: { action: "Ajout", entityType: "Produit" },
   updateProduct: { action: "Modification", entityType: "Produit" },
-  deleteProduct: { action: "Suppression", entityType: "Produit" },
+  archiveProduct: { action: "Archivage", entityType: "Produit" },
+  restoreProduct: { action: "Restauration", entityType: "Produit" },
+  deleteProduct: { action: "Archivage", entityType: "Produit" },
   addStockMovement: { action: "Ajout", entityType: "Stock" },
   countInventory: { action: "Inventaire", entityType: "Stock" },
   updateStockMovement: { action: "Modification", entityType: "Stock" },
@@ -479,7 +482,7 @@ export async function POST(request: Request) {
       if (!Array.isArray(parsedRows) || !parsedRows.length || parsedRows.length > 200) {
         return Response.json({ error: "Importez entre 1 et 200 commandes à la fois." }, { status: 400 });
       }
-      const catalog = await db.select().from(products);
+      const catalog = await db.select().from(products).where(isNull(products.archivedAt));
       const byCode = new Map(catalog.map((product) => [product.productCode.toLocaleUpperCase("fr"), product]));
       const normalizedRows = parsedRows.map((raw, index) => {
         const row = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
@@ -604,7 +607,7 @@ export async function POST(request: Request) {
       const quantity = numberValue(payload.quantity, 1);
       if (!phone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
       if (!name || !city || !productId || quantity < 1 || (!isStoreSale && !address)) return Response.json({ error: isStoreSale ? "Cliente, téléphone, ville, produit et quantité sont obligatoires." : "Cliente, téléphone, ville, adresse, produit et quantité sont obligatoires." }, { status: 400 });
-      const [selectedProduct] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
+      const [selectedProduct] = await db.select().from(products).where(and(eq(products.id, productId), isNull(products.archivedAt))).limit(1);
       if (!selectedProduct) return Response.json({ error: "Le produit sélectionné n’existe plus dans le catalogue." }, { status: 404 });
       const selectedStatus = isStoreSale ? "Livrée" : orderStatus(payload.status);
       const selectedReturnReason = selectedStatus === "Retour" ? returnReason(payload.returnReason) : "";
@@ -830,7 +833,7 @@ export async function POST(request: Request) {
       const nextPaymentStatus = textValue(payload.paymentStatus, "Payé");
       if (quantity < 1 || !["Payé", "À payer"].includes(nextPaymentStatus)) return Response.json({ error: "Achat invalide." }, { status: 400 });
       if (productId) {
-        const [linkedProduct] = await db.select({ id: products.id }).from(products).where(eq(products.id, productId)).limit(1);
+        const [linkedProduct] = await db.select({ id: products.id }).from(products).where(and(eq(products.id, productId), isNull(products.archivedAt))).limit(1);
         if (!linkedProduct) return Response.json({ error: "Le produit lié à cet achat est introuvable." }, { status: 404 });
       }
       const duplicatePurchase = await protectMutation("addPurchase");
@@ -858,7 +861,7 @@ export async function POST(request: Request) {
       const [purchase] = await db.select({ id: purchases.id, productId: purchases.productId, quantity: purchases.quantity, receivedQuantity: purchases.receivedQuantity }).from(purchases).where(eq(purchases.id, id)).limit(1);
       if (!purchase) return Response.json({ error: "Achat introuvable." }, { status: 404 });
       if (productId) {
-        const [linkedProduct] = await db.select({ id: products.id }).from(products).where(eq(products.id, productId)).limit(1);
+        const [linkedProduct] = await db.select({ id: products.id }).from(products).where(and(eq(products.id, productId), isNull(products.archivedAt))).limit(1);
         if (!linkedProduct) return Response.json({ error: "Le produit lié à cet achat est introuvable." }, { status: 404 });
       }
       if (purchase.receivedQuantity > 0 && (purchase.productId !== productId || purchase.quantity !== quantity)) {
@@ -879,7 +882,7 @@ export async function POST(request: Request) {
       if (!purchase.productId) return Response.json({ error: "Reliez d’abord cet achat à un produit du catalogue." }, { status: 409 });
       if (purchase.receivedQuantity >= purchase.quantity) return Response.json({ error: "Cet achat a déjà été réceptionné dans le stock." }, { status: 409 });
 
-      const [linkedProduct] = await db.select({ id: products.id, productCode: products.productCode, name: products.name }).from(products).where(eq(products.id, purchase.productId)).limit(1);
+      const [linkedProduct] = await db.select({ id: products.id, productCode: products.productCode, name: products.name }).from(products).where(and(eq(products.id, purchase.productId), isNull(products.archivedAt))).limit(1);
       if (!linkedProduct) return Response.json({ error: "Le produit lié à cet achat est introuvable." }, { status: 404 });
 
       const duplicateReception = await protectMutation("receivePurchase");
@@ -888,11 +891,12 @@ export async function POST(request: Request) {
       const now = new Date().toISOString();
       const remaining = purchase.quantity - purchase.receivedQuantity;
       const results = await rawDatabase.batch([
-        rawDatabase.prepare("UPDATE purchases SET received_quantity = quantity, received_at = ? WHERE id = ? AND product_id = ? AND received_quantity < quantity").bind(now, id, purchase.productId),
+        rawDatabase.prepare("UPDATE purchases SET received_quantity = quantity, received_at = ? WHERE id = ? AND product_id = ? AND received_quantity < quantity AND EXISTS (SELECT 1 FROM products WHERE id = ? AND archived_at IS NULL)").bind(now, id, purchase.productId, purchase.productId),
         rawDatabase.prepare(`
           UPDATE products
           SET stock_quantity = stock_quantity + ?
           WHERE id = ?
+            AND archived_at IS NULL
             AND EXISTS (
               SELECT 1 FROM purchases WHERE id = ? AND product_id = ? AND received_at = ?
             )
@@ -1025,6 +1029,10 @@ export async function POST(request: Request) {
       const catalog = await db.select().from(products);
       const existingByCode = new Map(catalog.map((product) => [product.productCode.toLocaleUpperCase("fr"), product]));
       const updateExisting = textValue(payload.conflictMode) === "update";
+      const archivedConflict = normalizedRows.find((row) => existingByCode.get(row.productCode)?.archivedAt);
+      if (archivedConflict && updateExisting) {
+        return Response.json({ error: `Le produit ${archivedConflict.productCode} est archivé. Restaurez-le avant de le mettre à jour par import.` }, { status: 409 });
+      }
       let createdCount = 0;
       let updatedCount = 0;
       let skippedCount = 0;
@@ -1148,27 +1156,64 @@ export async function POST(request: Request) {
       if (duplicate && duplicate.id !== id) return Response.json({ error: "Cet ID produit existe déjà." }, { status: 409 });
       const salePrice = moneyValue(payload.salePrice);
       await db.update(products).set({ productCode, name, category: productCategory(payload.category), purchasePrice: moneyValue(payload.purchasePrice), salePrice, minimumSalePrice: moneyValue(payload.minimumSalePrice, salePrice) }).where(eq(products.id, id));
-    } else if (payload.action === "deleteProduct") {
+    } else if (payload.action === "archiveProduct" || payload.action === "deleteProduct") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Produit invalide." }, { status: 400 });
-      const [product] = await db.select({ id: products.id }).from(products).where(eq(products.id, id)).limit(1);
+      const [product] = await db.select({
+        id: products.id,
+        productCode: products.productCode,
+        name: products.name,
+        stockQuantity: products.stockQuantity,
+        archivedAt: products.archivedAt,
+      }).from(products).where(eq(products.id, id)).limit(1);
       if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
-      const [linkedOrder] = await db.select({ id: orders.id }).from(orders).where(eq(orders.productId, id)).limit(1);
-      if (linkedOrder) return Response.json({ error: "Ce produit est lié à une commande et doit être conservé dans l’historique." }, { status: 409 });
-      const [linkedInventory] = await db.select({ id: inventoryCounts.id }).from(inventoryCounts).where(eq(inventoryCounts.productId, id)).limit(1);
-      if (linkedInventory) return Response.json({ error: "Ce produit possède un historique d’inventaire et doit être conservé." }, { status: 409 });
-      const [linkedPurchase] = await db.select({ id: purchases.id }).from(purchases).where(eq(purchases.productId, id)).limit(1);
-      if (linkedPurchase) return Response.json({ error: "Ce produit possède un historique d’achats fournisseur et doit être conservé." }, { status: 409 });
-      await db.batch([
-        db.delete(stockMovements).where(eq(stockMovements.productId, id)),
-        db.delete(products).where(eq(products.id, id)),
-      ]);
+      if (product.archivedAt) {
+        integrationMessage = `${product.name} est déjà archivé. Aucun historique n’a été supprimé.`;
+        auditEntityLabel = `${product.productCode} · ${product.name}`;
+      } else {
+        if (product.stockQuantity !== 0) return Response.json({ error: `Ramenez d’abord le stock de ${product.name} à 0 avant de l’archiver (${product.stockQuantity} unité(s) restante(s)).` }, { status: 409 });
+        const rawDatabase = await getRawDb();
+        const pendingPurchase = await rawDatabase.prepare("SELECT id FROM purchases WHERE product_id = ? AND received_quantity < quantity LIMIT 1").bind(id).first<{ id: number }>();
+        if (pendingPurchase) return Response.json({ error: "Ce produit a encore une réception fournisseur en attente. Réceptionnez ou modifiez d’abord cet achat." }, { status: 409 });
+        const duplicateArchive = await protectMutation("archiveProduct");
+        if (duplicateArchive) return duplicateArchive;
+        await ensureStorefrontCms(rawDatabase);
+        const now = new Date().toISOString();
+        const results = await rawDatabase.batch([
+          rawDatabase.prepare(`
+            UPDATE products
+            SET archived_at = ?, archived_by_user_id = ?
+            WHERE id = ? AND archived_at IS NULL AND stock_quantity = 0
+              AND NOT EXISTS (SELECT 1 FROM purchases WHERE product_id = ? AND received_quantity < quantity)
+          `).bind(now, user.id, id, id),
+          rawDatabase.prepare("UPDATE storefront_product_settings SET is_visible = 0, updated_at = CURRENT_TIMESTAMP WHERE product_id = ?").bind(id),
+          rawDatabase.prepare(`UPDATE storefront_offers SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id IN (SELECT offer_id FROM storefront_offer_items WHERE product_id = ?)`).bind(id),
+        ]);
+        if (Number(results[0]?.meta?.changes || 0) !== 1) return Response.json({ error: "Le produit a changé pendant l’archivage. Rechargez les données puis réessayez." }, { status: 409 });
+        integrationMessage = `${product.name} archivé. Stock, commandes, achats, inventaires et mouvements sont conservés. Sa publication et les packs concernés ont été désactivés.`;
+        auditEntityLabel = `${product.productCode} · ${product.name}`;
+      }
+    } else if (payload.action === "restoreProduct") {
+      const id = numberValue(payload.id);
+      if (!id) return Response.json({ error: "Produit invalide." }, { status: 400 });
+      const [product] = await db.select({ id: products.id, productCode: products.productCode, name: products.name, archivedAt: products.archivedAt }).from(products).where(eq(products.id, id)).limit(1);
+      if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
+      if (!product.archivedAt) {
+        integrationMessage = `${product.name} est déjà actif.`;
+        auditEntityLabel = `${product.productCode} · ${product.name}`;
+      } else {
+        const duplicateRestore = await protectMutation("restoreProduct");
+        if (duplicateRestore) return duplicateRestore;
+        await db.update(products).set({ archivedAt: null, archivedByUserId: null }).where(eq(products.id, id));
+        integrationMessage = `${product.name} restauré dans le catalogue interne. La boutique et les packs restent désactivés jusqu’à une réactivation volontaire.`;
+        auditEntityLabel = `${product.productCode} · ${product.name}`;
+      }
     } else if (payload.action === "addStockMovement") {
       const productId = numberValue(payload.productId);
       const quantity = numberValue(payload.quantity);
       const movementType = textValue(payload.movementType);
       if (!productId || quantity < 1 || !["Entrée", "Vente"].includes(movementType)) return Response.json({ error: "Mouvement de stock invalide." }, { status: 400 });
-      const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
+      const [product] = await db.select().from(products).where(and(eq(products.id, productId), isNull(products.archivedAt))).limit(1);
       if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
       if (movementType === "Vente" && quantity > product.stockQuantity) return Response.json({ error: `Stock insuffisant : ${product.stockQuantity} unité(s) restante(s).` }, { status: 400 });
       const duplicateMovement = await protectMutation("addStockMovement");
@@ -1192,7 +1237,7 @@ export async function POST(request: Request) {
       }
       const physicalQuantity = physicalRaw;
       const expectedSystemQuantity = expectedRaw;
-      const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
+      const [product] = await db.select().from(products).where(and(eq(products.id, productId), isNull(products.archivedAt))).limit(1);
       if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
       if (product.stockQuantity !== expectedSystemQuantity) {
         return Response.json({ error: `Le stock a changé pendant le comptage (${expectedSystemQuantity} → ${product.stockQuantity}). Rechargez puis recommencez l’inventaire.` }, { status: 409 });
@@ -1265,6 +1310,7 @@ export async function POST(request: Request) {
       if (!["Entrée", "Vente"].includes(movement.movementType)) return Response.json({ error: "Un ajustement d’inventaire ne peut pas être modifié." }, { status: 409 });
       const [product] = await db.select().from(products).where(eq(products.id, movement.productId)).limit(1);
       if (!product) return Response.json({ error: "Produit associé introuvable." }, { status: 404 });
+      if (product.archivedAt) return Response.json({ error: "Restaurez ce produit avant de modifier son historique de stock." }, { status: 409 });
       const oldDelta = movement.movementType === "Entrée" ? movement.quantity : -movement.quantity;
       const nextDelta = movementType === "Entrée" ? quantity : -quantity;
       const nextStock = product.stockQuantity - oldDelta + nextDelta;
@@ -1282,6 +1328,7 @@ export async function POST(request: Request) {
       if (!["Entrée", "Vente"].includes(movement.movementType)) return Response.json({ error: "Un ajustement d’inventaire ne peut pas être supprimé." }, { status: 409 });
       const [product] = await db.select().from(products).where(eq(products.id, movement.productId)).limit(1);
       if (!product) return Response.json({ error: "Produit associé introuvable." }, { status: 404 });
+      if (product.archivedAt) return Response.json({ error: "Restaurez ce produit avant de modifier son historique de stock." }, { status: 409 });
       const oldDelta = movement.movementType === "Entrée" ? movement.quantity : -movement.quantity;
       const nextStock = product.stockQuantity - oldDelta;
       if (nextStock < 0) return Response.json({ error: "Ce mouvement ne peut pas être supprimé car le stock deviendrait négatif." }, { status: 409 });

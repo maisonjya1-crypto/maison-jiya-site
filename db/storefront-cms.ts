@@ -62,6 +62,7 @@ async function ensureManualCatalog(database: D1Database) {
       SELECT id, name, sale_price, 1, 'available', '', '', 0, CURRENT_TIMESTAMP
       FROM products
       WHERE category NOT IN (${PUBLIC_CATEGORIES_SQL})
+      AND archived_at IS NULL
     `).run();
     await database.prepare(`
       INSERT INTO settings (key, value, updated_at) VALUES (?, '1', CURRENT_TIMESTAMP)
@@ -80,6 +81,7 @@ async function ensureManualCatalog(database: D1Database) {
     SELECT id, name, sale_price, 0, 'available', '', '', 0, CURRENT_TIMESTAMP
     FROM products
     WHERE category NOT IN (${PUBLIC_CATEGORIES_SQL})
+      AND archived_at IS NULL
   `).run();
 }
 
