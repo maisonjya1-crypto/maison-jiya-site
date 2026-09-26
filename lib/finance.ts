@@ -89,6 +89,67 @@ export function calculateOperatingProfit(
   };
 }
 
+export type FinanceTotalsInput = {
+  deliveredRevenue: number;
+  deliveredOrderCosts: number;
+  losses: number;
+  adSpend: number;
+  operatingExpenses: number;
+  collected: number;
+  shippingCollected: number;
+  feesCollected: number;
+  paidPurchases: number;
+  unpaidPurchases: number;
+  paidOperatingExpenses: number;
+  unpaidOperatingExpenses: number;
+  manualCapitalNet: number;
+  reinvestAllocation: number;
+  safetyReserve?: number;
+};
+
+export function calculateBusinessFinanceFromTotals(input: FinanceTotalsInput): FinanceSummary {
+  const safetyReserve = Math.max(0, amount(input.safetyReserve));
+  const netCollected = amount(input.collected) - amount(input.shippingCollected) - amount(input.feesCollected);
+  const profit = amount(input.deliveredRevenue)
+    - amount(input.deliveredOrderCosts)
+    - amount(input.losses)
+    - amount(input.adSpend)
+    - amount(input.operatingExpenses);
+  const cash = amount(input.manualCapitalNet)
+    + netCollected
+    - amount(input.paidPurchases)
+    - amount(input.losses)
+    - amount(input.adSpend)
+    - amount(input.paidOperatingExpenses);
+  const protectedAvailableCash = cash
+    - amount(input.unpaidPurchases)
+    - amount(input.unpaidOperatingExpenses)
+    - safetyReserve;
+  const reinvestable = Math.max(0, Math.min(amount(input.reinvestAllocation), protectedAvailableCash));
+
+  return {
+    deliveredRevenue: amount(input.deliveredRevenue),
+    deliveredOrderCosts: amount(input.deliveredOrderCosts),
+    losses: amount(input.losses),
+    adSpend: amount(input.adSpend),
+    operatingExpenses: amount(input.operatingExpenses),
+    paidOperatingExpenses: amount(input.paidOperatingExpenses),
+    unpaidOperatingExpenses: amount(input.unpaidOperatingExpenses),
+    collected: amount(input.collected),
+    shippingCollected: amount(input.shippingCollected),
+    feesCollected: amount(input.feesCollected),
+    netCollected,
+    paidPurchases: amount(input.paidPurchases),
+    unpaidPurchases: amount(input.unpaidPurchases),
+    manualCapitalNet: amount(input.manualCapitalNet),
+    reinvestAllocation: amount(input.reinvestAllocation),
+    profit,
+    cash,
+    margin: amount(input.deliveredRevenue) ? (profit / amount(input.deliveredRevenue)) * 100 : 0,
+    reinvestable,
+  };
+}
+
 export function calculateBusinessFinance({
   orders,
   purchases,
@@ -134,29 +195,21 @@ export function calculateBusinessFinance({
     .filter((entry) => entry.isAutomatic && entry.category === "Réinvestissement")
     .reduce((sum, entry) => sum + amount(entry.amount), 0);
 
-  const cash = manualCapitalNet
-    + netCollected
-    - paidPurchases
-    - operating.losses
-    - operating.adSpend
-    - paidOperatingExpenses;
-
-  const protectedAvailableCash = cash - unpaidPurchases - unpaidOperatingExpenses - safetyReserve;
-  const reinvestable = Math.max(0, Math.min(reinvestAllocation, protectedAvailableCash));
-
-  return {
-    ...operating,
+  return calculateBusinessFinanceFromTotals({
+    deliveredRevenue: operating.deliveredRevenue,
+    deliveredOrderCosts: operating.deliveredOrderCosts,
+    losses: operating.losses,
+    adSpend: operating.adSpend,
+    operatingExpenses: operating.operatingExpenses,
     collected,
     shippingCollected,
     feesCollected,
-    netCollected,
     paidPurchases,
     unpaidPurchases,
     paidOperatingExpenses,
     unpaidOperatingExpenses,
     manualCapitalNet,
     reinvestAllocation,
-    cash,
-    reinvestable,
-  };
+    safetyReserve,
+  });
 }
