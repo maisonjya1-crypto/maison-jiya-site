@@ -3648,8 +3648,16 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
             {kind === "purchase" && (
               <>
                 <Field label="Fournisseur *" name="supplier" required />
-                <Field label="Article / motif *" name="item" required />
-                <Field label="Quantité *" name="quantity" type="number" inputMode="numeric" defaultValue="1" min="1" required />
+                <Field label="Article / motif *" name="item" placeholder="Ex. Réassort montre dorée" required />
+                <label className="field">
+                  <span>Produit lié au stock</span>
+                  <select name="productId" defaultValue="">
+                    <option value="">Aucun — achat non stock / emballage / autre</option>
+                    {products.map((product) => <option key={product.id} value={product.id}>{product.productCode} · {product.name} · stock {product.stockQuantity}</option>)}
+                  </select>
+                  <small>Si vous choisissez un produit, l’achat pourra être réceptionné ensuite et ajouter automatiquement la quantité au stock.</small>
+                </label>
+                <Field label="Quantité achetée *" name="quantity" type="number" inputMode="numeric" defaultValue="1" min="1" required />
                 <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" required />
                 <Select label="Paiement" name="paymentStatus" options={["Payé", "À payer"]} />
               </>
@@ -3904,7 +3912,7 @@ function PrintOrderSheet({ order }: { order: Order }) {
     </section>
   );
 }
-function EntityModal({ selection, close, submit }: { selection: EditableEntity; close: () => void; submit: (action: string, values: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function EntityModal({ selection, products, close, submit }: { selection: EditableEntity; products: Product[]; close: () => void; submit: (action: string, values: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const titles = {
@@ -3966,7 +3974,27 @@ function EntityModal({ selection, close, submit }: { selection: EditableEntity; 
             {selection.kind === "purchase" && <>
               <Field label="Fournisseur *" name="supplier" defaultValue={selection.record.supplier} required />
               <Field label="Article / motif *" name="item" defaultValue={selection.record.item} required />
-              <Field label="Quantité *" name="quantity" type="number" inputMode="numeric" min="1" defaultValue={String(selection.record.quantity)} required />
+              {selection.record.receivedQuantity > 0 ? (
+                <>
+                  <input type="hidden" name="productId" value={selection.record.productId || ""} />
+                  <input type="hidden" name="quantity" value={selection.record.quantity} />
+                  <div className="movement-edit-note">
+                    <strong>{selection.record.productName || selection.record.item} · {selection.record.quantity} unité(s)</strong>
+                    <small>Réception déjà enregistrée : le produit et la quantité sont verrouillés pour préserver l’historique du stock.</small>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <label className="field">
+                    <span>Produit lié au stock</span>
+                    <select name="productId" defaultValue={selection.record.productId || ""}>
+                      <option value="">Aucun — achat non stock / emballage / autre</option>
+                      {products.map((product) => <option key={product.id} value={product.id}>{product.productCode} · {product.name} · stock {product.stockQuantity}</option>)}
+                    </select>
+                  </label>
+                  <Field label="Quantité *" name="quantity" type="number" inputMode="numeric" min="1" defaultValue={String(selection.record.quantity)} required />
+                </>
+              )}
               <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.unitCost)} required />
               <Select label="Paiement" name="paymentStatus" defaultValue={selection.record.paymentStatus} options={["Payé", "À payer"]} />
             </>}
