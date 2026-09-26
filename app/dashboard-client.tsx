@@ -146,6 +146,7 @@ type Member = {
   username: string;
   displayName: string;
   role: "admin" | "editor" | "viewer";
+  isOwner: boolean;
   isActive: boolean;
   createdAt: string;
 };
@@ -709,7 +710,7 @@ export default function DashboardClient() {
   if (authRequired) {
     return <AuthPage configured={authConfigured} onAuthenticated={() => void loadData()} />;
   }
-  const roleLabel = data.access.role === "admin" ? "Administrateur" : data.access.role === "editor" ? "Éditeur" : "Lecture seule";
+  const roleLabel = data.access.isOwner ? "Propriétaire principal" : data.access.role === "admin" ? "Administrateur" : data.access.role === "editor" ? "Éditeur" : "Lecture seule";
 
   return (
     <main className={`app-shell theme-${currentTheme}`}>
@@ -1675,7 +1676,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
                 </article>
               )) : <div className="empty-state"><strong>Aucune action enregistrée</strong><p>Les prochaines modifications apparaîtront ici.</p></div>}
             </div>
-          ) : <p className="settings-readonly-note">Le journal détaillé est réservé à l’administrateur.</p>}
+          ) : <p className="settings-readonly-note">Le journal détaillé est réservé au propriétaire principal.</p>}
           </div>
       </details>
 
@@ -1709,7 +1710,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
                   <select name="role" defaultValue="editor">
                     <option value="editor">Éditeur — peut ajouter et modifier</option>
                     <option value="viewer">Lecture seule — peut seulement consulter</option>
-                    <option value="admin">Administrateur — gère aussi les accès</option>
+                    <option value="admin">Administrateur — droits métier étendus</option>
                   </select>
                 </label>
                 <label><span>Mot de passe</span><input name="password" type="password" minLength={9} maxLength={128} required autoComplete="new-password" /></label>
@@ -1720,8 +1721,8 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
             </form>
           ) : (
             <div className="owner-security-note">
-              <strong>Votre rôle : {access.role === "editor" ? "Éditeur" : "Lecture seule"}</strong>
-              <p>Seul un administrateur peut créer des partenaires, modifier leurs rôles ou remplacer leurs mots de passe.</p>
+              <strong>Votre rôle : {access.role === "admin" ? "Administrateur" : access.role === "editor" ? "Éditeur" : "Lecture seule"}</strong>
+              <p>Seul le propriétaire principal peut créer des partenaires, modifier leurs rôles ou remplacer leurs mots de passe.</p>
             </div>
           )}
         </div>
@@ -1770,7 +1771,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
             <input name="username" type="text" minLength={2} maxLength={50} defaultValue={access.username} required autoComplete="username" autoCapitalize="none" disabled={!access.isOwner} />
           </label>
           <div className="account-form-footer">
-            <p>Ces informations sont modifiables uniquement par un administrateur. Si vous changez le nom d’utilisateur de connexion, utilisez le nouveau nom dès la prochaine session.</p>
+            <p>Ces informations sont modifiables uniquement par le propriétaire principal. Si vous changez le nom d’utilisateur de connexion, utilisez le nouveau nom dès la prochaine session.</p>
             <button className="primary-button" type="submit" disabled={savingAccount || !access.canEdit || !access.isOwner}>{savingAccount ? "Enregistrement…" : "Enregistrer le compte"}</button>
           </div>
         </form>
@@ -2019,7 +2020,7 @@ function MemberCard({ member, currentUsername, submit }: {
     }
   }
 
-  const roleLabel = member.role === "admin" ? "Administrateur" : member.role === "editor" ? "Éditeur" : "Lecture seule";
+  const roleLabel = member.isOwner ? "Propriétaire principal" : member.role === "admin" ? "Administrateur" : member.role === "editor" ? "Éditeur" : "Lecture seule";
   return (
     <article className={`member-card ${member.isActive ? "" : "inactive"}`}>
       <div className="member-card-head">
@@ -2028,8 +2029,8 @@ function MemberCard({ member, currentUsername, submit }: {
         <span className={`member-status ${member.isActive ? "active" : ""}`}>{member.isActive ? "Actif" : "Suspendu"}</span>
       </div>
       <form className="member-rights-form" onSubmit={(event) => void updateMember(event)}>
-        <label><span>Rôle</span><select name="role" defaultValue={member.role} disabled={isCurrent}><option value="admin">Administrateur</option><option value="editor">Éditeur</option><option value="viewer">Lecture seule</option></select></label>
-        <label className="member-active-toggle"><input name="isActive" type="checkbox" defaultChecked={member.isActive} disabled={isCurrent} /><span>Compte actif</span></label>
+        <label><span>Rôle</span><select name="role" defaultValue={member.role} disabled={isCurrent || member.isOwner}><option value="admin">Administrateur</option><option value="editor">Éditeur</option><option value="viewer">Lecture seule</option></select></label>
+        <label className="member-active-toggle"><input name="isActive" type="checkbox" defaultChecked={member.isActive} disabled={isCurrent || member.isOwner} /><span>Compte actif</span></label>
         <button className="secondary-button" type="submit" disabled={saving || isCurrent}>{saving ? "Mise à jour…" : isCurrent ? "Compte principal" : "Enregistrer les droits"}</button>
       </form>
       {!isCurrent && (
