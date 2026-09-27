@@ -2916,6 +2916,159 @@ function ImportProductsPanel({ products, canEdit, submit }: { products: Product[
   );
 }
 
+function ReorderingPage({
+  data,
+  submit,
+  onEditProduct,
+}: {
+  data: Data;
+  submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
+  onEditProduct: (selection: EditableEntity) => void;
+}) {
+  const [creatingId, setCreatingId] = useState<number | null>(null);
+  const recommendations = data.stockRecommendations;
+  const attention = recommendations.filter((row) => row.status !== "OK");
+  const reorderRows = recommendations.filter((row) => row.recommendedQuantity > 0);
+  const ruptureCount = recommendations.filter((row) => row.status === "Rupture").length;
+  const criticalCount = recommendations.filter((row) => row.status === "Critique").length;
+  const recommendedUnits = reorderRows.reduce((sum, row) => sum + row.recommendedQuantity, 0);
+  const estimatedBudget = reorderRows.reduce((sum, row) => sum + row.estimatedCost, 0);
+  const pendingUnits = recommendations.reduce((sum, row) => sum + row.pendingInbound, 0);
+  const supplierNames = Array.from(new Set(attention.map((row) => row.supplier)))
+    .sort((left, right) => {
+      if (left === "Fournisseur à renseigner") return 1;
+      if (right === "Fournisseur à renseigner") return -1;
+      return left.localeCompare(right, "fr");
+    });
+
+  async function preparePurchase(row: SmartStockRecommendation) {
+    if (!data.access.canEdit || creatingId || row.recommendedQuantity <= 0 || row.supplier === "Fournisseur à renseigner") return;
+    const confirmed = window.confirm(
+      `Créer un achat fournisseur de ${row.recommendedQuantity} unité(s) de ${row.productName} chez ${row.supplier} ?\n\nIl sera créé « À payer ». Le stock ne changera qu’au moment où vous cliquerez sur Réceptionner dans Achats.`,
+    );
+    if (!confirmed) return;
+    setCreatingId(row.productId);
+    try {
+      await submit("addPurchase", {
+        supplier: row.supplier,
+        item: `Réapprovisionnement · ${row.productName}`,
+        productId: String(row.productId),
+        quantity: String(row.recommendedQuantity),
+        unitCost: String(row.unitCost),
+        account: "Banque",
+        paymentStatus: "À payer",
+      });
+    } finally {
+      setCreatingId(null);
+    }
+  }
+
+  return (
+    <div className="reports-page">
+      <section className="report-automation-banner">
+        <div>
+          <span>↻</span>
+          <div>
+            <strong>Stock intelligent actif</strong>
+            <p>La recommandation combine le seuil du produit, les sorties des 30 derniers jours, la couverture cible et les achats déjà en attente de réception.</p>
+          </div>
+        </div>
+        <small>Aucun achat n’est créé automatiquement</small>
+      </section>
+
+      <section className="kpi-grid">
+        <Kpi label="Ruptures" value={String(ruptureCount)} detail={ruptureCount ? "À traiter en priorité" : "Aucune rupture"} danger={ruptureCount > 0} />
+        <Kpi label="Stocks critiques" value={String(criticalCount)} detail="Sous le seuil personnalisé" danger={criticalCount > 0} />
+        <Kpi label="Quantité conseillée" value={String(recommendedUnits)} detail={`${pendingUnits} unité(s) déjà en commande`} />
+        <Kpi label="Budget estimé" value={money(estimatedBudget)} detail="Dernier coût fournisseur connu ou prix d’achat" />
+      </section>
+
+      <section className="panel">
+        <PanelHead kicker="Méthode" title="Comment Maison Jiya calcule la commande" total="30 jours" />
+        <p className="profitability-note">
+          Cible = consommation moyenne sur 30 jours × couverture choisie + seuil de sécurité. Les quantités déjà commandées mais non réceptionnées sont retirées du besoin. Une sortie d’inventaire ou une perte manuelle n’augmente pas artificiellement la demande.
+        </p>
+      </section>
+
+      {supplierNames.length === 0 ? (
+        <section className="panel">
+          <EmptyState title="Stock suffisamment couvert" text="Aucune rupture ni commande complémentaire n’est recommandée pour le moment." />
+        </section>
+      ) : supplierNames.map((supplier) => {
+        const rows = attention.filter((row) => row.supplier === supplier);
+        const supplierUnits = rows.reduce((sum, row) => sum + row.recommendedQuantity, 0);
+        const supplierBudget = rows.reduce((sum, row) => sum + row.estimatedCost, 0);
+        return (
+          <section className="panel" key={supplier}>
+            <PanelHead
+              kicker={supplier === "Fournisseur à renseigner" ? "Fournisseur manquant" : "Fournisseur"}
+              title={supplier}
+              total={supplierUnits ? `${supplierUnits} unité(s) · ${money(supplierBudget)}` : "Achat déjà couvert"}
+            />
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Produit</th><th>État</th><th>Stock / seuil</th><th>Sorties 30 j</th><th>Couverture</th><th>Déjà commandé</th><th>Cible</th><th>Conseillé</th><th>Coût estimé</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
+                    const product = data.products.find((item) => item.id === row.productId);
+                    const covered = row.recommendedQuantity === 0 && row.pendingInbound > 0;
+                    return (
+                      <tr key={row.productId}>
+                        <td><strong>{row.productName}</strong><small>{row.productCode} · {row.category}</small></td>
+                        <td><Status value={row.status} />{covered ? <small>Besoin couvert par achat en attente</small> : null}</td>
+                        <td><strong>{row.stockQuantity}</strong><small>Seuil {row.alertThreshold}</small></td>
+                        <td>{row.soldUnits30}<small>{row.averageDailyDemand.toFixed(2)} / jour</small></td>
+                        <td>{row.daysOfCover === null ? "—" : `${row.daysOfCover} j`}<small>Cible {row.coverDays} j</small></td>
+                        <td>{row.pendingInbound}</td>
+                        <td>{row.targetStock}</td>
+                        <td className={row.recommendedQuantity > 0 ? "money-negative" : "money-positive"}><strong>{row.recommendedQuantity}</strong></td>
+                        <td>{row.recommendedQuantity > 0 ? money(row.estimatedCost) : "—"}<small>{row.unitCost ? `${money(row.unitCost)} / unité` : "Coût inconnu"}</small></td>
+                        <td>
+                          <div className="entity-actions-row">
+                            {product ? <button className="secondary-button" type="button" onClick={() => onEditProduct({ kind: "product", record: product })}>Réglages</button> : null}
+                            {row.recommendedQuantity > 0 && supplier !== "Fournisseur à renseigner" ? (
+                              <button className="primary-button" type="button" disabled={!data.access.canEdit || creatingId === row.productId} onClick={() => void preparePurchase(row)}>
+                                {creatingId === row.productId ? "Création…" : "Préparer l’achat"}
+                              </button>
+                            ) : row.recommendedQuantity > 0 ? <small>Ajoutez d’abord un achat lié à ce produit pour mémoriser son fournisseur.</small> : <small>Rien à commander</small>}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        );
+      })}
+
+      <section className="panel">
+        <PanelHead kicker="Vue complète" title="Tous les produits actifs" total={String(recommendations.length)} />
+        <div className="table-scroll">
+          <table>
+            <thead><tr><th>Produit</th><th>Stock</th><th>Seuil</th><th>Couverture cible</th><th>Fournisseur connu</th><th>Conseil</th></tr></thead>
+            <tbody>{recommendations.map((row) => (
+              <tr key={row.productId}>
+                <td><strong>{row.productName}</strong><small>{row.productCode}</small></td>
+                <td><StockLevel quantity={row.stockQuantity} threshold={row.alertThreshold} /></td>
+                <td>{row.alertThreshold}</td>
+                <td>{row.coverDays} jours</td>
+                <td>{row.supplier}<small>{row.lastPurchaseAt ? `Dernier achat : ${dateLabel(row.lastPurchaseAt)}` : "Aucun achat lié"}</small></td>
+                <td><Status value={row.status} /><small>{row.recommendedQuantity > 0 ? `Commander ${row.recommendedQuantity}` : row.pendingInbound > 0 ? `${row.pendingInbound} en réception` : "Stock couvert"}</small></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, submit, onAdd, onMove, onCount, onEdit, onDelete, onRestore }: { products: Product[]; orders: Order[]; movements: StockMovement[]; inventoryCounts: InventoryCount[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onMove: (selection: StockSelection) => void; onCount: (product: Product) => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void; onRestore: (product: Product) => void }) {
   const [profitSearch, setProfitSearch] = useState("");
   const [profitCategory, setProfitCategory] = useState("");
@@ -4184,7 +4337,7 @@ function MonthlyCapitalChart({
   );
 }
 function Status({ value }: { value: string }) {
-  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration"].includes(value) ? "success" : ["Retour", "Annulée", "Refusée", "Retournée", "Remboursé", "Non encaissé"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande"].includes(value) ? "info" : "warning";
+  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration", "OK"].includes(value) ? "success" : ["Retour", "Annulée", "Refusée", "Retournée", "Remboursé", "Non encaissé", "Rupture", "Critique"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande"].includes(value) ? "info" : "warning";
   return <span className={`status ${tone}`}>{value}</span>;
 }
 
