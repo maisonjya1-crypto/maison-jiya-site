@@ -3155,7 +3155,7 @@ function PurchasesPage({ purchases, products, canEdit, submit, onAdd, onEdit, on
         </div>
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Date</th><th>Fournisseur</th><th>Achat</th><th>Produit stock</th><th>Qté</th><th>Total</th><th>Paiement</th><th>Réception</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Date</th><th>Fournisseur</th><th>Achat</th><th>Produit stock</th><th>Qté</th><th>Total</th><th>Compte</th><th>Paiement</th><th>Réception</th><th>Actions</th></tr></thead>
             <tbody>
               {purchases.map((purchase) => {
                 const received = purchase.receivedQuantity >= purchase.quantity && purchase.quantity > 0;
@@ -3167,7 +3167,8 @@ function PurchasesPage({ purchases, products, canEdit, submit, onAdd, onEdit, on
                     <td>{purchase.productId ? <><strong>{purchase.productName || "Produit"}</strong><small>{purchase.productCode || `#${purchase.productId}`}</small></> : <small>Non lié au stock</small>}</td>
                     <td>{purchase.quantity}</td>
                     <td><strong>{money(purchase.totalCost)}</strong></td>
-                    <td><Status value={purchase.paymentStatus} /></td>
+                    <td>{purchase.account || "Banque"}</td>
+                    <td><Status value={purchase.paymentStatus} />{purchase.paymentStatus === "Payé" && purchase.paidAt ? <small>{dateLabel(purchase.paidAt)}</small> : null}</td>
                     <td>
                       {received ? (
                         <span className="purchase-received"><strong>✓ +{purchase.receivedQuantity}</strong><small>{purchase.receivedAt ? dateLabel(purchase.receivedAt) : "Réceptionné"}</small></span>
@@ -3239,7 +3240,7 @@ function ExpensesPage({ expenses, onAdd, onEdit, onDelete }: { expenses: Expense
         {expenses.length ? (
           <div className="table-scroll">
             <table>
-              <thead><tr><th>Date</th><th>Catégorie</th><th>Libellé</th><th>Compte</th><th>Montant</th><th>Paiement</th><th>Note</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Date</th><th>Catégorie</th><th>Libellé</th><th>Compte</th><th>Montant</th><th>Paiement</th><th>Payé le</th><th>Note</th><th>Actions</th></tr></thead>
               <tbody>
                 {expenses.map((expense) => (
                   <tr key={expense.id}>
@@ -3249,6 +3250,7 @@ function ExpensesPage({ expenses, onAdd, onEdit, onDelete }: { expenses: Expense
                     <td>{expense.account}</td>
                     <td className="money-negative"><strong>{money(expense.amount)}</strong></td>
                     <td><Status value={expense.paymentStatus} /></td>
+                    <td>{expense.paymentStatus === "Payé" && expense.paidAt ? dateLabel(expense.paidAt) : "—"}</td>
                     <td>{expense.note || "—"}</td>
                     <td className="order-actions-cell"><RecordActions label={"la dépense " + expense.label} onEdit={() => onEdit({ kind: "expense", record: expense })} onDelete={() => onDelete({ kind: "expense", record: expense })} /></td>
                   </tr>
