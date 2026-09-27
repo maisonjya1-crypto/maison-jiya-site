@@ -61,7 +61,7 @@ test("l’API réserve la modification au propriétaire et exige un total de 100
   const end = route.indexOf('payload.action === "updateSetting"', start);
   const block = route.slice(start, end);
   assert.match(block, /access\.isOwner/);
-  assert.match(block, /totalise exactement 100/);
+  assert.match(block, /totaliser exactement 100/);
   assert.match(block, /reinvestment_allocation/);
   assert.match(block, /salary_allocation/);
   assert.match(block, /emergency_allocation/);
