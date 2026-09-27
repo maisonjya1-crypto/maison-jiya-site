@@ -116,6 +116,8 @@ type Product = {
   salePrice: number;
   minimumSalePrice: number;
   stockQuantity: number;
+  stockAlertThreshold: number;
+  reorderCoverDays: number;
   archivedAt: string | null;
   archivedByUserId: number | null;
   createdAt: string;
@@ -237,6 +239,26 @@ type DailyClosingPreview = {
   paidExpensesAmount: number;
   adSpend: number;
 };
+type SmartStockRecommendation = {
+  productId: number;
+  productCode: string;
+  productName: string;
+  category: string;
+  stockQuantity: number;
+  alertThreshold: number;
+  coverDays: number;
+  soldUnits30: number;
+  averageDailyDemand: number;
+  daysOfCover: number | null;
+  pendingInbound: number;
+  targetStock: number;
+  recommendedQuantity: number;
+  supplier: string;
+  unitCost: number;
+  estimatedCost: number;
+  lastPurchaseAt: string | null;
+  status: "Rupture" | "Critique" | "À prévoir" | "OK";
+};
 type GoogleSheetsSyncLog = {
   id: number;
   eventId: string;
@@ -282,6 +304,7 @@ type Data = {
   backups: DailyBackup[];
   dailyClosings: DailyClosing[];
   dailyClosingPreview: DailyClosingPreview;
+  stockRecommendations: SmartStockRecommendation[];
   googleSheetsSync: GoogleSheetsSync;
   settings: Record<string, string>;
   access: {
@@ -352,6 +375,7 @@ const emptyData: Data = {
     paidExpensesAmount: 0,
     adSpend: 0,
   },
+  stockRecommendations: [],
   googleSheetsSync: {
     state: { status: "unconfigured", currentVersion: 0, syncedVersion: 0, pendingChanges: 0, attemptCount: 0, lastEventAt: null, lastAttemptAt: null, lastSyncAt: null, nextAttemptAt: null, lastError: "" },
     logs: [],
@@ -376,9 +400,9 @@ const dateTimeLabel = (value: string) =>
     minute: "2-digit",
   }).format(new Date(value));
 
-const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
+const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
 const navigationGroups = [
-  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats"] },
+  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Achats"] },
   { label: "Pilotage", items: ["Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA"] },
   { label: "Système", items: ["Mode entraînement", "Corbeille", "Paramètres"] },
 ];
@@ -386,6 +410,7 @@ const sectionDescriptions: Record<string, string> = {
   "Vue d’ensemble": "Synthèse de l’activité, de la trésorerie et des opérations.",
   Commandes: "Suivez les ventes, statuts, paiements et expéditions.",
   Produits: "Pilotez le catalogue, les coûts, les marges et le stock.",
+  Réapprovisionnement: "Anticipez les ruptures et préparez les quantités à commander par fournisseur.",
   Colis: "Contrôlez les expéditions et le suivi des transporteurs.",
   Clients: "Centralisez les coordonnées et l’historique de vos clientes.",
   Achats: "Gérez les fournisseurs, réceptions et coûts d’approvisionnement.",
@@ -1052,7 +1077,7 @@ function Loading() {
 function SectionSearch({ active, data, openOrder, openEntity }: { active: string; data: Data; openOrder: (order: Order) => void; openEntity: (selection: EditableEntity) => void }) {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLocaleLowerCase("fr");
-  const searchablePages = new Set(["Commandes", "Produits", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Corbeille"]);
+  const searchablePages = new Set(["Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Corbeille"]);
   const results = useMemo<Array<{ key: string; label: string; detail: string; order?: Order; entity?: EditableEntity }>>(() => {
     if (normalized.length < 2) return [];
     const matches = (values: Array<string | number | null | undefined>) => values.some((value) => String(value || "").toLocaleLowerCase("fr").includes(normalized));
@@ -1067,6 +1092,20 @@ function SectionSearch({ active, data, openOrder, openEntity }: { active: string
       return data.products
         .filter((product) => matches([product.productCode, product.name, product.category, product.stockQuantity]))
         .map((product) => ({ key: `product-${product.id}`, label: product.name, detail: `${product.productCode} · stock ${product.stockQuantity}`, entity: { kind: "product" as const, record: product } }))
+        .slice(0, 10);
+    }
+    if (active === "Réapprovisionnement") {
+      return data.stockRecommendations
+        .filter((row) => matches([row.productCode, row.productName, row.category, row.supplier, row.status]))
+        .map((row) => {
+          const product = data.products.find((item) => item.id === row.productId);
+          return {
+            key: `reorder-${row.productId}`,
+            label: row.productName,
+            detail: `${row.supplier} · ${row.status} · conseillé ${row.recommendedQuantity}`,
+            entity: product ? ({ kind: "product" as const, record: product }) : undefined,
+          };
+        })
         .slice(0, 10);
     }
     if (active === "Colis") {
@@ -1210,6 +1249,7 @@ function Page({
   const allocationPolicy = allocationPolicyFromSettings(data.settings);
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} onRestore={restoreProduct} />;
+  if (active === "Réapprovisionnement") return <ReorderingPage data={data} submit={submit} onEditProduct={editEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Achats") return <PurchasesPage purchases={data.purchases} products={data.products.filter((product) => !product.archivedAt)} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
@@ -2201,6 +2241,8 @@ function parseDelimitedProducts(text: string) {
     prixdeventeminimumdh: "minimumSalePrice", prixminimum: "minimumSalePrice", minimumsaleprice: "minimumSalePrice",
     quantitestockinitial: "initialQuantity", quantiteinitiale: "initialQuantity", stockinitial: "initialQuantity", initialquantity: "initialQuantity",
     stockrestant: "stockRemaining", quantiterestante: "stockRemaining", stockremaining: "stockRemaining",
+    seuilalertestock: "stockAlertThreshold", seuilstock: "stockAlertThreshold", stockalertthreshold: "stockAlertThreshold",
+    couvertureciblejours: "reorderCoverDays", couverturejours: "reorderCoverDays", reordercoverdays: "reorderCoverDays",
   });
   return rows.filter((row) => String(row.productCode || "").trim() || String(row.name || "").trim());
 }
@@ -2860,8 +2902,8 @@ function ImportProductsPanel({ products, canEdit, submit }: { products: Product[
             <small>Le stock importé correspond à « Stock restant ». Les ventes et bénéfices historiques du fichier ne créent pas de fausses commandes.</small>
           </div>
           <div className="table-scroll product-import-table">
-            <table><thead><tr><th>ID</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Minimum</th><th>Stock restant</th></tr></thead><tbody>
-              {parsed.slice(0, 5).map((row, index) => <tr key={`${row.productCode}-${index}`}><td><strong>{row.productCode}</strong></td><td>{row.name}</td><td>{row.category}</td><td>{row.purchasePrice || "0"} MAD</td><td>{row.salePrice || "0"} MAD</td><td>{row.minimumSalePrice || row.salePrice || "0"} MAD</td><td>{row.stockRemaining || row.initialQuantity || "0"}</td></tr>)}
+            <table><thead><tr><th>ID</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Minimum</th><th>Stock restant</th><th>Seuil</th><th>Couverture</th></tr></thead><tbody>
+              {parsed.slice(0, 5).map((row, index) => <tr key={`${row.productCode}-${index}`}><td><strong>{row.productCode}</strong></td><td>{row.name}</td><td>{row.category}</td><td>{row.purchasePrice || "0"} MAD</td><td>{row.salePrice || "0"} MAD</td><td>{row.minimumSalePrice || row.salePrice || "0"} MAD</td><td>{row.stockRemaining || row.initialQuantity || "0"}</td><td>{row.stockAlertThreshold || "5"}</td><td>{row.reorderCoverDays || "30"} j</td></tr>)}
             </tbody></table>
           </div>
           <div className="product-import-actions">
@@ -2871,6 +2913,159 @@ function ImportProductsPanel({ products, canEdit, submit }: { products: Product[
         </div>
       ) : <p className="product-import-empty">Aucun fichier chargé. Votre fichier « Products Database.csv » sera accepté directement.</p>}
     </section>
+  );
+}
+
+function ReorderingPage({
+  data,
+  submit,
+  onEditProduct,
+}: {
+  data: Data;
+  submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
+  onEditProduct: (selection: EditableEntity) => void;
+}) {
+  const [creatingId, setCreatingId] = useState<number | null>(null);
+  const recommendations = data.stockRecommendations;
+  const attention = recommendations.filter((row) => row.status !== "OK");
+  const reorderRows = recommendations.filter((row) => row.recommendedQuantity > 0);
+  const ruptureCount = recommendations.filter((row) => row.status === "Rupture").length;
+  const criticalCount = recommendations.filter((row) => row.status === "Critique").length;
+  const recommendedUnits = reorderRows.reduce((sum, row) => sum + row.recommendedQuantity, 0);
+  const estimatedBudget = reorderRows.reduce((sum, row) => sum + row.estimatedCost, 0);
+  const pendingUnits = recommendations.reduce((sum, row) => sum + row.pendingInbound, 0);
+  const supplierNames = Array.from(new Set(attention.map((row) => row.supplier)))
+    .sort((left, right) => {
+      if (left === "Fournisseur à renseigner") return 1;
+      if (right === "Fournisseur à renseigner") return -1;
+      return left.localeCompare(right, "fr");
+    });
+
+  async function preparePurchase(row: SmartStockRecommendation) {
+    if (!data.access.canEdit || creatingId || row.recommendedQuantity <= 0 || row.supplier === "Fournisseur à renseigner") return;
+    const confirmed = window.confirm(
+      `Créer un achat fournisseur de ${row.recommendedQuantity} unité(s) de ${row.productName} chez ${row.supplier} ?\n\nIl sera créé « À payer ». Le stock ne changera qu’au moment où vous cliquerez sur Réceptionner dans Achats.`,
+    );
+    if (!confirmed) return;
+    setCreatingId(row.productId);
+    try {
+      await submit("addPurchase", {
+        supplier: row.supplier,
+        item: `Réapprovisionnement · ${row.productName}`,
+        productId: String(row.productId),
+        quantity: String(row.recommendedQuantity),
+        unitCost: String(row.unitCost),
+        account: "Banque",
+        paymentStatus: "À payer",
+      });
+    } finally {
+      setCreatingId(null);
+    }
+  }
+
+  return (
+    <div className="reports-page">
+      <section className="report-automation-banner">
+        <div>
+          <span>↻</span>
+          <div>
+            <strong>Stock intelligent actif</strong>
+            <p>La recommandation combine le seuil du produit, les sorties des 30 derniers jours, la couverture cible et les achats déjà en attente de réception.</p>
+          </div>
+        </div>
+        <small>Aucun achat n’est créé automatiquement</small>
+      </section>
+
+      <section className="kpi-grid">
+        <Kpi label="Ruptures" value={String(ruptureCount)} detail={ruptureCount ? "À traiter en priorité" : "Aucune rupture"} danger={ruptureCount > 0} />
+        <Kpi label="Stocks critiques" value={String(criticalCount)} detail="Sous le seuil personnalisé" danger={criticalCount > 0} />
+        <Kpi label="Quantité conseillée" value={String(recommendedUnits)} detail={`${pendingUnits} unité(s) déjà en commande`} />
+        <Kpi label="Budget estimé" value={money(estimatedBudget)} detail="Dernier coût fournisseur connu ou prix d’achat" />
+      </section>
+
+      <section className="panel">
+        <PanelHead kicker="Méthode" title="Comment Maison Jiya calcule la commande" total="30 jours" />
+        <p className="profitability-note">
+          Cible = consommation moyenne sur 30 jours × couverture choisie + seuil de sécurité. Les quantités déjà commandées mais non réceptionnées sont retirées du besoin. Une sortie d’inventaire ou une perte manuelle n’augmente pas artificiellement la demande.
+        </p>
+      </section>
+
+      {supplierNames.length === 0 ? (
+        <section className="panel">
+          <EmptyState title="Stock suffisamment couvert" text="Aucune rupture ni commande complémentaire n’est recommandée pour le moment." />
+        </section>
+      ) : supplierNames.map((supplier) => {
+        const rows = attention.filter((row) => row.supplier === supplier);
+        const supplierUnits = rows.reduce((sum, row) => sum + row.recommendedQuantity, 0);
+        const supplierBudget = rows.reduce((sum, row) => sum + row.estimatedCost, 0);
+        return (
+          <section className="panel" key={supplier}>
+            <PanelHead
+              kicker={supplier === "Fournisseur à renseigner" ? "Fournisseur manquant" : "Fournisseur"}
+              title={supplier}
+              total={supplierUnits ? `${supplierUnits} unité(s) · ${money(supplierBudget)}` : "Achat déjà couvert"}
+            />
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Produit</th><th>État</th><th>Stock / seuil</th><th>Sorties 30 j</th><th>Couverture</th><th>Déjà commandé</th><th>Cible</th><th>Conseillé</th><th>Coût estimé</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
+                    const product = data.products.find((item) => item.id === row.productId);
+                    const covered = row.recommendedQuantity === 0 && row.pendingInbound > 0;
+                    return (
+                      <tr key={row.productId}>
+                        <td><strong>{row.productName}</strong><small>{row.productCode} · {row.category}</small></td>
+                        <td><Status value={row.status} />{covered ? <small>Besoin couvert par achat en attente</small> : null}</td>
+                        <td><strong>{row.stockQuantity}</strong><small>Seuil {row.alertThreshold}</small></td>
+                        <td>{row.soldUnits30}<small>{row.averageDailyDemand.toFixed(2)} / jour</small></td>
+                        <td>{row.daysOfCover === null ? "—" : `${row.daysOfCover} j`}<small>Cible {row.coverDays} j</small></td>
+                        <td>{row.pendingInbound}</td>
+                        <td>{row.targetStock}</td>
+                        <td className={row.recommendedQuantity > 0 ? "money-negative" : "money-positive"}><strong>{row.recommendedQuantity}</strong></td>
+                        <td>{row.recommendedQuantity > 0 ? money(row.estimatedCost) : "—"}<small>{row.unitCost ? `${money(row.unitCost)} / unité` : "Coût inconnu"}</small></td>
+                        <td>
+                          <div className="entity-actions-row">
+                            {product ? <button className="secondary-button" type="button" onClick={() => onEditProduct({ kind: "product", record: product })}>Réglages</button> : null}
+                            {row.recommendedQuantity > 0 && supplier !== "Fournisseur à renseigner" ? (
+                              <button className="primary-button" type="button" disabled={!data.access.canEdit || creatingId === row.productId} onClick={() => void preparePurchase(row)}>
+                                {creatingId === row.productId ? "Création…" : "Préparer l’achat"}
+                              </button>
+                            ) : row.recommendedQuantity > 0 ? <small>Ajoutez d’abord un achat lié à ce produit pour mémoriser son fournisseur.</small> : <small>Rien à commander</small>}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        );
+      })}
+
+      <section className="panel">
+        <PanelHead kicker="Vue complète" title="Tous les produits actifs" total={String(recommendations.length)} />
+        <div className="table-scroll">
+          <table>
+            <thead><tr><th>Produit</th><th>Stock</th><th>Seuil</th><th>Couverture cible</th><th>Fournisseur connu</th><th>Conseil</th></tr></thead>
+            <tbody>{recommendations.map((row) => (
+              <tr key={row.productId}>
+                <td><strong>{row.productName}</strong><small>{row.productCode}</small></td>
+                <td><StockLevel quantity={row.stockQuantity} threshold={row.alertThreshold} /></td>
+                <td>{row.alertThreshold}</td>
+                <td>{row.coverDays} jours</td>
+                <td>{row.supplier}<small>{row.lastPurchaseAt ? `Dernier achat : ${dateLabel(row.lastPurchaseAt)}` : "Aucun achat lié"}</small></td>
+                <td><Status value={row.status} /><small>{row.recommendedQuantity > 0 ? `Commander ${row.recommendedQuantity}` : row.pendingInbound > 0 ? `${row.pendingInbound} en réception` : "Stock couvert"}</small></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -2885,7 +3080,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
   const units = activeProducts.reduce((sum, product) => sum + product.stockQuantity, 0),
     purchaseValue = activeProducts.reduce((sum, product) => sum + product.stockQuantity * product.purchasePrice, 0),
     saleValue = activeProducts.reduce((sum, product) => sum + product.stockQuantity * product.salePrice, 0),
-    lowStock = activeProducts.filter((product) => product.stockQuantity <= 5).length;
+    lowStock = activeProducts.filter((product) => product.stockQuantity <= product.stockAlertThreshold).length;
   const quantityForProduct = (order: Order, product: Product) => {
     if (order.productId === product.id) return order.quantity;
     const linkedQuantity = movements
@@ -3007,7 +3202,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
             <>
               <div className="desktop-product-table table-scroll">
                 <table>
-                  <thead><tr><th>ID produit</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Minimum</th><th>Restant</th><th>Actions</th></tr></thead>
+                  <thead><tr><th>ID produit</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Minimum</th><th>Seuil stock</th><th>Restant</th><th>Actions</th></tr></thead>
                   <tbody>
                     {filteredProducts.map((product) => (
                       <tr key={product.id}>
@@ -3017,7 +3212,8 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                         <td>{money(product.purchasePrice)}</td>
                         <td><strong>{money(product.salePrice)}</strong></td>
                         <td>{money(product.minimumSalePrice || product.salePrice)}</td>
-                        <td><StockLevel quantity={product.stockQuantity} /></td>
+                        <td>{product.stockAlertThreshold}</td>
+                        <td><StockLevel quantity={product.stockQuantity} threshold={product.stockAlertThreshold} /></td>
                         <td>
                           <div className="entity-actions-row">
                             {product.archivedAt ? (
@@ -3048,7 +3244,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                     <div className="product-card-head">
                       <div><span>{product.productCode}</span><h3>{product.name}</h3></div>
                       <div className="product-card-actions">
-                        <StockLevel quantity={product.stockQuantity} />
+                        <StockLevel quantity={product.stockQuantity} threshold={product.stockAlertThreshold} />
                         {product.archivedAt ? <Status value="Archivé" /> : <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />}
                       </div>
                     </div>
@@ -3057,6 +3253,8 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                       <p>Prix d’achat<strong>{money(product.purchasePrice)}</strong></p>
                       <p>Prix de vente<strong>{money(product.salePrice)}</strong></p>
                       <p>Prix minimum<strong>{money(product.minimumSalePrice || product.salePrice)}</strong></p>
+                      <p>Seuil stock<strong>{product.stockAlertThreshold}</strong></p>
+                      <p>Couverture cible<strong>{product.reorderCoverDays} j</strong></p>
                     </div>
                     {product.archivedAt ? (
                       <div className="stock-actions">
@@ -3156,11 +3354,11 @@ function ProductFilterBar({ search, category, categories, resultCount, totalCoun
     </div>
   );
 }
-function StockLevel({ quantity }: { quantity: number }) {
+function StockLevel({ quantity, threshold = 5 }: { quantity: number; threshold?: number }) {
   return (
-    <span className={`stock-level ${quantity === 0 ? "empty" : quantity <= 5 ? "low" : "ok"}`}>
+    <span className={`stock-level ${quantity === 0 ? "empty" : quantity <= threshold ? "low" : "ok"}`}>
       <strong>{quantity}</strong> unité{quantity === 1 ? "" : "s"}
-      <small>{quantity === 0 ? "Rupture" : quantity <= 5 ? "Stock faible" : "Disponible"}</small>
+      <small>{quantity === 0 ? "Rupture" : quantity <= threshold ? `Stock faible · seuil ${threshold}` : "Disponible"}</small>
     </span>
   );
 }
@@ -3669,7 +3867,7 @@ function ReportsPage({ data }: { data: Data }) {
     periodCard("7 derniers jours", weekStartKey, today),
     periodCard("Mois en cours", monthStartKey, today),
   ];
-  const lowStock = data.products.filter((product) => product.stockQuantity <= 3);
+  const stockAlerts = data.stockRecommendations.filter((row) => row.status !== "OK");
   const delayed = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && elapsedDays(order.updatedAt || order.createdAt) >= 4);
   const unpaid = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus !== "Encaissé" && elapsedDays(order.updatedAt || order.createdAt) >= 3);
   const supplierDue = data.purchases.filter((purchase) => purchase.paymentStatus !== "Payé");
@@ -3695,7 +3893,14 @@ function ReportsPage({ data }: { data: Data }) {
   const positiveProfit = automaticAllocations.reduce((sum, entry) => sum + entry.amount, 0);
   const allocationAmount = (category: string) => automaticAllocations.filter((entry) => entry.category === category).reduce((sum, entry) => sum + entry.amount, 0);
   const alerts = [
-    ...lowStock.map((product) => ({ key: `stock-${product.id}`, level: product.stockQuantity === 0 ? "danger" : "warning", title: `${product.name} : stock ${product.stockQuantity}`, detail: `SKU ${product.productCode} · seuil faible atteint` })),
+    ...stockAlerts.map((row) => ({
+      key: `stock-${row.productId}`,
+      level: row.status === "À prévoir" ? "warning" : "danger",
+      title: `${row.productName} : ${row.status.toLocaleLowerCase("fr")} · stock ${row.stockQuantity}`,
+      detail: row.recommendedQuantity > 0
+        ? `Seuil ${row.alertThreshold} · commander ${row.recommendedQuantity} unité(s) · ${row.supplier}`
+        : `Seuil ${row.alertThreshold} · ${row.pendingInbound} unité(s) déjà en attente de réception`,
+    })),
     ...delayed.map((order) => ({ key: `delay-${order.id}`, level: "warning", title: `${order.orderRef} semble bloquée`, detail: `${order.carrier} · ${order.status} depuis ${elapsedDays(order.updatedAt || order.createdAt)} jours` })),
     ...unpaid.map((order) => ({ key: `unpaid-${order.id}`, level: "danger", title: `${order.orderRef} livrée mais non encaissée`, detail: `${order.carrier} · ${money(order.saleAmount - order.shippingCost - order.fees)} à vérifier` })),
     ...supplierDue.map((purchase) => ({ key: `supplier-${purchase.id}`, level: "danger", title: `${purchase.supplier} : paiement fournisseur à prévoir`, detail: `${purchase.item} · ${money(purchase.totalCost)} à payer` })),
@@ -4139,7 +4344,7 @@ function MonthlyCapitalChart({
   );
 }
 function Status({ value }: { value: string }) {
-  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration"].includes(value) ? "success" : ["Retour", "Annulée", "Refusée", "Retournée", "Remboursé", "Non encaissé"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande"].includes(value) ? "info" : "warning";
+  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration", "OK"].includes(value) ? "success" : ["Retour", "Annulée", "Refusée", "Retournée", "Remboursé", "Non encaissé", "Rupture", "Critique"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande"].includes(value) ? "info" : "warning";
   return <span className={`status ${tone}`}>{value}</span>;
 }
 
@@ -4335,6 +4540,8 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
                 <Field label="Nom du produit *" name="name" required />
                 <Select label="Catégorie *" name="category" options={productCategoryOptions} />
                 <Field label="Quantité initiale *" name="initialQuantity" type="number" inputMode="numeric" defaultValue="0" min="0" required />
+                <Field label="Seuil d’alerte stock *" name="stockAlertThreshold" type="number" inputMode="numeric" defaultValue="5" min="0" required />
+                <Field label="Couverture cible (jours) *" name="reorderCoverDays" type="number" inputMode="numeric" defaultValue="30" min="1" required />
                 <ProductPricingFields />
               </>
             )}
@@ -4751,6 +4958,8 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
               <Field label="ID produit / SKU *" name="productCode" defaultValue={selection.record.productCode} required />
               <Field label="Nom du produit *" name="name" defaultValue={selection.record.name} required />
               <Select label="Catégorie *" name="category" defaultValue={selection.record.category} options={productCategoryOptions} />
+              <Field label="Seuil d’alerte stock *" name="stockAlertThreshold" type="number" inputMode="numeric" min="0" defaultValue={String(selection.record.stockAlertThreshold)} required />
+              <Field label="Couverture cible (jours) *" name="reorderCoverDays" type="number" inputMode="numeric" min="1" defaultValue={String(selection.record.reorderCoverDays)} required />
               <ProductPricingFields initialPurchasePrice={selection.record.purchasePrice} initialSalePrice={selection.record.salePrice} initialMinimumSalePrice={selection.record.minimumSalePrice} />
             </>}
             {selection.kind === "movement" && <>
