@@ -125,7 +125,7 @@ export async function receivePurchaseIntoStock(
         AND product_id = ?
         AND received_quantity + ? <= quantity
         AND received_quantity < quantity
-        AND procurement_status <> 'Annulé'
+        AND procurement_status IN ('Commandé', 'Partiellement reçu')
         AND EXISTS (
           SELECT 1 FROM products WHERE id = ? AND archived_at IS NULL
         )
