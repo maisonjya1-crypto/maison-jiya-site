@@ -6,6 +6,9 @@ export type PurchaseReceiptResult = {
   productCode: string;
   productName: string;
   receivedQuantity: number;
+  totalReceivedQuantity: number;
+  remainingQuantity: number;
+  procurementStatus: "Partiellement reçu" | "Reçu";
   previousStock: number;
   newStock: number;
   previousAverageCost: number;
@@ -49,7 +52,12 @@ export function weightedAverageUnitCost(
   return roundMoney(((stock * currentCost) + (quantity * incomingCost)) / (stock + quantity));
 }
 
-export async function receivePurchaseIntoStock(database: D1Database, purchaseId: number, receivedAt = new Date().toISOString()): Promise<PurchaseReceiptResult> {
+export async function receivePurchaseIntoStock(
+  database: D1Database,
+  purchaseId: number,
+  requestedQuantityOrReceivedAt?: number | string,
+  receivedAtInput?: string,
+): Promise<PurchaseReceiptResult> {
   const purchase = await database.prepare(`
     SELECT
       id,
@@ -82,26 +90,54 @@ export async function receivePurchaseIntoStock(database: D1Database, purchaseId:
 
   if (!product) throw new Error("Le produit lié à cet achat est introuvable.");
 
-  const remaining = purchase.quantity - purchase.receivedQuantity;
+  const remainingBefore = purchase.quantity - purchase.receivedQuantity;
+  const receivedAt = typeof requestedQuantityOrReceivedAt === "string"
+    ? requestedQuantityOrReceivedAt
+    : receivedAtInput || new Date().toISOString();
+  const requestedQuantity = typeof requestedQuantityOrReceivedAt === "number"
+    ? Math.round(requestedQuantityOrReceivedAt)
+    : remainingBefore;
+
+  if (!Number.isInteger(requestedQuantity) || requestedQuantity < 1) {
+    throw new Error("La quantité réceptionnée doit être un entier supérieur à zéro.");
+  }
+  if (requestedQuantity > remainingBefore) {
+    throw new Error(`Vous ne pouvez réceptionner que ${remainingBefore} unité(s) restante(s).`);
+  }
+
+  const totalReceivedQuantity = purchase.receivedQuantity + requestedQuantity;
+  const remainingQuantity = purchase.quantity - totalReceivedQuantity;
+  const procurementStatus = remainingQuantity === 0 ? "Reçu" : "Partiellement reçu";
   const expectedAverageCost = weightedAverageUnitCost(
     product.stockQuantity,
     product.purchasePrice,
-    remaining,
+    requestedQuantity,
     purchase.unitCost,
   );
 
   const results = await database.batch([
     database.prepare(`
       UPDATE purchases
-      SET received_quantity = quantity,
-          received_at = ?
+      SET received_quantity = received_quantity + ?,
+          received_at = ?,
+          procurement_status = ?
       WHERE id = ?
         AND product_id = ?
+        AND received_quantity + ? <= quantity
         AND received_quantity < quantity
+        AND procurement_status <> 'Annulé'
         AND EXISTS (
           SELECT 1 FROM products WHERE id = ? AND archived_at IS NULL
         )
-    `).bind(receivedAt, purchase.id, purchase.productId, purchase.productId),
+    `).bind(
+      requestedQuantity,
+      receivedAt,
+      procurementStatus,
+      purchase.id,
+      purchase.productId,
+      requestedQuantity,
+      purchase.productId,
+    ),
     database.prepare(`
       UPDATE products
       SET purchase_price = ROUND(
@@ -118,16 +154,18 @@ export async function receivePurchaseIntoStock(database: D1Database, purchaseId:
           WHERE id = ?
             AND product_id = ?
             AND received_at = ?
+            AND received_quantity >= ?
         )
     `).bind(
       purchase.unitCost,
-      remaining,
-      remaining,
-      remaining,
+      requestedQuantity,
+      requestedQuantity,
+      requestedQuantity,
       purchase.productId,
       purchase.id,
       purchase.productId,
       receivedAt,
+      totalReceivedQuantity,
     ),
     database.prepare(`
       INSERT INTO stock_movements (product_id, purchase_id, movement_type, quantity, note, created_at)
@@ -138,20 +176,22 @@ export async function receivePurchaseIntoStock(database: D1Database, purchaseId:
         WHERE id = ?
           AND product_id = ?
           AND received_at = ?
+          AND received_quantity >= ?
       )
     `).bind(
       purchase.productId,
       purchase.id,
-      remaining,
+      requestedQuantity,
       `Réception fournisseur · ${purchase.supplier} · ${purchase.item}`,
       receivedAt,
       purchase.id,
       purchase.productId,
       receivedAt,
+      totalReceivedQuantity,
     ),
   ]);
 
-  if (!results[0]?.meta?.changes) throw new Error("Cet achat vient déjà d’être réceptionné.");
+  if (!results[0]?.meta?.changes) throw new Error("Cette réception n’a pas été enregistrée. Rechargez les données puis réessayez.");
 
   const refreshed = await database.prepare(`
     SELECT purchase_price AS purchasePrice, stock_quantity AS stockQuantity
@@ -167,9 +207,12 @@ export async function receivePurchaseIntoStock(database: D1Database, purchaseId:
     productId: purchase.productId,
     productCode: product.productCode,
     productName: product.name,
-    receivedQuantity: remaining,
+    receivedQuantity: requestedQuantity,
+    totalReceivedQuantity,
+    remainingQuantity,
+    procurementStatus,
     previousStock: product.stockQuantity,
-    newStock: refreshed?.stockQuantity ?? product.stockQuantity + remaining,
+    newStock: refreshed?.stockQuantity ?? product.stockQuantity + requestedQuantity,
     previousAverageCost: product.purchasePrice,
     receivedUnitCost: purchase.unitCost,
     newAverageCost: refreshed?.purchasePrice ?? expectedAverageCost,
