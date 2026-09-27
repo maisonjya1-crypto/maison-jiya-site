@@ -9,6 +9,7 @@ import { reconcileOrderAllocations } from "../../../db/allocations";
 import { getGoogleSheetsSyncSnapshot, markGoogleSheetsSyncPending, processGoogleSheetsSyncQueue } from "../../../db/google-sheets-sync";
 import { ensureStorefrontCms } from "../../../db/storefront-cms";
 import { receivePurchaseIntoStock } from "../../../db/inventory-cost";
+import { normalizeOrderPaymentState, type OrderPaymentStatus } from "../../../lib/order-payment-lifecycle";
 import { moveOrderToTrash, releaseTrashedOrderStock, restoreOrderFromTrash } from "../../../db/order-trash";
 import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, expenses, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
@@ -323,7 +324,7 @@ async function snapshot(access: AccessInfo) {
   const rawDatabase = await getRawDb();
   await createDailyBackup(rawDatabase);
   const db = await getDb();
-  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, campaign: orders.campaign, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
+  const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, campaign: orders.campaign, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, refundedAt: orders.refundedAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
   const [orderRows, trashRows, customerRows, purchaseRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
@@ -711,7 +712,7 @@ export async function POST(request: Request) {
       const isStoreSale = nextFulfillmentType === "Magasin physique";
       const switchingToStore = isStoreSale && existingOrder.fulfillmentType !== "Magasin physique";
       if (switchingToStore && existingOrder.trackingNumber) return Response.json({ error: "Ce colis possède déjà un numéro de suivi. Il ne peut plus être transformé en vente magasin." }, { status: 409 });
-      const nextPaymentStatus = switchingToStore ? "Encaissé" : paymentStatus(payload.paymentStatus, existingOrder.paymentStatus);
+      const requestedPaymentStatus = (switchingToStore ? "Encaissé" : paymentStatus(payload.paymentStatus, existingOrder.paymentStatus)) as OrderPaymentStatus;
       const nextStatus = switchingToStore ? "Livrée" : orderStatus(payload.status, existingOrder.status);
       if (isStoreSale && !["Livrée", "Retour", "Annulée"].includes(nextStatus)) return Response.json({ error: "Une vente magasin peut être livrée, retournée ou annulée." }, { status: 400 });
       const nextAddress = isStoreSale ? "Magasin Maison Jiya" : textValue(payload.address, existingOrder.address).slice(0, 300);
@@ -725,9 +726,15 @@ export async function POST(request: Request) {
       if (nextStatus === "Retour" && !nextReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
       if (nextReturnReason === "Autre" && !nextReturnNote) return Response.json({ error: "Précisez le motif du retour." }, { status: 400 });
       const now = new Date().toISOString();
-      const paidAt = nextPaymentStatus === "Encaissé"
-        ? existingOrder.paymentStatus === "Encaissé" && existingOrder.paidAt ? existingOrder.paidAt : now
-        : null;
+      const paymentState = normalizeOrderPaymentState({
+        status: nextStatus,
+        requestedPaymentStatus,
+        previousPaymentStatus: existingOrder.paymentStatus,
+        paidAt: existingOrder.paidAt,
+        refundedAt: existingOrder.refundedAt,
+        now,
+      });
+      const nextPaymentStatus = paymentState.paymentStatus;
       const shouldDeductStock = Boolean(existingOrder.productId && !existingOrder.stockDeducted && commitsStock(nextStatus));
       const shouldRestoreStock = Boolean(existingOrder.productId && existingOrder.stockDeducted && !commitsStock(nextStatus));
       if (shouldDeductStock) {
@@ -749,8 +756,8 @@ export async function POST(request: Request) {
       const rawDb = await getRawDb();
       const statements = [
         rawDb.prepare("UPDATE customers SET phone = ? WHERE id = ?").bind(nextPhone, existingOrder.customerId),
-        rawDb.prepare(`UPDATE orders SET fulfillment_type = ?, status = ?, payment_status = ?, source = ?, campaign = ?, address = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, carrier_dispatch_state = ?, carrier_authorized_at = ?, carrier_invoice_code = ?, return_cost = ?, return_reason = ?, return_note = ?, paid_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
-          .bind(nextFulfillmentType, nextStatus, nextPaymentStatus, nextSource, nextCampaign, nextAddress, isStoreSale ? 0 : moneyValue(payload.shippingCost), nextCarrier, nextTrackingNumber, nextDispatchState, nextCarrierAuthorizedAt, nextCarrierInvoiceCode, moneyValue(payload.returnCost), nextReturnReason, nextReturnNote, paidAt, nextStockDeducted ? 1 : 0, now, id),
+        rawDb.prepare(`UPDATE orders SET fulfillment_type = ?, status = ?, payment_status = ?, source = ?, campaign = ?, address = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, carrier_dispatch_state = ?, carrier_authorized_at = ?, carrier_invoice_code = ?, return_cost = ?, return_reason = ?, return_note = ?, paid_at = ?, refunded_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
+          .bind(nextFulfillmentType, nextStatus, nextPaymentStatus, nextSource, nextCampaign, nextAddress, isStoreSale ? 0 : moneyValue(payload.shippingCost), nextCarrier, nextTrackingNumber, nextDispatchState, nextCarrierAuthorizedAt, nextCarrierInvoiceCode, moneyValue(payload.returnCost), nextReturnReason, nextReturnNote, paymentState.paidAt, paymentState.refundedAt, nextStockDeducted ? 1 : 0, now, id),
       ];
       if (nextStatus !== existingOrder.status) {
         statements.push(rawDb.prepare("INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at) VALUES (?, ?, ?, ?, ?, ?)").bind(id, existingOrder.status, nextStatus, user.id, user.displayName, now));
