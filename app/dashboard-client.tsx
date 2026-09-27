@@ -73,6 +73,7 @@ type Purchase = {
   supplierId: number | null;
   purchaseRef: string | null;
   purchaseLineNo: number;
+  invoiceId: number | null;
   procurementStatus: string;
   orderedAt: string | null;
   expectedAt: string | null;
@@ -88,6 +89,33 @@ type Purchase = {
   paidAt: string | null;
   receivedQuantity: number;
   receivedAt: string | null;
+  createdAt: string;
+};
+type SupplierInvoice = {
+  id: number;
+  supplierId: number;
+  supplierName: string | null;
+  purchaseRef: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  dueDate: string;
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  paymentStatus: "À payer" | "Partiellement payé" | "Payé";
+  isOverdue: boolean;
+  note: string;
+  createdAt: string;
+  updatedAt: string | null;
+};
+type SupplierPayment = {
+  id: number;
+  invoiceId: number;
+  amount: number;
+  account: string;
+  paidAt: string;
+  reference: string;
+  note: string;
   createdAt: string;
 };
 type Expense = {
@@ -316,6 +344,8 @@ type Data = {
   customers: Customer[];
   suppliers: Supplier[];
   purchases: Purchase[];
+  supplierInvoices: SupplierInvoice[];
+  supplierPayments: SupplierPayment[];
   expenses: Expense[];
   ads: Ad[];
   capital: Capital[];
@@ -342,7 +372,7 @@ type Data = {
     displayName: string;
   };
 };
-type ModalName = "order" | "purchase" | "supplier" | "expense" | "ad" | "capital" | "product" | null;
+type ModalName = "order" | "purchase" | "supplier" | "supplierInvoice" | "expense" | "ad" | "capital" | "product" | null;
 type StockSelection = { product: Product; type: "Entrée" | "Vente" } | null;
 type InventorySelection = Product | null;
 type ThemeKey = "mauve-froid" | "rose-poudre" | "sombre-prune" | "bleu-brume" | "sable-chic";
@@ -370,6 +400,8 @@ const emptyData: Data = {
   customers: [],
   suppliers: [],
   purchases: [],
+  supplierInvoices: [],
+  supplierPayments: [],
   expenses: [],
   ads: [],
   capital: [],
@@ -426,9 +458,9 @@ const dateTimeLabel = (value: string) =>
     minute: "2-digit",
   }).format(new Date(value));
 
-const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
+const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs", "Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
 const navigationGroups = [
-  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats"] },
+  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs"] },
   { label: "Pilotage", items: ["Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA"] },
   { label: "Système", items: ["Mode entraînement", "Corbeille", "Paramètres"] },
 ];
@@ -441,6 +473,7 @@ const sectionDescriptions: Record<string, string> = {
   Clients: "Centralisez les coordonnées et l’historique de vos clientes.",
   Fournisseurs: "Centralisez contacts, délais, conditions et historique de vos fournisseurs.",
   Achats: "Gérez les fournisseurs, réceptions et coûts d’approvisionnement.",
+  "Factures fournisseurs": "Suivez les factures, échéances, paiements partiels et restes à payer.",
   Dépenses: "Enregistrez les charges réelles qui réduisent le résultat et la trésorerie.",
   Publicités: "Suivez vos campagnes, dépenses et performances Meta.",
   Capital: "Suivez les mouvements, enveloppes et capacités de réinvestissement.",
@@ -457,6 +490,7 @@ const addActionLabels: Record<string, string> = {
   Produits: "Nouveau produit",
   Fournisseurs: "Nouveau fournisseur",
   Achats: "Nouveau bon de commande",
+  "Factures fournisseurs": "Nouvelle facture",
   Dépenses: "Nouvelle dépense",
   Publicités: "Nouvelle campagne",
   Capital: "Nouveau mouvement",
@@ -469,6 +503,8 @@ const retrySafeMutationActions = new Set([
   "addPurchase",
   "addPurchaseOrder",
   "receivePurchase",
+  "addSupplierInvoice",
+  "addSupplierPayment",
   "addExpense",
   "addAd",
   "addCapital",
@@ -706,10 +742,15 @@ export default function DashboardClient() {
       addPurchaseOrder: "Bon de commande multi-produits créé",
       updatePurchase: "Bon de commande mis à jour",
       deletePurchase: "Bon de commande supprimé",
+      addSupplierInvoice: "Facture fournisseur créée",
+      updateSupplierInvoice: "Facture fournisseur mise à jour",
+      deleteSupplierInvoice: "Facture fournisseur supprimée",
+      addSupplierPayment: "Paiement fournisseur enregistré",
+      deleteSupplierPayment: "Paiement fournisseur supprimé",
       addExpense: "Dépense enregistrée",
       updateExpense: "Dépense mise à jour",
       deleteExpense: "Dépense supprimée",
-      receivePurchase: "Réception fournisseur ajoutée au stock",
+      receivePurchase: "Réception fournisseur enregistrée",
       updateAd: "Publicité mise à jour",
       deleteAd: "Publicité supprimée",
       updateCapital: "Mouvement de capital mis à jour",
@@ -840,6 +881,7 @@ export default function DashboardClient() {
     const finance = calculateBusinessFinance({
       orders: data.orders,
       purchases: data.purchases,
+      supplierInvoices: data.supplierInvoices,
       expenses: data.expenses,
       ads: data.ads,
       capital: data.capital,
@@ -967,7 +1009,7 @@ export default function DashboardClient() {
           <div className="top-actions">
             <SectionSearch key={active} active={active} data={data} openOrder={openOrder} openEntity={openEntity} />
             {addableSections.has(active) && (
-              <button className="primary-button top-primary-action" onClick={() => openEntry(active === "Produits" ? "product" : active === "Achats" ? "purchase" : active === "Dépenses" ? "expense" : active === "Publicités" ? "ad" : active === "Capital" ? "capital" : "order")}>
+              <button className="primary-button top-primary-action" onClick={() => openEntry(active === "Produits" ? "product" : active === "Achats" ? "purchase" : active === "Factures fournisseurs" ? "supplierInvoice" : active === "Dépenses" ? "expense" : active === "Publicités" ? "ad" : active === "Capital" ? "capital" : "order")}>
                 <span>{data.access.canEdit ? "＋" : "🔒"}</span> {data.access.canEdit ? addActionLabels[active] : "Lecture seule"}
               </button>
             )}
@@ -998,7 +1040,7 @@ export default function DashboardClient() {
         )}
         {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} print={printOrderSlip} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} restoreProduct={restoreProduct} moveStock={openStock} countInventory={openInventory} submit={submit} />}
       </section>
-      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} ads={data.ads} close={() => setModal(null)} submit={submit} />}
+      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} ads={data.ads} close={() => setModal(null)} submit={submit} />}
       {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} ads={data.ads} close={() => setSelectedOrder(null)} print={() => printOrderSlip(selectedOrder)} submit={submit} />}
       {selectedEntity && <EntityModal selection={selectedEntity} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
@@ -1111,7 +1153,7 @@ function Loading() {
 function SectionSearch({ active, data, openOrder, openEntity }: { active: string; data: Data; openOrder: (order: Order) => void; openEntity: (selection: EditableEntity) => void }) {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLocaleLowerCase("fr");
-  const searchablePages = new Set(["Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Dépenses", "Publicités", "Capital", "Corbeille"]);
+  const searchablePages = new Set(["Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs", "Dépenses", "Publicités", "Capital", "Corbeille"]);
   const results = useMemo<Array<{ key: string; label: string; detail: string; order?: Order; entity?: EditableEntity }>>(() => {
     if (normalized.length < 2) return [];
     const matches = (values: Array<string | number | null | undefined>) => values.some((value) => String(value || "").toLocaleLowerCase("fr").includes(normalized));
@@ -1170,6 +1212,12 @@ function SectionSearch({ active, data, openOrder, openEntity }: { active: string
       return data.purchases
         .filter((purchase) => matches([purchase.purchaseRef, purchase.supplier, purchase.item, purchase.productCode, purchase.productName, purchase.procurementStatus, purchase.paymentStatus, purchase.totalCost, purchase.quantity, purchase.receivedAt ? "réceptionné" : "à réceptionner"]))
         .map((purchase) => ({ key: `purchase-${purchase.id}`, label: purchase.item, detail: `${purchase.supplier} · ${money(purchase.totalCost)} · ${purchase.paymentStatus}`, entity: { kind: "purchase" as const, record: purchase } }))
+        .slice(0, 10);
+    }
+    if (active === "Factures fournisseurs") {
+      return data.supplierInvoices
+        .filter((invoice) => matches([invoice.invoiceNumber, invoice.purchaseRef, invoice.supplierName, invoice.paymentStatus, invoice.dueDate, invoice.totalAmount, invoice.remainingAmount]))
+        .map((invoice) => ({ key: `supplier-invoice-${invoice.id}`, label: invoice.invoiceNumber, detail: `${invoice.supplierName || "Fournisseur"} · ${invoice.purchaseRef} · reste ${money(invoice.remainingAmount)}` }))
         .slice(0, 10);
     }
     if (active === "Dépenses") {
@@ -4733,11 +4781,12 @@ function CarrierQuoteChooser({ city, defaultCarrier = "", defaultFee = 0, locked
   );
 }
 
-function EntryModal({ kind, carrierNames, products, suppliers, ads, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; products: Product[]; suppliers: Supplier[]; ads: Ad[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function EntryModal({ kind, carrierNames, products, suppliers, purchases, supplierInvoices, ads, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; products: Product[]; suppliers: Supplier[]; purchases: Purchase[]; supplierInvoices: SupplierInvoice[]; ads: Ad[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const labels = {
     order: "Nouvelle commande",
     purchase: "Nouveau bon de commande",
     supplier: "Nouveau fournisseur",
+    supplierInvoice: "Nouvelle facture fournisseur",
     expense: "Nouvelle dépense",
     ad: "Performance Meta Ads",
     capital: "Mouvement de capital",
@@ -4840,6 +4889,8 @@ function EntryModal({ kind, carrierNames, products, suppliers, ads, close, submi
             unitCost: line.unitCost,
           }))),
         });
+      } else if (kind === "supplierInvoice") {
+        await submit("addSupplierInvoice", values);
       } else {
         await submit(kind === "order" ? "addOrder" : kind === "product" ? "addProduct" : kind === "supplier" ? "addSupplier" : kind === "expense" ? "addExpense" : kind === "ad" ? "addAd" : "addCapital", values);
       }
@@ -4892,6 +4943,41 @@ function EntryModal({ kind, carrierNames, products, suppliers, ads, close, submi
                 <Field label="Notes" name="notes" placeholder="Qualité, horaires, conditions particulières…" maxLength={500} />
               </>
             )}
+            {kind === "supplierInvoice" && (() => {
+              const invoiceRefs = new Set(supplierInvoices.map((invoice) => invoice.purchaseRef));
+              const groups = new Map<string, Purchase[]>();
+              for (const purchase of purchases) {
+                if (!purchase.purchaseRef || invoiceRefs.has(purchase.purchaseRef) || ["Brouillon", "Annulé"].includes(purchase.procurementStatus)) continue;
+                const rows = groups.get(purchase.purchaseRef) || [];
+                rows.push(purchase);
+                groups.set(purchase.purchaseRef, rows);
+              }
+              const eligible = Array.from(groups.entries()).map(([purchaseRef, rows]) => ({
+                purchaseRef,
+                supplier: rows[0]?.supplier || "Fournisseur",
+                total: rows.reduce((sum, row) => sum + row.totalCost, 0),
+              }));
+              const today = new Date().toISOString().slice(0, 10);
+              const due = new Date();
+              due.setDate(due.getDate() + 30);
+              return (
+                <>
+                  <label className="field">
+                    <span>Bon de commande à facturer *</span>
+                    <select name="purchaseRef" defaultValue="" required>
+                      <option value="" disabled>Choisir un bon sans facture</option>
+                      {eligible.map((row) => <option key={row.purchaseRef} value={row.purchaseRef}>{row.purchaseRef} · {row.supplier} · {money(row.total)}</option>)}
+                    </select>
+                    <small>Le montant de la facture sera repris automatiquement depuis le total du bon.</small>
+                  </label>
+                  <Field label="N° facture fournisseur *" name="invoiceNumber" required maxLength={120} />
+                  <Field label="Date de facture *" name="invoiceDate" type="date" defaultValue={today} required />
+                  <Field label="Échéance de paiement *" name="dueDate" type="date" defaultValue={due.toISOString().slice(0, 10)} required />
+                  <Field label="Note" name="note" placeholder="Référence interne, conditions particulières…" maxLength={500} />
+                  {!eligible.length ? <div className="form-warning">Aucun bon commandé sans facture n’est disponible.</div> : null}
+                </>
+              );
+            })()}
             {kind === "order" && (
               <>
                 <label className="field order-fulfillment-field">
