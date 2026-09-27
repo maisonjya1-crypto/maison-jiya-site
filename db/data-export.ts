@@ -13,6 +13,7 @@ const EXPORT_QUERIES: Record<string, string> = {
   produits: "SELECT * FROM products ORDER BY id",
   mouvements_stock: "SELECT * FROM stock_movements ORDER BY id",
   inventaires: "SELECT * FROM inventory_counts ORDER BY id",
+  fournisseurs: "SELECT * FROM suppliers ORDER BY id",
   achats: "SELECT * FROM purchases ORDER BY id",
   depenses: "SELECT * FROM expenses ORDER BY expense_date DESC, id DESC",
   publicites: "SELECT * FROM ad_performance ORDER BY id",
