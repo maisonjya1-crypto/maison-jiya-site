@@ -16,9 +16,11 @@ test("the Apps Script URL stays on the server", async () => {
 
 test("deleted orders use a 90-day trash instead of immediate deletion", async () => {
   const route = await readFile(new URL("app/api/data/route.ts", root), "utf8");
+  const trash = await readFile(new URL("db/order-trash.ts", root), "utf8");
   const backups = await readFile(new URL("db/backups.ts", root), "utf8");
-  assert.match(route, /deletedAt: new Date\(\)\.toISOString\(\)/);
-  assert.match(route, /restoreOrder/);
+  assert.match(route, /moveOrderToTrash\(await getRawDb\(\), id, user\.id\)/);
+  assert.match(route, /restoreOrderFromTrash\(await getRawDb\(\), id\)/);
+  assert.match(trash, /deleted_at = \?/);
   assert.match(backups, /setUTCDate\(cutoff\.getUTCDate\(\) - 90\)/);
 });
 
