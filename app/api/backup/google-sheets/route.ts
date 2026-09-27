@@ -1,6 +1,6 @@
 import { desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { adPerformance, capitalLedger, customers, expenses, inventoryCounts, inventorySessions, orders, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../../db/schema";
+import { adPerformance, capitalLedger, carrierSettlementOrders, carrierSettlements, customers, expenses, inventoryCounts, inventorySessions, orders, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../../db/schema";
 import { orderContributionBeforeGlobalAds } from "../../../../lib/finance";
 
 const datasetNames = new Set([
@@ -18,6 +18,8 @@ const datasetNames = new Set([
   "stock-movements",
   "inventory-sessions",
   "inventory-counts",
+  "carrier-settlements",
+  "carrier-settlement-orders",
   "carriers",
   "members",
   "settings",
@@ -338,6 +340,35 @@ export async function GET(request: Request) {
       return csvResponse(
         ["ID", "ID produit", "ID achat fournisseur", "ID produit / SKU", "Nom du produit", "Type de mouvement", "Quantité", "Note", "Créé le"],
         rows.map((row) => [row.id, row.productId, row.purchaseId, row.productCode, row.productName, row.movementType, row.quantity, row.note, row.createdAt]),
+      );
+    }
+
+    if (dataset === "carrier-settlements") {
+      const rows = await db.select().from(carrierSettlements).orderBy(desc(carrierSettlements.settlementDate), desc(carrierSettlements.createdAt));
+      return csvResponse(
+        ["ID", "Transporteur", "Référence", "Date reçue", "Montant attendu (MAD)", "Montant reçu (MAD)", "Écart (MAD)", "Nombre de commandes", "Statut", "Note", "Enregistré par", "Créé le"],
+        rows.map((row) => [row.id, row.carrier, row.reference, row.settlementDate, row.expectedAmount, row.actualAmount, row.differenceAmount, row.orderCount, row.status, row.note, row.createdByName, row.createdAt]),
+      );
+    }
+
+    if (dataset === "carrier-settlement-orders") {
+      const rows = await db.select({
+        id: carrierSettlementOrders.id,
+        settlementId: carrierSettlementOrders.settlementId,
+        settlementReference: carrierSettlements.reference,
+        settlementCarrier: carrierSettlements.carrier,
+        orderId: carrierSettlementOrders.orderId,
+        orderRef: orders.orderRef,
+        trackingNumber: orders.trackingNumber,
+        expectedAmount: carrierSettlementOrders.expectedAmount,
+        createdAt: carrierSettlementOrders.createdAt,
+      }).from(carrierSettlementOrders)
+        .leftJoin(carrierSettlements, eq(carrierSettlementOrders.settlementId, carrierSettlements.id))
+        .leftJoin(orders, eq(carrierSettlementOrders.orderId, orders.id))
+        .orderBy(desc(carrierSettlementOrders.createdAt));
+      return csvResponse(
+        ["ID", "ID règlement", "Référence règlement", "Transporteur", "ID commande", "Référence commande", "Suivi", "Montant attendu (MAD)", "Créé le"],
+        rows.map((row) => [row.id, row.settlementId, row.settlementReference, row.settlementCarrier, row.orderId, row.orderRef, row.trackingNumber, row.expectedAmount, row.createdAt]),
       );
     }
 
