@@ -8,6 +8,7 @@ import { getMetaRuntimeStatus, syncMetaAds } from "../../../db/meta";
 import { reconcileOrderAllocations } from "../../../db/allocations";
 import { getGoogleSheetsSyncSnapshot, markGoogleSheetsSyncPending, processGoogleSheetsSyncQueue } from "../../../db/google-sheets-sync";
 import { ensureStorefrontCms } from "../../../db/storefront-cms";
+import { receivePurchaseIntoStock } from "../../../db/inventory-cost";
 import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, expenses, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
@@ -895,48 +896,13 @@ export async function POST(request: Request) {
     } else if (payload.action === "receivePurchase") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Achat invalide." }, { status: 400 });
-      const rawDatabase = await getRawDb();
-      const purchase = await rawDatabase.prepare(`
-        SELECT id, supplier, item, product_id AS productId, quantity, received_quantity AS receivedQuantity
-        FROM purchases
-        WHERE id = ?
-        LIMIT 1
-      `).bind(id).first<{ id: number; supplier: string; item: string; productId: number | null; quantity: number; receivedQuantity: number }>();
-      if (!purchase) return Response.json({ error: "Achat introuvable." }, { status: 404 });
-      if (!purchase.productId) return Response.json({ error: "Reliez d’abord cet achat à un produit du catalogue." }, { status: 409 });
-      if (purchase.receivedQuantity >= purchase.quantity) return Response.json({ error: "Cet achat a déjà été réceptionné dans le stock." }, { status: 409 });
-
-      const [linkedProduct] = await db.select({ id: products.id, productCode: products.productCode, name: products.name }).from(products).where(and(eq(products.id, purchase.productId), isNull(products.archivedAt))).limit(1);
-      if (!linkedProduct) return Response.json({ error: "Le produit lié à cet achat est introuvable." }, { status: 404 });
-
       const duplicateReception = await protectMutation("receivePurchase");
       if (duplicateReception) return duplicateReception;
 
-      const now = new Date().toISOString();
-      const remaining = purchase.quantity - purchase.receivedQuantity;
-      const results = await rawDatabase.batch([
-        rawDatabase.prepare("UPDATE purchases SET received_quantity = quantity, received_at = ? WHERE id = ? AND product_id = ? AND received_quantity < quantity AND EXISTS (SELECT 1 FROM products WHERE id = ? AND archived_at IS NULL)").bind(now, id, purchase.productId, purchase.productId),
-        rawDatabase.prepare(`
-          UPDATE products
-          SET stock_quantity = stock_quantity + ?
-          WHERE id = ?
-            AND archived_at IS NULL
-            AND EXISTS (
-              SELECT 1 FROM purchases WHERE id = ? AND product_id = ? AND received_at = ?
-            )
-        `).bind(remaining, purchase.productId, id, purchase.productId, now),
-        rawDatabase.prepare(`
-          INSERT INTO stock_movements (product_id, purchase_id, movement_type, quantity, note, created_at)
-          SELECT ?, ?, 'Réception fournisseur', ?, ?, ?
-          WHERE EXISTS (
-            SELECT 1 FROM purchases WHERE id = ? AND product_id = ? AND received_at = ?
-          )
-        `).bind(purchase.productId, id, remaining, `Réception fournisseur · ${purchase.supplier} · ${purchase.item}`, now, id, purchase.productId, now),
-      ]);
-      if (!results[0]?.meta?.changes) return Response.json({ error: "Cet achat vient déjà d’être réceptionné." }, { status: 409 });
+      const result = await receivePurchaseIntoStock(await getRawDb(), id);
       auditEntityId = String(id);
-      auditEntityLabel = `${purchase.supplier} · ${purchase.item}`;
-      integrationMessage = `${remaining} unité(s) de ${linkedProduct.name} ajoutée(s) au stock depuis la réception fournisseur.`;
+      auditEntityLabel = `${result.supplier} · ${result.item}`;
+      integrationMessage = `${result.receivedQuantity} unité(s) de ${result.productName} ajoutée(s) au stock. Coût moyen : ${result.previousAverageCost.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} → ${result.newAverageCost.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MAD.`;
     } else if (payload.action === "deletePurchase") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Achat invalide." }, { status: 400 });
