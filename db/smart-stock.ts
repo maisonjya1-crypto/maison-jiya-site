@@ -15,6 +15,7 @@ export type SmartStockRecommendation = {
   supplierId: number | null;
   supplier: string;
   supplierLeadTimeDays: number | null;
+  supplierMinimumOrderAmount: number | null;
   unitCost: number;
   estimatedCost: number;
   lastPurchaseAt: string | null;
@@ -34,7 +35,7 @@ type ProductRow = {
 
 type DemandRow = { productId: number; units: number };
 type PendingRow = { productId: number; units: number };
-type SupplierRow = { productId: number; supplierId: number | null; supplier: string; supplierLeadTimeDays: number | null; unitCost: number; createdAt: string };
+type SupplierRow = { productId: number; supplierId: number | null; supplier: string; supplierLeadTimeDays: number | null; supplierMinimumOrderAmount: number | null; unitCost: number; createdAt: string };
 
 function nonNegativeInteger(value: unknown) {
   const parsed = Number(value);
@@ -96,6 +97,7 @@ export async function buildSmartStockRecommendations(database: D1Database): Prom
           suppliers.id AS supplierId,
           COALESCE(NULLIF(trim(suppliers.name), ''), NULLIF(trim(purchases.supplier), '')) AS supplier,
           CASE WHEN suppliers.id IS NOT NULL THEN suppliers.lead_time_days ELSE NULL END AS supplierLeadTimeDays,
+          CASE WHEN suppliers.id IS NOT NULL THEN suppliers.minimum_order_amount ELSE NULL END AS supplierMinimumOrderAmount,
           purchases.unit_cost AS unitCost,
           purchases.created_at AS createdAt,
           ROW_NUMBER() OVER (
@@ -163,6 +165,9 @@ export async function buildSmartStockRecommendations(database: D1Database): Prom
       supplierLeadTimeDays: latestSupplier?.supplierLeadTimeDays === null || latestSupplier?.supplierLeadTimeDays === undefined
         ? null
         : nonNegativeInteger(latestSupplier.supplierLeadTimeDays),
+      supplierMinimumOrderAmount: latestSupplier?.supplierMinimumOrderAmount === null || latestSupplier?.supplierMinimumOrderAmount === undefined
+        ? null
+        : money(latestSupplier.supplierMinimumOrderAmount),
       unitCost,
       estimatedCost,
       lastPurchaseAt: latestSupplier?.createdAt || null,
