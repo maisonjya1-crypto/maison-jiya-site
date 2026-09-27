@@ -10,6 +10,7 @@ import { getGoogleSheetsSyncSnapshot, markGoogleSheetsSyncPending, processGoogle
 import { ensureStorefrontCms } from "../../../db/storefront-cms";
 import { receivePurchaseIntoStock } from "../../../db/inventory-cost";
 import { buildDailyClosingPreview, saveDailyClosing } from "../../../db/daily-closing";
+import { buildSmartStockRecommendations } from "../../../db/smart-stock";
 import { normalizeOrderPaymentState, type OrderPaymentStatus } from "../../../lib/order-payment-lifecycle";
 import { moveOrderToTrash, releaseTrashedOrderStock, restoreOrderFromTrash } from "../../../db/order-trash";
 import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, dailyClosings, expenses, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
@@ -370,12 +371,13 @@ async function snapshot(access: AccessInfo) {
   const publicSettings = settingRows.filter((row) => !row.key.startsWith("security_"));
   const backupConfigured = settingRows.some((row) => row.key === "security_backup_token_hash" && row.value.length === 64);
   const secureWebhook = settingRows.find((row) => row.key === "security_backup_webhook_url")?.value || "";
-  const [carrierRuntime, lastCarrierEvent, metaRuntimeConfigured, googleSheetsSync, dailyClosingPreview] = await Promise.all([
+  const [carrierRuntime, lastCarrierEvent, metaRuntimeConfigured, googleSheetsSync, dailyClosingPreview, stockRecommendations] = await Promise.all([
     getCarrierRuntimeStatus(),
     db.select({ receivedAt: carrierEvents.receivedAt }).from(carrierEvents).where(sql`${carrierEvents.provider} IN ('sendit', 'forcelog')`).orderBy(desc(carrierEvents.receivedAt)).limit(1),
     getMetaRuntimeStatus(),
     getGoogleSheetsSyncSnapshot(rawDatabase),
     buildDailyClosingPreview(rawDatabase),
+    buildSmartStockRecommendations(rawDatabase),
   ]);
   return {
     orders: orderRows,
@@ -394,6 +396,7 @@ async function snapshot(access: AccessInfo) {
     backups: backupRows,
     dailyClosings: closingRows,
     dailyClosingPreview,
+    stockRecommendations,
     googleSheetsSync,
     settings: {
       ...Object.fromEntries(publicSettings.map((row) => [row.key, row.value])),
