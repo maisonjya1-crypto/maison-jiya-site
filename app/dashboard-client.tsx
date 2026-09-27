@@ -1163,7 +1163,7 @@ function SectionSearch({ active, data, openOrder, openEntity }: { active: string
     }
     if (active === "Achats") {
       return data.purchases
-        .filter((purchase) => matches([purchase.supplier, purchase.item, purchase.productCode, purchase.productName, purchase.paymentStatus, purchase.totalCost, purchase.quantity, purchase.receivedAt ? "réceptionné" : "à réceptionner"]))
+        .filter((purchase) => matches([purchase.purchaseRef, purchase.supplier, purchase.item, purchase.productCode, purchase.productName, purchase.procurementStatus, purchase.paymentStatus, purchase.totalCost, purchase.quantity, purchase.receivedAt ? "réceptionné" : "à réceptionner"]))
         .map((purchase) => ({ key: `purchase-${purchase.id}`, label: purchase.item, detail: `${purchase.supplier} · ${money(purchase.totalCost)} · ${purchase.paymentStatus}`, entity: { kind: "purchase" as const, record: purchase } }))
         .slice(0, 10);
     }
@@ -4483,7 +4483,7 @@ function MonthlyCapitalChart({
   );
 }
 function Status({ value }: { value: string }) {
-  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration", "OK"].includes(value) ? "success" : ["Retour", "Annulée", "Refusée", "Retournée", "Remboursé", "Non encaissé", "Rupture", "Critique"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande"].includes(value) ? "info" : "warning";
+  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration", "OK", "Actif", "Reçu"].includes(value) ? "success" : ["Retour", "Annulée", "Annulé", "Inactif", "Refusée", "Retournée", "Remboursé", "Non encaissé", "Rupture", "Critique"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande", "Commandé"].includes(value) ? "info" : "warning";
   return <span className={`status ${tone}`}>{value}</span>;
 }
 
@@ -4797,7 +4797,7 @@ function EntryModal({ kind, carrierNames, products, suppliers, ads, close, submi
                 <Select label="État du bon" name="procurementStatus" options={["Commandé", "Brouillon"]} />
                 <Field label="Livraison prévue" name="expectedDate" type="date" />
                 <Select label="Compte de paiement" name="account" options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
-                <Select label="Paiement" name="paymentStatus" options={["Payé", "À payer"]} />
+                <Select label="Paiement" name="paymentStatus" options={["À payer", "Payé"]} />
                 <Field label="Date de paiement (si payé)" name="paidDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
               </>
             )}
@@ -5161,7 +5161,10 @@ function EntityModal({ selection, products, suppliers, close, submit }: { select
                   </select>
                 </label>
               ) : <Field label="Fournisseur *" name="supplier" defaultValue={selection.record.supplier} required />}
-              <Field label="Référence du bon" name="purchaseRef" defaultValue={selection.record.purchaseRef || ""} />
+              <div className="movement-edit-note">
+                <strong>{selection.record.purchaseRef || `Bon #${selection.record.id}`}</strong>
+                <small>La référence du bon est générée automatiquement et reste immuable.</small>
+              </div>
               <Field label="Article / motif *" name="item" defaultValue={selection.record.item} required />
               {selection.record.receivedQuantity > 0 ? (
                 <>
