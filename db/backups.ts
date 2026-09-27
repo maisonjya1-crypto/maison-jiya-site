@@ -63,7 +63,7 @@ const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   stockMovements: ["id", "product_id", "order_id", "purchase_id", "movement_type", "quantity", "note", "created_at"],
   inventoryCounts: ["id", "count_ref", "product_id", "system_quantity", "physical_quantity", "difference", "note", "counted_by_user_id", "counted_by_name", "created_at"],
   suppliers: ["id", "name", "contact_name", "phone", "whatsapp", "city", "lead_time_days", "minimum_order_amount", "payment_terms", "notes", "is_active", "created_at", "updated_at"],
-  purchases: ["id", "supplier", "supplier_id", "purchase_ref", "procurement_status", "ordered_at", "expected_at", "item", "product_id", "quantity", "unit_cost", "total_cost", "account", "payment_status", "paid_at", "received_quantity", "received_at", "created_at"],
+  purchases: ["id", "supplier", "supplier_id", "purchase_ref", "purchase_line_no", "procurement_status", "ordered_at", "expected_at", "item", "product_id", "quantity", "unit_cost", "total_cost", "account", "payment_status", "paid_at", "received_quantity", "received_at", "created_at"],
   expenses: ["id", "category", "label", "amount", "account", "payment_status", "paid_at", "expense_date", "note", "created_at"],
   ads: ["id", "platform", "campaign", "external_id", "spend", "revenue", "order_count", "native_spend_cents", "native_revenue_cents", "native_currency", "source", "performance_date", "created_at"],
   capital: ["id", "direction", "category", "label", "amount", "account", "order_id", "is_automatic", "auto_key", "entry_date", "created_at"],
@@ -261,6 +261,7 @@ function insertStatement(database: D1Database, tableKey: keyof BusinessSnapshot[
     if (column === "received_quantity") return row[column] ?? 0;
     if (column === "supplier_id") return row[column] ?? null;
     if (column === "purchase_ref") return row[column] ?? null;
+    if (column === "purchase_line_no") return row[column] ?? 1;
     if (column === "procurement_status") {
       if (row[column] !== undefined) return row[column];
       const quantity = Number(row.quantity || 0);
