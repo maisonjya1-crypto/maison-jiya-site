@@ -99,7 +99,7 @@ function portableExport(overrides = {}) {
 
 test("l’import portable v1 restaure les données, les valeurs héritées et la boutique sans remplacer les secrets", async t => {
   const db = await databaseFor(t);
-  db.sqlite.exec("INSERT INTO settings (key, value) VALUES ('account_email', 'actuelle@example.com')");
+  db.sqlite.exec("INSERT INTO settings (key, value) VALUES ('account_email', 'actuelle@example.com') ON CONFLICT(key) DO UPDATE SET value = excluded.value");
   const importer = loadSource("db/data-import.ts");
 
   const summary = await importer.restorePortableDataImport(db, JSON.stringify(portableExport()));
