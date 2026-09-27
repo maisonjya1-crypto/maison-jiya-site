@@ -74,6 +74,7 @@ export function calculateTreasuryAccounts({
   ads,
   capital,
   supplierPayments = [],
+  carrierSettlementAdjustment = 0,
 }: {
   orders: TreasuryOrder[];
   purchases: TreasuryPurchase[];
@@ -81,6 +82,7 @@ export function calculateTreasuryAccounts({
   ads: TreasuryAd[];
   capital: TreasuryCapital[];
   supplierPayments?: TreasurySupplierPayment[];
+  carrierSettlementAdjustment?: number;
 }): TreasuryAccounts {
   const accounts = { bank: 0, cash: 0, other: 0 };
 
@@ -91,6 +93,8 @@ export function calculateTreasuryAccounts({
     }
     if (amount(order.returnCost) > 0) add(accounts, bucket, -amount(order.returnCost));
   }
+
+  if (amount(carrierSettlementAdjustment) !== 0) add(accounts, "bank", amount(carrierSettlementAdjustment));
 
   for (const purchase of purchases) {
     if (!purchase.invoiceId && purchase.paymentStatus === "Payé") {
