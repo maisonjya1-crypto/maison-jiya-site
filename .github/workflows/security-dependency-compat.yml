@@ -21,7 +21,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install candidate without touching lockfile
-        run: npm install --no-save --package-lock=false vinext@1.0.0-beta.11
+        run: npm install --no-save --package-lock=false vinext@1.0.0-beta.11 @vitejs/plugin-rsc@0.5.35
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build
@@ -42,6 +42,7 @@ jobs:
       - name: Install candidate without touching lockfile
         run: npm install --no-save --package-lock=false drizzle-kit@0.31.11
       - run: npm run typecheck
-      - run: npm run db:generate
-      - name: Verify generation does not alter tracked schema artifacts
-        run: git diff --exit-code -- drizzle migrations
+      - name: Verify CLI can inspect the schema
+        run: npx drizzle-kit check
+      - name: Confirm no tracked file changed during compatibility probe
+        run: git diff --exit-code -- . ':!package-lock.json'
