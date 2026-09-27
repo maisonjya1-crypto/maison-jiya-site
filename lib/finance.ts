@@ -12,6 +12,7 @@ export type FinancePurchase = {
   totalCost: number;
   paymentStatus: string;
   invoiceId?: number | null;
+  procurementStatus?: string | null;
 };
 
 export type FinanceSupplierInvoice = {
@@ -182,7 +183,10 @@ export function calculateBusinessFinance({
   const feesCollected = collectedOrders.reduce((sum, order) => sum + amount(order.fees), 0);
   const netCollected = collected - shippingCollected - feesCollected;
 
-  const legacyPurchases = purchases.filter((purchase) => !purchase.invoiceId);
+  const legacyPurchases = purchases.filter((purchase) =>
+    !purchase.invoiceId
+    && !["Brouillon", "Annulé"].includes(purchase.procurementStatus || ""),
+  );
   const paidPurchases = legacyPurchases
     .filter((purchase) => purchase.paymentStatus === "Payé")
     .reduce((sum, purchase) => sum + amount(purchase.totalCost), 0)
