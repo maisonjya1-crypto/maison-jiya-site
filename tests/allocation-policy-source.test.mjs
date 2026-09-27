@@ -40,7 +40,7 @@ test("la réconciliation applique la configuration active aux écritures automat
   `);
 
   const allocations = loadSource("db/allocations.ts", {
-    ".": { getRawDb: async () => db },
+    "./index": { getRawDb: async () => db },
   });
   await allocations.reconcileOrderAllocations(1);
 
