@@ -93,6 +93,16 @@ const TABLE_SPECS: Record<string, TableSpec> = {
       received_at: null,
     },
   },
+  factures_fournisseurs: {
+    table: "supplier_invoices",
+    columns: ["id", "supplier_id", "purchase_ref", "invoice_number", "invoice_date", "due_date", "total_amount", "note", "created_at", "updated_at"],
+    defaults: { note: "", updated_at: null },
+  },
+  paiements_fournisseurs: {
+    table: "supplier_payments",
+    columns: ["id", "invoice_id", "amount", "account", "paid_at", "reference", "note", "created_at"],
+    defaults: { account: "Banque", reference: "", note: "" },
+  },
   depenses: {
     table: "expenses",
     columns: ["id", "category", "label", "amount", "account", "payment_status", "paid_at", "expense_date", "note", "created_at"],
@@ -236,7 +246,7 @@ const REQUIRED_TABLES = [
 ] as const;
 
 const OPTIONAL_TABLES = [
-  "fournisseurs", "inventaires", "depenses", "clotures_journalieres", "historique_commandes", "evenements_transporteurs", "journal_actions",
+  "fournisseurs", "factures_fournisseurs", "paiements_fournisseurs", "inventaires", "depenses", "clotures_journalieres", "historique_commandes", "evenements_transporteurs", "journal_actions",
   "boutique_produits", "boutique_offres", "boutique_composition_offres", "boutique_medias",
 ] as const;
 
@@ -313,6 +323,8 @@ function validateReferences(tables: Record<string, ImportRow[]>) {
   const productIds = new Set(rowsFor(tables, "produits").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
   const supplierIds = new Set(rowsFor(tables, "fournisseurs").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
   const purchaseIds = new Set(rowsFor(tables, "achats").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
+  const purchaseRefs = new Set(rowsFor(tables, "achats").map((row) => String(row.purchase_ref || "").trim()).filter(Boolean));
+  const supplierInvoiceIds = new Set(rowsFor(tables, "factures_fournisseurs").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
   const orderIds = new Set(rowsFor(tables, "commandes").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
   const offerIds = new Set(rowsFor(tables, "boutique_offres").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
 
@@ -341,6 +353,14 @@ function validateReferences(tables: Record<string, ImportRow[]>) {
   for (const row of rowsFor(tables, "achats")) {
     assertForeignKey(row.product_id, productIds, "produit d’achat", true);
     assertForeignKey(row.supplier_id, supplierIds, "fournisseur d’achat", true);
+  }
+  for (const row of rowsFor(tables, "factures_fournisseurs")) {
+    assertForeignKey(row.supplier_id, supplierIds, "fournisseur de facture", false);
+    const purchaseRef = String(row.purchase_ref || "").trim();
+    if (!purchaseRef || !purchaseRefs.has(purchaseRef)) throw new Error(`Référence de bon introuvable pour une facture fournisseur : ${purchaseRef || "vide"}.`);
+  }
+  for (const row of rowsFor(tables, "paiements_fournisseurs")) {
+    assertForeignKey(row.invoice_id, supplierInvoiceIds, "facture du paiement fournisseur", false);
   }
   for (const row of rowsFor(tables, "mouvements_stock")) {
     assertForeignKey(row.product_id, productIds, "produit de mouvement de stock", false);
@@ -404,6 +424,15 @@ function parsePortableExport(raw: string) {
   assertUnique(tables, "fournisseurs", "id", "fournisseur");
   assertUnique(tables, "fournisseurs", "name", "nom fournisseur");
   assertUnique(tables, "achats", "id", "achat");
+  assertUnique(tables, "factures_fournisseurs", "id", "facture fournisseur");
+  assertUnique(tables, "factures_fournisseurs", "purchase_ref", "bon facturé");
+  assertUnique(tables, "paiements_fournisseurs", "id", "paiement fournisseur");
+  const invoiceNumbers = new Set<string>();
+  for (const row of rowsFor(tables, "factures_fournisseurs")) {
+    const key = `${row.supplier_id ?? ""}::${String(row.invoice_number || "").trim().toLocaleLowerCase("fr")}`;
+    if (invoiceNumbers.has(key)) throw new Error(`L’export contient un doublon de numéro de facture fournisseur : ${row.invoice_number ?? ""}.`);
+    invoiceNumbers.add(key);
+  }
   const purchaseOrderLines = new Set<string>();
   for (const row of rowsFor(tables, "achats")) {
     const purchaseRef = String(row.purchase_ref || "").trim();
@@ -532,6 +561,8 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
     database.prepare("DELETE FROM capital_ledger"),
     database.prepare("DELETE FROM orders"),
     database.prepare("DELETE FROM customers"),
+    database.prepare("DELETE FROM supplier_payments"),
+    database.prepare("DELETE FROM supplier_invoices"),
     database.prepare("DELETE FROM purchases"),
     database.prepare("DELETE FROM suppliers"),
     database.prepare("DELETE FROM expenses"),
@@ -561,6 +592,8 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
     "produits",
     "fournisseurs",
     "achats",
+    "factures_fournisseurs",
+    "paiements_fournisseurs",
     "depenses",
     "commandes",
     "tresorerie_capital",
