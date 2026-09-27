@@ -111,6 +111,16 @@ function inventoryDifferenceReason(value: unknown, difference: number) {
   return reason;
 }
 
+async function openInventorySession() {
+  return (await getRawDb()).prepare(
+    "SELECT id, session_ref AS sessionRef FROM inventory_sessions WHERE status = 'En cours' ORDER BY id DESC LIMIT 1",
+  ).first<{ id: number; sessionRef: string }>();
+}
+
+function inventoryCatalogLockMessage(sessionRef: string) {
+  return `Terminez d’abord l’inventaire ${sessionRef} avant d’ajouter, modifier, archiver ou restaurer des produits.`;
+}
+
 const productCategories = ["Montres", "Bijoux", "Wallets", "Électronique", "Boîtes", "Autre"];
 const themeOptions = ["mauve-froid", "rose-poudre", "sombre-prune", "bleu-brume", "sable-chic"];
 
@@ -1643,6 +1653,8 @@ export async function POST(request: Request) {
       if (entry.isAutomatic) return Response.json({ error: "Une affectation automatique liée à une commande ne peut pas être supprimée manuellement." }, { status: 409 });
       await db.delete(capitalLedger).where(eq(capitalLedger.id, id));
     } else if (payload.action === "importProducts") {
+      const openInventory = await openInventorySession();
+      if (openInventory) return Response.json({ error: inventoryCatalogLockMessage(openInventory.sessionRef) }, { status: 409 });
       let parsedRows: unknown;
       try {
         parsedRows = JSON.parse(textValue(payload.rows, "[]"));
@@ -1771,6 +1783,8 @@ export async function POST(request: Request) {
       integrationMessage = `${createdCount} produit(s) créé(s)${updatedCount ? ` · ${updatedCount} mis à jour` : ""}${skippedCount ? ` · ${skippedCount} déjà présent(s), ignoré(s)` : ""}. Import appliqué en une seule opération.`;
       auditEntityLabel = `${createdCount} créé(s), ${updatedCount} mis à jour, ${skippedCount} ignoré(s)`;
     } else if (payload.action === "addProduct") {
+      const openInventory = await openInventorySession();
+      if (openInventory) return Response.json({ error: inventoryCatalogLockMessage(openInventory.sessionRef) }, { status: 409 });
       const productCode = textValue(payload.productCode).toUpperCase();
       const name = textValue(payload.name);
       if (!productCode || !name) return Response.json({ error: "L’ID produit et le nom sont obligatoires." }, { status: 400 });
@@ -1802,6 +1816,8 @@ export async function POST(request: Request) {
       }
       await rawDatabase.batch(productStatements);
     } else if (payload.action === "updateProduct") {
+      const openInventory = await openInventorySession();
+      if (openInventory) return Response.json({ error: inventoryCatalogLockMessage(openInventory.sessionRef) }, { status: 409 });
       const id = numberValue(payload.id);
       const productCode = textValue(payload.productCode).toUpperCase();
       const name = textValue(payload.name);
@@ -1824,6 +1840,8 @@ export async function POST(request: Request) {
         reorderCoverDays: coverDays,
       }).where(eq(products.id, id));
     } else if (payload.action === "archiveProduct" || payload.action === "deleteProduct") {
+      const openInventory = await openInventorySession();
+      if (openInventory) return Response.json({ error: inventoryCatalogLockMessage(openInventory.sessionRef) }, { status: 409 });
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Produit invalide." }, { status: 400 });
       const [product] = await db.select({
@@ -1861,6 +1879,8 @@ export async function POST(request: Request) {
         auditEntityLabel = `${product.productCode} · ${product.name}`;
       }
     } else if (payload.action === "restoreProduct") {
+      const openInventory = await openInventorySession();
+      if (openInventory) return Response.json({ error: inventoryCatalogLockMessage(openInventory.sessionRef) }, { status: 409 });
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Produit invalide." }, { status: 400 });
       const [product] = await db.select({ id: products.id, productCode: products.productCode, name: products.name, archivedAt: products.archivedAt }).from(products).where(eq(products.id, id)).limit(1);
