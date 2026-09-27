@@ -71,7 +71,7 @@ test("un même bon peut contenir plusieurs lignes et chaque réception reste ind
   `);
 
   const lines = db.sqlite.prepare("SELECT purchase_ref, purchase_line_no FROM purchases WHERE purchase_ref = 'BC-MULTI-001' ORDER BY purchase_line_no").all();
-  assert.deepEqual(lines, [
+  assert.deepEqual(lines.map((row) => ({ ...row })), [
     { purchase_ref: "BC-MULTI-001", purchase_line_no: 1 },
     { purchase_ref: "BC-MULTI-001", purchase_line_no: 2 },
   ]);
