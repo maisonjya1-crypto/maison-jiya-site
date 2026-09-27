@@ -72,6 +72,7 @@ type Purchase = {
   supplier: string;
   supplierId: number | null;
   purchaseRef: string | null;
+  purchaseLineNo: number;
   procurementStatus: string;
   orderedAt: string | null;
   expectedAt: string | null;
@@ -466,6 +467,7 @@ const retrySafeMutationActions = new Set([
   "importOrders",
   "addSupplier",
   "addPurchase",
+  "addPurchaseOrder",
   "receivePurchase",
   "addExpense",
   "addAd",
@@ -701,6 +703,7 @@ export default function DashboardClient() {
       addSupplier: "Fournisseur créé",
       updateSupplier: "Fournisseur mis à jour",
       toggleSupplier: "Statut fournisseur mis à jour",
+      addPurchaseOrder: "Bon de commande multi-produits créé",
       updatePurchase: "Bon de commande mis à jour",
       deletePurchase: "Bon de commande supprimé",
       addExpense: "Dépense enregistrée",
@@ -4677,6 +4680,56 @@ function EntryModal({ kind, carrierNames, products, suppliers, ads, close, submi
   const [orderFulfillment, setOrderFulfillment] = useState<"Livraison" | "Magasin physique">("Livraison");
   const selectedProduct = products.find((product) => String(product.id) === selectedProductId) || null;
 
+  const initialPurchaseProduct = products[0] || null;
+  const [purchaseLines, setPurchaseLines] = useState<Array<{ key: number; productId: string; item: string; quantity: string; unitCost: string }>>([
+    {
+      key: 1,
+      productId: initialPurchaseProduct ? String(initialPurchaseProduct.id) : "",
+      item: initialPurchaseProduct?.name || "",
+      quantity: "1",
+      unitCost: initialPurchaseProduct ? String(initialPurchaseProduct.purchasePrice) : "",
+    },
+  ]);
+  const purchaseOrderTotal = purchaseLines.reduce((sum, line) => {
+    const quantity = Math.max(0, Number(line.quantity) || 0);
+    const unitCost = Math.max(0, Number(String(line.unitCost).replace(",", ".")) || 0);
+    return sum + quantity * unitCost;
+  }, 0);
+
+  function updatePurchaseLine(key: number, patch: Partial<{ productId: string; item: string; quantity: string; unitCost: string }>) {
+    setPurchaseLines((current) => current.map((line) => line.key === key ? { ...line, ...patch } : line));
+  }
+
+  function choosePurchaseProduct(key: number, productId: string) {
+    const product = products.find((entry) => String(entry.id) === productId);
+    if (!product) {
+      updatePurchaseLine(key, { productId });
+      return;
+    }
+    updatePurchaseLine(key, {
+      productId,
+      item: product.name,
+      unitCost: String(product.purchasePrice),
+    });
+  }
+
+  function addPurchaseLine() {
+    setPurchaseLines((current) => [
+      ...current,
+      {
+        key: current.reduce((max, line) => Math.max(max, line.key), 0) + 1,
+        productId: "",
+        item: "",
+        quantity: "1",
+        unitCost: "",
+      },
+    ]);
+  }
+
+  function removePurchaseLine(key: number) {
+    setPurchaseLines((current) => current.length > 1 ? current.filter((line) => line.key !== key) : current);
+  }
+
   function selectOrderProduct(productId: string) {
     const product = products.find((item) => String(item.id) === productId);
     setSelectedProductId(productId);
@@ -4703,7 +4756,20 @@ function EntryModal({ kind, carrierNames, products, suppliers, ads, close, submi
     setSaving(true);
     setFormError("");
     try {
-      await submit(kind === "order" ? "addOrder" : kind === "product" ? "addProduct" : kind === "supplier" ? "addSupplier" : kind === "purchase" ? "addPurchase" : kind === "expense" ? "addExpense" : kind === "ad" ? "addAd" : "addCapital", Object.fromEntries(new FormData(e.currentTarget)));
+      const values = Object.fromEntries(new FormData(e.currentTarget));
+      if (kind === "purchase") {
+        await submit("addPurchaseOrder", {
+          ...values,
+          linesJson: JSON.stringify(purchaseLines.map((line) => ({
+            productId: line.productId,
+            item: line.item,
+            quantity: line.quantity,
+            unitCost: line.unitCost,
+          }))),
+        });
+      } else {
+        await submit(kind === "order" ? "addOrder" : kind === "product" ? "addProduct" : kind === "supplier" ? "addSupplier" : kind === "expense" ? "addExpense" : kind === "ad" ? "addAd" : "addCapital", values);
+      }
     } catch (c) {
       setFormError(c instanceof Error ? c.message : "Erreur");
       setSaving(false);
@@ -4835,20 +4901,56 @@ function EntryModal({ kind, carrierNames, products, suppliers, ads, close, submi
                         <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.city ? ` · ${supplier.city}` : ""}</option>
                       ))}
                     </select>
-                    <small>Créez ou modifiez les fiches dans le module Fournisseurs.</small>
+                    <small>Une seule fiche fournisseur sera liée à toutes les lignes de ce bon.</small>
                   </label>
                 ) : <Field label="Fournisseur *" name="supplier" required />}
-                <Field label="Article / motif *" name="item" placeholder="Ex. Réassort montre dorée" required />
-                <label className="field">
-                  <span>Produit lié au stock</span>
-                  <select name="productId" defaultValue="">
-                    <option value="">Aucun — achat non stock / emballage / autre</option>
-                    {products.map((product) => <option key={product.id} value={product.id}>{product.productCode} · {product.name} · stock {product.stockQuantity}</option>)}
-                  </select>
-                  <small>Si vous choisissez un produit, l’achat pourra être réceptionné ensuite et ajouter automatiquement la quantité au stock.</small>
-                </label>
-                <Field label="Quantité achetée *" name="quantity" type="number" inputMode="numeric" defaultValue="1" min="1" required />
-                <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" step="0.01" required />
+                <div className="purchase-lines-editor">
+                  <div className="purchase-lines-head">
+                    <div>
+                      <strong>Produits du bon</strong>
+                      <small>Ajoutez jusqu’à 50 lignes. Chaque ligne pourra être réceptionnée séparément.</small>
+                    </div>
+                    <button type="button" className="secondary-button" onClick={addPurchaseLine}>＋ Ajouter un produit</button>
+                  </div>
+                  {purchaseLines.map((line, index) => {
+                    const quantity = Math.max(0, Number(line.quantity) || 0);
+                    const unitCost = Math.max(0, Number(String(line.unitCost).replace(",", ".")) || 0);
+                    return (
+                      <div className="purchase-line-card" key={line.key}>
+                        <div className="purchase-line-title">
+                          <strong>Ligne {index + 1}</strong>
+                          <span>{money(quantity * unitCost)}</span>
+                          {purchaseLines.length > 1 && (
+                            <button type="button" className="text-button danger" onClick={() => removePurchaseLine(line.key)}>Supprimer</button>
+                          )}
+                        </div>
+                        <label className="field">
+                          <span>Produit lié au stock</span>
+                          <select value={line.productId} onChange={(event) => choosePurchaseProduct(line.key, event.target.value)}>
+                            <option value="">Aucun — achat non stock / emballage / autre</option>
+                            {products.map((product) => <option key={product.id} value={product.id}>{product.productCode} · {product.name} · stock {product.stockQuantity}</option>)}
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>Article / motif *</span>
+                          <input value={line.item} onChange={(event) => updatePurchaseLine(line.key, { item: event.target.value })} placeholder="Ex. Montre dorée" required />
+                        </label>
+                        <label className="field">
+                          <span>Quantité *</span>
+                          <input type="number" inputMode="numeric" min="1" value={line.quantity} onChange={(event) => updatePurchaseLine(line.key, { quantity: event.target.value })} required />
+                        </label>
+                        <label className="field">
+                          <span>Coût unitaire (MAD) *</span>
+                          <input type="number" inputMode="decimal" min="0" step="0.01" value={line.unitCost} onChange={(event) => updatePurchaseLine(line.key, { unitCost: event.target.value })} required />
+                        </label>
+                      </div>
+                    );
+                  })}
+                  <div className="purchase-order-total">
+                    <span>{purchaseLines.length} ligne{purchaseLines.length === 1 ? "" : "s"}</span>
+                    <strong>Total du bon : {money(purchaseOrderTotal)}</strong>
+                  </div>
+                </div>
                 <Select label="État du bon" name="procurementStatus" options={["Commandé", "Brouillon"]} />
                 <Field label="Livraison prévue" name="expectedDate" type="date" />
                 <Select label="Compte de paiement" name="account" options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
