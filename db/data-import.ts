@@ -71,7 +71,7 @@ const TABLE_SPECS: Record<string, TableSpec> = {
       "sale_amount", "product_cost", "shipping_cost", "ad_cost", "fees", "return_cost", "return_reason",
       "return_note", "source", "campaign", "fulfillment_type", "status", "payment_status", "carrier",
       "tracking_number", "carrier_dispatch_state", "carrier_authorized_at", "carrier_invoice_code",
-      "stock_deducted", "paid_at", "deleted_at", "deleted_by_user_id", "created_at", "updated_at",
+      "stock_deducted", "paid_at", "deleted_at", "deleted_by_user_id", "created_at", "updated_at", "items_json", "pack_name",
     ],
     defaults: {
       product_id: null,
@@ -98,6 +98,8 @@ const TABLE_SPECS: Record<string, TableSpec> = {
       deleted_at: null,
       deleted_by_user_id: null,
       updated_at: null,
+      items_json: "[]",
+      pack_name: "",
     },
   },
   tresorerie_capital: {
@@ -261,6 +263,24 @@ function validateReferences(tables: Record<string, ImportRow[]>) {
   for (const row of rowsFor(tables, "commandes")) {
     assertForeignKey(row.customer_id, customerIds, "client de commande", false);
     assertForeignKey(row.product_id, productIds, "produit de commande", true);
+    const rawItems = row.items_json;
+    if (rawItems !== undefined && rawItems !== null && rawItems !== "") {
+      let items: unknown = rawItems;
+      if (typeof rawItems === "string") {
+        try {
+          items = JSON.parse(rawItems || "[]");
+        } catch {
+          throw new Error("Une commande contient une composition multi-produits illisible.");
+        }
+      }
+      if (!Array.isArray(items)) throw new Error("Une commande contient une composition multi-produits invalide.");
+      for (const item of items) {
+        if (!isPlainRow(item)) throw new Error("Une commande contient une ligne multi-produits invalide.");
+        assertForeignKey(item.productId, productIds, "produit de commande multi-produits", false);
+        const quantity = Number(item.quantity);
+        if (!Number.isInteger(quantity) || quantity < 1) throw new Error("Une commande contient une quantité multi-produits invalide.");
+      }
+    }
   }
   for (const row of rowsFor(tables, "achats")) assertForeignKey(row.product_id, productIds, "produit d’achat", true);
   for (const row of rowsFor(tables, "mouvements_stock")) {
