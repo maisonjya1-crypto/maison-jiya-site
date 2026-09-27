@@ -1,6 +1,6 @@
 import { desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { adPerformance, capitalLedger, customers, expenses, orders, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../../db/schema";
+import { adPerformance, capitalLedger, customers, expenses, inventoryCounts, inventorySessions, orders, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../../db/schema";
 import { orderContributionBeforeGlobalAds } from "../../../../lib/finance";
 
 const datasetNames = new Set([
@@ -16,6 +16,8 @@ const datasetNames = new Set([
   "ads",
   "capital",
   "stock-movements",
+  "inventory-sessions",
+  "inventory-counts",
   "carriers",
   "members",
   "settings",
@@ -280,6 +282,44 @@ export async function GET(request: Request) {
       return csvResponse(
         ["ID", "Direction", "Catégorie", "Libellé", "Montant (MAD)", "Compte / enveloppe", "Commande liée", "Automatique", "Date opération", "Créé le"],
         rows.map((row) => [row.id, row.direction, row.category, row.label, row.amount, row.account, row.orderId, row.isAutomatic, row.entryDate, row.createdAt]),
+      );
+    }
+
+    if (dataset === "inventory-sessions") {
+      const rows = await db.select().from(inventorySessions).orderBy(desc(inventorySessions.startedAt));
+      return csvResponse(
+        ["ID", "Référence session", "Statut", "Produits attendus", "Produits comptés", "Unités système", "Unités physiques", "Unités ajustées", "Valeur avant (MAD)", "Valeur après (MAD)", "Pertes (MAD)", "Responsable", "Démarré le", "Clôturé le", "Note"],
+        rows.map((row) => [row.id, row.sessionRef, row.status, row.expectedProductCount, row.countedProductCount, row.totalSystemUnits, row.totalPhysicalUnits, row.totalAdjustmentUnits, row.valueBefore, row.valueAfter, row.lossValue, row.startedByName, row.startedAt, row.completedAt, row.note]),
+      );
+    }
+
+    if (dataset === "inventory-counts") {
+      const rows = await db.select({
+        id: inventoryCounts.id,
+        countRef: inventoryCounts.countRef,
+        sessionId: inventoryCounts.sessionId,
+        sessionRef: inventorySessions.sessionRef,
+        productId: inventoryCounts.productId,
+        productCode: products.productCode,
+        productName: products.name,
+        systemQuantity: inventoryCounts.systemQuantity,
+        physicalQuantity: inventoryCounts.physicalQuantity,
+        difference: inventoryCounts.difference,
+        reason: inventoryCounts.reason,
+        unitCost: inventoryCounts.unitCost,
+        valueBefore: inventoryCounts.valueBefore,
+        valueAfter: inventoryCounts.valueAfter,
+        lossValue: inventoryCounts.lossValue,
+        note: inventoryCounts.note,
+        countedByName: inventoryCounts.countedByName,
+        createdAt: inventoryCounts.createdAt,
+      }).from(inventoryCounts)
+        .leftJoin(products, eq(inventoryCounts.productId, products.id))
+        .leftJoin(inventorySessions, eq(inventoryCounts.sessionId, inventorySessions.id))
+        .orderBy(desc(inventoryCounts.createdAt));
+      return csvResponse(
+        ["ID", "Référence comptage", "ID session", "Référence session", "ID produit", "SKU", "Produit", "Stock système", "Stock physique", "Écart", "Motif", "Coût unitaire (MAD)", "Valeur avant (MAD)", "Valeur après (MAD)", "Perte (MAD)", "Note", "Compté par", "Créé le"],
+        rows.map((row) => [row.id, row.countRef, row.sessionId, row.sessionRef, row.productId, row.productCode, row.productName, row.systemQuantity, row.physicalQuantity, row.difference, row.reason, row.unitCost, row.valueBefore, row.valueAfter, row.lossValue, row.note, row.countedByName, row.createdAt]),
       );
     }
 
