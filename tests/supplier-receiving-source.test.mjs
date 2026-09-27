@@ -22,7 +22,9 @@ test("les achats peuvent être liés à un produit et mémorisent leur réceptio
 });
 
 test("la réception fournisseur ajoute le stock une seule fois et crée un mouvement traçable", () => {
-  assert.match(route, /receivePurchaseIntoStock\(await getRawDb\(\), id, receiveQuantity \|\| undefined\)/);
+  assert.match(route, /receivePurchaseLine\(await getRawDb\(\), id, receiveQuantity \|\| undefined\)/);
+  assert.match(receiving, /receivePurchaseIntoStock/);
+  assert.match(receiving, /stockUpdated: false/);
   assert.match(receiving, /received_quantity < quantity/);
   assert.match(receiving, /stock_quantity = stock_quantity \+ \?/);
   assert.match(receiving, /'Réception fournisseur'/);

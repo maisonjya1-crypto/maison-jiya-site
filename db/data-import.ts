@@ -70,13 +70,14 @@ const TABLE_SPECS: Record<string, TableSpec> = {
   achats: {
     table: "purchases",
     columns: [
-      "id", "supplier", "supplier_id", "purchase_ref", "procurement_status", "ordered_at", "expected_at",
+      "id", "supplier", "supplier_id", "purchase_ref", "purchase_line_no", "procurement_status", "ordered_at", "expected_at",
       "item", "product_id", "quantity", "unit_cost", "total_cost",
       "account", "payment_status", "paid_at", "received_quantity", "received_at", "created_at",
     ],
     defaults: {
       supplier_id: null,
       purchase_ref: null,
+      purchase_line_no: 1,
       procurement_status: (row) => {
         const quantity = Number(row.quantity || 0);
         const received = Number(row.received_quantity || 0);
@@ -403,7 +404,16 @@ function parsePortableExport(raw: string) {
   assertUnique(tables, "fournisseurs", "id", "fournisseur");
   assertUnique(tables, "fournisseurs", "name", "nom fournisseur");
   assertUnique(tables, "achats", "id", "achat");
-  assertUnique(tables, "achats", "purchase_ref", "référence de bon de commande", true);
+  const purchaseOrderLines = new Set<string>();
+  for (const row of rowsFor(tables, "achats")) {
+    const purchaseRef = String(row.purchase_ref || "").trim();
+    if (!purchaseRef) continue;
+    const lineNo = Number(row.purchase_line_no || 1);
+    if (!Number.isInteger(lineNo) || lineNo < 1) throw new Error(`Ligne de bon de commande invalide pour ${purchaseRef}.`);
+    const lineKey = `${purchaseRef}::${lineNo}`;
+    if (purchaseOrderLines.has(lineKey)) throw new Error(`L’export contient un doublon de ligne pour le bon ${purchaseRef}.`);
+    purchaseOrderLines.add(lineKey);
+  }
   assertUnique(tables, "commandes", "id", "commande");
   assertUnique(tables, "commandes", "order_ref", "référence commande");
   assertUnique(tables, "mouvements_stock", "id", "mouvement de stock");

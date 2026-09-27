@@ -218,3 +218,89 @@ export async function receivePurchaseIntoStock(
     newAverageCost: refreshed?.purchasePrice ?? expectedAverageCost,
   };
 }
+
+export type PurchaseLineReceiptResult =
+  | (PurchaseReceiptResult & { stockUpdated: true })
+  | {
+      purchaseId: number;
+      supplier: string;
+      item: string;
+      productId: null;
+      productName: string;
+      receivedQuantity: number;
+      totalReceivedQuantity: number;
+      remainingQuantity: number;
+      procurementStatus: "Partiellement reçu" | "Reçu";
+      stockUpdated: false;
+    };
+
+export async function receivePurchaseLine(
+  database: D1Database,
+  purchaseId: number,
+  requestedQuantity?: number,
+  receivedAtInput = new Date().toISOString(),
+): Promise<PurchaseLineReceiptResult> {
+  const purchase = await database.prepare(`
+    SELECT
+      id,
+      supplier,
+      item,
+      product_id AS productId,
+      quantity,
+      received_quantity AS receivedQuantity,
+      procurement_status AS procurementStatus
+    FROM purchases
+    WHERE id = ?
+    LIMIT 1
+  `).bind(purchaseId).first<PurchaseRow & { procurementStatus: string }>();
+
+  if (!purchase) throw new Error("Achat introuvable.");
+  if (purchase.productId) {
+    const result = await receivePurchaseIntoStock(database, purchaseId, requestedQuantity, receivedAtInput);
+    return { ...result, stockUpdated: true };
+  }
+  if (!["Commandé", "Partiellement reçu"].includes(purchase.procurementStatus)) {
+    throw new Error("Cette ligne ne peut pas être réceptionnée dans son état actuel.");
+  }
+  if (purchase.receivedQuantity >= purchase.quantity) throw new Error("Cette ligne a déjà été entièrement réceptionnée.");
+
+  const remainingBefore = purchase.quantity - purchase.receivedQuantity;
+  const quantity = requestedQuantity === undefined ? remainingBefore : Math.round(requestedQuantity);
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    throw new Error("La quantité réceptionnée doit être un entier supérieur à zéro.");
+  }
+  if (quantity > remainingBefore) {
+    throw new Error(`Vous ne pouvez réceptionner que ${remainingBefore} unité(s) restante(s).`);
+  }
+
+  const totalReceivedQuantity = purchase.receivedQuantity + quantity;
+  const remainingQuantity = purchase.quantity - totalReceivedQuantity;
+  const procurementStatus = remainingQuantity === 0 ? "Reçu" : "Partiellement reçu";
+  const result = await database.prepare(`
+    UPDATE purchases
+    SET received_quantity = received_quantity + ?,
+        received_at = ?,
+        procurement_status = ?
+    WHERE id = ?
+      AND product_id IS NULL
+      AND received_quantity + ? <= quantity
+      AND received_quantity < quantity
+      AND procurement_status IN ('Commandé', 'Partiellement reçu')
+  `).bind(quantity, receivedAtInput, procurementStatus, purchase.id, quantity).run();
+
+  if (!result.meta?.changes) throw new Error("Cette réception n’a pas été enregistrée. Rechargez les données puis réessayez.");
+
+  return {
+    purchaseId: purchase.id,
+    supplier: purchase.supplier,
+    item: purchase.item,
+    productId: null,
+    productName: purchase.item,
+    receivedQuantity: quantity,
+    totalReceivedQuantity,
+    remainingQuantity,
+    procurementStatus,
+    stockUpdated: false,
+  };
+}
+

@@ -72,6 +72,7 @@ type Purchase = {
   supplier: string;
   supplierId: number | null;
   purchaseRef: string | null;
+  purchaseLineNo: number;
   procurementStatus: string;
   orderedAt: string | null;
   expectedAt: string | null;
@@ -466,6 +467,7 @@ const retrySafeMutationActions = new Set([
   "importOrders",
   "addSupplier",
   "addPurchase",
+  "addPurchaseOrder",
   "receivePurchase",
   "addExpense",
   "addAd",
@@ -701,6 +703,7 @@ export default function DashboardClient() {
       addSupplier: "Fournisseur créé",
       updateSupplier: "Fournisseur mis à jour",
       toggleSupplier: "Statut fournisseur mis à jour",
+      addPurchaseOrder: "Bon de commande multi-produits créé",
       updatePurchase: "Bon de commande mis à jour",
       deletePurchase: "Bon de commande supprimé",
       addExpense: "Dépense enregistrée",
@@ -3435,7 +3438,11 @@ function SuppliersPage({
 }) {
   const activeSuppliers = suppliers.filter((supplier) => supplier.isActive);
   const totalDue = purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
-  const openOrders = purchases.filter((purchase) => !["Reçu", "Annulé"].includes(purchase.procurementStatus)).length;
+  const openOrders = new Set(
+    purchases
+      .filter((purchase) => !["Reçu", "Annulé"].includes(purchase.procurementStatus))
+      .map((purchase) => purchase.purchaseRef || `legacy-${purchase.id}`),
+  ).size;
   const todayKey = new Date().toISOString().slice(0, 10);
 
   async function toggle(supplier: Supplier) {
@@ -3476,6 +3483,7 @@ function SuppliersPage({
                   .sort((left, right) => (right.orderedAt || right.createdAt).localeCompare(left.orderedAt || left.createdAt));
                 const spent = rows.reduce((sum, purchase) => sum + purchase.totalCost, 0);
                 const due = rows.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
+                const orderCount = new Set(rows.map((purchase) => purchase.purchaseRef || `legacy-${purchase.id}`)).size;
                 const lastPurchase = rows[0] || null;
                 const suppliedProducts = Array.from(new Set(rows.map((purchase) => purchase.productName || purchase.item).filter(Boolean)));
                 const lateOrders = rows.filter((purchase) =>
@@ -3486,6 +3494,7 @@ function SuppliersPage({
                     && ["Commandé", "Partiellement reçu"].includes(purchase.procurementStatus),
                   )
                 );
+                const lateOrderCount = new Set(lateOrders.map((purchase) => purchase.purchaseRef || `legacy-${purchase.id}`)).size;
                 return (
                   <tr key={supplier.id}>
                     <td>
@@ -3497,7 +3506,7 @@ function SuppliersPage({
                           <ul>
                             {rows.slice(0, 5).map((purchase) => (
                               <li key={purchase.id}>
-                                <strong>{purchase.purchaseRef || `#${purchase.id}`}</strong> · {purchase.item} · {purchase.quantity} × {money(purchase.unitCost)} · {purchase.procurementStatus}
+                                <strong>{purchase.purchaseRef || `#${purchase.id}`}</strong> · L{purchase.purchaseLineNo} · {purchase.item} · {purchase.quantity} × {money(purchase.unitCost)} · {purchase.procurementStatus}
                               </li>
                             ))}
                           </ul>
@@ -3520,10 +3529,10 @@ function SuppliersPage({
                         </>
                       ) : "—"}
                     </td>
-                    <td><strong>{money(spent)}</strong><small>{rows.length} bon(s)</small></td>
+                    <td><strong>{money(spent)}</strong><small>{orderCount} bon(s) · {rows.length} ligne(s)</small></td>
                     <td className={moneyTone(-due)}><strong>{money(due)}</strong></td>
                     <td>{lastPurchase ? <><strong>{money(lastPurchase.unitCost)}</strong><small>{dateLabel(lastPurchase.orderedAt || lastPurchase.createdAt)}</small></> : "—"}</td>
-                    <td>{lateOrders.length ? <><Status value="En retard" /><small>{lateOrders.length} bon(s)</small></> : <Status value="À jour" />}</td>
+                    <td>{lateOrderCount ? <><Status value="En retard" /><small>{lateOrderCount} bon(s) · {lateOrders.length} ligne(s)</small></> : <Status value="À jour" />}</td>
                     <td><Status value={supplier.isActive ? "Actif" : "Inactif"} /></td>
                     <td>
                       <div className="entity-actions-row">
@@ -3544,28 +3553,84 @@ function SuppliersPage({
 
 function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd, onEdit, onDelete }: { purchases: Purchase[]; products: Product[]; suppliers: Supplier[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
   const [receivingId, setReceivingId] = useState<number | null>(null);
-  const total = purchases.reduce((sum, purchase) => sum + purchase.totalCost, 0);
-  const waitingReceipt = purchases.filter((purchase) => purchase.productId && purchase.receivedQuantity < purchase.quantity && ["Commandé", "Partiellement reçu"].includes(purchase.procurementStatus));
-  const receivedCount = purchases.filter((purchase) => purchase.receivedQuantity >= purchase.quantity && purchase.quantity > 0).length;
   const todayKey = new Date().toISOString().slice(0, 10);
+  const groups = new Map<string, Purchase[]>();
+  for (const purchase of purchases) {
+    const key = purchase.purchaseRef || `legacy-${purchase.id}`;
+    const current = groups.get(key) || [];
+    current.push(purchase);
+    groups.set(key, current);
+  }
+  const purchaseOrders = Array.from(groups.entries()).map(([key, rawLines]) => {
+    const lines = [...rawLines].sort((left, right) => left.purchaseLineNo - right.purchaseLineNo || left.id - right.id);
+    const first = lines[0];
+    const quantity = lines.reduce((sum, line) => sum + line.quantity, 0);
+    const receivedQuantity = lines.reduce((sum, line) => sum + line.receivedQuantity, 0);
+    const remainingQuantity = Math.max(0, quantity - receivedQuantity);
+    const totalCost = lines.reduce((sum, line) => sum + line.totalCost, 0);
+    const received = quantity > 0 && remainingQuantity === 0;
+    const anyReceived = receivedQuantity > 0;
+    const cancelled = lines.every((line) => line.procurementStatus === "Annulé");
+    const draft = lines.every((line) => line.procurementStatus === "Brouillon");
+    const status = cancelled
+      ? "Annulé"
+      : received
+        ? "Reçu"
+        : anyReceived
+          ? "Partiellement reçu"
+          : draft
+            ? "Brouillon"
+            : "Commandé";
+    const paymentStatus = lines.every((line) => line.paymentStatus === "Payé") ? "Payé" : "À payer";
+    const expectedAt = first.expectedAt;
+    const overdue = Boolean(
+      expectedAt
+      && expectedAt < todayKey
+      && remainingQuantity > 0
+      && ["Commandé", "Partiellement reçu"].includes(status),
+    );
+    return {
+      key,
+      ref: first.purchaseRef || `#${first.id}`,
+      first,
+      lines,
+      quantity,
+      receivedQuantity,
+      remainingQuantity,
+      totalCost,
+      status,
+      paymentStatus,
+      expectedAt,
+      overdue,
+      orderedAt: first.orderedAt || first.createdAt,
+    };
+  }).sort((left, right) => right.orderedAt.localeCompare(left.orderedAt) || right.first.id - left.first.id);
+
+  const total = purchaseOrders.reduce((sum, order) => sum + order.totalCost, 0);
+  const paidTotal = purchaseOrders.reduce((sum, order) => sum + order.lines.filter((line) => line.paymentStatus === "Payé").reduce((lineSum, line) => lineSum + line.totalCost, 0), 0);
+  const dueTotal = purchaseOrders.reduce((sum, order) => sum + order.lines.filter((line) => line.paymentStatus !== "Payé").reduce((lineSum, line) => lineSum + line.totalCost, 0), 0);
+  const waitingLines = purchases.filter((purchase) => purchase.productId && purchase.receivedQuantity < purchase.quantity && ["Commandé", "Partiellement reçu"].includes(purchase.procurementStatus));
+  const waitingOrders = purchaseOrders.filter((order) => order.remainingQuantity > 0 && ["Commandé", "Partiellement reçu"].includes(order.status));
+  const receivedCount = purchaseOrders.filter((order) => order.status === "Reçu").length;
   const supplierRows = Array.from(new Set(purchases.map((purchase) => purchase.supplier).filter(Boolean)))
     .map((supplier) => {
       const rows = purchases.filter((purchase) => purchase.supplier === supplier);
+      const operationKeys = new Set(rows.map((purchase) => purchase.purchaseRef || `legacy-${purchase.id}`));
       return {
         supplier,
         purchased: rows.reduce((sum, purchase) => sum + purchase.totalCost, 0),
         due: rows.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0),
-        operations: rows.length,
+        operations: operationKeys.size,
         lastPurchase: rows.reduce((latest, purchase) => purchase.createdAt > latest ? purchase.createdAt : latest, ""),
       };
     })
     .sort((left, right) => right.due - left.due || right.purchased - left.purchased);
 
   async function receive(purchase: Purchase) {
-    if (!canEdit || receivingId || !purchase.productId || purchase.receivedQuantity >= purchase.quantity || purchase.procurementStatus === "Annulé") return;
+    if (!canEdit || receivingId || purchase.receivedQuantity >= purchase.quantity || purchase.procurementStatus === "Annulé") return;
     const remaining = purchase.quantity - purchase.receivedQuantity;
     const raw = window.prompt(
-      `Quantité reçue pour ${purchase.productName || purchase.item} ?\n\nReste à recevoir : ${remaining} unité(s). Le stock sera augmenté uniquement de la quantité saisie.`,
+      `Quantité reçue pour ${purchase.productName || purchase.item} ?\n\nReste à recevoir sur cette ligne : ${remaining} unité(s). ${purchase.productId ? "Le stock sera augmenté uniquement de la quantité saisie." : "Cette ligne n’est pas liée au stock : aucun stock ne sera modifié."}`,
       String(remaining),
     );
     if (raw === null) return;
@@ -3585,78 +3650,89 @@ function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd,
   return (
     <>
       <section className="kpi-grid three">
-        <Kpi label="Total achats" value={money(total)} detail={`${purchases.length} opérations · ${products.length} produits catalogue`} />
-        <Kpi label="Achats payés" value={money(purchases.filter((purchase) => purchase.paymentStatus === "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail={`${receivedCount} réception(s) terminée(s)`} />
-        <Kpi label="Reste à payer" value={money(purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0))} detail={`${waitingReceipt.length} réception(s) stock en attente`} danger />
+        <Kpi label="Total achats" value={money(total)} detail={`${purchaseOrders.length} bon(s) · ${purchases.length} ligne(s)`} />
+        <Kpi label="Achats payés" value={money(paidTotal)} detail={`${receivedCount} bon(s) entièrement réceptionné(s)`} />
+        <Kpi label="Reste à payer" value={money(dueTotal)} detail={`${waitingOrders.length} bon(s) · ${waitingLines.length} ligne(s) stock en attente`} danger />
       </section>
       <section className="panel supplier-receiving-guide">
         <div>
           <span className="card-kicker">Réception fournisseur</span>
-          <h2>Achat ≠ stock reçu</h2>
-          <p>Enregistrez d’abord l’achat. Si vous le reliez à un produit du catalogue, le stock ne bouge pas tant que vous ne cliquez pas sur « Réceptionner le stock ».</p>
+          <h2>Achat ≠ stock reçu — même avec plusieurs produits</h2>
+          <p>Chaque ligne est réceptionnée séparément. Le stock augmente uniquement du produit et de la quantité réellement reçus, même si les autres lignes du même bon restent en attente.</p>
         </div>
-        <strong>{waitingReceipt.length} à réceptionner</strong>
+        <strong>{waitingLines.length} ligne{waitingLines.length === 1 ? "" : "s"} à réceptionner</strong>
       </section>
       <section className="panel report-table">
         <PanelHead kicker="Fournisseurs" title="Suivi des engagements" total={`${supplierRows.length} fournisseur${supplierRows.length === 1 ? "" : "s"}`} />
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Fournisseur</th><th>Achats cumulés</th><th>À payer</th><th>Opérations</th><th>Dernier achat</th></tr></thead>
+            <thead><tr><th>Fournisseur</th><th>Achats cumulés</th><th>À payer</th><th>Bons</th><th>Dernier achat</th></tr></thead>
             <tbody>{supplierRows.length ? supplierRows.map((row) => <tr key={row.supplier}><td><strong>{row.supplier}</strong></td><td>{money(row.purchased)}</td><td className={moneyTone(-row.due)}><strong>{money(row.due)}</strong></td><td>{row.operations}</td><td>{row.lastPurchase ? dateLabel(row.lastPurchase) : "—"}</td></tr>) : <tr><td colSpan={5}>Aucun fournisseur enregistré.</td></tr>}</tbody>
           </table>
         </div>
       </section>
       <section className="panel page-panel">
         <div className="section-toolbar">
-          <div><h2>Bons de commande fournisseurs</h2><p>Suivez chaque commande de Brouillon jusqu’à Reçu. Les réceptions partielles alimentent le stock au fur et à mesure.</p></div>
+          <div><h2>Bons de commande fournisseurs</h2><p>Un seul bon regroupe désormais plusieurs produits. La progression et le total sont calculés automatiquement sur toutes ses lignes.</p></div>
           <button className="primary-button" onClick={onAdd}>＋ Nouveau bon de commande</button>
         </div>
         <div className="table-scroll">
-          <table>
-            <thead><tr><th>Bon</th><th>Commandé le</th><th>Fournisseur</th><th>Achat</th><th>Produit stock</th><th>Qté commandée</th><th>Reçue</th><th>Reste</th><th>Total</th><th>État</th><th>Prévu</th><th>Paiement</th><th>Réception</th><th>Actions</th></tr></thead>
+          <table className="purchase-orders-table">
+            <thead><tr><th>Bon</th><th>Commandé le</th><th>Fournisseur</th><th>Produits / lignes</th><th>Qté</th><th>Reçue</th><th>Reste</th><th>Total</th><th>État</th><th>Prévu</th><th>Paiement</th></tr></thead>
             <tbody>
-              {purchases.map((purchase) => {
-                const received = purchase.receivedQuantity >= purchase.quantity && purchase.quantity > 0;
-                const remaining = Math.max(0, purchase.quantity - purchase.receivedQuantity);
-                const overdue = Boolean(
-                  purchase.expectedAt
-                  && purchase.expectedAt < todayKey
-                  && remaining > 0
-                  && ["Commandé", "Partiellement reçu"].includes(purchase.procurementStatus),
-                );
-                return (
-                  <tr key={purchase.id}>
-                    <td><strong>{purchase.purchaseRef || `#${purchase.id}`}</strong></td>
-                    <td>{dateLabel(purchase.orderedAt || purchase.createdAt)}</td>
-                    <td><strong>{purchase.supplier}</strong><small>{suppliers.find((supplier) => supplier.id === purchase.supplierId)?.city || ""}</small></td>
-                    <td>{purchase.item}</td>
-                    <td>{purchase.productId ? <><strong>{purchase.productName || "Produit"}</strong><small>{purchase.productCode || `#${purchase.productId}`}</small></> : <small>Non lié au stock</small>}</td>
-                    <td><strong>{purchase.quantity}</strong></td>
-                    <td>{purchase.receivedQuantity}</td>
-                    <td className={remaining > 0 ? "money-negative" : "money-positive"}><strong>{remaining}</strong></td>
-                    <td><strong>{money(purchase.totalCost)}</strong></td>
-                    <td><Status value={purchase.procurementStatus} /></td>
-                    <td>{purchase.expectedAt ? <>{dateLabel(purchase.expectedAt)}{overdue ? <small><Status value="En retard" /></small> : null}</> : "—"}</td>
-                    <td><Status value={purchase.paymentStatus} />{purchase.paymentStatus === "Payé" && purchase.paidAt ? <small>{dateLabel(purchase.paidAt)}</small> : null}</td>
-                    <td>
-                      {received ? (
-                        <span className="purchase-received"><strong>✓ {purchase.receivedQuantity}/{purchase.quantity}</strong><small>{purchase.receivedAt ? dateLabel(purchase.receivedAt) : "Réceptionné"}</small></span>
-                      ) : purchase.procurementStatus === "Brouillon" ? (
-                        <span className="purchase-unlinked">Passez le bon à « Commandé » avant réception</span>
-                      ) : purchase.procurementStatus === "Annulé" ? (
-                        <span className="purchase-unlinked">Bon annulé</span>
-                      ) : purchase.productId ? (
-                        <button className="secondary-button purchase-receive-button" type="button" disabled={!canEdit || receivingId === purchase.id} onClick={() => void receive(purchase)}>
-                          {receivingId === purchase.id ? "Réception…" : `Réceptionner · reste ${remaining}`}
-                        </button>
-                      ) : (
-                        <span className="purchase-unlinked">Modifier pour lier un produit</span>
-                      )}
-                    </td>
-                    <td className="order-actions-cell"><RecordActions label={`l’achat ${purchase.item}`} onEdit={() => onEdit({ kind: "purchase", record: purchase })} onDelete={() => onDelete({ kind: "purchase", record: purchase })} /></td>
-                  </tr>
-                );
-              })}
+              {purchaseOrders.length ? purchaseOrders.map((order) => (
+                <tr key={order.key}>
+                  <td>
+                    <strong>{order.ref}</strong>
+                    <small>{order.lines.length} ligne{order.lines.length === 1 ? "" : "s"}</small>
+                  </td>
+                  <td>{dateLabel(order.orderedAt)}</td>
+                  <td><strong>{order.first.supplier}</strong><small>{suppliers.find((supplier) => supplier.id === order.first.supplierId)?.city || ""}</small></td>
+                  <td className="purchase-order-lines-cell">
+                    <div className="purchase-order-lines">
+                      {order.lines.map((line) => {
+                        const remaining = Math.max(0, line.quantity - line.receivedQuantity);
+                        const received = remaining === 0 && line.quantity > 0;
+                        return (
+                          <article className="purchase-order-line" key={line.id}>
+                            <div className="purchase-order-line-main">
+                              <span className="purchase-line-number">L{line.purchaseLineNo}</span>
+                              <div>
+                                <strong>{line.productName || line.item}</strong>
+                                <small>{line.productCode ? `${line.productCode} · ` : ""}{line.item !== line.productName ? line.item : ""}</small>
+                              </div>
+                              <span>{line.quantity} × {money(line.unitCost)}</span>
+                              <strong>{money(line.totalCost)}</strong>
+                            </div>
+                            <div className="purchase-order-line-actions">
+                              <span className={remaining > 0 ? "money-negative" : "money-positive"}>{line.receivedQuantity}/{line.quantity} reçu · reste {remaining}</span>
+                              {received ? (
+                                <span className="purchase-received">✓ Reçu</span>
+                              ) : line.procurementStatus === "Brouillon" ? (
+                                <span className="purchase-unlinked">Brouillon</span>
+                              ) : line.procurementStatus === "Annulé" ? (
+                                <span className="purchase-unlinked">Annulé</span>
+                              ) : (
+                                <button className="secondary-button purchase-receive-button" type="button" disabled={!canEdit || receivingId === line.id} onClick={() => void receive(line)}>
+                                  {receivingId === line.id ? "Réception…" : line.productId ? `Réceptionner ${remaining}` : `Marquer reçu · ${remaining}`}
+                                </button>
+                              )}
+                              <RecordActions label={`la ligne ${line.purchaseLineNo} du bon ${order.ref}`} onEdit={() => onEdit({ kind: "purchase", record: line })} onDelete={() => onDelete({ kind: "purchase", record: line })} />
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </td>
+                  <td><strong>{order.quantity}</strong></td>
+                  <td>{order.receivedQuantity}</td>
+                  <td className={order.remainingQuantity > 0 ? "money-negative" : "money-positive"}><strong>{order.remainingQuantity}</strong></td>
+                  <td><strong>{money(order.totalCost)}</strong></td>
+                  <td><Status value={order.status} /></td>
+                  <td>{order.expectedAt ? <>{dateLabel(order.expectedAt)}{order.overdue ? <small><Status value="En retard" /></small> : null}</> : "—"}</td>
+                  <td><Status value={order.paymentStatus} />{order.paymentStatus === "Payé" && order.first.paidAt ? <small>{dateLabel(order.first.paidAt)}</small> : null}</td>
+                </tr>
+              )) : <tr><td colSpan={11}>Aucun bon de commande enregistré.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -4677,6 +4753,56 @@ function EntryModal({ kind, carrierNames, products, suppliers, ads, close, submi
   const [orderFulfillment, setOrderFulfillment] = useState<"Livraison" | "Magasin physique">("Livraison");
   const selectedProduct = products.find((product) => String(product.id) === selectedProductId) || null;
 
+  const initialPurchaseProduct = products[0] || null;
+  const [purchaseLines, setPurchaseLines] = useState<Array<{ key: number; productId: string; item: string; quantity: string; unitCost: string }>>([
+    {
+      key: 1,
+      productId: initialPurchaseProduct ? String(initialPurchaseProduct.id) : "",
+      item: initialPurchaseProduct?.name || "",
+      quantity: "1",
+      unitCost: initialPurchaseProduct ? String(initialPurchaseProduct.purchasePrice) : "",
+    },
+  ]);
+  const purchaseOrderTotal = purchaseLines.reduce((sum, line) => {
+    const quantity = Math.max(0, Number(line.quantity) || 0);
+    const unitCost = Math.max(0, Number(String(line.unitCost).replace(",", ".")) || 0);
+    return sum + quantity * unitCost;
+  }, 0);
+
+  function updatePurchaseLine(key: number, patch: Partial<{ productId: string; item: string; quantity: string; unitCost: string }>) {
+    setPurchaseLines((current) => current.map((line) => line.key === key ? { ...line, ...patch } : line));
+  }
+
+  function choosePurchaseProduct(key: number, productId: string) {
+    const product = products.find((entry) => String(entry.id) === productId);
+    if (!product) {
+      updatePurchaseLine(key, { productId });
+      return;
+    }
+    updatePurchaseLine(key, {
+      productId,
+      item: product.name,
+      unitCost: String(product.purchasePrice),
+    });
+  }
+
+  function addPurchaseLine() {
+    setPurchaseLines((current) => [
+      ...current,
+      {
+        key: current.reduce((max, line) => Math.max(max, line.key), 0) + 1,
+        productId: "",
+        item: "",
+        quantity: "1",
+        unitCost: "",
+      },
+    ]);
+  }
+
+  function removePurchaseLine(key: number) {
+    setPurchaseLines((current) => current.length > 1 ? current.filter((line) => line.key !== key) : current);
+  }
+
   function selectOrderProduct(productId: string) {
     const product = products.find((item) => String(item.id) === productId);
     setSelectedProductId(productId);
@@ -4703,7 +4829,20 @@ function EntryModal({ kind, carrierNames, products, suppliers, ads, close, submi
     setSaving(true);
     setFormError("");
     try {
-      await submit(kind === "order" ? "addOrder" : kind === "product" ? "addProduct" : kind === "supplier" ? "addSupplier" : kind === "purchase" ? "addPurchase" : kind === "expense" ? "addExpense" : kind === "ad" ? "addAd" : "addCapital", Object.fromEntries(new FormData(e.currentTarget)));
+      const values = Object.fromEntries(new FormData(e.currentTarget));
+      if (kind === "purchase") {
+        await submit("addPurchaseOrder", {
+          ...values,
+          linesJson: JSON.stringify(purchaseLines.map((line) => ({
+            productId: line.productId,
+            item: line.item,
+            quantity: line.quantity,
+            unitCost: line.unitCost,
+          }))),
+        });
+      } else {
+        await submit(kind === "order" ? "addOrder" : kind === "product" ? "addProduct" : kind === "supplier" ? "addSupplier" : kind === "expense" ? "addExpense" : kind === "ad" ? "addAd" : "addCapital", values);
+      }
     } catch (c) {
       setFormError(c instanceof Error ? c.message : "Erreur");
       setSaving(false);
@@ -4835,20 +4974,56 @@ function EntryModal({ kind, carrierNames, products, suppliers, ads, close, submi
                         <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.city ? ` · ${supplier.city}` : ""}</option>
                       ))}
                     </select>
-                    <small>Créez ou modifiez les fiches dans le module Fournisseurs.</small>
+                    <small>Une seule fiche fournisseur sera liée à toutes les lignes de ce bon.</small>
                   </label>
                 ) : <Field label="Fournisseur *" name="supplier" required />}
-                <Field label="Article / motif *" name="item" placeholder="Ex. Réassort montre dorée" required />
-                <label className="field">
-                  <span>Produit lié au stock</span>
-                  <select name="productId" defaultValue="">
-                    <option value="">Aucun — achat non stock / emballage / autre</option>
-                    {products.map((product) => <option key={product.id} value={product.id}>{product.productCode} · {product.name} · stock {product.stockQuantity}</option>)}
-                  </select>
-                  <small>Si vous choisissez un produit, l’achat pourra être réceptionné ensuite et ajouter automatiquement la quantité au stock.</small>
-                </label>
-                <Field label="Quantité achetée *" name="quantity" type="number" inputMode="numeric" defaultValue="1" min="1" required />
-                <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" step="0.01" required />
+                <div className="purchase-lines-editor">
+                  <div className="purchase-lines-head">
+                    <div>
+                      <strong>Produits du bon</strong>
+                      <small>Ajoutez jusqu’à 50 lignes. Chaque ligne pourra être réceptionnée séparément.</small>
+                    </div>
+                    <button type="button" className="secondary-button" onClick={addPurchaseLine}>＋ Ajouter un produit</button>
+                  </div>
+                  {purchaseLines.map((line, index) => {
+                    const quantity = Math.max(0, Number(line.quantity) || 0);
+                    const unitCost = Math.max(0, Number(String(line.unitCost).replace(",", ".")) || 0);
+                    return (
+                      <div className="purchase-line-card" key={line.key}>
+                        <div className="purchase-line-title">
+                          <strong>Ligne {index + 1}</strong>
+                          <span>{money(quantity * unitCost)}</span>
+                          {purchaseLines.length > 1 && (
+                            <button type="button" className="text-button danger" onClick={() => removePurchaseLine(line.key)}>Supprimer</button>
+                          )}
+                        </div>
+                        <label className="field">
+                          <span>Produit lié au stock</span>
+                          <select value={line.productId} onChange={(event) => choosePurchaseProduct(line.key, event.target.value)}>
+                            <option value="">Aucun — achat non stock / emballage / autre</option>
+                            {products.map((product) => <option key={product.id} value={product.id}>{product.productCode} · {product.name} · stock {product.stockQuantity}</option>)}
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>Article / motif *</span>
+                          <input value={line.item} onChange={(event) => updatePurchaseLine(line.key, { item: event.target.value })} placeholder="Ex. Montre dorée" required />
+                        </label>
+                        <label className="field">
+                          <span>Quantité *</span>
+                          <input type="number" inputMode="numeric" min="1" value={line.quantity} onChange={(event) => updatePurchaseLine(line.key, { quantity: event.target.value })} required />
+                        </label>
+                        <label className="field">
+                          <span>Coût unitaire (MAD) *</span>
+                          <input type="number" inputMode="decimal" min="0" step="0.01" value={line.unitCost} onChange={(event) => updatePurchaseLine(line.key, { unitCost: event.target.value })} required />
+                        </label>
+                      </div>
+                    );
+                  })}
+                  <div className="purchase-order-total">
+                    <span>{purchaseLines.length} ligne{purchaseLines.length === 1 ? "" : "s"}</span>
+                    <strong>Total du bon : {money(purchaseOrderTotal)}</strong>
+                  </div>
+                </div>
                 <Select label="État du bon" name="procurementStatus" options={["Commandé", "Brouillon"]} />
                 <Field label="Livraison prévue" name="expectedDate" type="date" />
                 <Select label="Compte de paiement" name="account" options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />

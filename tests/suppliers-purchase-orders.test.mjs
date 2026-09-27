@@ -51,6 +51,83 @@ test("une réception partielle met à jour le stock, le coût moyen et le statut
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM stock_movements WHERE purchase_id = 50").get().n, 2);
 });
 
+test("un même bon peut contenir plusieurs lignes et chaque réception reste indépendante", async t => {
+  const db = await fixture();
+  t.after(() => db.sqlite.close());
+  const receiving = loadSource("db/inventory-cost.ts");
+
+  db.sqlite.exec(`
+    INSERT INTO products (id, product_code, name, category, purchase_price, sale_price, stock_quantity)
+    VALUES (2, 'TEST-2', 'Produit test 2', 'Bijoux', 8, 22, 0);
+    INSERT INTO suppliers (id, name) VALUES (40, 'Fournisseur Multi');
+    INSERT INTO purchases (
+      id, supplier, supplier_id, purchase_ref, purchase_line_no, procurement_status, ordered_at,
+      item, product_id, quantity, unit_cost, total_cost, payment_status, received_quantity
+    ) VALUES
+      (70, 'Fournisseur Multi', 40, 'BC-MULTI-001', 1, 'Commandé', '2026-09-27T15:00:00.000Z',
+       'Produit test', 1, 3, 10, 30, 'À payer', 0),
+      (71, 'Fournisseur Multi', 40, 'BC-MULTI-001', 2, 'Commandé', '2026-09-27T15:00:00.000Z',
+       'Produit test 2', 2, 4, 8, 32, 'À payer', 0);
+  `);
+
+  const lines = db.sqlite.prepare("SELECT purchase_ref, purchase_line_no FROM purchases WHERE purchase_ref = 'BC-MULTI-001' ORDER BY purchase_line_no").all();
+  assert.deepEqual(lines.map((row) => ({ ...row })), [
+    { purchase_ref: "BC-MULTI-001", purchase_line_no: 1 },
+    { purchase_ref: "BC-MULTI-001", purchase_line_no: 2 },
+  ]);
+
+  assert.throws(
+    () => db.sqlite.prepare(`
+      INSERT INTO purchases (
+        supplier, supplier_id, purchase_ref, purchase_line_no, procurement_status,
+        item, product_id, quantity, unit_cost, total_cost, payment_status
+      ) VALUES ('Fournisseur Multi', 40, 'BC-MULTI-001', 2, 'Commandé', 'Doublon', 1, 1, 10, 10, 'À payer')
+    `).run(),
+    /UNIQUE/,
+  );
+
+  const result = await receiving.receivePurchaseIntoStock(db, 70, 2, "2026-09-27T16:00:00.000Z");
+  assert.equal(result.receivedQuantity, 2);
+  assert.equal(result.remainingQuantity, 1);
+  assert.equal(db.sqlite.prepare("SELECT received_quantity FROM purchases WHERE id = 70").get().received_quantity, 2);
+  assert.equal(db.sqlite.prepare("SELECT received_quantity FROM purchases WHERE id = 71").get().received_quantity, 0);
+  assert.equal(db.sqlite.prepare("SELECT stock_quantity FROM products WHERE id = 1").get().stock_quantity, 2);
+  assert.equal(db.sqlite.prepare("SELECT stock_quantity FROM products WHERE id = 2").get().stock_quantity, 0);
+});
+
+test("une ligne hors stock peut être reçue sans modifier aucun stock", async t => {
+  const db = await fixture();
+  t.after(() => db.sqlite.close());
+  const receiving = loadSource("db/inventory-cost.ts");
+
+  db.sqlite.exec(`
+    INSERT INTO suppliers (id, name) VALUES (41, 'Fournisseur Hors Stock');
+    INSERT INTO purchases (
+      id, supplier, supplier_id, purchase_ref, purchase_line_no, procurement_status, ordered_at,
+      item, product_id, quantity, unit_cost, total_cost, payment_status, received_quantity
+    ) VALUES (
+      72, 'Fournisseur Hors Stock', 41, 'BC-NON-STOCK', 1, 'Commandé', '2026-09-27T15:00:00.000Z',
+      'Emballages non suivis', NULL, 5, 2, 10, 'À payer', 0
+    );
+  `);
+
+  const first = await receiving.receivePurchaseLine(db, 72, 3, "2026-09-27T16:00:00.000Z");
+  assert.equal(first.stockUpdated, false);
+  assert.equal(first.totalReceivedQuantity, 3);
+  assert.equal(first.remainingQuantity, 2);
+  assert.equal(first.procurementStatus, "Partiellement reçu");
+  assert.equal(db.sqlite.prepare("SELECT stock_quantity FROM products WHERE id = 1").get().stock_quantity, 0);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM stock_movements WHERE purchase_id = 72").get().n, 0);
+
+  const second = await receiving.receivePurchaseLine(db, 72, 2, "2026-09-27T17:00:00.000Z");
+  assert.equal(second.stockUpdated, false);
+  assert.equal(second.totalReceivedQuantity, 5);
+  assert.equal(second.remainingQuantity, 0);
+  assert.equal(second.procurementStatus, "Reçu");
+  assert.equal(db.sqlite.prepare("SELECT received_quantity FROM purchases WHERE id = 72").get().received_quantity, 5);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM stock_movements WHERE purchase_id = 72").get().n, 0);
+});
+
 test("un brouillon ou un bon annulé ne peut pas alimenter le stock", async t => {
   const db = await fixture();
   t.after(() => db.sqlite.close());
@@ -175,6 +252,8 @@ test("API, interface, export et sync Sheets connaissent les fournisseurs et bons
   assert.match(route, /payload\.action === "updateSupplier"/);
   assert.match(route, /payload\.action === "toggleSupplier"/);
   assert.match(route, /buildPurchaseReference/);
+  assert.match(route, /payload\.action === "addPurchaseOrder"/);
+  assert.match(route, /purchase_line_no/);
   assert.match(dashboard, /Répertoire fournisseurs/);
   assert.match(dashboard, /Bons de commande fournisseurs/);
   assert.match(dashboard, /Partiellement reçu/);
@@ -182,12 +261,18 @@ test("API, interface, export et sync Sheets connaissent les fournisseurs et bons
   assert.match(dashboard, /Dernier prix/);
   assert.match(dashboard, /En retard/);
   assert.match(dashboard, /supplierId: row\.supplierId/);
+  assert.match(dashboard, /Ajouter un produit/);
+  assert.match(dashboard, /linesJson/);
+  assert.match(dashboard, /purchaseLineNo/);
   assert.match(backups, /suppliers/);
   assert.match(backups, /purchase_ref/);
+  assert.match(backups, /purchase_line_no/);
   assert.match(dataExport, /fournisseurs: "SELECT \* FROM suppliers/);
   assert.match(dataImport, /fournisseurs:/);
+  assert.match(dataImport, /purchase_line_no/);
   assert.match(sheets, /dataset === "suppliers"/);
   assert.match(sheets, /Référence bon/);
+  assert.match(sheets, /Ligne du bon/);
   assert.match(sheets, /Quantité commandée/);
   assert.match(sheets, /Reste à recevoir/);
   assert.match(sync, /"suppliers"/);
