@@ -1075,7 +1075,13 @@ export async function POST(request: Request) {
         return Response.json({ error: "Cet achat a déjà été réceptionné. Le produit et la quantité doivent rester inchangés pour préserver l’historique du stock." }, { status: 409 });
       }
       const database = await getRawDb();
-      const supplierProfile = await resolveSupplierProfile(database, numberValue(payload.supplierId) || purchase.supplierId || null, textValue(payload.supplier));
+      const selectedSupplierId = numberValue(payload.supplierId) || purchase.supplierId || null;
+      const supplierProfile = await resolveSupplierProfile(
+        database,
+        selectedSupplierId,
+        textValue(payload.supplier),
+        Boolean(selectedSupplierId && selectedSupplierId === purchase.supplierId),
+      );
       const procurementStatus = purchase.receivedQuantity >= quantity
         ? "Reçu"
         : purchase.receivedQuantity > 0
