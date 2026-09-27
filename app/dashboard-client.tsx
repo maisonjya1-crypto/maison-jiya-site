@@ -116,6 +116,8 @@ type Product = {
   salePrice: number;
   minimumSalePrice: number;
   stockQuantity: number;
+  stockAlertThreshold: number;
+  reorderCoverDays: number;
   archivedAt: string | null;
   archivedByUserId: number | null;
   createdAt: string;
@@ -237,6 +239,26 @@ type DailyClosingPreview = {
   paidExpensesAmount: number;
   adSpend: number;
 };
+type SmartStockRecommendation = {
+  productId: number;
+  productCode: string;
+  productName: string;
+  category: string;
+  stockQuantity: number;
+  alertThreshold: number;
+  coverDays: number;
+  soldUnits30: number;
+  averageDailyDemand: number;
+  daysOfCover: number | null;
+  pendingInbound: number;
+  targetStock: number;
+  recommendedQuantity: number;
+  supplier: string;
+  unitCost: number;
+  estimatedCost: number;
+  lastPurchaseAt: string | null;
+  status: "Rupture" | "Critique" | "À prévoir" | "OK";
+};
 type GoogleSheetsSyncLog = {
   id: number;
   eventId: string;
@@ -282,6 +304,7 @@ type Data = {
   backups: DailyBackup[];
   dailyClosings: DailyClosing[];
   dailyClosingPreview: DailyClosingPreview;
+  stockRecommendations: SmartStockRecommendation[];
   googleSheetsSync: GoogleSheetsSync;
   settings: Record<string, string>;
   access: {
@@ -352,6 +375,7 @@ const emptyData: Data = {
     paidExpensesAmount: 0,
     adSpend: 0,
   },
+  stockRecommendations: [],
   googleSheetsSync: {
     state: { status: "unconfigured", currentVersion: 0, syncedVersion: 0, pendingChanges: 0, attemptCount: 0, lastEventAt: null, lastAttemptAt: null, lastSyncAt: null, nextAttemptAt: null, lastError: "" },
     logs: [],
@@ -376,9 +400,9 @@ const dateTimeLabel = (value: string) =>
     minute: "2-digit",
   }).format(new Date(value));
 
-const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
+const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
 const navigationGroups = [
-  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats"] },
+  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Achats"] },
   { label: "Pilotage", items: ["Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA"] },
   { label: "Système", items: ["Mode entraînement", "Corbeille", "Paramètres"] },
 ];
@@ -386,6 +410,7 @@ const sectionDescriptions: Record<string, string> = {
   "Vue d’ensemble": "Synthèse de l’activité, de la trésorerie et des opérations.",
   Commandes: "Suivez les ventes, statuts, paiements et expéditions.",
   Produits: "Pilotez le catalogue, les coûts, les marges et le stock.",
+  Réapprovisionnement: "Anticipez les ruptures et préparez les quantités à commander par fournisseur.",
   Colis: "Contrôlez les expéditions et le suivi des transporteurs.",
   Clients: "Centralisez les coordonnées et l’historique de vos clientes.",
   Achats: "Gérez les fournisseurs, réceptions et coûts d’approvisionnement.",
