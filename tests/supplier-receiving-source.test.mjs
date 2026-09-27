@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [schema, compat, route, dashboard, backups, sheets] = await Promise.all([
+const [schema, compat, route, receiving, dashboard, backups, sheets] = await Promise.all([
   readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
   readFile(new URL("../db/schema-compat.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/data/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../db/inventory-cost.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/dashboard-client.tsx", import.meta.url), "utf8"),
   readFile(new URL("../db/backups.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/backup/google-sheets/route.ts", import.meta.url), "utf8"),
@@ -21,15 +22,20 @@ test("les achats peuvent être liés à un produit et mémorisent leur réceptio
 });
 
 test("la réception fournisseur ajoute le stock une seule fois et crée un mouvement traçable", () => {
-  const start = route.indexOf('payload.action === "receivePurchase"');
-  const end = route.indexOf('payload.action === "deletePurchase"', start);
-  assert.ok(start >= 0 && end > start, "action receivePurchase introuvable");
-  const action = route.slice(start, end);
-  assert.match(action, /received_quantity < quantity/);
-  assert.match(action, /SET stock_quantity = stock_quantity \+ \?/);
-  assert.match(action, /'Réception fournisseur'/);
-  assert.match(action, /purchase_id/);
-  assert.match(action, /results\[0\]\?\.meta\?\.changes/);
+  assert.match(route, /receivePurchaseIntoStock\(await getRawDb\(\), id\)/);
+  assert.match(receiving, /received_quantity < quantity/);
+  assert.match(receiving, /stock_quantity = stock_quantity \+ \?/);
+  assert.match(receiving, /'Réception fournisseur'/);
+  assert.match(receiving, /purchase_id/);
+  assert.match(receiving, /results\[0\]\?\.meta\?\.changes/);
+});
+
+test("la réception fournisseur recalcule le coût moyen pondéré sans réécrire les anciennes commandes", () => {
+  assert.match(receiving, /purchase_price = ROUND/);
+  assert.match(receiving, /purchase_price \* stock_quantity/);
+  assert.match(receiving, /unit_cost AS unitCost/);
+  assert.match(route, /selectedProduct\.purchasePrice \* quantity/);
+  assert.match(route, /Coût moyen/);
 });
 
 test("un achat réceptionné ne peut plus être supprimé ni changer de produit ou quantité", () => {
