@@ -5,14 +5,23 @@ export type PurchasePlanRecommendation = {
   productId: number;
   productCode: string;
   productName: string;
-  status: "Rupture" | "Critique" | "À prévoir" | "OK";
-  daysOfCover: number | null;
+  category: string;
+  stockQuantity: number;
+  alertThreshold: number;
+  coverDays: number;
+  soldUnits30: number;
   averageDailyDemand: number;
+  daysOfCover: number | null;
+  pendingInbound: number;
+  targetStock: number;
   recommendedQuantity: number;
   supplierId: number | null;
   supplier: string;
+  supplierLeadTimeDays: number | null;
   supplierMinimumOrderAmount?: number | null;
   unitCost: number;
+  estimatedCost: number;
+  lastPurchaseAt: string | null;
 };
 
 export type PurchasePlanLine = PurchasePlanRecommendation & {
