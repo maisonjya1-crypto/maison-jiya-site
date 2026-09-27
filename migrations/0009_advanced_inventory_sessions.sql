@@ -31,3 +31,4 @@ ALTER TABLE inventory_counts ADD COLUMN value_after REAL NOT NULL DEFAULT 0;
 ALTER TABLE inventory_counts ADD COLUMN loss_value REAL NOT NULL DEFAULT 0;
 
 CREATE INDEX inventory_counts_session_id_idx ON inventory_counts(session_id);
+CREATE UNIQUE INDEX inventory_counts_session_product_unique_idx ON inventory_counts(session_id, product_id);
