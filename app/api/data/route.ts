@@ -8,7 +8,7 @@ import { getMetaRuntimeStatus, syncMetaAds } from "../../../db/meta";
 import { reconcileOrderAllocations } from "../../../db/allocations";
 import { getGoogleSheetsSyncSnapshot, markGoogleSheetsSyncPending, processGoogleSheetsSyncQueue } from "../../../db/google-sheets-sync";
 import { ensureStorefrontCms } from "../../../db/storefront-cms";
-import { receivePurchaseLine } from "../../../db/inventory-cost";
+import { receivePurchaseLine, receivePurchaseOrderImmediately } from "../../../db/inventory-cost";
 import { buildDailyClosingPreview, saveDailyClosing } from "../../../db/daily-closing";
 import { buildSmartStockRecommendations } from "../../../db/smart-stock";
 import { supplierInvoiceIsOverdue, supplierInvoicePaymentStatus, syncPurchaseOrderPaymentState } from "../../../db/supplier-invoices";
@@ -1173,12 +1173,7 @@ export async function POST(request: Request) {
       )));
 
       if (receiveImmediately) {
-        const insertedLines = await database.prepare(
-          "SELECT id, quantity FROM purchases WHERE purchase_ref = ? ORDER BY purchase_line_no, id",
-        ).bind(purchaseRef).all<{ id: number; quantity: number }>();
-        for (const line of insertedLines.results) {
-          await receivePurchaseLine(database, line.id, Number(line.quantity || 0), new Date().toISOString());
-        }
+        await receivePurchaseOrderImmediately(database, purchaseRef, new Date().toISOString());
       }
 
       if (mode === "Retrait fournisseur" && travelCost > 0) {
