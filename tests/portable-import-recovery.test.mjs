@@ -154,6 +154,8 @@ test("un ancien export sans dépenses et sans nouvelles colonnes reste importabl
   await importer.restorePortableDataImport(db, JSON.stringify(data));
   const purchase = db.sqlite.prepare("SELECT * FROM purchases").get();
   assert.equal(purchase.product_id, null);
+  assert.equal(purchase.account, "Banque");
+  assert.equal(purchase.paid_at, now);
   assert.equal(purchase.received_quantity, 0);
   assert.equal(purchase.received_at, null);
   assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM expenses").get().n, 0);

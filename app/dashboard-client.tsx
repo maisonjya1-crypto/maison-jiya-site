@@ -6,6 +6,7 @@ import TrainingPage from "./training-page";
 import { calculateBusinessFinance, calculateOperatingProfit, orderContributionBeforeGlobalAds } from "../lib/finance";
 import { businessDateKey, deliveryRecognitionDate } from "../lib/accounting-dates";
 import { allocationPolicyFromSettings } from "../lib/allocation-policy";
+import { calculateTreasuryAccounts } from "../lib/treasury";
 
 type Order = {
   id: number;
@@ -60,7 +61,9 @@ type Purchase = {
   quantity: number;
   unitCost: number;
   totalCost: number;
+  account: string;
   paymentStatus: string;
+  paidAt: string | null;
   receivedQuantity: number;
   receivedAt: string | null;
   createdAt: string;
@@ -72,6 +75,7 @@ type Expense = {
   amount: number;
   account: string;
   paymentStatus: string;
+  paidAt: string | null;
   expenseDate: string;
   note: string;
   createdAt: string;
@@ -3151,7 +3155,7 @@ function PurchasesPage({ purchases, products, canEdit, submit, onAdd, onEdit, on
         </div>
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Date</th><th>Fournisseur</th><th>Achat</th><th>Produit stock</th><th>Qté</th><th>Total</th><th>Paiement</th><th>Réception</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Date</th><th>Fournisseur</th><th>Achat</th><th>Produit stock</th><th>Qté</th><th>Total</th><th>Compte</th><th>Paiement</th><th>Réception</th><th>Actions</th></tr></thead>
             <tbody>
               {purchases.map((purchase) => {
                 const received = purchase.receivedQuantity >= purchase.quantity && purchase.quantity > 0;
@@ -3163,7 +3167,8 @@ function PurchasesPage({ purchases, products, canEdit, submit, onAdd, onEdit, on
                     <td>{purchase.productId ? <><strong>{purchase.productName || "Produit"}</strong><small>{purchase.productCode || `#${purchase.productId}`}</small></> : <small>Non lié au stock</small>}</td>
                     <td>{purchase.quantity}</td>
                     <td><strong>{money(purchase.totalCost)}</strong></td>
-                    <td><Status value={purchase.paymentStatus} /></td>
+                    <td>{purchase.account || "Banque"}</td>
+                    <td><Status value={purchase.paymentStatus} />{purchase.paymentStatus === "Payé" && purchase.paidAt ? <small>{dateLabel(purchase.paidAt)}</small> : null}</td>
                     <td>
                       {received ? (
                         <span className="purchase-received"><strong>✓ +{purchase.receivedQuantity}</strong><small>{purchase.receivedAt ? dateLabel(purchase.receivedAt) : "Réceptionné"}</small></span>
@@ -3235,7 +3240,7 @@ function ExpensesPage({ expenses, onAdd, onEdit, onDelete }: { expenses: Expense
         {expenses.length ? (
           <div className="table-scroll">
             <table>
-              <thead><tr><th>Date</th><th>Catégorie</th><th>Libellé</th><th>Compte</th><th>Montant</th><th>Paiement</th><th>Note</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Date</th><th>Catégorie</th><th>Libellé</th><th>Compte</th><th>Montant</th><th>Paiement</th><th>Payé le</th><th>Note</th><th>Actions</th></tr></thead>
               <tbody>
                 {expenses.map((expense) => (
                   <tr key={expense.id}>
@@ -3245,6 +3250,7 @@ function ExpensesPage({ expenses, onAdd, onEdit, onDelete }: { expenses: Expense
                     <td>{expense.account}</td>
                     <td className="money-negative"><strong>{money(expense.amount)}</strong></td>
                     <td><Status value={expense.paymentStatus} /></td>
+                    <td>{expense.paymentStatus === "Payé" && expense.paidAt ? dateLabel(expense.paidAt) : "—"}</td>
                     <td>{expense.note || "—"}</td>
                     <td className="order-actions-cell"><RecordActions label={"la dépense " + expense.label} onEdit={() => onEdit({ kind: "expense", record: expense })} onDelete={() => onDelete({ kind: "expense", record: expense })} /></td>
                   </tr>
@@ -3439,16 +3445,19 @@ function ReportsPage({ data }: { data: Data }) {
     const recentOutbound = data.stockMovements.some((movement) => movement.productId === product.id && ["Commande", "Vente", "Inventaire -"].includes(movement.movementType) && elapsedDays(movement.createdAt) < 45);
     return !recentOutbound;
   });
-  const storeCash = collected.filter((order) => order.fulfillmentType === "Magasin physique").reduce((sum, order) => sum + order.saleAmount - order.fees - order.returnCost, 0);
+  const treasury = calculateTreasuryAccounts({
+    orders: data.orders,
+    purchases: data.purchases,
+    expenses: data.expenses,
+    ads: data.ads,
+    capital: data.capital,
+  });
+  const storeCash = treasury.cash;
+  const bank = treasury.bank;
+  const otherAccounts = treasury.other;
   const carrierMoney = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus === "À encaisser").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees, 0);
   const receivables = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && order.paymentStatus !== "Encaissé").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees, 0);
-  const manualCapital = data.capital.filter((entry) => !entry.isAutomatic).reduce((sum, entry) => sum + (entry.direction === "Entrée" ? entry.amount : entry.direction === "Sortie" ? -entry.amount : 0), 0);
-  const deliveryReceipts = collected.filter((order) => order.fulfillmentType !== "Magasin physique").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees - order.returnCost, 0);
-  const paidPurchases = data.purchases.filter((purchase) => purchase.paymentStatus === "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
-  const paidExpenses = data.expenses.filter((expense) => expense.paymentStatus === "Payé").reduce((sum, expense) => sum + expense.amount, 0);
   const unpaidExpenses = data.expenses.filter((expense) => expense.paymentStatus !== "Payé");
-  const adSpend = data.ads.reduce((sum, ad) => sum + ad.spend, 0);
-  const bank = deliveryReceipts + manualCapital - paidPurchases - paidExpenses - adSpend;
   const automaticAllocations = data.capital.filter((entry) => entry.isAutomatic);
   const positiveProfit = automaticAllocations.reduce((sum, entry) => sum + entry.amount, 0);
   const allocationAmount = (category: string) => automaticAllocations.filter((entry) => entry.category === category).reduce((sum, entry) => sum + entry.amount, 0);
@@ -3465,7 +3474,7 @@ function ReportsPage({ data }: { data: Data }) {
   return <div className="reports-page">
     <section className="report-automation-banner"><div><span>↻</span><div><strong>Rapports automatiques actifs</strong><p>Les chiffres quotidiens, hebdomadaires et mensuels se recalculent à chaque commande, paiement, retour, achat, dépense ou publicité.</p></div></div><small>Actualisé maintenant</small></section>
     <section className="report-period-grid">{periods.map((period) => <article key={period.label}><span>{period.label}</span><strong>{money(period.profit)}</strong><p>{period.count} livrée{period.count === 1 ? "" : "s"} · CA {money(period.revenue)}</p><small>Meta {money(period.adSpend)} · charges {money(period.operatingExpenses)}</small></article>)}</section>
-    <section className="financial-account-grid"><article><span>Caisse magasin</span><strong>{money(storeCash)}</strong><small>Encaissements remis sur place</small></article><article><span>Banque estimée</span><strong className={moneyTone(bank)}>{money(bank)}</strong><small>Virements moins achats, charges et publicités payées</small></article><article><span>Argent transporteurs</span><strong>{money(carrierMoney)}</strong><small>Livré, en attente de virement</small></article><article><span>Créances en cours</span><strong>{money(receivables)}</strong><small>Confirmé ou en transit</small></article></section>
+    <section className="financial-account-grid"><article><span>Caisse / espèces</span><strong className={moneyTone(storeCash)}>{money(storeCash)}</strong><small>Ventes magasin et mouvements payés en espèces</small></article><article><span>Banque / carte</span><strong className={moneyTone(bank)}>{money(bank)}</strong><small>Virements et paiements affectés à Banque ou Carte</small></article><article><span>Autres comptes</span><strong className={moneyTone(otherAccounts)}>{money(otherAccounts)}</strong><small>Mouvements explicitement classés « Autre »</small></article><article><span>Argent transporteurs</span><strong>{money(carrierMoney)}</strong><small>Livré, en attente de virement</small></article><article><span>Créances en cours</span><strong>{money(receivables)}</strong><small>Confirmé ou en transit</small></article></section>
     <section className="allocation-report"><div><span className="card-kicker">Mouvements automatiques enregistrés</span><h2>{money(positiveProfit)} affectés</h2><p>Chaque vente encaissée crée trois enveloppes théoriques à partir de la marge commande. Les dépenses Meta réelles et charges restent déduites globalement pour éviter le double comptage.</p></div><div><article><span>Réinvestissement · {allocationPolicy.reinvestment}%</span><strong>{money(allocationAmount("Réinvestissement"))}</strong></article><article><span>Salaire personnel · {allocationPolicy.salary}%</span><strong>{money(allocationAmount("Salaire personnel"))}</strong></article><article><span>Fonds d’urgence · {allocationPolicy.emergency}%</span><strong>{money(allocationAmount("Fonds d’urgence"))}</strong></article></div></section>
     <section className="panel alerts-panel"><PanelHead kicker="Surveillance automatique" title="Alertes actives" total={String(alerts.length)} />{alerts.length ? <div className="alerts-list">{alerts.map((alert) => <article className={alert.level} key={alert.key}><span aria-hidden="true">{alert.level === "danger" ? "!" : "◷"}</span><div><strong>{alert.title}</strong><small>{alert.detail}</small></div></article>)}</div> : <div className="pending-empty">✓ Aucun stock critique, colis bloqué ou encaissement en retard détecté.</div>}</section>
     <div className="report-analysis-grid"><AnalysisTable title="Marge commandes par produit" rows={groupOrderAnalysis(completed, (order) => order.products)} /><AnalysisTable title="Marge commandes par ville" rows={groupOrderAnalysis(completed, (order) => order.city)} /><AnalysisTable title="Marge commandes par source" rows={groupOrderAnalysis(completed, (order) => order.source)} /><AnalysisTable title="Marge commandes par agence" rows={groupOrderAnalysis(completed.filter((order) => order.fulfillmentType !== "Magasin physique"), (order) => order.carrier)} /><AnalysisTable title="Facebook, Instagram, TikTok et WhatsApp" rows={platformRows} /><AnalysisTable title="Campagnes reliées aux commandes" rows={campaignRows} /></div>
@@ -3496,6 +3505,7 @@ function CapitalPage({
   onDelete: (selection: EditableEntity) => void;
 }) {
   const currentYear = new Date().getFullYear();
+  const allocationPolicy = allocationPolicyFromSettings(data.settings);
   const automaticAllocations = data.capital.filter((entry) => entry.isAutomatic);
   const personalSalary = automaticAllocations.filter((entry) => entry.category === "Salaire personnel").reduce((sum, entry) => sum + entry.amount, 0);
   const emergencyFund = automaticAllocations.filter((entry) => entry.category === "Fonds d’urgence").reduce((sum, entry) => sum + entry.amount, 0);
@@ -3529,9 +3539,9 @@ function CapitalPage({
       .filter((purchase) => purchase.paymentStatus === "Payé")
       .map((purchase) => ({
         direction: "Sortie" as const,
-        source: "Achats fournisseurs",
+        source: `Achats fournisseurs · ${purchase.account || "Banque"}`,
         amount: purchase.totalCost,
-        date: purchase.createdAt,
+        date: purchase.paidAt || purchase.createdAt,
       })),
     ...data.ads
       .filter((ad) => ad.spend > 0)
@@ -3545,9 +3555,9 @@ function CapitalPage({
       .filter((expense) => expense.paymentStatus === "Payé")
       .map((expense) => ({
         direction: "Sortie" as const,
-        source: `Dépenses · ${expense.category}`,
+        source: `Dépenses · ${expense.category} · ${expense.account}`,
         amount: expense.amount,
-        date: expense.expenseDate,
+        date: expense.paidAt || expense.expenseDate,
       })),
 
   ];
@@ -3667,15 +3677,15 @@ function CapitalPage({
             <span className="envelope-icon">◎</span>
             <span className="envelope-label">Salaire personnel</span>
             <h3>{money(personalSalary)}</h3>
-            <p>30% de la marge commande positive encaissée affectés à votre rémunération personnelle.</p>
-            <small>Écritures automatiques · 30%</small>
+            <p>{allocationPolicy.salary}% de la marge commande positive encaissée affectés à votre rémunération personnelle.</p>
+            <small>Écritures automatiques · {allocationPolicy.salary}%</small>
           </article>
           <article className="capital-envelope-card emergency-envelope">
             <span className="envelope-icon">◇</span>
             <span className="envelope-label">Fonds d’urgence</span>
             <h3>{money(emergencyFund)}</h3>
-            <p>20% de la marge commande positive encaissée conservés pour les imprévus.</p>
-            <small>Écritures automatiques · 20%</small>
+            <p>{allocationPolicy.emergency}% de la marge commande positive encaissée conservés pour les imprévus.</p>
+            <small>Écritures automatiques · {allocationPolicy.emergency}%</small>
           </article>
         </div>
       </section>
@@ -4180,7 +4190,9 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
                 </label>
                 <Field label="Quantité achetée *" name="quantity" type="number" inputMode="numeric" defaultValue="1" min="1" required />
                 <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" step="0.01" required />
+                <Select label="Compte de paiement" name="account" options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
                 <Select label="Paiement" name="paymentStatus" options={["Payé", "À payer"]} />
+                <Field label="Date de paiement (si payé)" name="paidDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
               </>
             )}
             {kind === "expense" && (
@@ -4190,6 +4202,7 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
                 <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" required />
                 <Select label="Compte" name="account" options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
                 <Select label="Paiement" name="paymentStatus" options={["Payé", "À payer"]} />
+                <Field label="Date de paiement (si payée)" name="paidDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
                 <Field label="Date de la dépense *" name="expenseDate" type="date" required />
                 <Field label="Note" name="note" placeholder="Facultatif" maxLength={300} />
               </>
@@ -4208,7 +4221,8 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
                 <Select label="Type" name="direction" options={["Entrée", "Sortie"]} />
                 <Field label="Source du capital *" name="category" defaultValue="Apport" required />
                 <Field label="Libellé *" name="label" required />
-                <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0" step="0.01" required />
+                <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" required />
+                <Select label="Compte concerné" name="account" options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
                 <Field label="Date *" name="entryDate" type="date" required />
               </>
             )}
@@ -4530,7 +4544,9 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
                 </>
               )}
               <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={String(selection.record.unitCost)} required />
+              <Select label="Compte de paiement" name="account" defaultValue={selection.record.account || "Banque"} options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
               <Select label="Paiement" name="paymentStatus" defaultValue={selection.record.paymentStatus} options={["Payé", "À payer"]} />
+              <Field label="Date de paiement (si payé)" name="paidDate" type="date" defaultValue={selection.record.paidAt?.slice(0, 10) || ""} />
             </>}
             {selection.kind === "expense" && <>
               <Select label="Catégorie *" name="category" defaultValue={selection.record.category} options={["Loyer", "Emballage", "Transport", "Téléphone / Internet", "Frais bancaires", "Outils / logiciels", "Prestataire", "Matériel", "Autre"]} />
@@ -4538,6 +4554,7 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
               <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" defaultValue={String(selection.record.amount)} required />
               <Select label="Compte" name="account" defaultValue={selection.record.account} options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
               <Select label="Paiement" name="paymentStatus" defaultValue={selection.record.paymentStatus} options={["Payé", "À payer"]} />
+              <Field label="Date de paiement (si payée)" name="paidDate" type="date" defaultValue={selection.record.paidAt?.slice(0, 10) || ""} />
               <Field label="Date de la dépense *" name="expenseDate" type="date" defaultValue={selection.record.expenseDate.slice(0, 10)} required />
               <Field label="Note" name="note" defaultValue={selection.record.note} maxLength={300} />
             </>}
@@ -4552,7 +4569,8 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
               <Select label="Type" name="direction" defaultValue={selection.record.direction} options={["Entrée", "Sortie"]} />
               <Field label="Source du capital *" name="category" defaultValue={selection.record.category} required />
               <Field label="Libellé *" name="label" defaultValue={selection.record.label} required />
-              <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={String(selection.record.amount)} required />
+              <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" defaultValue={String(selection.record.amount)} required />
+              <Select label="Compte concerné" name="account" defaultValue={selection.record.account || "Banque"} options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
               <Field label="Date *" name="entryDate" type="date" defaultValue={selection.record.entryDate.slice(0, 10)} required />
             </>}
           </div>

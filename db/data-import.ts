@@ -50,19 +50,26 @@ const TABLE_SPECS: Record<string, TableSpec> = {
     table: "purchases",
     columns: [
       "id", "supplier", "item", "product_id", "quantity", "unit_cost", "total_cost",
-      "payment_status", "received_quantity", "received_at", "created_at",
+      "account", "payment_status", "paid_at", "received_quantity", "received_at", "created_at",
     ],
     defaults: {
       product_id: null,
+      account: "Banque",
       payment_status: "Payé",
+      paid_at: (row) => String(row.payment_status || "Payé") === "Payé" ? scalar(row.created_at, null) : null,
       received_quantity: 0,
       received_at: null,
     },
   },
   depenses: {
     table: "expenses",
-    columns: ["id", "category", "label", "amount", "account", "payment_status", "expense_date", "note", "created_at"],
-    defaults: { account: "Banque", payment_status: "Payé", note: "" },
+    columns: ["id", "category", "label", "amount", "account", "payment_status", "paid_at", "expense_date", "note", "created_at"],
+    defaults: {
+      account: "Banque",
+      payment_status: "Payé",
+      paid_at: (row) => String(row.payment_status || "Payé") === "Payé" ? scalar(row.expense_date ?? row.created_at, null) : null,
+      note: "",
+    },
   },
   commandes: {
     table: "orders",
