@@ -25,8 +25,10 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build
-      - name: Run source and integration tests
-        run: node --test tests/*.test.mjs
+      - name: Run source and integration tests compatible with Node
+        run: find tests -maxdepth 1 -name '*.test.mjs' ! -name 'rendered-html.test.mjs' -print0 | xargs -0 node --test
+      - name: Verify Cloudflare Worker bundle with candidate vinext
+        run: npx wrangler deploy --dry-run
 
   drizzle-latest:
     name: Test drizzle-kit 0.31.11
