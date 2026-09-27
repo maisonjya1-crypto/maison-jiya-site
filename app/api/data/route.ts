@@ -82,6 +82,13 @@ function treasuryAccount(value: unknown, fallback = "Banque") {
   return treasuryAccounts.includes(account) ? account : fallback;
 }
 
+const purchaseModes = ["Retrait fournisseur", "Livraison fournisseur"];
+
+function purchaseMode(value: unknown, fallback = "Retrait fournisseur") {
+  const mode = textValue(value, fallback);
+  return purchaseModes.includes(mode) ? mode : fallback;
+}
+
 function paidAtFromInput(value: unknown, fallbackIso = new Date().toISOString()) {
   const raw = textValue(value);
   if (!raw) return fallbackIso;
@@ -396,6 +403,7 @@ async function snapshot(access: AccessInfo) {
       supplierId: purchases.supplierId,
       purchaseRef: purchases.purchaseRef,
       purchaseLineNo: purchases.purchaseLineNo,
+      purchaseMode: purchases.purchaseMode,
       procurementStatus: purchases.procurementStatus,
       orderedAt: purchases.orderedAt,
       expectedAt: purchases.expectedAt,
@@ -1081,15 +1089,30 @@ export async function POST(request: Request) {
       } catch (error) {
         return Response.json({ error: error instanceof Error ? error.message : "Bon de commande invalide." }, { status: 400 });
       }
+
       const account = treasuryAccount(payload.account);
       const nextPaymentStatus = textValue(payload.paymentStatus, "À payer");
+      const mode = purchaseMode(payload.purchaseMode);
+      const receiveImmediately = textValue(payload.receiveImmediately) === "true" || textValue(payload.receiveImmediately) === "on";
+      const travelCost = moneyValue(payload.travelCost);
+      const travelExpenseAccount = treasuryAccount(payload.travelExpenseAccount, "Espèces");
       const procurementStatus = normalizedProcurementStatus(payload.procurementStatus, "Commandé");
       const paidAt = nextPaymentStatus === "Payé" ? paidAtFromInput(payload.paidDate) : null;
       let expectedAt = textValue(payload.expectedDate);
+
       if (!["Payé", "À payer"].includes(nextPaymentStatus) || ["Partiellement reçu", "Reçu", "Annulé"].includes(procurementStatus)) {
         return Response.json({ error: "Bon de commande invalide." }, { status: 400 });
       }
-      if (expectedAt && !/^\d{4}-\d{2}-\d{2}$/.test(expectedAt)) return Response.json({ error: "Date de livraison prévue invalide." }, { status: 400 });
+      if (receiveImmediately && procurementStatus !== "Commandé") {
+        return Response.json({ error: "Un achat reçu immédiatement doit être enregistré comme commandé, pas comme brouillon." }, { status: 400 });
+      }
+      if (mode !== "Retrait fournisseur" && travelCost > 0) {
+        return Response.json({ error: "Les frais de déplacement sont réservés au mode Retrait fournisseur." }, { status: 400 });
+      }
+      if (expectedAt && !/^\d{4}-\d{2}-\d{2}$/.test(expectedAt)) {
+        return Response.json({ error: mode === "Retrait fournisseur" ? "Date de retrait prévue invalide." : "Date de livraison prévue invalide." }, { status: 400 });
+      }
+
       const duplicatePurchaseOrder = await protectMutation("addPurchaseOrder");
       if (duplicatePurchaseOrder) return duplicatePurchaseOrder;
 
@@ -1104,11 +1127,16 @@ export async function POST(request: Request) {
 
       const supplierProfile = await resolveSupplierProfile(database, numberValue(payload.supplierId) || null, textValue(payload.supplier));
       const orderedAt = procurementStatus === "Brouillon" ? null : new Date().toISOString();
+      const todayKey = new Date().toISOString().slice(0, 10);
       if (!expectedAt && procurementStatus !== "Brouillon") {
-        const profile = await database.prepare("SELECT lead_time_days AS leadTimeDays FROM suppliers WHERE id = ?").bind(supplierProfile.id).first<{ leadTimeDays: number }>();
-        const date = new Date();
-        date.setUTCDate(date.getUTCDate() + Math.max(0, Number(profile?.leadTimeDays || 0)));
-        expectedAt = date.toISOString().slice(0, 10);
+        if (mode === "Retrait fournisseur") {
+          expectedAt = todayKey;
+        } else {
+          const profile = await database.prepare("SELECT lead_time_days AS leadTimeDays FROM suppliers WHERE id = ?").bind(supplierProfile.id).first<{ leadTimeDays: number }>();
+          const date = new Date();
+          date.setUTCDate(date.getUTCDate() + Math.max(0, Number(profile?.leadTimeDays || 0)));
+          expectedAt = date.toISOString().slice(0, 10);
+        }
       }
 
       let purchaseRef = buildPurchaseReference();
@@ -1122,14 +1150,15 @@ export async function POST(request: Request) {
 
       await database.batch(lines.map((line, index) => database.prepare(`
         INSERT INTO purchases (
-          supplier, supplier_id, purchase_ref, purchase_line_no, procurement_status, ordered_at, expected_at,
+          supplier, supplier_id, purchase_ref, purchase_line_no, purchase_mode, procurement_status, ordered_at, expected_at,
           item, product_id, quantity, unit_cost, total_cost, account, payment_status, paid_at, received_quantity
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
       `).bind(
         supplierProfile.name,
         supplierProfile.id,
         purchaseRef,
         index + 1,
+        mode,
         procurementStatus,
         orderedAt,
         expectedAt || null,
@@ -1142,8 +1171,35 @@ export async function POST(request: Request) {
         nextPaymentStatus,
         paidAt,
       )));
+
+      if (receiveImmediately) {
+        const insertedLines = await database.prepare(
+          "SELECT id, quantity FROM purchases WHERE purchase_ref = ? ORDER BY purchase_line_no, id",
+        ).bind(purchaseRef).all<{ id: number; quantity: number }>();
+        for (const line of insertedLines.results) {
+          await receivePurchaseLine(database, line.id, Number(line.quantity || 0), new Date().toISOString());
+        }
+      }
+
+      if (mode === "Retrait fournisseur" && travelCost > 0) {
+        const now = new Date();
+        await database.prepare(`
+          INSERT INTO expenses (category, label, amount, account, payment_status, paid_at, expense_date, note)
+          VALUES ('Transport', ?, ?, ?, 'Payé', ?, ?, ?)
+        `).bind(
+          `Déplacement fournisseur · ${supplierProfile.name}`,
+          travelCost,
+          travelExpenseAccount,
+          now.toISOString(),
+          now.toISOString().slice(0, 10),
+          `Frais séparés du coût du stock · ${purchaseRef} · Retrait chez fournisseur`,
+        ).run();
+      }
+
       auditEntityLabel = `${purchaseRef} · ${supplierProfile.name} · ${lines.length} ligne(s)`;
-      integrationMessage = `${purchaseRef} créé avec ${lines.length} ligne(s) pour ${supplierProfile.name}.`;
+      integrationMessage = receiveImmediately
+        ? `${purchaseRef} créé en retrait fournisseur et réceptionné immédiatement. Stock mis à jour ligne par ligne.${travelCost > 0 ? ` Frais de déplacement : ${travelCost.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.` : ""}`
+        : `${purchaseRef} créé avec ${lines.length} ligne(s) pour ${supplierProfile.name} · ${mode}.`;
     } else if (payload.action === "addPurchase") {
       const quantity = numberValue(payload.quantity, 1);
       const unitCost = moneyValue(payload.unitCost);
@@ -1179,6 +1235,7 @@ export async function POST(request: Request) {
         supplier: supplierProfile.name,
         supplierId: supplierProfile.id,
         purchaseRef,
+        purchaseMode: "Retrait fournisseur",
         procurementStatus,
         orderedAt,
         expectedAt: expectedAt || null,
@@ -1330,10 +1387,14 @@ export async function POST(request: Request) {
           MAX(supplier_id) AS maxSupplierId,
           COUNT(*) AS lineCount,
           SUM(total_cost) AS totalAmount,
-          SUM(CASE WHEN procurement_status IN ('Brouillon', 'Annulé') THEN 1 ELSE 0 END) AS blockedLines
+          SUM(CASE WHEN procurement_status IN ('Brouillon', 'Annulé') THEN 1 ELSE 0 END) AS blockedLines,
+          SUM(CASE WHEN payment_status = 'Payé' THEN 1 ELSE 0 END) AS paidLines,
+          MIN(account) AS paymentAccount,
+          MAX(account) AS maxPaymentAccount,
+          MAX(paid_at) AS paidAt
         FROM purchases
         WHERE purchase_ref = ?
-      `).bind(purchaseRef).first<{ supplierId: number | null; maxSupplierId: number | null; lineCount: number; totalAmount: number; blockedLines: number }>();
+      `).bind(purchaseRef).first<{ supplierId: number | null; maxSupplierId: number | null; lineCount: number; totalAmount: number; blockedLines: number; paidLines: number; paymentAccount: string | null; maxPaymentAccount: string | null; paidAt: string | null }>();
       if (!purchaseOrder?.lineCount || !purchaseOrder.supplierId || purchaseOrder.supplierId !== purchaseOrder.maxSupplierId) {
         return Response.json({ error: "Bon de commande introuvable ou fournisseur incohérent." }, { status: 404 });
       }
@@ -1352,10 +1413,36 @@ export async function POST(request: Request) {
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `).bind(purchaseOrder.supplierId, purchaseRef, invoiceNumber, invoiceDate, dueDate, Number(purchaseOrder.totalAmount || 0), note).run();
       const invoiceId = Number(inserted.meta?.last_row_id || 0);
-      await database.prepare("UPDATE purchases SET payment_status = 'À payer', paid_at = NULL WHERE purchase_ref = ?").bind(purchaseRef).run();
+      const lineCount = Number(purchaseOrder.lineCount || 0);
+      const paidLines = Number(purchaseOrder.paidLines || 0);
+      if (paidLines > 0 && paidLines < lineCount) {
+        await database.prepare("DELETE FROM supplier_invoices WHERE id = ?").bind(invoiceId).run();
+        return Response.json({ error: "Les lignes de ce bon ont des statuts de paiement incohérents. Uniformisez le paiement avant de créer la facture." }, { status: 409 });
+      }
+      if (paidLines === lineCount && lineCount > 0) {
+        const paymentAccount = purchaseOrder.paymentAccount && purchaseOrder.paymentAccount === purchaseOrder.maxPaymentAccount
+          ? treasuryAccount(purchaseOrder.paymentAccount)
+          : "Banque";
+        await database.prepare(`
+          INSERT INTO supplier_payments (invoice_id, amount, account, paid_at, reference, note)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).bind(
+          invoiceId,
+          Number(purchaseOrder.totalAmount || 0),
+          paymentAccount,
+          purchaseOrder.paidAt || new Date().toISOString(),
+          "Paiement déjà enregistré au bon",
+          "Repris automatiquement depuis l’achat fournisseur payé avant création de la facture.",
+        ).run();
+        await syncPurchaseOrderPaymentState(database, invoiceId);
+      } else {
+        await database.prepare("UPDATE purchases SET payment_status = 'À payer', paid_at = NULL WHERE purchase_ref = ?").bind(purchaseRef).run();
+      }
       auditEntityId = invoiceId ? String(invoiceId) : null;
       auditEntityLabel = `${invoiceNumber} · ${purchaseRef}`;
-      integrationMessage = `Facture ${invoiceNumber} créée pour ${purchaseRef}. Échéance : ${dueDate}. Montant : ${Number(purchaseOrder.totalAmount || 0).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.`;
+      integrationMessage = paidLines === lineCount && lineCount > 0
+        ? `Facture ${invoiceNumber} créée pour ${purchaseRef} et marquée payée à partir du règlement déjà enregistré au bon.`
+        : `Facture ${invoiceNumber} créée pour ${purchaseRef}. Échéance : ${dueDate}. Montant : ${Number(purchaseOrder.totalAmount || 0).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.`;
     } else if (payload.action === "updateSupplierInvoice") {
       const id = numberValue(payload.id);
       const invoiceNumber = textValue(payload.invoiceNumber).slice(0, 120);
