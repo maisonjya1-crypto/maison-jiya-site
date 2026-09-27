@@ -11,9 +11,10 @@ import { ensureStorefrontCms } from "../../../db/storefront-cms";
 import { receivePurchaseIntoStock } from "../../../db/inventory-cost";
 import { buildDailyClosingPreview, saveDailyClosing } from "../../../db/daily-closing";
 import { buildSmartStockRecommendations } from "../../../db/smart-stock";
+import { buildPurchaseReference, normalizedProcurementStatus, normalizeSupplierName, resolveSupplierProfile } from "../../../db/suppliers";
 import { normalizeOrderPaymentState, type OrderPaymentStatus } from "../../../lib/order-payment-lifecycle";
 import { moveOrderToTrash, releaseTrashedOrderStock, restoreOrderFromTrash } from "../../../db/order-trash";
-import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, dailyClosings, expenses, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
+import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, dailyClosings, expenses, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, suppliers, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
 type ActionPayload = Record<string, unknown> & { action?: string };
@@ -204,6 +205,9 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   deleteOrderPermanently: { action: "Suppression définitive", entityType: "Commande" },
   updateCustomer: { action: "Modification", entityType: "Client" },
   deleteCustomer: { action: "Suppression", entityType: "Client" },
+  addSupplier: { action: "Ajout", entityType: "Fournisseur" },
+  updateSupplier: { action: "Modification", entityType: "Fournisseur" },
+  toggleSupplier: { action: "Statut modifié", entityType: "Fournisseur" },
   addPurchase: { action: "Ajout", entityType: "Achat" },
   updatePurchase: { action: "Modification", entityType: "Achat" },
   deletePurchase: { action: "Suppression", entityType: "Achat" },
@@ -342,15 +346,21 @@ async function snapshot(access: AccessInfo) {
   await createDailyBackup(rawDatabase);
   const db = await getDb();
   const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, campaign: orders.campaign, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, refundedAt: orders.refundedAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
-  const [orderRows, trashRows, customerRows, purchaseRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows, closingRows] = await Promise.all([
+  const [orderRows, trashRows, customerRows, supplierRows, purchaseRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows, closingRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
       ? db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNotNull(orders.deletedAt)).orderBy(desc(orders.deletedAt))
       : Promise.resolve([]),
     db.select().from(customers).orderBy(desc(customers.createdAt)),
+    db.select().from(suppliers).orderBy(desc(suppliers.isActive), desc(suppliers.createdAt)),
     db.select({
       id: purchases.id,
       supplier: purchases.supplier,
+      supplierId: purchases.supplierId,
+      purchaseRef: purchases.purchaseRef,
+      procurementStatus: purchases.procurementStatus,
+      orderedAt: purchases.orderedAt,
+      expectedAt: purchases.expectedAt,
       item: purchases.item,
       productId: purchases.productId,
       productCode: products.productCode,
@@ -397,6 +407,7 @@ async function snapshot(access: AccessInfo) {
     orders: orderRows,
     trash: trashRows,
     customers: customerRows,
+    suppliers: supplierRows,
     purchases: purchaseRows,
     expenses: expenseRows,
     ads: adRows,
@@ -928,14 +939,75 @@ export async function POST(request: Request) {
       const [customer] = await db.select({ id: customers.id }).from(customers).where(eq(customers.id, id)).limit(1);
       if (!customer) return Response.json({ error: "Client introuvable." }, { status: 404 });
       await db.delete(customers).where(eq(customers.id, id));
+    } else if (payload.action === "addSupplier") {
+      const duplicateSupplier = await protectMutation("addSupplier");
+      if (duplicateSupplier) return duplicateSupplier;
+      const name = normalizeSupplierName(payload.name);
+      const contactName = textValue(payload.contactName).slice(0, 120);
+      const phone = textValue(payload.phone).slice(0, 40);
+      const whatsapp = textValue(payload.whatsapp).slice(0, 40);
+      const city = textValue(payload.city).slice(0, 100);
+      const leadTimeDays = numberValue(payload.leadTimeDays, 7);
+      const minimumOrderAmount = moneyValue(payload.minimumOrderAmount);
+      const paymentTerms = textValue(payload.paymentTerms).slice(0, 160);
+      const notes = textValue(payload.notes).slice(0, 500);
+      if (!name || leadTimeDays > 365) return Response.json({ error: "Fournisseur invalide." }, { status: 400 });
+      const database = await getRawDb();
+      const duplicate = await database.prepare("SELECT id FROM suppliers WHERE lower(name) = lower(?) LIMIT 1").bind(name).first();
+      if (duplicate) return Response.json({ error: "Ce fournisseur existe déjà." }, { status: 409 });
+      const inserted = await database.prepare(`
+        INSERT INTO suppliers (name, contact_name, phone, whatsapp, city, lead_time_days, minimum_order_amount, payment_terms, notes, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        RETURNING id
+      `).bind(name, contactName, phone, whatsapp, city, leadTimeDays, minimumOrderAmount, paymentTerms, notes).first<{ id: number }>();
+      auditEntityId = inserted ? String(inserted.id) : null;
+      auditEntityLabel = name;
+    } else if (payload.action === "updateSupplier") {
+      const id = numberValue(payload.id);
+      const name = normalizeSupplierName(payload.name);
+      const contactName = textValue(payload.contactName).slice(0, 120);
+      const phone = textValue(payload.phone).slice(0, 40);
+      const whatsapp = textValue(payload.whatsapp).slice(0, 40);
+      const city = textValue(payload.city).slice(0, 100);
+      const leadTimeDays = numberValue(payload.leadTimeDays, 7);
+      const minimumOrderAmount = moneyValue(payload.minimumOrderAmount);
+      const paymentTerms = textValue(payload.paymentTerms).slice(0, 160);
+      const notes = textValue(payload.notes).slice(0, 500);
+      if (!id || !name || leadTimeDays > 365) return Response.json({ error: "Fournisseur invalide." }, { status: 400 });
+      const database = await getRawDb();
+      const current = await database.prepare("SELECT id, name FROM suppliers WHERE id = ? LIMIT 1").bind(id).first<{ id: number; name: string }>();
+      if (!current) return Response.json({ error: "Fournisseur introuvable." }, { status: 404 });
+      const duplicate = await database.prepare("SELECT id FROM suppliers WHERE lower(name) = lower(?) AND id <> ? LIMIT 1").bind(name, id).first();
+      if (duplicate) return Response.json({ error: "Un autre fournisseur porte déjà ce nom." }, { status: 409 });
+      await database.batch([
+        database.prepare(`
+          UPDATE suppliers
+          SET name = ?, contact_name = ?, phone = ?, whatsapp = ?, city = ?, lead_time_days = ?, minimum_order_amount = ?, payment_terms = ?, notes = ?, updated_at = ?
+          WHERE id = ?
+        `).bind(name, contactName, phone, whatsapp, city, leadTimeDays, minimumOrderAmount, paymentTerms, notes, new Date().toISOString(), id),
+        database.prepare("UPDATE purchases SET supplier = ? WHERE supplier_id = ?").bind(name, id),
+      ]);
+      auditEntityLabel = name;
+    } else if (payload.action === "toggleSupplier") {
+      const id = numberValue(payload.id);
+      const active = textValue(payload.active) === "true";
+      if (!id) return Response.json({ error: "Fournisseur invalide." }, { status: 400 });
+      const database = await getRawDb();
+      const supplier = await database.prepare("SELECT name FROM suppliers WHERE id = ? LIMIT 1").bind(id).first<{ name: string }>();
+      if (!supplier) return Response.json({ error: "Fournisseur introuvable." }, { status: 404 });
+      await database.prepare("UPDATE suppliers SET is_active = ?, updated_at = ? WHERE id = ?").bind(active ? 1 : 0, new Date().toISOString(), id).run();
+      auditEntityLabel = supplier.name;
     } else if (payload.action === "addPurchase") {
       const quantity = numberValue(payload.quantity, 1);
       const unitCost = moneyValue(payload.unitCost);
       const productId = numberValue(payload.productId) || null;
       const account = treasuryAccount(payload.account);
-      const nextPaymentStatus = textValue(payload.paymentStatus, "Payé");
+      const nextPaymentStatus = textValue(payload.paymentStatus, "À payer");
+      const procurementStatus = normalizedProcurementStatus(payload.procurementStatus, "Commandé");
       const paidAt = nextPaymentStatus === "Payé" ? paidAtFromInput(payload.paidDate) : null;
-      if (quantity < 1 || !["Payé", "À payer"].includes(nextPaymentStatus)) return Response.json({ error: "Achat invalide." }, { status: 400 });
+      if (quantity < 1 || !["Payé", "À payer"].includes(nextPaymentStatus) || ["Partiellement reçu", "Reçu"].includes(procurementStatus)) {
+        return Response.json({ error: "Bon de commande invalide." }, { status: 400 });
+      }
       if (productId) {
         const [linkedProduct] = await db.select({ id: products.id }).from(products).where(and(eq(products.id, productId), isNull(products.archivedAt))).limit(1);
         if (!linkedProduct) return Response.json({ error: "Le produit lié à cet achat est introuvable." }, { status: 404 });
@@ -943,8 +1015,25 @@ export async function POST(request: Request) {
       const duplicatePurchase = await protectMutation("addPurchase");
       if (duplicatePurchase) return duplicatePurchase;
 
+      const database = await getRawDb();
+      const supplierProfile = await resolveSupplierProfile(database, numberValue(payload.supplierId) || null, textValue(payload.supplier));
+      const orderedAt = procurementStatus === "Brouillon" ? null : new Date().toISOString();
+      let expectedAt = textValue(payload.expectedDate);
+      if (expectedAt && !/^\d{4}-\d{2}-\d{2}$/.test(expectedAt)) return Response.json({ error: "Date de livraison prévue invalide." }, { status: 400 });
+      if (!expectedAt && procurementStatus !== "Brouillon") {
+        const profile = await database.prepare("SELECT lead_time_days AS leadTimeDays FROM suppliers WHERE id = ?").bind(supplierProfile.id).first<{ leadTimeDays: number }>();
+        const date = new Date();
+        date.setUTCDate(date.getUTCDate() + Math.max(0, Number(profile?.leadTimeDays || 0)));
+        expectedAt = date.toISOString().slice(0, 10);
+      }
+      const purchaseRef = buildPurchaseReference();
       await db.insert(purchases).values({
-        supplier: textValue(payload.supplier, "Fournisseur"),
+        supplier: supplierProfile.name,
+        supplierId: supplierProfile.id,
+        purchaseRef,
+        procurementStatus,
+        orderedAt,
+        expectedAt: expectedAt || null,
         item: textValue(payload.item, "Achat"),
         productId,
         quantity,
@@ -955,17 +1044,27 @@ export async function POST(request: Request) {
         paidAt,
         receivedQuantity: 0,
       });
+      auditEntityLabel = `${purchaseRef} · ${supplierProfile.name}`;
     } else if (payload.action === "updatePurchase") {
       const id = numberValue(payload.id);
-      const supplier = textValue(payload.supplier);
       const item = textValue(payload.item);
       const productId = numberValue(payload.productId) || null;
       const quantity = numberValue(payload.quantity);
       const unitCost = moneyValue(payload.unitCost);
       const account = treasuryAccount(payload.account);
-      const nextPaymentStatus = textValue(payload.paymentStatus, "Payé");
-      if (!id || !supplier || !item || quantity < 1 || !["Payé", "À payer"].includes(nextPaymentStatus)) return Response.json({ error: "Achat invalide." }, { status: 400 });
-      const [purchase] = await db.select({ id: purchases.id, productId: purchases.productId, quantity: purchases.quantity, receivedQuantity: purchases.receivedQuantity, paymentStatus: purchases.paymentStatus, paidAt: purchases.paidAt }).from(purchases).where(eq(purchases.id, id)).limit(1);
+      const nextPaymentStatus = textValue(payload.paymentStatus, "À payer");
+      const requestedProcurementStatus = normalizedProcurementStatus(payload.procurementStatus, "Commandé");
+      if (!id || !item || quantity < 1 || !["Payé", "À payer"].includes(nextPaymentStatus)) return Response.json({ error: "Bon de commande invalide." }, { status: 400 });
+      const [purchase] = await db.select({
+        id: purchases.id,
+        supplierId: purchases.supplierId,
+        productId: purchases.productId,
+        quantity: purchases.quantity,
+        receivedQuantity: purchases.receivedQuantity,
+        paymentStatus: purchases.paymentStatus,
+        paidAt: purchases.paidAt,
+        orderedAt: purchases.orderedAt,
+      }).from(purchases).where(eq(purchases.id, id)).limit(1);
       if (!purchase) return Response.json({ error: "Achat introuvable." }, { status: 404 });
       if (productId) {
         const [linkedProduct] = await db.select({ id: products.id }).from(products).where(and(eq(products.id, productId), isNull(products.archivedAt))).limit(1);
@@ -974,20 +1073,47 @@ export async function POST(request: Request) {
       if (purchase.receivedQuantity > 0 && (purchase.productId !== productId || purchase.quantity !== quantity)) {
         return Response.json({ error: "Cet achat a déjà été réceptionné. Le produit et la quantité doivent rester inchangés pour préserver l’historique du stock." }, { status: 409 });
       }
+      const database = await getRawDb();
+      const supplierProfile = await resolveSupplierProfile(database, numberValue(payload.supplierId) || purchase.supplierId || null, textValue(payload.supplier));
+      const procurementStatus = purchase.receivedQuantity >= quantity
+        ? "Reçu"
+        : purchase.receivedQuantity > 0
+          ? "Partiellement reçu"
+          : requestedProcurementStatus;
+      if (purchase.receivedQuantity > 0 && procurementStatus === "Annulé") return Response.json({ error: "Un bon déjà partiellement réceptionné ne peut pas être annulé." }, { status: 409 });
       const paidAt = nextPaymentStatus === "Payé"
         ? paidAtFromInput(payload.paidDate, purchase.paymentStatus === "Payé" && purchase.paidAt ? purchase.paidAt : new Date().toISOString())
         : null;
-      await db.update(purchases).set({ supplier, item, productId, quantity, unitCost, totalCost: quantity * unitCost, account, paymentStatus: nextPaymentStatus, paidAt }).where(eq(purchases.id, id));
+      let expectedAt = textValue(payload.expectedDate);
+      if (expectedAt && !/^\d{4}-\d{2}-\d{2}$/.test(expectedAt)) return Response.json({ error: "Date de livraison prévue invalide." }, { status: 400 });
+      const orderedAt = procurementStatus === "Brouillon" ? null : purchase.orderedAt || new Date().toISOString();
+      await db.update(purchases).set({
+        supplier: supplierProfile.name,
+        supplierId: supplierProfile.id,
+        item,
+        productId,
+        quantity,
+        unitCost,
+        totalCost: quantity * unitCost,
+        account,
+        paymentStatus: nextPaymentStatus,
+        paidAt,
+        procurementStatus,
+        orderedAt,
+        expectedAt: expectedAt || null,
+      }).where(eq(purchases.id, id));
+      auditEntityLabel = `${supplierProfile.name} · ${item}`;
     } else if (payload.action === "receivePurchase") {
       const id = numberValue(payload.id);
+      const receiveQuantity = numberValue(payload.receiveQuantity);
       if (!id) return Response.json({ error: "Achat invalide." }, { status: 400 });
       const duplicateReception = await protectMutation("receivePurchase");
       if (duplicateReception) return duplicateReception;
 
-      const result = await receivePurchaseIntoStock(await getRawDb(), id);
+      const result = await receivePurchaseIntoStock(await getRawDb(), id, receiveQuantity || undefined);
       auditEntityId = String(id);
       auditEntityLabel = `${result.supplier} · ${result.item}`;
-      integrationMessage = `${result.receivedQuantity} unité(s) de ${result.productName} ajoutée(s) au stock. Coût moyen : ${result.previousAverageCost.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} → ${result.newAverageCost.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MAD.`;
+      integrationMessage = `${result.receivedQuantity} unité(s) de ${result.productName} ajoutée(s) au stock. Réception totale : ${result.totalReceivedQuantity}. Reste : ${result.remainingQuantity}. Coût moyen : ${result.previousAverageCost.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} → ${result.newAverageCost.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MAD.`;
     } else if (payload.action === "deletePurchase") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Achat invalide." }, { status: 400 });
