@@ -4817,9 +4817,10 @@ function CashflowForecastPage({
   const executablePurchaseSpend = purchasePlan.supplierGroups
     .filter((group) => group.meetsMinimumOrder)
     .reduce((sum, group) => sum + group.totalCost, 0);
+  const forecastDate = businessDateKey(new Date());
   const forecast = useMemo(
     () => buildCashflowForecast({
-      asOf: businessDateKey(new Date()),
+      asOf: forecastDate,
       openingCash: metrics.cash,
       safetyReserve: metrics.safetyReserve,
       supplierInvoices: data.supplierInvoices,
@@ -4828,7 +4829,7 @@ function CashflowForecastPage({
       orders: data.orders,
       plannedPurchaseSpend: executablePurchaseSpend,
     }),
-    [data.supplierInvoices, data.expenses, data.purchases, data.orders, executablePurchaseSpend, metrics.cash, metrics.safetyReserve],
+    [forecastDate, data.supplierInvoices, data.expenses, data.purchases, data.orders, executablePurchaseSpend, metrics.cash, metrics.safetyReserve],
   );
 
   const datedEvents = forecast.events.filter((event) => !event.scenario);
