@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Refuse high severity dependency vulnerabilities
+        run: npm audit --audit-level=high
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -67,6 +70,9 @@ jobs:
 
       - name: Run all source and rendered HTML tests
         run: node --test tests/*.test.mjs
+
+      - name: Verify Cloudflare Worker bundle
+        run: npx wrangler deploy --dry-run
 
       - name: Production smoke diagnostic
         continue-on-error: true
