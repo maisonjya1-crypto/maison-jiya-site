@@ -1,4 +1,4 @@
-import { getRawDb } from ".";
+import { getRawDb } from "./index";
 import { allocationAmounts, allocationPolicyFromSettings } from "../lib/allocation-policy";
 
 type AllocationOrder = {
