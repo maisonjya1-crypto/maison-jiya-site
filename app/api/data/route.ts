@@ -1,6 +1,7 @@
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb, getRawDb } from "../../../db";
 import { createDailyBackup, purgeExpiredTrash, resetBusinessValuesPreservingStock, restoreDailyBackup, verifyLatestBackup } from "../../../db/backups";
+import { restorePortableDataImport } from "../../../db/data-import";
 import { dispatchAuthorizedOrder, getCarrierRuntimeStatus, syncCarrierOperations } from "../../../db/carriers";
 import { moroccanPhoneHelp, normalizeMoroccanPhone } from "../../../db/phone";
 import { getMetaRuntimeStatus, syncMetaAds } from "../../../db/meta";
@@ -199,6 +200,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   createBackupNow: { action: "Création", entityType: "Sauvegarde" },
   verifyBackupNow: { action: "Vérification", entityType: "Sauvegarde" },
   restoreBackup: { action: "Restauration", entityType: "Sauvegarde" },
+  importPortableExport: { action: "Restauration", entityType: "Export complet" },
   resetBusinessValues: { action: "Remise à zéro", entityType: "Données commerciales" },
   retryGoogleSheetsSync: { action: "Nouvelle tentative", entityType: "Google Sheets" },
   updateCarriers: { action: "Modification", entityType: "Transporteurs" },
@@ -1462,6 +1464,15 @@ export async function POST(request: Request) {
       integrationMessage = `Dernière sauvegarde contrôlée sans modifier la production · ${verification.recordCount} enregistrement(s) · ${verification.backupCreatedAt.slice(0, 10)}.`;
       auditEntityId = verification.backupId ? String(verification.backupId) : null;
       auditEntityLabel = "Contrôle de restaurabilité";
+    } else if (payload.action === "importPortableExport") {
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut réimporter un export complet." }, { status: 403 });
+      const portableExport = textValue(payload.portableExport);
+      if (!portableExport) return Response.json({ error: "Sélectionnez un export JSON Maison Jiya." }, { status: 400 });
+      const duplicateImport = await protectMutation("importPortableExport");
+      if (duplicateImport) return duplicateImport;
+      const summary = await restorePortableDataImport(await getRawDb(), portableExport);
+      integrationMessage = `Export du ${summary.exportedAt.slice(0, 10)} restauré · ${summary.restoredRows.toLocaleString("fr-MA")} ligne(s) réimportée(s). Comptes, e-mail et secrets actuels conservés.`;
+      auditEntityLabel = `Export portable ${summary.exportedAt.slice(0, 10)} · ${summary.restoredRows} ligne(s)`;
     } else if (payload.action === "restoreBackup") {
       if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut restaurer une sauvegarde." }, { status: 403 });
       const backupId = numberValue(payload.backupId);
@@ -1599,6 +1610,7 @@ export async function POST(request: Request) {
       return Response.json({ error: errorMessage }, { status: 400 });
     }
     if (errorMessage.startsWith("Ligne ")) return Response.json({ error: errorMessage }, { status: 400 });
+    if (/^(Le fichier|Version d.export|La date de l.export|Les tables de l.export|La table |L.export contient|Référence |Cet export)/.test(errorMessage)) return Response.json({ error: errorMessage }, { status: 400 });
     return Response.json({ error: "L’enregistrement n’a pas abouti. Vérifiez les champs puis réessayez." }, { status: 500 });
   }
 }
