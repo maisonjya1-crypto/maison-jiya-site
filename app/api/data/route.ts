@@ -9,9 +9,10 @@ import { reconcileOrderAllocations } from "../../../db/allocations";
 import { getGoogleSheetsSyncSnapshot, markGoogleSheetsSyncPending, processGoogleSheetsSyncQueue } from "../../../db/google-sheets-sync";
 import { ensureStorefrontCms } from "../../../db/storefront-cms";
 import { receivePurchaseIntoStock } from "../../../db/inventory-cost";
+import { buildDailyClosingPreview, saveDailyClosing } from "../../../db/daily-closing";
 import { normalizeOrderPaymentState, type OrderPaymentStatus } from "../../../lib/order-payment-lifecycle";
 import { moveOrderToTrash, releaseTrashedOrderStock, restoreOrderFromTrash } from "../../../db/order-trash";
-import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, expenses, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
+import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, dailyClosings, expenses, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
 type ActionPayload = Record<string, unknown> & { action?: string };
@@ -224,6 +225,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   syncMetaNow: { action: "Synchronisation", entityType: "Meta Ads" },
   updateSetting: { action: "Modification", entityType: "Paramètre" },
   updateAllocationPolicy: { action: "Modification", entityType: "Répartition du capital" },
+  saveDailyClosing: { action: "Clôture", entityType: "Journée" },
 };
 
 async function writeAudit(user: AppUser, actionName: string, entityId: string | null, entityLabel: string) {
@@ -325,7 +327,7 @@ async function snapshot(access: AccessInfo) {
   await createDailyBackup(rawDatabase);
   const db = await getDb();
   const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, campaign: orders.campaign, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, refundedAt: orders.refundedAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
-  const [orderRows, trashRows, customerRows, purchaseRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows] = await Promise.all([
+  const [orderRows, trashRows, customerRows, purchaseRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows, closingRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
       ? db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNotNull(orders.deletedAt)).orderBy(desc(orders.deletedAt))
@@ -363,15 +365,17 @@ async function snapshot(access: AccessInfo) {
     access.isOwner
       ? db.select({ id: dailyBackups.id, backupDate: dailyBackups.backupDate, reason: dailyBackups.reason, recordCount: dailyBackups.recordCount, createdAt: dailyBackups.createdAt }).from(dailyBackups).orderBy(desc(dailyBackups.createdAt)).limit(90)
       : Promise.resolve([]),
+    db.select().from(dailyClosings).orderBy(desc(dailyClosings.closeDate)).limit(365),
   ]);
   const publicSettings = settingRows.filter((row) => !row.key.startsWith("security_"));
   const backupConfigured = settingRows.some((row) => row.key === "security_backup_token_hash" && row.value.length === 64);
   const secureWebhook = settingRows.find((row) => row.key === "security_backup_webhook_url")?.value || "";
-  const [carrierRuntime, lastCarrierEvent, metaRuntimeConfigured, googleSheetsSync] = await Promise.all([
+  const [carrierRuntime, lastCarrierEvent, metaRuntimeConfigured, googleSheetsSync, dailyClosingPreview] = await Promise.all([
     getCarrierRuntimeStatus(),
     db.select({ receivedAt: carrierEvents.receivedAt }).from(carrierEvents).where(sql`${carrierEvents.provider} IN ('sendit', 'forcelog')`).orderBy(desc(carrierEvents.receivedAt)).limit(1),
     getMetaRuntimeStatus(),
     getGoogleSheetsSyncSnapshot(rawDatabase),
+    buildDailyClosingPreview(rawDatabase),
   ]);
   return {
     orders: orderRows,
@@ -388,6 +392,8 @@ async function snapshot(access: AccessInfo) {
     orderStatusHistory: historyRows,
     auditLogs: auditRows,
     backups: backupRows,
+    dailyClosings: closingRows,
+    dailyClosingPreview,
     googleSheetsSync,
     settings: {
       ...Object.fromEntries(publicSettings.map((row) => [row.key, row.value])),
@@ -474,7 +480,27 @@ export async function POST(request: Request) {
     let auditEntityLabel = "";
     let integrationMessage = "";
 
-    if (payload.action === "createMember") {
+    if (payload.action === "saveDailyClosing") {
+      const duplicateClosing = await protectMutation("saveDailyClosing");
+      if (duplicateClosing) return duplicateClosing;
+      const actualBank = moneyValue(payload.actualBank);
+      const actualCash = moneyValue(payload.actualCash);
+      const actualOther = moneyValue(payload.actualOther);
+      const note = textValue(payload.note).slice(0, 500);
+      const result = await saveDailyClosing(await getRawDb(), {
+        bank: actualBank,
+        cash: actualCash,
+        other: actualOther,
+        note,
+        userId: user.id,
+        userName: user.displayName,
+      });
+      auditEntityId = result.closeDate;
+      auditEntityLabel = `${result.closeDate} · écart ${result.totalVariance.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD`;
+      integrationMessage = Math.abs(result.totalVariance) <= 0.01
+        ? `Clôture du ${result.closeDate} enregistrée : trésorerie conforme.`
+        : `Clôture du ${result.closeDate} enregistrée avec un écart de ${result.totalVariance.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.`;
+    } else if (payload.action === "createMember") {
       if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut créer un partenaire." }, { status: 403 });
       const username = normalizeUsername(textValue(payload.username));
       const [existingMember] = await db.select({ id: users.id }).from(users).where(eq(users.username, username)).limit(1);
