@@ -23,6 +23,7 @@ type BusinessSnapshot = {
     expenses?: SnapshotRow[];
     ads: SnapshotRow[];
     capital: SnapshotRow[];
+    dailyClosings?: SnapshotRow[];
     settings: SnapshotRow[];
     orderStatusHistory: SnapshotRow[];
     carrierEvents?: SnapshotRow[];
@@ -43,6 +44,7 @@ const TABLES = {
   expenses: "expenses",
   ads: "ad_performance",
   capital: "capital_ledger",
+  dailyClosings: "daily_closings",
   settings: "settings",
   orderStatusHistory: "order_status_history",
   carrierEvents: "carrier_events",
@@ -62,6 +64,7 @@ const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   expenses: ["id", "category", "label", "amount", "account", "payment_status", "paid_at", "expense_date", "note", "created_at"],
   ads: ["id", "platform", "campaign", "external_id", "spend", "revenue", "order_count", "native_spend_cents", "native_revenue_cents", "native_currency", "source", "performance_date", "created_at"],
   capital: ["id", "direction", "category", "label", "amount", "account", "order_id", "is_automatic", "auto_key", "entry_date", "created_at"],
+  dailyClosings: ["id", "close_date", "expected_bank", "actual_bank", "bank_variance", "expected_cash", "actual_cash", "cash_variance", "expected_other", "actual_other", "other_variance", "expected_total", "actual_total", "total_variance", "carrier_money", "receivables", "unpaid_purchases", "unpaid_expenses", "collected_orders", "collected_amount", "refunded_orders", "refunded_amount", "paid_purchases_count", "paid_purchases_amount", "paid_expenses_count", "paid_expenses_amount", "ad_spend", "note", "closed_by_user_id", "closed_by_name", "created_at", "updated_at"],
   settings: ["key", "value", "updated_at"],
   orderStatusHistory: ["id", "order_id", "from_status", "to_status", "changed_by_user_id", "changed_by_name", "changed_at"],
   carrierEvents: ["id", "provider", "event_type", "external_code", "external_status", "payload_hash", "message", "proof_image", "occurred_at", "order_id", "processed", "error_message", "received_at"],
@@ -94,7 +97,7 @@ async function readOptionalRows(database: D1Database, table: string) {
 }
 
 async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
-  const [customers, orders, products, stockMovements, inventoryCounts, purchases, expenses, ads, capital, settings, orderStatusHistory, carrierEvents, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia] = await Promise.all([
+  const [customers, orders, products, stockMovements, inventoryCounts, purchases, expenses, ads, capital, dailyClosings, settings, orderStatusHistory, carrierEvents, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia] = await Promise.all([
     readRows(database, TABLES.customers),
     readRows(database, TABLES.orders),
     readRows(database, TABLES.products),
@@ -104,6 +107,7 @@ async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
     readRows(database, TABLES.expenses),
     readRows(database, TABLES.ads),
     readRows(database, TABLES.capital),
+    readOptionalRows(database, TABLES.dailyClosings),
     readRows(database, TABLES.settings, " WHERE key NOT LIKE 'security_%' AND key <> 'backup_webhook_url'"),
     readRows(database, TABLES.orderStatusHistory),
     readRows(database, TABLES.carrierEvents),
@@ -116,7 +120,7 @@ async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
     version: 1,
     createdAt: new Date().toISOString(),
     tables: {
-      customers, orders, products, stockMovements, inventoryCounts, purchases, expenses, ads, capital, settings,
+      customers, orders, products, stockMovements, inventoryCounts, purchases, expenses, ads, capital, dailyClosings, settings,
       orderStatusHistory, carrierEvents, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia,
     },
   };
@@ -146,7 +150,7 @@ function inspectSnapshot(raw: string, expectedRecordCount?: number) {
       throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
     }
   }
-  for (const tableKey of ["inventoryCounts", "expenses", "carrierEvents", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"] as const) {
+  for (const tableKey of ["inventoryCounts", "expenses", "dailyClosings", "carrierEvents", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"] as const) {
     const rows = snapshot.tables[tableKey];
     if (rows !== undefined && (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item)))) {
       throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
@@ -282,13 +286,13 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
 
   const insertionOrder: Array<keyof BusinessSnapshot["tables"]> = [
     "settings", "customers", "products", "purchases", "expenses", "ads", "capital", "orders", "stockMovements",
-    "inventoryCounts", "orderStatusHistory", "carrierEvents", "storefrontProducts", "storefrontOffers",
+    "inventoryCounts", "dailyClosings", "orderStatusHistory", "carrierEvents", "storefrontProducts", "storefrontOffers",
     "storefrontOfferItems", "storefrontMedia",
   ];
   const inserts = insertionOrder.flatMap((tableKey) => {
     const rows = snapshot.tables[tableKey];
     // Ces tables n'existaient pas dans les premières sauvegardes v1.
-    if (rows === undefined && ["inventoryCounts", "carrierEvents", "expenses", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"].includes(tableKey)) return [];
+    if (rows === undefined && ["inventoryCounts", "carrierEvents", "expenses", "dailyClosings", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"].includes(tableKey)) return [];
     if (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
       throw new Error("Format de sauvegarde incompatible.");
     }
@@ -309,6 +313,7 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
     ] : []),
     database.prepare("DELETE FROM stock_movements"),
     database.prepare("DELETE FROM inventory_counts"),
+    database.prepare("DELETE FROM daily_closings"),
     database.prepare("DELETE FROM order_status_history"),
     database.prepare("DELETE FROM carrier_events"),
     database.prepare("DELETE FROM orders"),

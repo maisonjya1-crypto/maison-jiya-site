@@ -183,6 +183,60 @@ type DailyBackup = {
   recordCount: number;
   createdAt: string;
 };
+type DailyClosing = {
+  id: number;
+  closeDate: string;
+  expectedBank: number;
+  actualBank: number;
+  bankVariance: number;
+  expectedCash: number;
+  actualCash: number;
+  cashVariance: number;
+  expectedOther: number;
+  actualOther: number;
+  otherVariance: number;
+  expectedTotal: number;
+  actualTotal: number;
+  totalVariance: number;
+  carrierMoney: number;
+  receivables: number;
+  unpaidPurchases: number;
+  unpaidExpenses: number;
+  collectedOrders: number;
+  collectedAmount: number;
+  refundedOrders: number;
+  refundedAmount: number;
+  paidPurchasesCount: number;
+  paidPurchasesAmount: number;
+  paidExpensesCount: number;
+  paidExpensesAmount: number;
+  adSpend: number;
+  note: string;
+  closedByUserId: number | null;
+  closedByName: string;
+  createdAt: string;
+  updatedAt: string | null;
+};
+type DailyClosingPreview = {
+  closeDate: string;
+  expectedBank: number;
+  expectedCash: number;
+  expectedOther: number;
+  expectedTotal: number;
+  carrierMoney: number;
+  receivables: number;
+  unpaidPurchases: number;
+  unpaidExpenses: number;
+  collectedOrders: number;
+  collectedAmount: number;
+  refundedOrders: number;
+  refundedAmount: number;
+  paidPurchasesCount: number;
+  paidPurchasesAmount: number;
+  paidExpensesCount: number;
+  paidExpensesAmount: number;
+  adSpend: number;
+};
 type GoogleSheetsSyncLog = {
   id: number;
   eventId: string;
@@ -226,6 +280,8 @@ type Data = {
   orderStatusHistory: OrderStatusHistory[];
   auditLogs: AuditLog[];
   backups: DailyBackup[];
+  dailyClosings: DailyClosing[];
+  dailyClosingPreview: DailyClosingPreview;
   googleSheetsSync: GoogleSheetsSync;
   settings: Record<string, string>;
   access: {
@@ -275,6 +331,27 @@ const emptyData: Data = {
   orderStatusHistory: [],
   auditLogs: [],
   backups: [],
+  dailyClosings: [],
+  dailyClosingPreview: {
+    closeDate: "",
+    expectedBank: 0,
+    expectedCash: 0,
+    expectedOther: 0,
+    expectedTotal: 0,
+    carrierMoney: 0,
+    receivables: 0,
+    unpaidPurchases: 0,
+    unpaidExpenses: 0,
+    collectedOrders: 0,
+    collectedAmount: 0,
+    refundedOrders: 0,
+    refundedAmount: 0,
+    paidPurchasesCount: 0,
+    paidPurchasesAmount: 0,
+    paidExpensesCount: 0,
+    paidExpensesAmount: 0,
+    adSpend: 0,
+  },
   googleSheetsSync: {
     state: { status: "unconfigured", currentVersion: 0, syncedVersion: 0, pendingChanges: 0, attemptCount: 0, lastEventAt: null, lastAttemptAt: null, lastSyncAt: null, nextAttemptAt: null, lastError: "" },
     logs: [],
@@ -299,10 +376,10 @@ const dateTimeLabel = (value: string) =>
     minute: "2-digit",
   }).format(new Date(value));
 
-const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
+const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
 const navigationGroups = [
   { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Colis", "Clients", "Achats"] },
-  { label: "Pilotage", items: ["Dépenses", "Publicités", "Capital", "Rapports", "Assistant IA"] },
+  { label: "Pilotage", items: ["Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA"] },
   { label: "Système", items: ["Mode entraînement", "Corbeille", "Paramètres"] },
 ];
 const sectionDescriptions: Record<string, string> = {
@@ -315,6 +392,7 @@ const sectionDescriptions: Record<string, string> = {
   Dépenses: "Enregistrez les charges réelles qui réduisent le résultat et la trésorerie.",
   Publicités: "Suivez vos campagnes, dépenses et performances Meta.",
   Capital: "Suivez les mouvements, enveloppes et capacités de réinvestissement.",
+  Clôture: "Comparez la trésorerie théorique à l’argent réellement présent en fin de journée.",
   Rapports: "Analysez la performance commerciale et financière par période.",
   "Assistant IA": "Interrogez les données Maison Jiya et préparez vos actions.",
   "Mode entraînement": "Testez le logiciel sans toucher aux données réelles.",
@@ -342,6 +420,7 @@ const retrySafeMutationActions = new Set([
   "importProducts",
   "importPortableExport",
   "updateAllocationPolicy",
+  "saveDailyClosing",
   "addProduct",
   "addStockMovement",
   "countInventory",
@@ -1137,6 +1216,7 @@ function Page({
   if (active === "Dépenses") return <ExpensesPage expenses={data.expenses} onAdd={() => open("expense")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Clôture") return <DailyClosingPage data={data} submit={submit} />;
   if (active === "Rapports") return <ReportsPage data={data} />;
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
   if (active === "Mode entraînement") return <TrainingPage onExit={() => setActive("Vue d’ensemble")} />;
@@ -3397,6 +3477,158 @@ function groupOrderAnalysis(orders: Order[], label: (order: Order) => string): A
 function AnalysisTable({ title, rows }: { title: string; rows: AnalysisRow[] }) {
   return <section className="panel report-table"><PanelHead kicker="Analyse automatique" title={title} total={`${rows.length} ligne${rows.length === 1 ? "" : "s"}`} /><div className="table-scroll"><table><thead><tr><th>Élément</th><th>Commandes</th><th>CA</th><th>Marge commandes</th><th>Taux</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={row.label}><td><strong>{row.label}</strong></td><td>{row.orders}</td><td>{money(row.revenue)}</td><td className={moneyTone(row.profit)}>{money(row.profit)}</td><td>{row.revenue ? `${((row.profit / row.revenue) * 100).toFixed(1)}%` : "0%"}</td></tr>) : <tr><td colSpan={5}>Aucune donnée pour le moment.</td></tr>}</tbody></table></div></section>;
 }
+function DailyClosingPage({
+  data,
+  submit,
+}: {
+  data: Data;
+  submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
+}) {
+  const preview = data.dailyClosingPreview;
+  const existing = data.dailyClosings.find((closing) => closing.closeDate === preview.closeDate) || null;
+  const [saving, setSaving] = useState(false);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving || !data.access.canEdit) return;
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+    const values = Object.fromEntries(new FormData(form).entries()) as Record<string, FormDataEntryValue>;
+    setSaving(true);
+    try {
+      await submit("saveDailyClosing", values);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const varianceStatus = (value: number) => Math.abs(value) <= 0.01 ? "Conforme" : "Écart";
+  const todayMovement = preview.collectedAmount - preview.refundedAmount - preview.paidPurchasesAmount - preview.paidExpensesAmount - preview.adSpend;
+
+  return (
+    <div className="reports-page">
+      <section className="report-automation-banner">
+        <div>
+          <span>✓</span>
+          <div>
+            <strong>Clôture du {preview.closeDate || "jour"}</strong>
+            <p>Maison Jiya calcule la trésorerie théorique. Vous saisissez ce qui existe réellement sur vos comptes et le logiciel conserve l’écart.</p>
+          </div>
+        </div>
+        <small>{existing ? "Clôture déjà enregistrée · modifiable" : "À clôturer"}</small>
+      </section>
+
+      <section className="hero-grid">
+        <article className="hero-card">
+          <div className="hero-heading">
+            <div>
+              <p>Trésorerie théorique totale</p>
+              <h2>{money(preview.expectedTotal)}</h2>
+              <small>Banque/carte + caisse/espèces + autres comptes</small>
+            </div>
+          </div>
+          <div className="capital-summary">
+            <p>Banque / carte<strong>{money(preview.expectedBank)}</strong></p>
+            <p>Caisse / espèces<strong>{money(preview.expectedCash)}</strong></p>
+            <p>Autres comptes<strong>{money(preview.expectedOther)}</strong></p>
+          </div>
+        </article>
+        <article className="reinvest-card">
+          <span className="card-kicker">Mouvement net du jour</span>
+          <h2 className={moneyTone(todayMovement)}>{money(todayMovement)}</h2>
+          <p>Encaissements − remboursements − fournisseurs − charges − publicité Meta du jour.</p>
+          <small>{preview.collectedOrders} encaissement(s) · {preview.refundedOrders} remboursement(s)</small>
+        </article>
+      </section>
+
+      <section className="kpi-grid">
+        <Kpi label="Chez transporteurs" value={money(preview.carrierMoney)} detail="Livré mais pas encore viré" />
+        <Kpi label="Créances en transit" value={money(preview.receivables)} detail="Confirmé, expédié ou en livraison" />
+        <Kpi label="Fournisseurs à payer" value={money(preview.unpaidPurchases)} detail="Achats encore marqués À payer" />
+        <Kpi label="Charges à payer" value={money(preview.unpaidExpenses)} detail="Dépenses encore marquées À payer" />
+      </section>
+
+      <section className="panel">
+        <PanelHead kicker="Activité du jour" title="Flux réellement enregistrés" total={preview.closeDate} />
+        <div className="financial-account-grid">
+          <article><span>Encaissements</span><strong>{money(preview.collectedAmount)}</strong><small>{preview.collectedOrders} commande(s)</small></article>
+          <article><span>Remboursements</span><strong className={preview.refundedAmount ? "money-negative" : ""}>{money(preview.refundedAmount)}</strong><small>{preview.refundedOrders} commande(s)</small></article>
+          <article><span>Fournisseurs payés</span><strong>{money(preview.paidPurchasesAmount)}</strong><small>{preview.paidPurchasesCount} paiement(s)</small></article>
+          <article><span>Charges payées</span><strong>{money(preview.paidExpensesAmount)}</strong><small>{preview.paidExpensesCount} paiement(s)</small></article>
+          <article><span>Meta Ads</span><strong>{money(preview.adSpend)}</strong><small>Dépense enregistrée aujourd’hui</small></article>
+        </div>
+      </section>
+
+      <section className="settings-panel account-settings-panel">
+        <div className="settings-panel-head">
+          <div>
+            <span className="card-kicker">Rapprochement réel</span>
+            <h2>Comptez l’argent réellement disponible</h2>
+          </div>
+          <p>Ces valeurs ne modifient aucune commande ni aucun mouvement. Elles servent uniquement à détecter et conserver les écarts.</p>
+        </div>
+        <form
+          className="account-settings-form"
+          key={existing ? `closing-${existing.id}-${existing.updatedAt || existing.createdAt}` : `closing-${preview.closeDate}`}
+          onSubmit={(event) => void save(event)}
+        >
+          <label>
+            <span>Banque / carte réelle (MAD)</span>
+            <input name="actualBank" type="number" inputMode="decimal" step="0.01" min="0" defaultValue={existing ? String(existing.actualBank) : ""} placeholder={String(preview.expectedBank)} required />
+            <small>Théorique : {money(preview.expectedBank)}</small>
+          </label>
+          <label>
+            <span>Caisse / espèces réelle (MAD)</span>
+            <input name="actualCash" type="number" inputMode="decimal" step="0.01" min="0" defaultValue={existing ? String(existing.actualCash) : ""} placeholder={String(preview.expectedCash)} required />
+            <small>Théorique : {money(preview.expectedCash)}</small>
+          </label>
+          <label>
+            <span>Autres comptes réels (MAD)</span>
+            <input name="actualOther" type="number" inputMode="decimal" step="0.01" min="0" defaultValue={existing ? String(existing.actualOther) : ""} placeholder={String(preview.expectedOther)} required />
+            <small>Théorique : {money(preview.expectedOther)}</small>
+          </label>
+          <label>
+            <span>Note / explication d’un écart</span>
+            <input name="note" maxLength={500} defaultValue={existing?.note || ""} placeholder="Ex. dépôt bancaire en attente, dépense non saisie…" />
+            <small>Facultatif, mais utile si un écart existe.</small>
+          </label>
+          <div className="account-form-footer">
+            <p>{existing ? <>Dernier écart enregistré : <strong className={moneyTone(existing.totalVariance)}>{money(existing.totalVariance)}</strong></> : "Aucune clôture enregistrée pour aujourd’hui."}</p>
+            <button className="primary-button" type="submit" disabled={saving || !data.access.canEdit}>
+              {saving ? "Enregistrement…" : existing ? "Mettre à jour la clôture" : "Enregistrer la clôture"}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="panel">
+        <PanelHead kicker="Historique" title="Clôtures enregistrées" total={String(data.dailyClosings.length)} />
+        {data.dailyClosings.length ? (
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Date</th><th>Théorique</th><th>Réel</th><th>Écart</th><th>Banque</th><th>Caisse</th><th>Transporteurs</th><th>Créances</th><th>Clôturé par</th><th>Note</th></tr></thead>
+              <tbody>{data.dailyClosings.slice(0, 120).map((closing) => (
+                <tr key={closing.id}>
+                  <td><strong>{closing.closeDate}</strong><small>{dateTimeLabel(closing.updatedAt || closing.createdAt)}</small></td>
+                  <td>{money(closing.expectedTotal)}</td>
+                  <td>{money(closing.actualTotal)}</td>
+                  <td><Status value={varianceStatus(closing.totalVariance)} /><small className={moneyTone(closing.totalVariance)}>{money(closing.totalVariance)}</small></td>
+                  <td>{money(closing.bankVariance)}</td>
+                  <td>{money(closing.cashVariance)}</td>
+                  <td>{money(closing.carrierMoney)}</td>
+                  <td>{money(closing.receivables)}</td>
+                  <td>{closing.closedByName}</td>
+                  <td>{closing.note || "—"}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        ) : <div className="pending-empty">Aucune clôture enregistrée. La première apparaîtra ici.</div>}
+      </section>
+    </div>
+  );
+}
+
 function ReportsPage({ data }: { data: Data }) {
   const allocationPolicy = allocationPolicyFromSettings(data.settings);
   const now = new Date();

@@ -115,6 +115,21 @@ const TABLE_SPECS: Record<string, TableSpec> = {
     columns: ["id", "direction", "category", "label", "amount", "account", "order_id", "is_automatic", "auto_key", "entry_date", "created_at"],
     defaults: { account: "Banque", order_id: null, is_automatic: 0, auto_key: null },
   },
+  clotures_journalieres: {
+    table: "daily_closings",
+    columns: [
+      "id", "close_date",
+      "expected_bank", "actual_bank", "bank_variance",
+      "expected_cash", "actual_cash", "cash_variance",
+      "expected_other", "actual_other", "other_variance",
+      "expected_total", "actual_total", "total_variance",
+      "carrier_money", "receivables", "unpaid_purchases", "unpaid_expenses",
+      "collected_orders", "collected_amount", "refunded_orders", "refunded_amount",
+      "paid_purchases_count", "paid_purchases_amount", "paid_expenses_count", "paid_expenses_amount",
+      "ad_spend", "note", "closed_by_user_id", "closed_by_name", "created_at", "updated_at",
+    ],
+    defaults: { note: "", closed_by_user_id: null, closed_by_name: "Import Maison Jiya", updated_at: null },
+  },
   mouvements_stock: {
     table: "stock_movements",
     columns: ["id", "product_id", "order_id", "purchase_id", "movement_type", "quantity", "note", "created_at"],
@@ -189,14 +204,14 @@ const REQUIRED_TABLES = [
 ] as const;
 
 const OPTIONAL_TABLES = [
-  "inventaires", "depenses", "historique_commandes", "evenements_transporteurs", "journal_actions",
+  "inventaires", "depenses", "clotures_journalieres", "historique_commandes", "evenements_transporteurs", "journal_actions",
   "boutique_produits", "boutique_offres", "boutique_composition_offres", "boutique_medias",
 ] as const;
 
 const INFORMATIONAL_TABLES = ["membres", "journal_sync_google_sheets"] as const;
 
 const USER_REFERENCE_COLUMNS = new Set([
-  "deleted_by_user_id", "archived_by_user_id", "counted_by_user_id", "changed_by_user_id", "user_id",
+  "deleted_by_user_id", "archived_by_user_id", "counted_by_user_id", "changed_by_user_id", "closed_by_user_id", "user_id",
 ]);
 
 function isPlainRow(value: unknown): value is ImportRow {
@@ -359,6 +374,8 @@ function parsePortableExport(raw: string) {
   assertUnique(tables, "publicites", "id", "ligne publicitaire");
   assertUnique(tables, "tresorerie_capital", "id", "mouvement de capital");
   assertUnique(tables, "tresorerie_capital", "auto_key", "clé automatique de capital", true);
+  assertUnique(tables, "clotures_journalieres", "id", "clôture journalière");
+  assertUnique(tables, "clotures_journalieres", "close_date", "date de clôture");
   assertUnique(tables, "historique_commandes", "id", "historique de commande");
   assertUnique(tables, "evenements_transporteurs", "id", "événement transporteur");
   assertUnique(tables, "evenements_transporteurs", "payload_hash", "empreinte transporteur");
@@ -461,6 +478,7 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
     database.prepare("DELETE FROM storefront_product_settings"),
     database.prepare("DELETE FROM stock_movements"),
     database.prepare("DELETE FROM inventory_counts"),
+    database.prepare("DELETE FROM daily_closings"),
     database.prepare("DELETE FROM order_status_history"),
     database.prepare("DELETE FROM carrier_events"),
     database.prepare("DELETE FROM capital_ledger"),
@@ -496,6 +514,7 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
     "depenses",
     "commandes",
     "tresorerie_capital",
+    "clotures_journalieres",
     "mouvements_stock",
     "inventaires",
     "historique_commandes",

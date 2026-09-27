@@ -168,6 +168,45 @@ export const dailyBackups = sqliteTable("daily_backups", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const dailyClosings = sqliteTable(
+  "daily_closings",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    closeDate: text("close_date").notNull().unique(),
+    expectedBank: integer("expected_bank").notNull().default(0),
+    actualBank: integer("actual_bank").notNull().default(0),
+    bankVariance: integer("bank_variance").notNull().default(0),
+    expectedCash: integer("expected_cash").notNull().default(0),
+    actualCash: integer("actual_cash").notNull().default(0),
+    cashVariance: integer("cash_variance").notNull().default(0),
+    expectedOther: integer("expected_other").notNull().default(0),
+    actualOther: integer("actual_other").notNull().default(0),
+    otherVariance: integer("other_variance").notNull().default(0),
+    expectedTotal: integer("expected_total").notNull().default(0),
+    actualTotal: integer("actual_total").notNull().default(0),
+    totalVariance: integer("total_variance").notNull().default(0),
+    carrierMoney: integer("carrier_money").notNull().default(0),
+    receivables: integer("receivables").notNull().default(0),
+    unpaidPurchases: integer("unpaid_purchases").notNull().default(0),
+    unpaidExpenses: integer("unpaid_expenses").notNull().default(0),
+    collectedOrders: integer("collected_orders").notNull().default(0),
+    collectedAmount: integer("collected_amount").notNull().default(0),
+    refundedOrders: integer("refunded_orders").notNull().default(0),
+    refundedAmount: integer("refunded_amount").notNull().default(0),
+    paidPurchasesCount: integer("paid_purchases_count").notNull().default(0),
+    paidPurchasesAmount: integer("paid_purchases_amount").notNull().default(0),
+    paidExpensesCount: integer("paid_expenses_count").notNull().default(0),
+    paidExpensesAmount: integer("paid_expenses_amount").notNull().default(0),
+    adSpend: integer("ad_spend").notNull().default(0),
+    note: text("note").notNull().default(""),
+    closedByUserId: integer("closed_by_user_id"),
+    closedByName: text("closed_by_name").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at"),
+  },
+  (table) => [index("daily_closings_date_idx").on(table.closeDate)],
+);
+
 export const purchases = sqliteTable(
   "purchases",
   {
