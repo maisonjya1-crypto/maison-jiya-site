@@ -2038,9 +2038,11 @@ export async function POST(request: Request) {
             AND EXISTS (SELECT 1 FROM inventory_counts WHERE count_ref = ?)
         `).bind(physicalRaw, Math.abs(difference), valueAfter, lossValue, sessionId, countRef),
       );
-      const results = await database.batch(statements);
-      const insertedCount = Number((results[0]?.meta as { changes?: number } | undefined)?.changes || 0);
-      if (insertedCount !== 1) {
+      await database.batch(statements);
+      const persistedCount = await database.prepare(
+        "SELECT id FROM inventory_counts WHERE count_ref = ? LIMIT 1",
+      ).bind(countRef).first<{ id: number }>();
+      if (!persistedCount) {
         if (mutationReceiptReserved) {
           await releaseMutationReceipt(mutationReceiptKey, mutationReceiptUserId, mutationReceiptAction);
           mutationReceiptReserved = false;
@@ -2188,9 +2190,11 @@ export async function POST(request: Request) {
         );
       }
 
-      const inventoryResults = await rawDatabase.batch(statements);
-      const insertedCount = Number((inventoryResults[0]?.meta as { changes?: number } | undefined)?.changes || 0);
-      if (insertedCount !== 1) {
+      await rawDatabase.batch(statements);
+      const persistedCount = await rawDatabase.prepare(
+        "SELECT id FROM inventory_counts WHERE count_ref = ? LIMIT 1",
+      ).bind(countRef).first<{ id: number }>();
+      if (!persistedCount) {
         if (mutationReceiptReserved) {
           await releaseMutationReceipt(mutationReceiptKey, mutationReceiptUserId, mutationReceiptAction);
           mutationReceiptReserved = false;
