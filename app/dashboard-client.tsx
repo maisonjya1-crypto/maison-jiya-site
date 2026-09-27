@@ -3081,6 +3081,8 @@ function ReorderingPage({
   const protectedCash = Math.max(0, metrics.cash - metrics.unpaidPurchases - metrics.unpaidOperatingExpenses - metrics.safetyReserve);
   const executableGroups = purchasePlan.supplierGroups.filter((group) => group.meetsMinimumOrder);
   const blockedMinimumGroups = purchasePlan.supplierGroups.filter((group) => !group.meetsMinimumOrder);
+  const executableSpend = executableGroups.reduce((sum, group) => sum + group.totalCost, 0);
+  const blockedSpend = blockedMinimumGroups.reduce((sum, group) => sum + group.totalCost, 0);
 
   function legacySupplierDebt(supplierId: number | null, supplierName: string) {
     return data.purchases
@@ -3088,7 +3090,7 @@ function ReorderingPage({
         !purchase.invoiceId
         && !["Brouillon", "Annulé"].includes(purchase.procurementStatus)
         && purchase.paymentStatus !== "Payé"
-        && (supplierId ? purchase.supplierId === supplierId : purchase.supplier === supplierName),
+        && (supplierId ? purchase.supplierId === supplierId || (!purchase.supplierId && purchase.supplier === supplierName) : purchase.supplier === supplierName),
       )
       .reduce((sum, purchase) => sum + purchase.totalCost, 0);
   }
@@ -3197,8 +3199,8 @@ function ReorderingPage({
         <div className="purchase-plan-summary-head">
           <div>
             <span className="card-kicker">Réinvestissement proposé</span>
-            <h2>{money(purchasePlan.plannedSpend)} à engager</h2>
-            <p>Besoin théorique total : {money(purchasePlan.totalRecommendedCost)} · reste de budget après le plan : {money(purchasePlan.remainingBudget)}.</p>
+            <h2>{money(executableSpend)} à engager maintenant</h2>
+            <p>Besoin théorique total : {money(purchasePlan.totalRecommendedCost)} · plan financé : {money(purchasePlan.plannedSpend)}{blockedSpend > 0 ? ` · ${money(blockedSpend)} bloqués par un minimum fournisseur` : ""}.</p>
           </div>
           <button
             className="primary-button"
@@ -3210,7 +3212,7 @@ function ReorderingPage({
           </button>
         </div>
         <div className="purchase-plan-budget-track">
-          <span style={{ width: `${purchasePlan.availableBudget ? Math.min(100, (purchasePlan.plannedSpend / purchasePlan.availableBudget) * 100) : 0}%` }} />
+          <span style={{ width: `${purchasePlan.availableBudget ? Math.min(100, (executableSpend / purchasePlan.availableBudget) * 100) : 0}%` }} />
         </div>
         <div className="purchase-plan-stats">
           <span><strong>{purchasePlan.fullyFundedLines}</strong> besoin(s) financé(s)</span>
