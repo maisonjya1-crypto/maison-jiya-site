@@ -696,8 +696,11 @@ export default function DashboardClient() {
       countInventory: "Inventaire enregistré et stock corrigé",
       updateCustomer: "Client mis à jour",
       deleteCustomer: "Client supprimé",
-      updatePurchase: "Achat mis à jour",
-      deletePurchase: "Achat supprimé",
+      addSupplier: "Fournisseur créé",
+      updateSupplier: "Fournisseur mis à jour",
+      toggleSupplier: "Statut fournisseur mis à jour",
+      updatePurchase: "Bon de commande mis à jour",
+      deletePurchase: "Bon de commande supprimé",
       addExpense: "Dépense enregistrée",
       updateExpense: "Dépense mise à jour",
       deleteExpense: "Dépense supprimée",
@@ -990,9 +993,9 @@ export default function DashboardClient() {
         )}
         {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} print={printOrderSlip} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} restoreProduct={restoreProduct} moveStock={openStock} countInventory={openInventory} submit={submit} />}
       </section>
-      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products.filter((product) => !product.archivedAt)} ads={data.ads} close={() => setModal(null)} submit={submit} />}
+      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} ads={data.ads} close={() => setModal(null)} submit={submit} />}
       {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} ads={data.ads} close={() => setSelectedOrder(null)} print={() => printOrderSlip(selectedOrder)} submit={submit} />}
-      {selectedEntity && <EntityModal selection={selectedEntity} products={data.products.filter((product) => !product.archivedAt)} close={() => setSelectedEntity(null)} submit={submit} />}
+      {selectedEntity && <EntityModal selection={selectedEntity} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
       {inventorySelection && <InventoryCountModal product={inventorySelection} close={() => setInventorySelection(null)} submit={submit} />}
       {printOrder && <PrintOrderSheet order={printOrder} />}
@@ -1103,7 +1106,7 @@ function Loading() {
 function SectionSearch({ active, data, openOrder, openEntity }: { active: string; data: Data; openOrder: (order: Order) => void; openEntity: (selection: EditableEntity) => void }) {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLocaleLowerCase("fr");
-  const searchablePages = new Set(["Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Corbeille"]);
+  const searchablePages = new Set(["Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Dépenses", "Publicités", "Capital", "Corbeille"]);
   const results = useMemo<Array<{ key: string; label: string; detail: string; order?: Order; entity?: EditableEntity }>>(() => {
     if (normalized.length < 2) return [];
     const matches = (values: Array<string | number | null | undefined>) => values.some((value) => String(value || "").toLocaleLowerCase("fr").includes(normalized));
@@ -1145,6 +1148,17 @@ function SectionSearch({ active, data, openOrder, openEntity }: { active: string
       return data.customers
         .filter((customer) => matches([customer.name, customer.phone, customer.city]))
         .map((customer) => ({ key: `customer-${customer.id}`, label: customer.name, detail: `${customer.phone} · ${customer.city}`, entity: { kind: "customer" as const, record: customer } }))
+        .slice(0, 10);
+    }
+    if (active === "Fournisseurs") {
+      return data.suppliers
+        .filter((supplier) => matches([supplier.name, supplier.contactName, supplier.phone, supplier.whatsapp, supplier.city, supplier.paymentTerms, supplier.notes]))
+        .map((supplier) => ({
+          key: `supplier-${supplier.id}`,
+          label: supplier.name,
+          detail: `${supplier.city || "Ville non renseignée"} · délai ${supplier.leadTimeDays} j · ${supplier.isActive ? "Actif" : "Inactif"}`,
+          entity: { kind: "supplier" as const, record: supplier },
+        }))
         .slice(0, 10);
     }
     if (active === "Achats") {
@@ -1278,7 +1292,8 @@ function Page({
   if (active === "Réapprovisionnement") return <ReorderingPage data={data} submit={submit} onEditProduct={editEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
-  if (active === "Achats") return <PurchasesPage purchases={data.purchases} products={data.products.filter((product) => !product.archivedAt)} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Fournisseurs") return <SuppliersPage suppliers={data.suppliers} purchases={data.purchases} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("supplier")} onEdit={editEntity} />;
+  if (active === "Achats") return <PurchasesPage purchases={data.purchases} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Dépenses") return <ExpensesPage expenses={data.expenses} onAdd={() => open("expense")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
