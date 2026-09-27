@@ -8,7 +8,7 @@ import { getMetaRuntimeStatus, syncMetaAds } from "../../../db/meta";
 import { reconcileOrderAllocations } from "../../../db/allocations";
 import { getGoogleSheetsSyncSnapshot, markGoogleSheetsSyncPending, processGoogleSheetsSyncQueue } from "../../../db/google-sheets-sync";
 import { ensureStorefrontCms } from "../../../db/storefront-cms";
-import { receivePurchaseIntoStock } from "../../../db/inventory-cost";
+import { receivePurchaseLine } from "../../../db/inventory-cost";
 import { buildDailyClosingPreview, saveDailyClosing } from "../../../db/daily-closing";
 import { buildSmartStockRecommendations } from "../../../db/smart-stock";
 import { buildPurchaseReference, normalizedProcurementStatus, normalizeSupplierName, resolveSupplierProfile } from "../../../db/suppliers";
@@ -1248,10 +1248,12 @@ export async function POST(request: Request) {
       const duplicateReception = await protectMutation("receivePurchase");
       if (duplicateReception) return duplicateReception;
 
-      const result = await receivePurchaseIntoStock(await getRawDb(), id, receiveQuantity || undefined);
+      const result = await receivePurchaseLine(await getRawDb(), id, receiveQuantity || undefined);
       auditEntityId = String(id);
       auditEntityLabel = `${result.supplier} · ${result.item}`;
-      integrationMessage = `${result.receivedQuantity} unité(s) de ${result.productName} ajoutée(s) au stock. Réception totale : ${result.totalReceivedQuantity}. Reste : ${result.remainingQuantity}. Coût moyen : ${result.previousAverageCost.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} → ${result.newAverageCost.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MAD.`;
+      integrationMessage = result.stockUpdated
+        ? `${result.receivedQuantity} unité(s) de ${result.productName} ajoutée(s) au stock. Réception totale : ${result.totalReceivedQuantity}. Reste : ${result.remainingQuantity}. Coût moyen : ${result.previousAverageCost.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} → ${result.newAverageCost.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MAD.`
+        : `${result.receivedQuantity} unité(s) de ${result.item} marquée(s) reçue(s), sans mouvement de stock. Réception totale : ${result.totalReceivedQuantity}. Reste : ${result.remainingQuantity}.`;
     } else if (payload.action === "deletePurchase") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Achat invalide." }, { status: 400 });
