@@ -5893,7 +5893,7 @@ function InventoryCountModal({ product, close, submit }: { product: Product; clo
     </div>
   );
 }
-function Field({ label, ...props }: { label: string; name: string; type?: string; required?: boolean; defaultValue?: string; inputMode?: "tel" | "numeric" | "decimal"; autoComplete?: string; min?: string; step?: string; placeholder?: string; maxLength?: number }) {
+function Field({ label, ...props }: { label: string; name: string; type?: string; required?: boolean; defaultValue?: string; inputMode?: "tel" | "numeric" | "decimal"; autoComplete?: string; min?: string; step?: string; placeholder?: string; maxLength?: number; max?: string }) {
   return (
     <label className="field">
       <span>{label}</span>
