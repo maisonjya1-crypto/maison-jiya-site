@@ -348,7 +348,6 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
     database.prepare("DELETE FROM settings WHERE key NOT LIKE 'security_%' AND key <> 'backup_webhook_url'"),
     ...inserts,
   ]);
-  ]);
 
   if (!restoreSuppliers) {
     await database.batch([
