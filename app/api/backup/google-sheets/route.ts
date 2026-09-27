@@ -191,8 +191,8 @@ export async function GET(request: Request) {
         .leftJoin(suppliers, eq(purchases.supplierId, suppliers.id))
         .orderBy(desc(purchases.createdAt));
       return csvResponse(
-        ["ID", "Référence bon", "ID fournisseur", "Fournisseur", "Contact fournisseur", "Téléphone fournisseur", "WhatsApp fournisseur", "État du bon", "Commandé le", "Livraison prévue", "Article", "ID produit", "SKU", "Produit", "Quantité achetée", "Coût unitaire (MAD)", "Coût total (MAD)", "Compte paiement", "Statut paiement", "Payé le", "Quantité réceptionnée", "Réceptionné le", "Créé le"],
-        rows.map((row) => [row.id, row.purchaseRef, row.supplierId, row.supplier, row.supplierContact, row.supplierPhone, row.supplierWhatsapp, row.procurementStatus, row.orderedAt, row.expectedAt, row.item, row.productId, row.productCode, row.productName, row.quantity, row.unitCost, row.totalCost, row.account, row.paymentStatus, row.paidAt, row.receivedQuantity, row.receivedAt, row.createdAt]),
+        ["ID", "Référence bon", "ID fournisseur", "Fournisseur", "Contact fournisseur", "Téléphone fournisseur", "WhatsApp fournisseur", "État du bon", "Commandé le", "Livraison prévue", "Article", "ID produit", "SKU", "Produit", "Quantité commandée", "Quantité réceptionnée", "Reste à recevoir", "Coût unitaire (MAD)", "Coût total (MAD)", "Compte paiement", "Statut paiement", "Payé le", "Réceptionné le", "Créé le"],
+        rows.map((row) => [row.id, row.purchaseRef, row.supplierId, row.supplier, row.supplierContact, row.supplierPhone, row.supplierWhatsapp, row.procurementStatus, row.orderedAt, row.expectedAt, row.item, row.productId, row.productCode, row.productName, row.quantity, row.receivedQuantity, Math.max(0, row.quantity - row.receivedQuantity), row.unitCost, row.totalCost, row.account, row.paymentStatus, row.paidAt, row.receivedAt, row.createdAt]),
       );
     }
 

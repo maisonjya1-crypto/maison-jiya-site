@@ -32,6 +32,13 @@ test("une réception partielle met à jour le stock, le coût moyen et le statut
   assert.equal(purchase.received_quantity, 4);
   assert.equal(purchase.procurement_status, "Partiellement reçu");
 
+  await assert.rejects(
+    () => receiving.receivePurchaseIntoStock(db, 50, 7, "2026-09-27T12:30:00.000Z"),
+    /6 unité\(s\) restante\(s\)/,
+  );
+  assert.equal(db.sqlite.prepare("SELECT stock_quantity FROM products WHERE id = 1").get().stock_quantity, 9);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM stock_movements WHERE purchase_id = 50").get().n, 1);
+
   const second = await receiving.receivePurchaseIntoStock(db, 50, 6, "2026-09-27T13:00:00.000Z");
   assert.equal(second.totalReceivedQuantity, 10);
   assert.equal(second.remainingQuantity, 0);
@@ -99,6 +106,60 @@ test("la migration crée les profils fournisseurs et rattache les anciens achats
   assert.equal(purchase.ordered_at, "2026-09-20T10:00:00.000Z");
 });
 
+
+test("les fiches fournisseurs sont réutilisées sans doublon et un fournisseur inactif est bloqué", async t => {
+  const db = await fixture();
+  t.after(() => db.sqlite.close());
+  const supplierHelpers = loadSource("db/suppliers.ts");
+
+  const created = await supplierHelpers.resolveSupplierProfile(db, null, "  Atlas   Distribution  ");
+  assert.equal(created.name, "Atlas Distribution");
+
+  const reused = await supplierHelpers.resolveSupplierProfile(db, null, "atlas distribution");
+  assert.equal(reused.id, created.id);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM suppliers WHERE lower(name) = lower('Atlas Distribution')").get().n, 1);
+
+  db.sqlite.prepare("UPDATE suppliers SET is_active = 0 WHERE id = ?").run(created.id);
+  await assert.rejects(
+    () => supplierHelpers.resolveSupplierProfile(db, created.id, ""),
+    /désactivé/,
+  );
+
+  const refA = supplierHelpers.buildPurchaseReference(new Date("2026-09-27T12:00:00.000Z"));
+  const refB = supplierHelpers.buildPurchaseReference(new Date("2026-09-27T12:00:00.000Z"));
+  assert.match(refA, /^BC-\d{14}-[A-F0-9]{4}$/);
+  assert.notEqual(refA, refB);
+});
+
+test("le réapprovisionnement intelligent utilise la fiche fournisseur liée", async t => {
+  const db = await fixture();
+  t.after(() => db.sqlite.close());
+  const smartStock = loadSource("db/smart-stock.ts");
+
+  db.sqlite.exec(`
+    UPDATE products
+    SET stock_quantity = 0, stock_alert_threshold = 2, reorder_cover_days = 30, purchase_price = 11
+    WHERE id = 1;
+    INSERT INTO suppliers (id, name, lead_time_days, is_active)
+    VALUES (30, 'Fiche Fournisseur Réelle', 6, 1);
+    INSERT INTO purchases (
+      supplier, supplier_id, purchase_ref, procurement_status, ordered_at, item,
+      product_id, quantity, unit_cost, total_cost, payment_status, received_quantity, created_at
+    ) VALUES (
+      'Ancien libellé', 30, 'BC-PROFILE', 'Reçu', '2026-09-26T10:00:00.000Z', 'Réassort test',
+      1, 2, 17, 34, 'Payé', 2, '2026-09-26T10:00:00.000Z'
+    );
+  `);
+
+  const rows = await smartStock.buildSmartStockRecommendations(db);
+  const row = rows.find((entry) => entry.productId === 1);
+  assert.ok(row);
+  assert.equal(row.supplierId, 30);
+  assert.equal(row.supplier, "Fiche Fournisseur Réelle");
+  assert.equal(row.supplierLeadTimeDays, 6);
+  assert.equal(row.unitCost, 17);
+});
+
 test("API, interface, export et sync Sheets connaissent les fournisseurs et bons de commande", async () => {
   const [route, dashboard, backups, dataExport, dataImport, sheets, sync] = await Promise.all([
     readFile(new URL("../app/api/data/route.ts", import.meta.url), "utf8"),
@@ -117,11 +178,17 @@ test("API, interface, export et sync Sheets connaissent les fournisseurs et bons
   assert.match(dashboard, /Répertoire fournisseurs/);
   assert.match(dashboard, /Bons de commande fournisseurs/);
   assert.match(dashboard, /Partiellement reçu/);
+  assert.match(dashboard, /Produits fournis/);
+  assert.match(dashboard, /Dernier prix/);
+  assert.match(dashboard, /En retard/);
+  assert.match(dashboard, /supplierId: row\.supplierId/);
   assert.match(backups, /suppliers/);
   assert.match(backups, /purchase_ref/);
   assert.match(dataExport, /fournisseurs: "SELECT \* FROM suppliers/);
   assert.match(dataImport, /fournisseurs:/);
   assert.match(sheets, /dataset === "suppliers"/);
   assert.match(sheets, /Référence bon/);
+  assert.match(sheets, /Quantité commandée/);
+  assert.match(sheets, /Reste à recevoir/);
   assert.match(sync, /"suppliers"/);
 });

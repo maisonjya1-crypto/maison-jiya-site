@@ -12,7 +12,9 @@ export type SmartStockRecommendation = {
   pendingInbound: number;
   targetStock: number;
   recommendedQuantity: number;
+  supplierId: number | null;
   supplier: string;
+  supplierLeadTimeDays: number | null;
   unitCost: number;
   estimatedCost: number;
   lastPurchaseAt: string | null;
@@ -32,7 +34,7 @@ type ProductRow = {
 
 type DemandRow = { productId: number; units: number };
 type PendingRow = { productId: number; units: number };
-type SupplierRow = { productId: number; supplier: string; unitCost: number; createdAt: string };
+type SupplierRow = { productId: number; supplierId: number | null; supplier: string; supplierLeadTimeDays: number | null; unitCost: number; createdAt: string };
 
 function nonNegativeInteger(value: unknown) {
   const parsed = Number(value);
@@ -87,17 +89,26 @@ export async function buildSmartStockRecommendations(database: D1Database): Prom
       GROUP BY product_id
     `).all<PendingRow>(),
     database.prepare(`
-      SELECT productId, supplier, unitCost, createdAt
+      SELECT productId, supplierId, supplier, supplierLeadTimeDays, unitCost, createdAt
       FROM (
         SELECT
-          product_id AS productId,
-          supplier,
-          unit_cost AS unitCost,
-          created_at AS createdAt,
-          ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY datetime(created_at) DESC, id DESC) AS rowNumber
+          purchases.product_id AS productId,
+          suppliers.id AS supplierId,
+          COALESCE(NULLIF(trim(suppliers.name), ''), NULLIF(trim(purchases.supplier), '')) AS supplier,
+          CASE WHEN suppliers.id IS NOT NULL THEN suppliers.lead_time_days ELSE NULL END AS supplierLeadTimeDays,
+          purchases.unit_cost AS unitCost,
+          purchases.created_at AS createdAt,
+          ROW_NUMBER() OVER (
+            PARTITION BY purchases.product_id
+            ORDER BY datetime(purchases.created_at) DESC, purchases.id DESC
+          ) AS rowNumber
         FROM purchases
-        WHERE product_id IS NOT NULL
-          AND procurement_status <> 'Annulé'
+        LEFT JOIN suppliers
+          ON suppliers.id = purchases.supplier_id
+         AND suppliers.is_active = 1
+        WHERE purchases.product_id IS NOT NULL
+          AND purchases.procurement_status <> 'Annulé'
+          AND (purchases.supplier_id IS NULL OR suppliers.id IS NOT NULL)
       )
       WHERE rowNumber = 1
     `).all<SupplierRow>(),
@@ -147,7 +158,11 @@ export async function buildSmartStockRecommendations(database: D1Database): Prom
       pendingInbound,
       targetStock,
       recommendedQuantity,
+      supplierId: latestSupplier?.supplierId ? Number(latestSupplier.supplierId) : null,
       supplier: latestSupplier?.supplier?.trim() || "Fournisseur à renseigner",
+      supplierLeadTimeDays: latestSupplier?.supplierLeadTimeDays === null || latestSupplier?.supplierLeadTimeDays === undefined
+        ? null
+        : nonNegativeInteger(latestSupplier.supplierLeadTimeDays),
       unitCost,
       estimatedCost,
       lastPurchaseAt: latestSupplier?.createdAt || null,

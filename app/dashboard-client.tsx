@@ -273,7 +273,9 @@ type SmartStockRecommendation = {
   pendingInbound: number;
   targetStock: number;
   recommendedQuantity: number;
+  supplierId: number | null;
   supplier: string;
+  supplierLeadTimeDays: number | null;
   unitCost: number;
   estimatedCost: number;
   lastPurchaseAt: string | null;
@@ -2984,18 +2986,23 @@ function ReorderingPage({
 
   async function preparePurchase(row: SmartStockRecommendation) {
     if (!data.access.canEdit || creatingId || row.recommendedQuantity <= 0 || row.supplier === "Fournisseur à renseigner") return;
+    const deliveryHint = row.supplierLeadTimeDays === null
+      ? ""
+      : ` La date prévue sera calculée avec le délai fournisseur de ${row.supplierLeadTimeDays} jour(s).`;
     const confirmed = window.confirm(
-      `Créer un achat fournisseur de ${row.recommendedQuantity} unité(s) de ${row.productName} chez ${row.supplier} ?\n\nIl sera créé « À payer ». Le stock ne changera qu’au moment où vous cliquerez sur Réceptionner dans Achats.`,
+      `Créer un bon de commande de ${row.recommendedQuantity} unité(s) de ${row.productName} chez ${row.supplier} ?\n\nIl sera créé « Commandé » et « À payer ». Le stock ne changera qu’au moment où vous cliquerez sur Réceptionner dans Achats.${deliveryHint}`,
     );
     if (!confirmed) return;
     setCreatingId(row.productId);
     try {
       await submit("addPurchase", {
+        supplierId: row.supplierId ? String(row.supplierId) : "",
         supplier: row.supplier,
         item: `Réapprovisionnement · ${row.productName}`,
         productId: String(row.productId),
         quantity: String(row.recommendedQuantity),
         unitCost: String(row.unitCost),
+        procurementStatus: "Commandé",
         account: "Banque",
         paymentStatus: "À payer",
       });
@@ -3429,6 +3436,7 @@ function SuppliersPage({
   const activeSuppliers = suppliers.filter((supplier) => supplier.isActive);
   const totalDue = purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
   const openOrders = purchases.filter((purchase) => !["Reçu", "Annulé"].includes(purchase.procurementStatus)).length;
+  const todayKey = new Date().toISOString().slice(0, 10);
 
   async function toggle(supplier: Supplier) {
     if (!canEdit) return;
@@ -3454,25 +3462,48 @@ function SuppliersPage({
         <div className="section-toolbar">
           <div>
             <h2>Répertoire fournisseurs</h2>
-            <p>Contacts, délais moyens, minimums de commande, conditions de paiement et historique d’achat.</p>
+            <p>Contacts, délais, produits fournis, derniers prix, retards et historique d’achat.</p>
           </div>
           <button className="primary-button" type="button" onClick={onAdd} disabled={!canEdit}>＋ Nouveau fournisseur</button>
         </div>
         {suppliers.length ? (
           <div className="table-scroll">
             <table>
-              <thead><tr><th>Fournisseur</th><th>Contact</th><th>Ville</th><th>Délai</th><th>Minimum</th><th>Conditions</th><th>Achats</th><th>À payer</th><th>Dernier achat</th><th>Statut</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Fournisseur</th><th>Contact</th><th>Ville</th><th>Délai</th><th>Minimum</th><th>Conditions</th><th>Produits fournis</th><th>Achats</th><th>À payer</th><th>Dernier prix</th><th>Retards</th><th>Statut</th><th>Actions</th></tr></thead>
               <tbody>{suppliers.map((supplier) => {
-                const rows = purchases.filter((purchase) => purchase.supplierId === supplier.id || (!purchase.supplierId && purchase.supplier.toLocaleLowerCase("fr") === supplier.name.toLocaleLowerCase("fr")));
+                const rows = purchases
+                  .filter((purchase) => purchase.supplierId === supplier.id || (!purchase.supplierId && purchase.supplier.toLocaleLowerCase("fr") === supplier.name.toLocaleLowerCase("fr")))
+                  .sort((left, right) => (right.orderedAt || right.createdAt).localeCompare(left.orderedAt || left.createdAt));
                 const spent = rows.reduce((sum, purchase) => sum + purchase.totalCost, 0);
                 const due = rows.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
-                const last = rows.reduce((latest, purchase) => {
-                  const value = purchase.orderedAt || purchase.createdAt;
-                  return value > latest ? value : latest;
-                }, "");
+                const lastPurchase = rows[0] || null;
+                const suppliedProducts = Array.from(new Set(rows.map((purchase) => purchase.productName || purchase.item).filter(Boolean)));
+                const lateOrders = rows.filter((purchase) =>
+                  Boolean(
+                    purchase.expectedAt
+                    && purchase.expectedAt < todayKey
+                    && purchase.receivedQuantity < purchase.quantity
+                    && ["Commandé", "Partiellement reçu"].includes(purchase.procurementStatus),
+                  )
+                );
                 return (
                   <tr key={supplier.id}>
-                    <td><strong>{supplier.name}</strong><small>{supplier.notes || "Aucune note"}</small></td>
+                    <td>
+                      <strong>{supplier.name}</strong>
+                      <small>{supplier.notes || "Aucune note"}</small>
+                      {rows.length ? (
+                        <details>
+                          <summary>Historique achats</summary>
+                          <ul>
+                            {rows.slice(0, 5).map((purchase) => (
+                              <li key={purchase.id}>
+                                <strong>{purchase.purchaseRef || `#${purchase.id}`}</strong> · {purchase.item} · {purchase.quantity} × {money(purchase.unitCost)} · {purchase.procurementStatus}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      ) : null}
+                    </td>
                     <td>
                       <strong>{supplier.contactName || "—"}</strong>
                       <small>{supplier.phone || supplier.whatsapp || "Coordonnées non renseignées"}</small>
@@ -3481,9 +3512,18 @@ function SuppliersPage({
                     <td>{supplier.leadTimeDays} j</td>
                     <td>{supplier.minimumOrderAmount ? money(supplier.minimumOrderAmount) : "—"}</td>
                     <td>{supplier.paymentTerms || "—"}</td>
+                    <td>
+                      {suppliedProducts.length ? (
+                        <>
+                          <strong>{suppliedProducts.slice(0, 2).join(" · ")}</strong>
+                          <small>{suppliedProducts.length > 2 ? `+${suppliedProducts.length - 2} autre(s)` : `${suppliedProducts.length} produit(s)`}</small>
+                        </>
+                      ) : "—"}
+                    </td>
                     <td><strong>{money(spent)}</strong><small>{rows.length} bon(s)</small></td>
                     <td className={moneyTone(-due)}><strong>{money(due)}</strong></td>
-                    <td>{last ? dateLabel(last) : "—"}</td>
+                    <td>{lastPurchase ? <><strong>{money(lastPurchase.unitCost)}</strong><small>{dateLabel(lastPurchase.orderedAt || lastPurchase.createdAt)}</small></> : "—"}</td>
+                    <td>{lateOrders.length ? <><Status value="En retard" /><small>{lateOrders.length} bon(s)</small></> : <Status value="À jour" />}</td>
                     <td><Status value={supplier.isActive ? "Actif" : "Inactif"} /></td>
                     <td>
                       <div className="entity-actions-row">
@@ -3507,6 +3547,7 @@ function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd,
   const total = purchases.reduce((sum, purchase) => sum + purchase.totalCost, 0);
   const waitingReceipt = purchases.filter((purchase) => purchase.productId && purchase.receivedQuantity < purchase.quantity && ["Commandé", "Partiellement reçu"].includes(purchase.procurementStatus));
   const receivedCount = purchases.filter((purchase) => purchase.receivedQuantity >= purchase.quantity && purchase.quantity > 0).length;
+  const todayKey = new Date().toISOString().slice(0, 10);
   const supplierRows = Array.from(new Set(purchases.map((purchase) => purchase.supplier).filter(Boolean)))
     .map((supplier) => {
       const rows = purchases.filter((purchase) => purchase.supplier === supplier);
@@ -3572,20 +3613,30 @@ function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd,
         </div>
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Bon</th><th>Fournisseur</th><th>Achat</th><th>Produit stock</th><th>Qté</th><th>Total</th><th>État</th><th>Prévu</th><th>Paiement</th><th>Réception</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Bon</th><th>Commandé le</th><th>Fournisseur</th><th>Achat</th><th>Produit stock</th><th>Qté commandée</th><th>Reçue</th><th>Reste</th><th>Total</th><th>État</th><th>Prévu</th><th>Paiement</th><th>Réception</th><th>Actions</th></tr></thead>
             <tbody>
               {purchases.map((purchase) => {
                 const received = purchase.receivedQuantity >= purchase.quantity && purchase.quantity > 0;
+                const remaining = Math.max(0, purchase.quantity - purchase.receivedQuantity);
+                const overdue = Boolean(
+                  purchase.expectedAt
+                  && purchase.expectedAt < todayKey
+                  && remaining > 0
+                  && ["Commandé", "Partiellement reçu"].includes(purchase.procurementStatus),
+                );
                 return (
                   <tr key={purchase.id}>
-                    <td><strong>{purchase.purchaseRef || `#${purchase.id}`}</strong><small>{dateLabel(purchase.orderedAt || purchase.createdAt)}</small></td>
+                    <td><strong>{purchase.purchaseRef || `#${purchase.id}`}</strong></td>
+                    <td>{dateLabel(purchase.orderedAt || purchase.createdAt)}</td>
                     <td><strong>{purchase.supplier}</strong><small>{suppliers.find((supplier) => supplier.id === purchase.supplierId)?.city || ""}</small></td>
                     <td>{purchase.item}</td>
                     <td>{purchase.productId ? <><strong>{purchase.productName || "Produit"}</strong><small>{purchase.productCode || `#${purchase.productId}`}</small></> : <small>Non lié au stock</small>}</td>
-                    <td>{purchase.quantity}</td>
+                    <td><strong>{purchase.quantity}</strong></td>
+                    <td>{purchase.receivedQuantity}</td>
+                    <td className={remaining > 0 ? "money-negative" : "money-positive"}><strong>{remaining}</strong></td>
                     <td><strong>{money(purchase.totalCost)}</strong></td>
                     <td><Status value={purchase.procurementStatus} /></td>
-                    <td>{purchase.expectedAt ? dateLabel(purchase.expectedAt) : "—"}</td>
+                    <td>{purchase.expectedAt ? <>{dateLabel(purchase.expectedAt)}{overdue ? <small><Status value="En retard" /></small> : null}</> : "—"}</td>
                     <td><Status value={purchase.paymentStatus} />{purchase.paymentStatus === "Payé" && purchase.paidAt ? <small>{dateLabel(purchase.paidAt)}</small> : null}</td>
                     <td>
                       {received ? (
@@ -3596,7 +3647,7 @@ function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd,
                         <span className="purchase-unlinked">Bon annulé</span>
                       ) : purchase.productId ? (
                         <button className="secondary-button purchase-receive-button" type="button" disabled={!canEdit || receivingId === purchase.id} onClick={() => void receive(purchase)}>
-                          {receivingId === purchase.id ? "Réception…" : `Réceptionner ${purchase.receivedQuantity}/${purchase.quantity}`}
+                          {receivingId === purchase.id ? "Réception…" : `Réceptionner · reste ${remaining}`}
                         </button>
                       ) : (
                         <span className="purchase-unlinked">Modifier pour lier un produit</span>
@@ -4487,7 +4538,7 @@ function MonthlyCapitalChart({
   );
 }
 function Status({ value }: { value: string }) {
-  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration", "OK", "Actif", "Reçu"].includes(value) ? "success" : ["Retour", "Annulée", "Annulé", "Inactif", "Refusée", "Retournée", "Remboursé", "Non encaissé", "Rupture", "Critique"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande", "Commandé"].includes(value) ? "info" : "warning";
+  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration", "OK", "Actif", "Reçu"].includes(value) ? "success" : ["Retour", "Annulée", "Annulé", "Inactif", "Refusée", "Retournée", "Remboursé", "Non encaissé", "Rupture", "Critique", "En retard"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande", "Commandé"].includes(value) ? "info" : "warning";
   return <span className={`status ${tone}`}>{value}</span>;
 }
 
