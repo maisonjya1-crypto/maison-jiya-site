@@ -91,8 +91,16 @@ test("les rapports surveillent les fournisseurs à payer et le stock dormant", (
   assert.match(dashboard, /sans sortie depuis au moins 45 jours/);
 });
 
-test("les montants décimaux sont conservés pour achats, publicités et capital", () => {
+test("les montants décimaux sont conservés dans les commandes et les autres modules financiers", () => {
+  assert.match(api, /const saleAmount = moneyValue\(payload\.saleAmount/);
+  assert.match(api, /const selectedShippingCost = isStoreSale \? 0 : moneyValue\(payload\.shippingCost\)/);
+  assert.match(api, /moneyValue\(payload\.adCost\)/);
+  assert.match(api, /moneyValue\(payload\.fees\)/);
+  assert.match(api, /moneyValue\(payload\.returnCost\)/);
   assert.match(api, /const unitCost = moneyValue\(payload\.unitCost\)/);
   assert.match(api, /spend: moneyValue\(payload\.spend\), revenue: moneyValue\(payload\.revenue\)/);
   assert.match(api, /amount: moneyValue\(payload\.amount\)/);
+  assert.doesNotMatch(api, /numberValue\(payload\.(?:saleAmount|shippingCost|adCost|fees|returnCost)\)/);
+  assert.match(dashboard, /name="saleAmount"[^>]*step="0\.01"/);
+  assert.match(dashboard, /name="returnCost"[^>]*step="0\.01"/);
 });
