@@ -32,7 +32,8 @@ test("un comptage corrige le stock et crée un mouvement d’inventaire traçabl
   assert.match(api, /INSERT INTO inventory_counts/);
   assert.match(api, /UPDATE products/);
   assert.match(api, /INSERT INTO stock_movements/);
-  assert.match(api, /inventoryResults\[0\]/);
+  assert.match(api, /SELECT id FROM inventory_counts WHERE count_ref = \\? LIMIT 1/);
+  assert.match(api, /persistedCount/);
   assert.match(api, /Aucun inventaire n’a été enregistré/);
   assert.match(api, /Inventaire \+" : "Inventaire -/);
   assert.match(api, /Un ajustement d’inventaire ne peut pas être supprimé/);
