@@ -19,6 +19,7 @@ type BusinessSnapshot = {
     products: SnapshotRow[];
     stockMovements: SnapshotRow[];
     inventoryCounts?: SnapshotRow[];
+    suppliers?: SnapshotRow[];
     purchases: SnapshotRow[];
     expenses?: SnapshotRow[];
     ads: SnapshotRow[];
@@ -40,6 +41,7 @@ const TABLES = {
   products: "products",
   stockMovements: "stock_movements",
   inventoryCounts: "inventory_counts",
+  suppliers: "suppliers",
   purchases: "purchases",
   expenses: "expenses",
   ads: "ad_performance",
@@ -60,7 +62,8 @@ const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   products: ["id", "product_code", "name", "category", "purchase_price", "sale_price", "minimum_sale_price", "stock_quantity", "stock_alert_threshold", "reorder_cover_days", "archived_at", "archived_by_user_id", "created_at"],
   stockMovements: ["id", "product_id", "order_id", "purchase_id", "movement_type", "quantity", "note", "created_at"],
   inventoryCounts: ["id", "count_ref", "product_id", "system_quantity", "physical_quantity", "difference", "note", "counted_by_user_id", "counted_by_name", "created_at"],
-  purchases: ["id", "supplier", "item", "product_id", "quantity", "unit_cost", "total_cost", "account", "payment_status", "paid_at", "received_quantity", "received_at", "created_at"],
+  suppliers: ["id", "name", "contact_name", "phone", "whatsapp", "city", "lead_time_days", "minimum_order_amount", "payment_terms", "notes", "is_active", "created_at", "updated_at"],
+  purchases: ["id", "supplier", "supplier_id", "purchase_ref", "procurement_status", "ordered_at", "expected_at", "item", "product_id", "quantity", "unit_cost", "total_cost", "account", "payment_status", "paid_at", "received_quantity", "received_at", "created_at"],
   expenses: ["id", "category", "label", "amount", "account", "payment_status", "paid_at", "expense_date", "note", "created_at"],
   ads: ["id", "platform", "campaign", "external_id", "spend", "revenue", "order_count", "native_spend_cents", "native_revenue_cents", "native_currency", "source", "performance_date", "created_at"],
   capital: ["id", "direction", "category", "label", "amount", "account", "order_id", "is_automatic", "auto_key", "entry_date", "created_at"],
@@ -97,12 +100,13 @@ async function readOptionalRows(database: D1Database, table: string) {
 }
 
 async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
-  const [customers, orders, products, stockMovements, inventoryCounts, purchases, expenses, ads, capital, dailyClosings, settings, orderStatusHistory, carrierEvents, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia] = await Promise.all([
+  const [customers, orders, products, stockMovements, inventoryCounts, suppliers, purchases, expenses, ads, capital, dailyClosings, settings, orderStatusHistory, carrierEvents, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia] = await Promise.all([
     readRows(database, TABLES.customers),
     readRows(database, TABLES.orders),
     readRows(database, TABLES.products),
     readRows(database, TABLES.stockMovements),
     readRows(database, TABLES.inventoryCounts),
+    readOptionalRows(database, TABLES.suppliers),
     readRows(database, TABLES.purchases),
     readRows(database, TABLES.expenses),
     readRows(database, TABLES.ads),
@@ -120,7 +124,7 @@ async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
     version: 1,
     createdAt: new Date().toISOString(),
     tables: {
-      customers, orders, products, stockMovements, inventoryCounts, purchases, expenses, ads, capital, dailyClosings, settings,
+      customers, orders, products, stockMovements, inventoryCounts, suppliers, purchases, expenses, ads, capital, dailyClosings, settings,
       orderStatusHistory, carrierEvents, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia,
     },
   };
@@ -150,7 +154,7 @@ function inspectSnapshot(raw: string, expectedRecordCount?: number) {
       throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
     }
   }
-  for (const tableKey of ["inventoryCounts", "expenses", "dailyClosings", "carrierEvents", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"] as const) {
+  for (const tableKey of ["inventoryCounts", "suppliers", "expenses", "dailyClosings", "carrierEvents", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"] as const) {
     const rows = snapshot.tables[tableKey];
     if (rows !== undefined && (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item)))) {
       throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
@@ -255,6 +259,20 @@ function insertStatement(database: D1Database, tableKey: keyof BusinessSnapshot[
   const values = columns.map((column) => {
     if (column === "stock_deducted") return row[column] ?? 0;
     if (column === "received_quantity") return row[column] ?? 0;
+    if (column === "supplier_id") return row[column] ?? null;
+    if (column === "purchase_ref") return row[column] ?? null;
+    if (column === "procurement_status") {
+      if (row[column] !== undefined) return row[column];
+      const quantity = Number(row.quantity || 0);
+      const received = Number(row.received_quantity || 0);
+      return quantity > 0 && received >= quantity ? "Reçu" : received > 0 ? "Partiellement reçu" : "Commandé";
+    }
+    if (column === "ordered_at") return row[column] ?? row.created_at ?? null;
+    if (column === "expected_at") return row[column] ?? null;
+    if (column === "contact_name" || column === "phone" || column === "whatsapp" || column === "city" || column === "payment_terms" || column === "notes") return row[column] ?? "";
+    if (column === "lead_time_days") return row[column] ?? 7;
+    if (column === "minimum_order_amount") return row[column] ?? 0;
+    if (column === "is_active") return row[column] ?? 1;
     if (column === "refunded_at") return row[column] ?? null;
     if (column === "paid_at") {
       if (row[column] !== undefined) return row[column];
@@ -287,14 +305,14 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
   const { snapshot } = inspectSnapshot(row.snapshot_json);
 
   const insertionOrder: Array<keyof BusinessSnapshot["tables"]> = [
-    "settings", "customers", "products", "purchases", "expenses", "ads", "capital", "orders", "stockMovements",
+    "settings", "customers", "products", "suppliers", "purchases", "expenses", "ads", "capital", "orders", "stockMovements",
     "inventoryCounts", "dailyClosings", "orderStatusHistory", "carrierEvents", "storefrontProducts", "storefrontOffers",
     "storefrontOfferItems", "storefrontMedia",
   ];
   const inserts = insertionOrder.flatMap((tableKey) => {
     const rows = snapshot.tables[tableKey];
     // Ces tables n'existaient pas dans les premières sauvegardes v1.
-    if (rows === undefined && ["inventoryCounts", "carrierEvents", "expenses", "dailyClosings", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"].includes(tableKey)) return [];
+    if (rows === undefined && ["inventoryCounts", "suppliers", "carrierEvents", "expenses", "dailyClosings", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"].includes(tableKey)) return [];
     if (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
       throw new Error("Format de sauvegarde incompatible.");
     }
@@ -304,6 +322,7 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
   });
 
   const restoreStorefront = snapshot.tables.storefrontProducts !== undefined;
+  const restoreSuppliers = snapshot.tables.suppliers !== undefined;
 
   // Un seul batch D1 : toute erreur annule aussi les suppressions précédentes.
   await database.batch([
@@ -321,6 +340,7 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
     database.prepare("DELETE FROM orders"),
     database.prepare("DELETE FROM customers"),
     database.prepare("DELETE FROM purchases"),
+    ...(restoreSuppliers ? [database.prepare("DELETE FROM suppliers")] : []),
     database.prepare("DELETE FROM expenses"),
     database.prepare("DELETE FROM ad_performance"),
     database.prepare("DELETE FROM capital_ledger"),
