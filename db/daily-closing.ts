@@ -19,6 +19,18 @@ type ClosingPurchase = {
   paymentStatus: string;
   account: string | null;
   paidAt: string | null;
+  invoiceId: number | null;
+};
+
+type ClosingSupplierInvoice = {
+  totalAmount: number;
+  paidAmount: number;
+};
+
+type ClosingSupplierPayment = {
+  amount: number;
+  account: string | null;
+  paidAt: string;
 };
 
 type ClosingExpense = {
@@ -83,7 +95,7 @@ function orderCashAmount(order: Pick<ClosingOrder, "saleAmount" | "shippingCost"
 }
 
 async function closingSourceRows(database: D1Database) {
-  const [orders, purchases, expenses, ads, capital] = await Promise.all([
+  const [orders, purchases, supplierInvoices, supplierPayments, expenses, ads, capital] = await Promise.all([
     database.prepare(`
       SELECT
         id,
@@ -104,9 +116,25 @@ async function closingSourceRows(database: D1Database) {
         total_cost AS totalCost,
         payment_status AS paymentStatus,
         account,
-        paid_at AS paidAt
+        paid_at AS paidAt,
+        CASE
+          WHEN purchase_ref IS NOT NULL AND EXISTS (
+            SELECT 1 FROM supplier_invoices WHERE supplier_invoices.purchase_ref = purchases.purchase_ref
+          )
+          THEN 1 ELSE NULL
+        END AS invoiceId
       FROM purchases
     `).all<ClosingPurchase>(),
+    database.prepare(`
+      SELECT
+        total_amount AS totalAmount,
+        COALESCE((SELECT SUM(amount) FROM supplier_payments WHERE invoice_id = supplier_invoices.id), 0) AS paidAmount
+      FROM supplier_invoices
+    `).all<ClosingSupplierInvoice>(),
+    database.prepare(`
+      SELECT amount, account, paid_at AS paidAt
+      FROM supplier_payments
+    `).all<ClosingSupplierPayment>(),
     database.prepare(`
       SELECT
         amount,
@@ -128,6 +156,8 @@ async function closingSourceRows(database: D1Database) {
   return {
     orders: orders.results,
     purchases: purchases.results,
+    supplierInvoices: supplierInvoices.results,
+    supplierPayments: supplierPayments.results,
     expenses: expenses.results,
     ads: ads.results,
     capital: capital.results,
@@ -141,6 +171,7 @@ export async function buildDailyClosingPreview(database: D1Database, closeDate =
   const treasury = calculateTreasuryAccounts({
     orders: rows.orders,
     purchases: rows.purchases,
+    supplierPayments: rows.supplierPayments,
     expenses: rows.expenses,
     ads: rows.ads,
     capital: rows.capital,
@@ -153,7 +184,8 @@ export async function buildDailyClosingPreview(database: D1Database, closeDate =
   );
   const collected = rows.orders.filter((order) => sameBusinessDate(order.paidAt, closeDate));
   const refunded = rows.orders.filter((order) => sameBusinessDate(order.refundedAt, closeDate));
-  const paidPurchases = rows.purchases.filter((purchase) => purchase.paymentStatus === "Payé" && sameBusinessDate(purchase.paidAt, closeDate));
+  const paidLegacyPurchases = rows.purchases.filter((purchase) => !purchase.invoiceId && purchase.paymentStatus === "Payé" && sameBusinessDate(purchase.paidAt, closeDate));
+  const paidSupplierPayments = rows.supplierPayments.filter((payment) => sameBusinessDate(payment.paidAt, closeDate));
   const paidExpenses = rows.expenses.filter((expense) => expense.paymentStatus === "Payé" && sameBusinessDate(expense.paidAt, closeDate));
   const dayAds = rows.ads.filter((ad) => businessDateKey(ad.performanceDate) === closeDate);
 
@@ -165,14 +197,20 @@ export async function buildDailyClosingPreview(database: D1Database, closeDate =
     expectedTotal: roundMoney(treasury.total),
     carrierMoney: roundMoney(carrierOrders.reduce((sum, order) => sum + orderCashAmount(order), 0)),
     receivables: roundMoney(receivableOrders.reduce((sum, order) => sum + orderCashAmount(order), 0)),
-    unpaidPurchases: roundMoney(rows.purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + Number(purchase.totalCost || 0), 0)),
+    unpaidPurchases: roundMoney(
+      rows.purchases.filter((purchase) => !purchase.invoiceId && purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + Number(purchase.totalCost || 0), 0)
+      + rows.supplierInvoices.reduce((sum, invoice) => sum + Math.max(0, Number(invoice.totalAmount || 0) - Number(invoice.paidAmount || 0)), 0)
+    ),
     unpaidExpenses: roundMoney(rows.expenses.filter((expense) => expense.paymentStatus !== "Payé").reduce((sum, expense) => sum + Number(expense.amount || 0), 0)),
     collectedOrders: collected.length,
     collectedAmount: roundMoney(collected.reduce((sum, order) => sum + orderCashAmount(order), 0)),
     refundedOrders: refunded.length,
     refundedAmount: roundMoney(refunded.reduce((sum, order) => sum + orderCashAmount(order), 0)),
-    paidPurchasesCount: paidPurchases.length,
-    paidPurchasesAmount: roundMoney(paidPurchases.reduce((sum, purchase) => sum + Number(purchase.totalCost || 0), 0)),
+    paidPurchasesCount: paidLegacyPurchases.length + paidSupplierPayments.length,
+    paidPurchasesAmount: roundMoney(
+      paidLegacyPurchases.reduce((sum, purchase) => sum + Number(purchase.totalCost || 0), 0)
+      + paidSupplierPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0)
+    ),
     paidExpensesCount: paidExpenses.length,
     paidExpensesAmount: roundMoney(paidExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0)),
     adSpend: roundMoney(dayAds.reduce((sum, ad) => sum + Number(ad.spend || 0), 0)),
