@@ -3438,7 +3438,11 @@ function SuppliersPage({
 }) {
   const activeSuppliers = suppliers.filter((supplier) => supplier.isActive);
   const totalDue = purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
-  const openOrders = purchases.filter((purchase) => !["Reçu", "Annulé"].includes(purchase.procurementStatus)).length;
+  const openOrders = new Set(
+    purchases
+      .filter((purchase) => !["Reçu", "Annulé"].includes(purchase.procurementStatus))
+      .map((purchase) => purchase.purchaseRef || `legacy-${purchase.id}`),
+  ).size;
   const todayKey = new Date().toISOString().slice(0, 10);
 
   async function toggle(supplier: Supplier) {
@@ -3479,6 +3483,7 @@ function SuppliersPage({
                   .sort((left, right) => (right.orderedAt || right.createdAt).localeCompare(left.orderedAt || left.createdAt));
                 const spent = rows.reduce((sum, purchase) => sum + purchase.totalCost, 0);
                 const due = rows.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
+                const orderCount = new Set(rows.map((purchase) => purchase.purchaseRef || `legacy-${purchase.id}`)).size;
                 const lastPurchase = rows[0] || null;
                 const suppliedProducts = Array.from(new Set(rows.map((purchase) => purchase.productName || purchase.item).filter(Boolean)));
                 const lateOrders = rows.filter((purchase) =>
@@ -3489,6 +3494,7 @@ function SuppliersPage({
                     && ["Commandé", "Partiellement reçu"].includes(purchase.procurementStatus),
                   )
                 );
+                const lateOrderCount = new Set(lateOrders.map((purchase) => purchase.purchaseRef || `legacy-${purchase.id}`)).size;
                 return (
                   <tr key={supplier.id}>
                     <td>
@@ -3500,7 +3506,7 @@ function SuppliersPage({
                           <ul>
                             {rows.slice(0, 5).map((purchase) => (
                               <li key={purchase.id}>
-                                <strong>{purchase.purchaseRef || `#${purchase.id}`}</strong> · {purchase.item} · {purchase.quantity} × {money(purchase.unitCost)} · {purchase.procurementStatus}
+                                <strong>{purchase.purchaseRef || `#${purchase.id}`}</strong> · L{purchase.purchaseLineNo} · {purchase.item} · {purchase.quantity} × {money(purchase.unitCost)} · {purchase.procurementStatus}
                               </li>
                             ))}
                           </ul>
@@ -3523,10 +3529,10 @@ function SuppliersPage({
                         </>
                       ) : "—"}
                     </td>
-                    <td><strong>{money(spent)}</strong><small>{rows.length} bon(s)</small></td>
+                    <td><strong>{money(spent)}</strong><small>{orderCount} bon(s) · {rows.length} ligne(s)</small></td>
                     <td className={moneyTone(-due)}><strong>{money(due)}</strong></td>
                     <td>{lastPurchase ? <><strong>{money(lastPurchase.unitCost)}</strong><small>{dateLabel(lastPurchase.orderedAt || lastPurchase.createdAt)}</small></> : "—"}</td>
-                    <td>{lateOrders.length ? <><Status value="En retard" /><small>{lateOrders.length} bon(s)</small></> : <Status value="À jour" />}</td>
+                    <td>{lateOrderCount ? <><Status value="En retard" /><small>{lateOrderCount} bon(s) · {lateOrders.length} ligne(s)</small></> : <Status value="À jour" />}</td>
                     <td><Status value={supplier.isActive ? "Actif" : "Inactif"} /></td>
                     <td>
                       <div className="entity-actions-row">
