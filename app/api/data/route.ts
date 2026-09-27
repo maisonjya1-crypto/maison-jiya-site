@@ -11,10 +11,11 @@ import { ensureStorefrontCms } from "../../../db/storefront-cms";
 import { receivePurchaseLine } from "../../../db/inventory-cost";
 import { buildDailyClosingPreview, saveDailyClosing } from "../../../db/daily-closing";
 import { buildSmartStockRecommendations } from "../../../db/smart-stock";
+import { supplierInvoiceIsOverdue, supplierInvoicePaymentStatus, syncPurchaseOrderPaymentState } from "../../../db/supplier-invoices";
 import { buildPurchaseReference, normalizedProcurementStatus, normalizeSupplierName, resolveSupplierProfile } from "../../../db/suppliers";
 import { normalizeOrderPaymentState, type OrderPaymentStatus } from "../../../lib/order-payment-lifecycle";
 import { moveOrderToTrash, releaseTrashedOrderStock, restoreOrderFromTrash } from "../../../db/order-trash";
-import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, dailyClosings, expenses, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, suppliers, users } from "../../../db/schema";
+import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, dailyClosings, expenses, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
 type ActionPayload = Record<string, unknown> & { action?: string };
@@ -243,6 +244,11 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   updatePurchase: { action: "Modification", entityType: "Achat" },
   deletePurchase: { action: "Suppression", entityType: "Achat" },
   receivePurchase: { action: "Réception", entityType: "Achat fournisseur" },
+  addSupplierInvoice: { action: "Ajout", entityType: "Facture fournisseur" },
+  updateSupplierInvoice: { action: "Modification", entityType: "Facture fournisseur" },
+  deleteSupplierInvoice: { action: "Suppression", entityType: "Facture fournisseur" },
+  addSupplierPayment: { action: "Paiement", entityType: "Facture fournisseur" },
+  deleteSupplierPayment: { action: "Annulation paiement", entityType: "Facture fournisseur" },
   addExpense: { action: "Ajout", entityType: "Dépense" },
   updateExpense: { action: "Modification", entityType: "Dépense" },
   deleteExpense: { action: "Suppression", entityType: "Dépense" },
@@ -377,7 +383,7 @@ async function snapshot(access: AccessInfo) {
   await createDailyBackup(rawDatabase);
   const db = await getDb();
   const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, campaign: orders.campaign, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, refundedAt: orders.refundedAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
-  const [orderRows, trashRows, customerRows, supplierRows, purchaseRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows, closingRows] = await Promise.all([
+  const [orderRows, trashRows, customerRows, supplierRows, purchaseRows, invoiceRows, supplierPaymentRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows, closingRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
       ? db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNotNull(orders.deletedAt)).orderBy(desc(orders.deletedAt))
@@ -407,6 +413,20 @@ async function snapshot(access: AccessInfo) {
       receivedAt: purchases.receivedAt,
       createdAt: purchases.createdAt,
     }).from(purchases).leftJoin(products, eq(purchases.productId, products.id)).orderBy(desc(purchases.createdAt)),
+    db.select({
+      id: supplierInvoices.id,
+      supplierId: supplierInvoices.supplierId,
+      supplierName: suppliers.name,
+      purchaseRef: supplierInvoices.purchaseRef,
+      invoiceNumber: supplierInvoices.invoiceNumber,
+      invoiceDate: supplierInvoices.invoiceDate,
+      dueDate: supplierInvoices.dueDate,
+      totalAmount: supplierInvoices.totalAmount,
+      note: supplierInvoices.note,
+      createdAt: supplierInvoices.createdAt,
+      updatedAt: supplierInvoices.updatedAt,
+    }).from(supplierInvoices).leftJoin(suppliers, eq(supplierInvoices.supplierId, suppliers.id)).orderBy(desc(supplierInvoices.invoiceDate), desc(supplierInvoices.createdAt)),
+    db.select().from(supplierPayments).orderBy(desc(supplierPayments.paidAt), desc(supplierPayments.createdAt)),
     db.select().from(expenses).orderBy(desc(expenses.expenseDate), desc(expenses.createdAt)),
     db.select().from(adPerformance).orderBy(desc(adPerformance.performanceDate)),
     db.select().from(capitalLedger).orderBy(desc(capitalLedger.entryDate)),
@@ -424,6 +444,29 @@ async function snapshot(access: AccessInfo) {
       : Promise.resolve([]),
     db.select().from(dailyClosings).orderBy(desc(dailyClosings.closeDate)).limit(365),
   ]);
+  const paidByInvoice = new Map<number, number>();
+  for (const payment of supplierPaymentRows) {
+    paidByInvoice.set(payment.invoiceId, (paidByInvoice.get(payment.invoiceId) || 0) + Number(payment.amount || 0));
+  }
+  const enrichedInvoiceRows = invoiceRows.map((invoice) => {
+    const paidAmount = Math.round(((paidByInvoice.get(invoice.id) || 0) + Number.EPSILON) * 100) / 100;
+    const totalAmount = Number(invoice.totalAmount || 0);
+    const remainingAmount = Math.round((Math.max(0, totalAmount - paidAmount) + Number.EPSILON) * 100) / 100;
+    const paymentStatus = supplierInvoicePaymentStatus(totalAmount, paidAmount);
+    return {
+      ...invoice,
+      paidAmount,
+      remainingAmount,
+      paymentStatus,
+      isOverdue: supplierInvoiceIsOverdue(invoice.dueDate, remainingAmount),
+    };
+  });
+  const invoiceByPurchaseRef = new Map(enrichedInvoiceRows.map((invoice) => [invoice.purchaseRef, invoice]));
+  const enrichedPurchaseRows = purchaseRows.map((purchase) => ({
+    ...purchase,
+    invoiceId: purchase.purchaseRef ? invoiceByPurchaseRef.get(purchase.purchaseRef)?.id || null : null,
+  }));
+
   const publicSettings = settingRows.filter((row) => !row.key.startsWith("security_"));
   const backupConfigured = settingRows.some((row) => row.key === "security_backup_token_hash" && row.value.length === 64);
   const secureWebhook = settingRows.find((row) => row.key === "security_backup_webhook_url")?.value || "";
@@ -440,7 +483,9 @@ async function snapshot(access: AccessInfo) {
     trash: trashRows,
     customers: customerRows,
     suppliers: supplierRows,
-    purchases: purchaseRows,
+    purchases: enrichedPurchaseRows,
+    supplierInvoices: enrichedInvoiceRows,
+    supplierPayments: supplierPaymentRows,
     expenses: expenseRows,
     ads: adRows,
     capital: capitalRows,
@@ -1170,6 +1215,10 @@ export async function POST(request: Request) {
         orderedAt: purchases.orderedAt,
       }).from(purchases).where(eq(purchases.id, id)).limit(1);
       if (!purchase) return Response.json({ error: "Achat introuvable." }, { status: 404 });
+      if (purchase.purchaseRef) {
+        const invoice = await (await getRawDb()).prepare("SELECT id FROM supplier_invoices WHERE purchase_ref = ? LIMIT 1").bind(purchase.purchaseRef).first<{ id: number }>();
+        if (invoice) return Response.json({ error: "Ce bon possède déjà une facture fournisseur. Modifiez la facture ou ses paiements au lieu de réécrire le bon." }, { status: 409 });
+      }
       if (productId) {
         const [linkedProduct] = await db.select({ id: products.id }).from(products).where(and(eq(products.id, productId), isNull(products.archivedAt))).limit(1);
         if (!linkedProduct) return Response.json({ error: "Le produit lié à cet achat est introuvable." }, { status: 404 });
@@ -1257,10 +1306,137 @@ export async function POST(request: Request) {
     } else if (payload.action === "deletePurchase") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Achat invalide." }, { status: 400 });
-      const [purchase] = await db.select({ id: purchases.id, receivedQuantity: purchases.receivedQuantity }).from(purchases).where(eq(purchases.id, id)).limit(1);
+      const [purchase] = await db.select({ id: purchases.id, purchaseRef: purchases.purchaseRef, receivedQuantity: purchases.receivedQuantity }).from(purchases).where(eq(purchases.id, id)).limit(1);
       if (!purchase) return Response.json({ error: "Achat introuvable." }, { status: 404 });
+      if (purchase.purchaseRef) {
+        const invoice = await (await getRawDb()).prepare("SELECT id FROM supplier_invoices WHERE purchase_ref = ? LIMIT 1").bind(purchase.purchaseRef).first<{ id: number }>();
+        if (invoice) return Response.json({ error: "Ce bon possède une facture fournisseur et doit rester dans l’historique." }, { status: 409 });
+      }
       if (purchase.receivedQuantity > 0) return Response.json({ error: "Cet achat a déjà alimenté le stock et doit rester dans l’historique." }, { status: 409 });
       await db.delete(purchases).where(eq(purchases.id, id));
+    } else if (payload.action === "addSupplierInvoice") {
+      const purchaseRef = textValue(payload.purchaseRef).slice(0, 100);
+      const invoiceNumber = textValue(payload.invoiceNumber).slice(0, 120);
+      const invoiceDate = textValue(payload.invoiceDate);
+      const dueDate = textValue(payload.dueDate);
+      const note = textValue(payload.note).slice(0, 500);
+      if (!purchaseRef || !invoiceNumber || !/^\d{4}-\d{2}-\d{2}$/.test(invoiceDate) || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || dueDate < invoiceDate) {
+        return Response.json({ error: "Facture fournisseur invalide. Vérifiez le bon, le numéro et les dates." }, { status: 400 });
+      }
+      const duplicateInvoice = await protectMutation("addSupplierInvoice");
+      if (duplicateInvoice) return duplicateInvoice;
+      const database = await getRawDb();
+      const purchaseOrder = await database.prepare(`
+        SELECT
+          MIN(supplier_id) AS supplierId,
+          MAX(supplier_id) AS maxSupplierId,
+          COUNT(*) AS lineCount,
+          SUM(total_cost) AS totalAmount,
+          SUM(CASE WHEN procurement_status IN ('Brouillon', 'Annulé') THEN 1 ELSE 0 END) AS blockedLines
+        FROM purchases
+        WHERE purchase_ref = ?
+      `).bind(purchaseRef).first<{ supplierId: number | null; maxSupplierId: number | null; lineCount: number; totalAmount: number; blockedLines: number }>();
+      if (!purchaseOrder?.lineCount || !purchaseOrder.supplierId || purchaseOrder.supplierId !== purchaseOrder.maxSupplierId) {
+        return Response.json({ error: "Bon de commande introuvable ou fournisseur incohérent." }, { status: 404 });
+      }
+      if (Number(purchaseOrder.blockedLines || 0) > 0) {
+        return Response.json({ error: "Un bon en brouillon ou annulé ne peut pas être facturé." }, { status: 409 });
+      }
+      const existingInvoice = await database.prepare("SELECT id FROM supplier_invoices WHERE purchase_ref = ? LIMIT 1").bind(purchaseRef).first<{ id: number }>();
+      if (existingInvoice) return Response.json({ error: "Ce bon possède déjà une facture fournisseur." }, { status: 409 });
+      const duplicateNumber = await database.prepare("SELECT id FROM supplier_invoices WHERE supplier_id = ? AND lower(invoice_number) = lower(?) LIMIT 1").bind(purchaseOrder.supplierId, invoiceNumber).first<{ id: number }>();
+      if (duplicateNumber) return Response.json({ error: "Ce numéro de facture existe déjà pour ce fournisseur." }, { status: 409 });
+
+      const inserted = await database.prepare(`
+        INSERT INTO supplier_invoices (supplier_id, purchase_ref, invoice_number, invoice_date, due_date, total_amount, note)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(purchaseOrder.supplierId, purchaseRef, invoiceNumber, invoiceDate, dueDate, Number(purchaseOrder.totalAmount || 0), note).run();
+      const invoiceId = Number(inserted.meta?.last_row_id || 0);
+      await database.prepare("UPDATE purchases SET payment_status = 'À payer', paid_at = NULL WHERE purchase_ref = ?").bind(purchaseRef).run();
+      auditEntityId = invoiceId ? String(invoiceId) : null;
+      auditEntityLabel = `${invoiceNumber} · ${purchaseRef}`;
+      integrationMessage = `Facture ${invoiceNumber} créée pour ${purchaseRef}. Échéance : ${dueDate}. Montant : ${Number(purchaseOrder.totalAmount || 0).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.`;
+    } else if (payload.action === "updateSupplierInvoice") {
+      const id = numberValue(payload.id);
+      const invoiceNumber = textValue(payload.invoiceNumber).slice(0, 120);
+      const invoiceDate = textValue(payload.invoiceDate);
+      const dueDate = textValue(payload.dueDate);
+      const note = textValue(payload.note).slice(0, 500);
+      if (!id || !invoiceNumber || !/^\d{4}-\d{2}-\d{2}$/.test(invoiceDate) || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || dueDate < invoiceDate) {
+        return Response.json({ error: "Facture fournisseur invalide." }, { status: 400 });
+      }
+      const database = await getRawDb();
+      const invoice = await database.prepare("SELECT supplier_id AS supplierId, purchase_ref AS purchaseRef FROM supplier_invoices WHERE id = ? LIMIT 1").bind(id).first<{ supplierId: number; purchaseRef: string }>();
+      if (!invoice) return Response.json({ error: "Facture fournisseur introuvable." }, { status: 404 });
+      const duplicateNumber = await database.prepare("SELECT id FROM supplier_invoices WHERE supplier_id = ? AND lower(invoice_number) = lower(?) AND id <> ? LIMIT 1").bind(invoice.supplierId, invoiceNumber, id).first<{ id: number }>();
+      if (duplicateNumber) return Response.json({ error: "Ce numéro de facture existe déjà pour ce fournisseur." }, { status: 409 });
+      await database.prepare(`
+        UPDATE supplier_invoices
+        SET invoice_number = ?, invoice_date = ?, due_date = ?, note = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).bind(invoiceNumber, invoiceDate, dueDate, note, id).run();
+      auditEntityLabel = `${invoiceNumber} · ${invoice.purchaseRef}`;
+    } else if (payload.action === "addSupplierPayment") {
+      const invoiceId = numberValue(payload.invoiceId);
+      const amount = moneyValue(payload.amount);
+      const account = treasuryAccount(payload.account);
+      const paidDate = textValue(payload.paidDate);
+      const reference = textValue(payload.reference).slice(0, 160);
+      const note = textValue(payload.note).slice(0, 500);
+      if (!invoiceId || amount <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(paidDate)) {
+        return Response.json({ error: "Paiement fournisseur invalide." }, { status: 400 });
+      }
+      const duplicatePayment = await protectMutation("addSupplierPayment");
+      if (duplicatePayment) return duplicatePayment;
+      const database = await getRawDb();
+      const invoice = await database.prepare(`
+        SELECT
+          id,
+          invoice_number AS invoiceNumber,
+          total_amount AS totalAmount,
+          COALESCE((SELECT SUM(amount) FROM supplier_payments WHERE invoice_id = supplier_invoices.id), 0) AS paidAmount
+        FROM supplier_invoices
+        WHERE id = ?
+        LIMIT 1
+      `).bind(invoiceId).first<{ id: number; invoiceNumber: string; totalAmount: number; paidAmount: number }>();
+      if (!invoice) return Response.json({ error: "Facture fournisseur introuvable." }, { status: 404 });
+      const remaining = Math.round((Math.max(0, Number(invoice.totalAmount || 0) - Number(invoice.paidAmount || 0)) + Number.EPSILON) * 100) / 100;
+      if (amount > remaining + 0.005) return Response.json({ error: `Le reste à payer est de ${remaining.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.` }, { status: 409 });
+      const paidAt = paidAtFromInput(paidDate);
+      const inserted = await database.prepare(`
+        INSERT INTO supplier_payments (invoice_id, amount, account, paid_at, reference, note)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).bind(invoiceId, amount, account, paidAt, reference, note).run();
+      const state = await syncPurchaseOrderPaymentState(database, invoiceId);
+      auditEntityId = String(inserted.meta?.last_row_id || invoiceId);
+      auditEntityLabel = `${invoice.invoiceNumber} · ${amount} MAD`;
+      integrationMessage = `Paiement de ${amount.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD enregistré sur ${invoice.invoiceNumber}. Reste : ${state.remainingAmount.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.`;
+    } else if (payload.action === "deleteSupplierPayment") {
+      const id = numberValue(payload.id);
+      if (!id) return Response.json({ error: "Paiement fournisseur invalide." }, { status: 400 });
+      const database = await getRawDb();
+      const payment = await database.prepare("SELECT invoice_id AS invoiceId, amount, reference FROM supplier_payments WHERE id = ? LIMIT 1").bind(id).first<{ invoiceId: number; amount: number; reference: string }>();
+      if (!payment) return Response.json({ error: "Paiement fournisseur introuvable." }, { status: 404 });
+      await database.prepare("DELETE FROM supplier_payments WHERE id = ?").bind(id).run();
+      const state = await syncPurchaseOrderPaymentState(database, payment.invoiceId);
+      auditEntityLabel = `${payment.amount} MAD · ${payment.reference || "sans référence"}`;
+      integrationMessage = `Paiement fournisseur supprimé. Nouveau reste à payer : ${state.remainingAmount.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.`;
+    } else if (payload.action === "deleteSupplierInvoice") {
+      const id = numberValue(payload.id);
+      if (!id) return Response.json({ error: "Facture fournisseur invalide." }, { status: 400 });
+      const database = await getRawDb();
+      const invoice = await database.prepare(`
+        SELECT id, invoice_number AS invoiceNumber, purchase_ref AS purchaseRef,
+          (SELECT COUNT(*) FROM supplier_payments WHERE invoice_id = supplier_invoices.id) AS paymentCount
+        FROM supplier_invoices
+        WHERE id = ?
+        LIMIT 1
+      `).bind(id).first<{ id: number; invoiceNumber: string; purchaseRef: string; paymentCount: number }>();
+      if (!invoice) return Response.json({ error: "Facture fournisseur introuvable." }, { status: 404 });
+      if (Number(invoice.paymentCount || 0) > 0) return Response.json({ error: "Supprimez d’abord les paiements enregistrés sur cette facture." }, { status: 409 });
+      await database.prepare("DELETE FROM supplier_invoices WHERE id = ?").bind(id).run();
+      await database.prepare("UPDATE purchases SET payment_status = 'À payer', paid_at = NULL WHERE purchase_ref = ?").bind(invoice.purchaseRef).run();
+      auditEntityLabel = `${invoice.invoiceNumber} · ${invoice.purchaseRef}`;
     } else if (payload.action === "addExpense") {
       const category = textValue(payload.category).slice(0, 80);
       const label = textValue(payload.label).slice(0, 160);
