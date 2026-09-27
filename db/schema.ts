@@ -237,6 +237,7 @@ export const purchases = sqliteTable(
     supplierId: integer("supplier_id").references(() => suppliers.id),
     purchaseRef: text("purchase_ref"),
     purchaseLineNo: integer("purchase_line_no").notNull().default(1),
+    purchaseMode: text("purchase_mode").notNull().default("Retrait fournisseur"),
     procurementStatus: text("procurement_status").notNull().default("Commandé"),
     orderedAt: text("ordered_at"),
     expectedAt: text("expected_at"),
@@ -257,6 +258,7 @@ export const purchases = sqliteTable(
     index("purchases_supplier_id_idx").on(table.supplierId),
     index("purchases_purchase_ref_idx").on(table.purchaseRef),
     uniqueIndex("purchases_purchase_ref_line_unique_idx").on(table.purchaseRef, table.purchaseLineNo),
+    index("purchases_purchase_mode_idx").on(table.purchaseMode),
     index("purchases_procurement_status_idx").on(table.procurementStatus),
   ],
 );
