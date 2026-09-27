@@ -102,6 +102,20 @@ function productCategory(value: unknown, fallback = "Autre") {
   return fallback;
 }
 
+function stockAlertThreshold(value: unknown, fallback = 5) {
+  if (value === undefined || value === null || textValue(value) === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 100_000) throw new Error("Le seuil d’alerte stock doit être un entier entre 0 et 100000.");
+  return parsed;
+}
+
+function reorderCoverDays(value: unknown, fallback = 30) {
+  if (value === undefined || value === null || textValue(value) === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 180) throw new Error("La couverture de réapprovisionnement doit être comprise entre 1 et 180 jours.");
+  return parsed;
+}
+
 function commitsStock(status: string) {
   return stockCommittedStatuses.has(status);
 }
@@ -1092,9 +1106,15 @@ export async function POST(request: Request) {
         const salePrice = moneyValue(row.salePrice);
         const minimumSalePrice = moneyValue(row.minimumSalePrice, salePrice);
         const stockQuantity = numberValue(row.stockRemaining ?? row.initialQuantity);
+        const importedAlertThreshold = row.stockAlertThreshold === undefined || row.stockAlertThreshold === null || textValue(row.stockAlertThreshold) === ""
+          ? null
+          : stockAlertThreshold(row.stockAlertThreshold);
+        const importedCoverDays = row.reorderCoverDays === undefined || row.reorderCoverDays === null || textValue(row.reorderCoverDays) === ""
+          ? null
+          : reorderCoverDays(row.reorderCoverDays);
         if (!productCode || !name) throw new Error(`Ligne ${index + 2} : ID produit et nom obligatoires.`);
         if (!purchasePrice && !salePrice) throw new Error(`Ligne ${index + 2} : prix d’achat ou prix de vente manquant.`);
-        return { productCode, name, category: productCategory(row.category), purchasePrice, salePrice, minimumSalePrice, stockQuantity };
+        return { productCode, name, category: productCategory(row.category), purchasePrice, salePrice, minimumSalePrice, stockQuantity, stockAlertThreshold: importedAlertThreshold, reorderCoverDays: importedCoverDays };
       });
       const uploadCodes = new Set<string>();
       for (let index = 0; index < normalizedRows.length; index += 1) {
@@ -1135,7 +1155,7 @@ export async function POST(request: Request) {
           statements.push(
             rawDatabase.prepare(`
               UPDATE products
-              SET name = ?, category = ?, purchase_price = ?, sale_price = ?, minimum_sale_price = ?, stock_quantity = ?
+              SET name = ?, category = ?, purchase_price = ?, sale_price = ?, minimum_sale_price = ?, stock_quantity = ?, stock_alert_threshold = ?, reorder_cover_days = ?
               WHERE id = ?
             `).bind(
               row.name,
@@ -1144,6 +1164,8 @@ export async function POST(request: Request) {
               row.salePrice,
               row.minimumSalePrice,
               row.stockQuantity,
+              row.stockAlertThreshold ?? existing.stockAlertThreshold,
+              row.reorderCoverDays ?? existing.reorderCoverDays,
               existing.id,
             ),
           );
@@ -1165,8 +1187,8 @@ export async function POST(request: Request) {
 
         statements.push(
           rawDatabase.prepare(`
-            INSERT INTO products (product_code, name, category, purchase_price, sale_price, minimum_sale_price, stock_quantity)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO products (product_code, name, category, purchase_price, sale_price, minimum_sale_price, stock_quantity, stock_alert_threshold, reorder_cover_days)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).bind(
             row.productCode,
             row.name,
@@ -1175,6 +1197,8 @@ export async function POST(request: Request) {
             row.salePrice,
             row.minimumSalePrice,
             row.stockQuantity,
+            row.stockAlertThreshold ?? 5,
+            row.reorderCoverDays ?? 30,
           ),
         );
         if (row.stockQuantity > 0) {
@@ -1203,14 +1227,16 @@ export async function POST(request: Request) {
       const purchasePrice = moneyValue(payload.purchasePrice);
       const minimumSalePrice = moneyValue(payload.minimumSalePrice, salePrice);
       const category = productCategory(payload.category);
+      const alertThreshold = stockAlertThreshold(payload.stockAlertThreshold, 5);
+      const coverDays = reorderCoverDays(payload.reorderCoverDays, 30);
       const duplicateProductCreation = await protectMutation("addProduct");
       if (duplicateProductCreation) return duplicateProductCreation;
       const rawDatabase = await getRawDb();
       const productStatements = [
         rawDatabase.prepare(`
-          INSERT INTO products (product_code, name, category, purchase_price, sale_price, minimum_sale_price, stock_quantity)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).bind(productCode, name, category, purchasePrice, salePrice, minimumSalePrice, initialQuantity),
+          INSERT INTO products (product_code, name, category, purchase_price, sale_price, minimum_sale_price, stock_quantity, stock_alert_threshold, reorder_cover_days)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(productCode, name, category, purchasePrice, salePrice, minimumSalePrice, initialQuantity, alertThreshold, coverDays),
       ];
       if (initialQuantity > 0) {
         productStatements.push(
@@ -1226,12 +1252,23 @@ export async function POST(request: Request) {
       const productCode = textValue(payload.productCode).toUpperCase();
       const name = textValue(payload.name);
       if (!id || !productCode || !name) return Response.json({ error: "Produit invalide." }, { status: 400 });
-      const [product] = await db.select({ id: products.id }).from(products).where(eq(products.id, id)).limit(1);
+      const [product] = await db.select({ id: products.id, stockAlertThreshold: products.stockAlertThreshold, reorderCoverDays: products.reorderCoverDays }).from(products).where(eq(products.id, id)).limit(1);
       if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
       const [duplicate] = await db.select({ id: products.id }).from(products).where(eq(products.productCode, productCode)).limit(1);
       if (duplicate && duplicate.id !== id) return Response.json({ error: "Cet ID produit existe déjà." }, { status: 409 });
       const salePrice = moneyValue(payload.salePrice);
-      await db.update(products).set({ productCode, name, category: productCategory(payload.category), purchasePrice: moneyValue(payload.purchasePrice), salePrice, minimumSalePrice: moneyValue(payload.minimumSalePrice, salePrice) }).where(eq(products.id, id));
+      const alertThreshold = stockAlertThreshold(payload.stockAlertThreshold, product.stockAlertThreshold);
+      const coverDays = reorderCoverDays(payload.reorderCoverDays, product.reorderCoverDays);
+      await db.update(products).set({
+        productCode,
+        name,
+        category: productCategory(payload.category),
+        purchasePrice: moneyValue(payload.purchasePrice),
+        salePrice,
+        minimumSalePrice: moneyValue(payload.minimumSalePrice, salePrice),
+        stockAlertThreshold: alertThreshold,
+        reorderCoverDays: coverDays,
+      }).where(eq(products.id, id));
     } else if (payload.action === "archiveProduct" || payload.action === "deleteProduct") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Produit invalide." }, { status: 400 });
