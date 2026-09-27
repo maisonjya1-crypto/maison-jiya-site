@@ -801,6 +801,21 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,select:focus-vis
 .purchase-order-line-actions>span:first-child{font-size:11px;margin-right:auto}
 .purchase-order-line-actions .record-actions{margin-left:2px}
 .purchase-orders-table td{vertical-align:top}
+.invoice-list{display:grid;gap:14px}
+.supplier-invoice-card{display:grid;gap:14px;padding:18px;border:1px solid var(--line);border-radius:18px;background:var(--paper)}
+.supplier-invoice-card.overdue{border-color:color-mix(in srgb,var(--danger) 45%,var(--line));box-shadow:0 0 0 1px color-mix(in srgb,var(--danger) 10%,transparent)}
+.supplier-invoice-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.supplier-invoice-head h3{margin:3px 0;font:600 22px Georgia,serif}
+.supplier-invoice-head small,.supplier-invoice-note{color:var(--muted)}
+.supplier-invoice-money{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.supplier-invoice-money span,.invoice-payment-summary span{display:grid;gap:5px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft);font-size:11px;color:var(--muted)}
+.supplier-invoice-money strong,.invoice-payment-summary strong{font-size:15px;color:var(--text)}
+.supplier-invoice-actions{display:flex;flex-wrap:wrap;gap:8px}
+.supplier-payment-history{border-top:1px solid var(--line);padding-top:10px}
+.supplier-payment-history>summary{cursor:pointer;font-weight:700}
+.invoice-payment-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.form-warning{grid-column:1/-1;padding:10px 12px;border-radius:12px;border:1px solid color-mix(in srgb,var(--danger) 30%,var(--line));background:color-mix(in srgb,var(--danger) 6%,var(--paper));color:var(--danger);font-size:12px}
+@media(max-width:700px){.supplier-invoice-head{display:grid}.supplier-invoice-money,.invoice-payment-summary{grid-template-columns:1fr}.supplier-invoice-actions{display:grid}.supplier-invoice-actions>button{width:100%}}
 .field small{color:var(--muted);font-size:10px;line-height:1.45}
 @media(max-width:900px){
   .purchase-line-card{grid-template-columns:1fr 1fr}
