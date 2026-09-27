@@ -39,6 +39,7 @@ type Order = {
   carrierInvoiceCode: string;
   stockDeducted: boolean;
   paidAt: string | null;
+  refundedAt: string | null;
   deletedAt: string | null;
   deletedByUserId: number | null;
   createdAt: string;
@@ -4323,6 +4324,18 @@ function OrderModal({ order, history, carrierNames, ads, close, print, submit }:
               </>
             )}
             <Select label="Encaissement" name="paymentStatus" defaultValue={order.paymentStatus} options={["À encaisser", "Encaissé", "Non encaissé", "Remboursé"]} />
+            {(selectedStatus === "Retour" || selectedStatus === "Annulée") && (
+              <div className="order-carrier-safety-note">
+                <strong>Encaissement protégé automatiquement</strong>
+                <small>Un retour ou une annulation ne peut pas rester « Encaissé ». S’il avait déjà été encaissé, Maison Jiya le passera en « Remboursé » ; sinon en « Non encaissé ».</small>
+              </div>
+            )}
+            {(order.paidAt || order.refundedAt) && (
+              <div className="order-carrier-safety-note created">
+                <strong>Historique financier</strong>
+                <small>{order.paidAt ? `Encaissé le ${dateTimeLabel(order.paidAt)}` : "Jamais encaissé"}{order.refundedAt ? ` · Remboursé le ${dateTimeLabel(order.refundedAt)}` : ""}</small>
+              </div>
+            )}
             <Field label={isStoreSale ? "Téléphone de la cliente *" : "Téléphone de livraison *"} name="phone" type="tel" inputMode="tel" defaultValue={order.phone || ""} autoComplete="tel" placeholder="06 12 34 56 78" maxLength={18} required />
             {isStoreSale ? <input type="hidden" name="address" value="Magasin Maison Jiya" /> : <Field label="Adresse de livraison *" name="address" defaultValue={order.address === "Magasin Maison Jiya" ? "" : order.address} autoComplete="street-address" required />}
             <Field label="Coût retour (MAD)" name="returnCost" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={String(order.returnCost)} />

@@ -1,7 +1,9 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb, getRawDb } from "./index";
+import { reconcileOrderAllocations } from "./allocations";
 import { moroccanPhoneHelp, normalizeMoroccanPhone } from "./phone";
 import { customers, orders } from "./schema";
+import { normalizeOrderPaymentState, type OrderPaymentStatus } from "../lib/order-payment-lifecycle";
 
 type CarrierSecrets = {
   FORCELOG_API_KEY?: string;
@@ -520,20 +522,43 @@ async function updateTrackedOrder(input: {
   status: string | null;
 }) {
   const rawDb = await getRawDb();
-  const current = await rawDb.prepare("SELECT status, payment_status AS paymentStatus, shipping_cost AS shippingCost FROM orders WHERE id = ? AND deleted_at IS NULL")
-    .bind(input.orderId).first<{ paymentStatus: string; shippingCost: number; status: string }>();
+  const current = await rawDb.prepare("SELECT status, payment_status AS paymentStatus, shipping_cost AS shippingCost, paid_at AS paidAt, refunded_at AS refundedAt, carrier_invoice_code AS carrierInvoiceCode FROM orders WHERE id = ? AND deleted_at IS NULL")
+    .bind(input.orderId).first<{ paymentStatus: string; shippingCost: number; status: string; paidAt: string | null; refundedAt: string | null; carrierInvoiceCode: string }>();
   if (!current) return false;
   const now = new Date().toISOString();
   const nextStatus = input.status || current.status;
-  const nextPayment = input.paid ? "Encaissé" : current.paymentStatus;
+  const requestedPaymentStatus = current.paymentStatus as OrderPaymentStatus;
+  const paymentState = normalizeOrderPaymentState({
+    status: nextStatus,
+    requestedPaymentStatus,
+    previousPaymentStatus: current.paymentStatus,
+    paidAt: current.paidAt,
+    refundedAt: current.refundedAt,
+    carrierPaid: input.paid,
+    now,
+  });
   const fee = input.fee !== null ? input.fee : current.shippingCost;
-  const invoiceCode = input.invoiceCode || "";
-  if (nextStatus === current.status && nextPayment === current.paymentStatus && fee === current.shippingCost && !invoiceCode) return false;
+  const invoiceCode = input.invoiceCode || current.carrierInvoiceCode || "";
+  if (
+    nextStatus === current.status
+    && paymentState.paymentStatus === current.paymentStatus
+    && paymentState.paidAt === current.paidAt
+    && paymentState.refundedAt === current.refundedAt
+    && fee === current.shippingCost
+    && invoiceCode === current.carrierInvoiceCode
+  ) return false;
+  const paymentAction = paymentState.paymentStatus === "Remboursé"
+    ? "Remboursement transporteur"
+    : paymentState.paymentStatus === "Non encaissé" && current.paymentStatus !== "Non encaissé"
+      ? "Encaissement annulé"
+      : paymentState.paymentStatus === "Encaissé" && current.paymentStatus !== "Encaissé"
+        ? "Encaissement transporteur"
+        : "Suivi transporteur";
   const statements = [
-    rawDb.prepare("UPDATE orders SET status = ?, payment_status = ?, shipping_cost = ?, paid_at = CASE WHEN ? = 'Encaissé' THEN COALESCE(paid_at, ?) ELSE paid_at END, carrier_invoice_code = CASE WHEN ? <> '' THEN ? ELSE carrier_invoice_code END, updated_at = ? WHERE id = ?")
-      .bind(nextStatus, nextPayment, fee, nextPayment, now, invoiceCode, invoiceCode, now, input.orderId),
+    rawDb.prepare("UPDATE orders SET status = ?, payment_status = ?, shipping_cost = ?, paid_at = ?, refunded_at = ?, carrier_invoice_code = ?, updated_at = ? WHERE id = ?")
+      .bind(nextStatus, paymentState.paymentStatus, fee, paymentState.paidAt, paymentState.refundedAt, invoiceCode, now, input.orderId),
     rawDb.prepare("INSERT INTO audit_logs (username, display_name, action, entity_type, entity_id, entity_label, created_at) VALUES (?, ?, ?, 'Commande', ?, ?, ?)")
-      .bind(input.provider, `${input.carrierName} automatique`, input.paid ? "Encaissement transporteur" : "Suivi transporteur", String(input.orderId), `${input.orderRef} · ${input.externalStatus}`, now),
+      .bind(input.provider, `${input.carrierName} automatique`, paymentAction, String(input.orderId), `${input.orderRef} · ${input.externalStatus}`, now),
   ];
   if (nextStatus !== current.status) {
     statements.push(rawDb.prepare("INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_name, changed_at) VALUES (?, ?, ?, ?, ?)")
@@ -581,13 +606,11 @@ async function syncSendit(publicKey: string, privateKey: string, verifiedToken =
   const invoicesPayload = await smallJsonResponse(invoicesResponse, "Sendit");
   const records: JsonRecord[] = [];
   collectRecords(invoicesPayload, records);
-  const paidInvoices = records.filter((record) => typeof record.code === "string" && normalize(String(record.status || "")) === "paid").slice(0, 5);
+  const paidInvoices = records.filter((record) => typeof record.code === "string" && normalize(String(record.status || "")) === "paid").slice(0, 20);
   let updated = 0;
   const rawDb = await getRawDb();
   for (const invoice of paidInvoices) {
     const invoiceCode = String(invoice.code);
-    const alreadyProcessed = await rawDb.prepare("SELECT id FROM orders WHERE carrier_invoice_code = ? LIMIT 1").bind(invoiceCode).first<{ id: number }>();
-    if (alreadyProcessed) continue;
     try {
       const detailResponse = await fetch(`${SENDIT_API_BASE}/invoices/${encodeURIComponent(invoiceCode)}`, {
         headers: { accept: "application/json", authorization: `Bearer ${token}` },
@@ -655,6 +678,7 @@ export async function syncCarrierOperations(): Promise<CarrierSyncResult> {
   if (result.sendit.verified) tasks.push(syncSendit(senditPublic, senditPrivate, senditVerifiedToken));
   const operations = await Promise.allSettled(tasks);
   result.updated = operations.reduce((total, operation) => total + (operation.status === "fulfilled" ? operation.value : 0), 0);
+  if (result.updated > 0) await reconcileOrderAllocations();
   return result;
 }
 
@@ -673,13 +697,16 @@ export async function applySenditStatusUpdate(input: {
     .bind(input.event, input.code, input.newStatus, input.payloadHash, input.message, input.proofImage, input.lastActionAt || null, receivedAt).run();
   if ((inserted.meta.changes ?? 0) === 0) return { duplicate: true, internalStatus: mapSenditStatus(input.newStatus), matched: true, updated: false };
 
-  const order = await rawDb.prepare(`SELECT id, order_ref AS orderRef, product_id AS productId, quantity, status, stock_deducted AS stockDeducted
+  const order = await rawDb.prepare(`SELECT id, order_ref AS orderRef, product_id AS productId, quantity, status, payment_status AS paymentStatus, paid_at AS paidAt, refunded_at AS refundedAt, stock_deducted AS stockDeducted
     FROM orders WHERE tracking_number = ? AND deleted_at IS NULL AND lower(replace(carrier, ' ', '')) LIKE '%sendit%' LIMIT 1`).bind(input.code).first<{
       id: number;
       orderRef: string;
       productId: number | null;
       quantity: number;
       status: string;
+      paymentStatus: string;
+      paidAt: string | null;
+      refundedAt: string | null;
       stockDeducted: number;
     }>();
   if (!order) {
@@ -691,7 +718,20 @@ export async function applySenditStatusUpdate(input: {
     await rawDb.prepare("UPDATE carrier_events SET order_id = ?, error_message = 'Statut Sendit non reconnu' WHERE payload_hash = ?").bind(order.id, input.payloadHash).run();
     return { duplicate: false, internalStatus: null, matched: true, updated: false };
   }
-  if (order.status === nextStatus) {
+  const paymentState = normalizeOrderPaymentState({
+    status: nextStatus,
+    requestedPaymentStatus: order.paymentStatus as OrderPaymentStatus,
+    previousPaymentStatus: order.paymentStatus,
+    paidAt: order.paidAt,
+    refundedAt: order.refundedAt,
+    now: receivedAt,
+  });
+  if (
+    order.status === nextStatus
+    && paymentState.paymentStatus === order.paymentStatus
+    && paymentState.paidAt === order.paidAt
+    && paymentState.refundedAt === order.refundedAt
+  ) {
     await rawDb.prepare("UPDATE carrier_events SET order_id = ?, processed = 1 WHERE payload_hash = ?").bind(order.id, input.payloadHash).run();
     return { duplicate: false, internalStatus: nextStatus, matched: true, updated: false };
   }
@@ -707,14 +747,23 @@ export async function applySenditStatusUpdate(input: {
   }
 
   const statements = [
-    rawDb.prepare("UPDATE orders SET status = ?, stock_deducted = ?, return_reason = CASE WHEN ? = 'Retour' AND return_reason = '' THEN 'Autre' ELSE return_reason END, return_note = CASE WHEN ? = 'Retour' AND return_note = '' THEN ? ELSE return_note END, updated_at = ? WHERE id = ?")
-      .bind(nextStatus, order.productId ? (stockCommittedStatuses.has(nextStatus) ? 1 : 0) : order.stockDeducted, nextStatus, nextStatus, input.message.slice(0, 240), receivedAt, order.id),
-    rawDb.prepare("INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_name, changed_at) VALUES (?, ?, ?, 'Sendit automatique', ?)")
-      .bind(order.id, order.status, nextStatus, receivedAt),
-    rawDb.prepare("INSERT INTO audit_logs (username, display_name, action, entity_type, entity_id, entity_label, created_at) VALUES ('sendit', 'Sendit automatique', 'Statut reçu', 'Commande', ?, ?, ?)")
-      .bind(String(order.id), `${order.orderRef} · ${input.newStatus}`, receivedAt),
+    rawDb.prepare("UPDATE orders SET status = ?, payment_status = ?, paid_at = ?, refunded_at = ?, stock_deducted = ?, return_reason = CASE WHEN ? = 'Retour' AND return_reason = '' THEN 'Autre' ELSE return_reason END, return_note = CASE WHEN ? = 'Retour' AND return_note = '' THEN ? ELSE return_note END, updated_at = ? WHERE id = ?")
+      .bind(nextStatus, paymentState.paymentStatus, paymentState.paidAt, paymentState.refundedAt, order.productId ? (stockCommittedStatuses.has(nextStatus) ? 1 : 0) : order.stockDeducted, nextStatus, nextStatus, input.message.slice(0, 240), receivedAt, order.id),
+    rawDb.prepare("INSERT INTO audit_logs (username, display_name, action, entity_type, entity_id, entity_label, created_at) VALUES ('sendit', 'Sendit automatique', ?, 'Commande', ?, ?, ?)")
+      .bind(
+        paymentState.paymentStatus === "Remboursé" && order.paymentStatus !== "Remboursé" ? "Remboursement transporteur" : "Statut reçu",
+        String(order.id),
+        `${order.orderRef} · ${input.newStatus}`,
+        receivedAt,
+      ),
     rawDb.prepare("UPDATE carrier_events SET order_id = ?, processed = 1 WHERE payload_hash = ?").bind(order.id, input.payloadHash),
   ];
+  if (order.status !== nextStatus) {
+    statements.push(
+      rawDb.prepare("INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_name, changed_at) VALUES (?, ?, ?, 'Sendit automatique', ?)")
+        .bind(order.id, order.status, nextStatus, receivedAt),
+    );
+  }
   if (shouldDeduct && order.productId) {
     statements.push(
       rawDb.prepare("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?").bind(order.quantity, order.productId),
@@ -729,5 +778,6 @@ export async function applySenditStatusUpdate(input: {
     );
   }
   await rawDb.batch(statements);
+  await reconcileOrderAllocations(order.id);
   return { duplicate: false, internalStatus: nextStatus, matched: true, updated: true };
 }

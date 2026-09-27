@@ -78,7 +78,7 @@ const TABLE_SPECS: Record<string, TableSpec> = {
       "sale_amount", "product_cost", "shipping_cost", "ad_cost", "fees", "return_cost", "return_reason",
       "return_note", "source", "campaign", "fulfillment_type", "status", "payment_status", "carrier",
       "tracking_number", "carrier_dispatch_state", "carrier_authorized_at", "carrier_invoice_code",
-      "stock_deducted", "paid_at", "deleted_at", "deleted_by_user_id", "created_at", "updated_at", "items_json", "pack_name",
+      "stock_deducted", "paid_at", "refunded_at", "deleted_at", "deleted_by_user_id", "created_at", "updated_at", "items_json", "pack_name",
     ],
     defaults: {
       product_id: null,
@@ -102,6 +102,7 @@ const TABLE_SPECS: Record<string, TableSpec> = {
       carrier_invoice_code: "",
       stock_deducted: 0,
       paid_at: null,
+      refunded_at: null,
       deleted_at: null,
       deleted_by_user_id: null,
       updated_at: null,

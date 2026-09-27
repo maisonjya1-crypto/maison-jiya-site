@@ -81,6 +81,7 @@ export const orders = sqliteTable("orders", {
   carrierInvoiceCode: text("carrier_invoice_code").notNull().default(""),
   stockDeducted: integer("stock_deducted", { mode: "boolean" }).notNull().default(false),
   paidAt: text("paid_at"),
+  refundedAt: text("refunded_at"),
   deletedAt: text("deleted_at"),
   deletedByUserId: integer("deleted_by_user_id"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
