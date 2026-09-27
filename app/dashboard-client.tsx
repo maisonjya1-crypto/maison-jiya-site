@@ -749,7 +749,6 @@ export default function DashboardClient() {
 
   const currentTheme = safeTheme(data.settings.theme);
   const carrierNames = parseCarrierNames(data.settings);
-  const allocationPolicy = allocationPolicyFromSettings(data.settings);
 
   if (authChecking) {
     return <main className="auth-shell auth-loading-shell"><Loading /></main>;
@@ -1124,6 +1123,7 @@ function Page({
   countInventory: (product: Product) => void;
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
 }) {
+  const allocationPolicy = allocationPolicyFromSettings(data.settings);
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} onRestore={restoreProduct} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
