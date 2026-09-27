@@ -2457,14 +2457,14 @@ function OrderTable({ orders, onEdit, onPrint, onDelete }: { orders: Order[]; on
               <th>Cliente</th>
               <th>Ville</th>
               <th>Vente</th>
-              <th>Gain estimé</th>
+              <th>Marge commande</th>
               <th>Statut</th>
               <th className="order-actions-heading">Actions</th>
             </tr>
           </thead>
           <tbody>
             {orders.map((o) => {
-              const gain = o.saleAmount - o.productCost - o.shippingCost - o.adCost - o.fees - o.returnCost;
+              const gain = exactOrderProfit(o);
               return (
                 <tr key={o.id} className="clickable-row" onClick={() => onEdit(o)}>
                   <td>
@@ -2490,7 +2490,7 @@ function OrderTable({ orders, onEdit, onPrint, onDelete }: { orders: Order[]; on
       </div>
       <div className="mobile-order-list">
         {orders.map((o) => {
-          const gain = o.saleAmount - o.productCost - o.shippingCost - o.adCost - o.fees - o.returnCost;
+          const gain = exactOrderProfit(o);
           return (
             <article key={o.id} className="mobile-order-card" role="button" tabIndex={0} aria-label={`Ouvrir la commande ${o.orderRef}`} onClick={() => onEdit(o)} onKeyDown={(event) => {
               if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
@@ -2514,7 +2514,7 @@ function OrderTable({ orders, onEdit, onPrint, onDelete }: { orders: Order[]; on
               </div>
               <div className="mobile-order-money">
                 <span>Vente <strong>{money(o.saleAmount)}</strong></span>
-                <span>Gain <strong className={gain >= 0 ? "money-positive" : "money-negative"}>{money(gain)}</strong></span>
+                <span>Marge <strong className={gain >= 0 ? "money-positive" : "money-negative"}>{money(gain)}</strong></span>
               </div>
             </article>
           );
