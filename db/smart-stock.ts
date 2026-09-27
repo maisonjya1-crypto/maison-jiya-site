@@ -90,7 +90,7 @@ export async function buildSmartStockRecommendations(database: D1Database): Prom
       GROUP BY product_id
     `).all<PendingRow>(),
     database.prepare(`
-      SELECT productId, supplierId, supplier, supplierLeadTimeDays, unitCost, createdAt
+      SELECT productId, supplierId, supplier, supplierLeadTimeDays, supplierMinimumOrderAmount, unitCost, createdAt
       FROM (
         SELECT
           purchases.product_id AS productId,
