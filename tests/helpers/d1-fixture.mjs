@@ -16,6 +16,7 @@ export function loadSource(path, overrides = {}) {
   const localRequire = createRequire(filename);
   const resolveImport = (id) => {
     if (Object.hasOwn(overrides, id)) return overrides[id];
+    if (id === '.') return loadSource(resolve(dirname(filename), 'index.ts'), overrides);
     if (id.startsWith('.')) return loadSource(resolve(dirname(filename), id + '.ts'), overrides);
     return localRequire(id);
   };
