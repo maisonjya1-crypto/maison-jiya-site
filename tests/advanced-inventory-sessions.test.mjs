@@ -81,6 +81,9 @@ test("le workflow avancé impose un motif, protège le catalogue et refuse une c
   assert.match(route, /inventoryCatalogLockMessage/);
   assert.match(route, /value_before/);
   assert.match(route, /loss_value/);
+  assert.match(route, /SELECT id FROM inventory_counts WHERE count_ref = \? LIMIT 1/);
+  assert.match(route, /persistedCount/);
+  assert.doesNotMatch(route, /inventoryResults\[0\].*changes/s);
 });
 
 test("l’interface inventaire expose progression, recherche, pertes, écarts fréquents et historique", async () => {
