@@ -1077,7 +1077,7 @@ function Loading() {
 function SectionSearch({ active, data, openOrder, openEntity }: { active: string; data: Data; openOrder: (order: Order) => void; openEntity: (selection: EditableEntity) => void }) {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLocaleLowerCase("fr");
-  const searchablePages = new Set(["Commandes", "Produits", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Corbeille"]);
+  const searchablePages = new Set(["Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Corbeille"]);
   const results = useMemo<Array<{ key: string; label: string; detail: string; order?: Order; entity?: EditableEntity }>>(() => {
     if (normalized.length < 2) return [];
     const matches = (values: Array<string | number | null | undefined>) => values.some((value) => String(value || "").toLocaleLowerCase("fr").includes(normalized));
@@ -1092,6 +1092,20 @@ function SectionSearch({ active, data, openOrder, openEntity }: { active: string
       return data.products
         .filter((product) => matches([product.productCode, product.name, product.category, product.stockQuantity]))
         .map((product) => ({ key: `product-${product.id}`, label: product.name, detail: `${product.productCode} · stock ${product.stockQuantity}`, entity: { kind: "product" as const, record: product } }))
+        .slice(0, 10);
+    }
+    if (active === "Réapprovisionnement") {
+      return data.stockRecommendations
+        .filter((row) => matches([row.productCode, row.productName, row.category, row.supplier, row.status]))
+        .map((row) => {
+          const product = data.products.find((item) => item.id === row.productId);
+          return {
+            key: `reorder-${row.productId}`,
+            label: row.productName,
+            detail: `${row.supplier} · ${row.status} · conseillé ${row.recommendedQuantity}`,
+            entity: product ? ({ kind: "product" as const, record: product }) : undefined,
+          };
+        })
         .slice(0, 10);
     }
     if (active === "Colis") {
@@ -1235,6 +1249,7 @@ function Page({
   const allocationPolicy = allocationPolicyFromSettings(data.settings);
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} onRestore={restoreProduct} />;
+  if (active === "Réapprovisionnement") return <ReorderingPage data={data} submit={submit} onEditProduct={editEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Achats") return <PurchasesPage purchases={data.purchases} products={data.products.filter((product) => !product.archivedAt)} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
