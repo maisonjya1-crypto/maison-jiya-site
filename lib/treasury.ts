@@ -13,6 +13,12 @@ export type TreasuryPurchase = {
   totalCost: number;
   paymentStatus: string;
   account?: string | null;
+  invoiceId?: number | null;
+};
+
+export type TreasurySupplierPayment = {
+  amount: number;
+  account?: string | null;
 };
 
 export type TreasuryExpense = {
@@ -67,12 +73,14 @@ export function calculateTreasuryAccounts({
   expenses,
   ads,
   capital,
+  supplierPayments = [],
 }: {
   orders: TreasuryOrder[];
   purchases: TreasuryPurchase[];
   expenses: TreasuryExpense[];
   ads: TreasuryAd[];
   capital: TreasuryCapital[];
+  supplierPayments?: TreasurySupplierPayment[];
 }): TreasuryAccounts {
   const accounts = { bank: 0, cash: 0, other: 0 };
 
@@ -85,9 +93,13 @@ export function calculateTreasuryAccounts({
   }
 
   for (const purchase of purchases) {
-    if (purchase.paymentStatus === "Payé") {
+    if (!purchase.invoiceId && purchase.paymentStatus === "Payé") {
       add(accounts, bucketForAccount(purchase.account), -amount(purchase.totalCost));
     }
+  }
+
+  for (const payment of supplierPayments) {
+    add(accounts, bucketForAccount(payment.account), -amount(payment.amount));
   }
 
   for (const expense of expenses) {

@@ -11,6 +11,13 @@ export type FinanceOrder = {
 export type FinancePurchase = {
   totalCost: number;
   paymentStatus: string;
+  invoiceId?: number | null;
+};
+
+export type FinanceSupplierInvoice = {
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
 };
 
 export type FinanceExpense = {
@@ -156,6 +163,7 @@ export function calculateBusinessFinance({
   expenses,
   ads,
   capital,
+  supplierInvoices = [],
   safetyReserve = 500,
 }: {
   orders: FinanceOrder[];
@@ -163,6 +171,7 @@ export function calculateBusinessFinance({
   expenses: FinanceExpense[];
   ads: FinanceAd[];
   capital: FinanceCapital[];
+  supplierInvoices?: FinanceSupplierInvoice[];
   safetyReserve?: number;
 }): FinanceSummary {
   const operating = calculateOperatingProfit(orders, ads, expenses);
@@ -173,12 +182,15 @@ export function calculateBusinessFinance({
   const feesCollected = collectedOrders.reduce((sum, order) => sum + amount(order.fees), 0);
   const netCollected = collected - shippingCollected - feesCollected;
 
-  const paidPurchases = purchases
+  const legacyPurchases = purchases.filter((purchase) => !purchase.invoiceId);
+  const paidPurchases = legacyPurchases
     .filter((purchase) => purchase.paymentStatus === "Payé")
-    .reduce((sum, purchase) => sum + amount(purchase.totalCost), 0);
-  const unpaidPurchases = purchases
+    .reduce((sum, purchase) => sum + amount(purchase.totalCost), 0)
+    + supplierInvoices.reduce((sum, invoice) => sum + amount(invoice.paidAmount), 0);
+  const unpaidPurchases = legacyPurchases
     .filter((purchase) => purchase.paymentStatus !== "Payé")
-    .reduce((sum, purchase) => sum + amount(purchase.totalCost), 0);
+    .reduce((sum, purchase) => sum + amount(purchase.totalCost), 0)
+    + supplierInvoices.reduce((sum, invoice) => sum + amount(invoice.remainingAmount), 0);
 
   const paidOperatingExpenses = expenses
     .filter((expense) => expense.paymentStatus === "Payé")

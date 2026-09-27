@@ -15,6 +15,8 @@ const EXPORT_QUERIES: Record<string, string> = {
   inventaires: "SELECT * FROM inventory_counts ORDER BY id",
   fournisseurs: "SELECT * FROM suppliers ORDER BY id",
   achats: "SELECT * FROM purchases ORDER BY id",
+  factures_fournisseurs: "SELECT * FROM supplier_invoices ORDER BY id",
+  paiements_fournisseurs: "SELECT * FROM supplier_payments ORDER BY id",
   depenses: "SELECT * FROM expenses ORDER BY expense_date DESC, id DESC",
   publicites: "SELECT * FROM ad_performance ORDER BY id",
   tresorerie_capital: "SELECT * FROM capital_ledger ORDER BY id",

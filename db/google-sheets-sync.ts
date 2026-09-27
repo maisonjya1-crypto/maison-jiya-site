@@ -34,6 +34,8 @@ const CORE_SYNC_TABLES = [
   "inventory_counts",
   "suppliers",
   "purchases",
+  "supplier_invoices",
+  "supplier_payments",
   "expenses",
   "ad_performance",
   "capital_ledger",

@@ -73,6 +73,7 @@ type Purchase = {
   supplierId: number | null;
   purchaseRef: string | null;
   purchaseLineNo: number;
+  invoiceId: number | null;
   procurementStatus: string;
   orderedAt: string | null;
   expectedAt: string | null;
@@ -88,6 +89,33 @@ type Purchase = {
   paidAt: string | null;
   receivedQuantity: number;
   receivedAt: string | null;
+  createdAt: string;
+};
+type SupplierInvoice = {
+  id: number;
+  supplierId: number;
+  supplierName: string | null;
+  purchaseRef: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  dueDate: string;
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  paymentStatus: "À payer" | "Partiellement payé" | "Payé";
+  isOverdue: boolean;
+  note: string;
+  createdAt: string;
+  updatedAt: string | null;
+};
+type SupplierPayment = {
+  id: number;
+  invoiceId: number;
+  amount: number;
+  account: string;
+  paidAt: string;
+  reference: string;
+  note: string;
   createdAt: string;
 };
 type Expense = {
@@ -316,6 +344,8 @@ type Data = {
   customers: Customer[];
   suppliers: Supplier[];
   purchases: Purchase[];
+  supplierInvoices: SupplierInvoice[];
+  supplierPayments: SupplierPayment[];
   expenses: Expense[];
   ads: Ad[];
   capital: Capital[];
@@ -342,7 +372,7 @@ type Data = {
     displayName: string;
   };
 };
-type ModalName = "order" | "purchase" | "supplier" | "expense" | "ad" | "capital" | "product" | null;
+type ModalName = "order" | "purchase" | "supplier" | "supplierInvoice" | "expense" | "ad" | "capital" | "product" | null;
 type StockSelection = { product: Product; type: "Entrée" | "Vente" } | null;
 type InventorySelection = Product | null;
 type ThemeKey = "mauve-froid" | "rose-poudre" | "sombre-prune" | "bleu-brume" | "sable-chic";
@@ -370,6 +400,8 @@ const emptyData: Data = {
   customers: [],
   suppliers: [],
   purchases: [],
+  supplierInvoices: [],
+  supplierPayments: [],
   expenses: [],
   ads: [],
   capital: [],
@@ -426,9 +458,9 @@ const dateTimeLabel = (value: string) =>
     minute: "2-digit",
   }).format(new Date(value));
 
-const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
+const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs", "Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
 const navigationGroups = [
-  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats"] },
+  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs"] },
   { label: "Pilotage", items: ["Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA"] },
   { label: "Système", items: ["Mode entraînement", "Corbeille", "Paramètres"] },
 ];
@@ -441,6 +473,7 @@ const sectionDescriptions: Record<string, string> = {
   Clients: "Centralisez les coordonnées et l’historique de vos clientes.",
   Fournisseurs: "Centralisez contacts, délais, conditions et historique de vos fournisseurs.",
   Achats: "Gérez les fournisseurs, réceptions et coûts d’approvisionnement.",
+  "Factures fournisseurs": "Suivez les factures, échéances, paiements partiels et restes à payer.",
   Dépenses: "Enregistrez les charges réelles qui réduisent le résultat et la trésorerie.",
   Publicités: "Suivez vos campagnes, dépenses et performances Meta.",
   Capital: "Suivez les mouvements, enveloppes et capacités de réinvestissement.",
@@ -457,6 +490,7 @@ const addActionLabels: Record<string, string> = {
   Produits: "Nouveau produit",
   Fournisseurs: "Nouveau fournisseur",
   Achats: "Nouveau bon de commande",
+  "Factures fournisseurs": "Nouvelle facture",
   Dépenses: "Nouvelle dépense",
   Publicités: "Nouvelle campagne",
   Capital: "Nouveau mouvement",
@@ -469,6 +503,8 @@ const retrySafeMutationActions = new Set([
   "addPurchase",
   "addPurchaseOrder",
   "receivePurchase",
+  "addSupplierInvoice",
+  "addSupplierPayment",
   "addExpense",
   "addAd",
   "addCapital",
@@ -706,10 +742,15 @@ export default function DashboardClient() {
       addPurchaseOrder: "Bon de commande multi-produits créé",
       updatePurchase: "Bon de commande mis à jour",
       deletePurchase: "Bon de commande supprimé",
+      addSupplierInvoice: "Facture fournisseur créée",
+      updateSupplierInvoice: "Facture fournisseur mise à jour",
+      deleteSupplierInvoice: "Facture fournisseur supprimée",
+      addSupplierPayment: "Paiement fournisseur enregistré",
+      deleteSupplierPayment: "Paiement fournisseur supprimé",
       addExpense: "Dépense enregistrée",
       updateExpense: "Dépense mise à jour",
       deleteExpense: "Dépense supprimée",
-      receivePurchase: "Réception fournisseur ajoutée au stock",
+      receivePurchase: "Réception fournisseur enregistrée",
       updateAd: "Publicité mise à jour",
       deleteAd: "Publicité supprimée",
       updateCapital: "Mouvement de capital mis à jour",
@@ -840,6 +881,7 @@ export default function DashboardClient() {
     const finance = calculateBusinessFinance({
       orders: data.orders,
       purchases: data.purchases,
+      supplierInvoices: data.supplierInvoices,
       expenses: data.expenses,
       ads: data.ads,
       capital: data.capital,
@@ -967,7 +1009,7 @@ export default function DashboardClient() {
           <div className="top-actions">
             <SectionSearch key={active} active={active} data={data} openOrder={openOrder} openEntity={openEntity} />
             {addableSections.has(active) && (
-              <button className="primary-button top-primary-action" onClick={() => openEntry(active === "Produits" ? "product" : active === "Achats" ? "purchase" : active === "Dépenses" ? "expense" : active === "Publicités" ? "ad" : active === "Capital" ? "capital" : "order")}>
+              <button className="primary-button top-primary-action" onClick={() => openEntry(active === "Produits" ? "product" : active === "Achats" ? "purchase" : active === "Factures fournisseurs" ? "supplierInvoice" : active === "Dépenses" ? "expense" : active === "Publicités" ? "ad" : active === "Capital" ? "capital" : "order")}>
                 <span>{data.access.canEdit ? "＋" : "🔒"}</span> {data.access.canEdit ? addActionLabels[active] : "Lecture seule"}
               </button>
             )}
@@ -998,7 +1040,7 @@ export default function DashboardClient() {
         )}
         {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} print={printOrderSlip} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} restoreProduct={restoreProduct} moveStock={openStock} countInventory={openInventory} submit={submit} />}
       </section>
-      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} ads={data.ads} close={() => setModal(null)} submit={submit} />}
+      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} ads={data.ads} close={() => setModal(null)} submit={submit} />}
       {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} ads={data.ads} close={() => setSelectedOrder(null)} print={() => printOrderSlip(selectedOrder)} submit={submit} />}
       {selectedEntity && <EntityModal selection={selectedEntity} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
@@ -1111,7 +1153,7 @@ function Loading() {
 function SectionSearch({ active, data, openOrder, openEntity }: { active: string; data: Data; openOrder: (order: Order) => void; openEntity: (selection: EditableEntity) => void }) {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLocaleLowerCase("fr");
-  const searchablePages = new Set(["Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Dépenses", "Publicités", "Capital", "Corbeille"]);
+  const searchablePages = new Set(["Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs", "Dépenses", "Publicités", "Capital", "Corbeille"]);
   const results = useMemo<Array<{ key: string; label: string; detail: string; order?: Order; entity?: EditableEntity }>>(() => {
     if (normalized.length < 2) return [];
     const matches = (values: Array<string | number | null | undefined>) => values.some((value) => String(value || "").toLocaleLowerCase("fr").includes(normalized));
@@ -1170,6 +1212,12 @@ function SectionSearch({ active, data, openOrder, openEntity }: { active: string
       return data.purchases
         .filter((purchase) => matches([purchase.purchaseRef, purchase.supplier, purchase.item, purchase.productCode, purchase.productName, purchase.procurementStatus, purchase.paymentStatus, purchase.totalCost, purchase.quantity, purchase.receivedAt ? "réceptionné" : "à réceptionner"]))
         .map((purchase) => ({ key: `purchase-${purchase.id}`, label: purchase.item, detail: `${purchase.supplier} · ${money(purchase.totalCost)} · ${purchase.paymentStatus}`, entity: { kind: "purchase" as const, record: purchase } }))
+        .slice(0, 10);
+    }
+    if (active === "Factures fournisseurs") {
+      return data.supplierInvoices
+        .filter((invoice) => matches([invoice.invoiceNumber, invoice.purchaseRef, invoice.supplierName, invoice.paymentStatus, invoice.dueDate, invoice.totalAmount, invoice.remainingAmount]))
+        .map((invoice) => ({ key: `supplier-invoice-${invoice.id}`, label: invoice.invoiceNumber, detail: `${invoice.supplierName || "Fournisseur"} · ${invoice.purchaseRef} · reste ${money(invoice.remainingAmount)}` }))
         .slice(0, 10);
     }
     if (active === "Dépenses") {
@@ -1297,8 +1345,9 @@ function Page({
   if (active === "Réapprovisionnement") return <ReorderingPage data={data} submit={submit} onEditProduct={editEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
-  if (active === "Fournisseurs") return <SuppliersPage suppliers={data.suppliers} purchases={data.purchases} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("supplier")} onEdit={editEntity} />;
-  if (active === "Achats") return <PurchasesPage purchases={data.purchases} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Fournisseurs") return <SuppliersPage suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("supplier")} onEdit={editEntity} />;
+  if (active === "Achats") return <PurchasesPage purchases={data.purchases} supplierInvoices={data.supplierInvoices} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Factures fournisseurs") return <SupplierInvoicesPage invoices={data.supplierInvoices} payments={data.supplierPayments} canEdit={data.access.canEdit} onAdd={() => open("supplierInvoice")} submit={submit} />;
   if (active === "Dépenses") return <ExpensesPage expenses={data.expenses} onAdd={() => open("expense")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
@@ -3424,6 +3473,7 @@ function EmptyState({ title, text }: { title: string; text: string }) {
 function SuppliersPage({
   suppliers,
   purchases,
+  supplierInvoices,
   canEdit,
   submit,
   onAdd,
@@ -3431,13 +3481,16 @@ function SuppliersPage({
 }: {
   suppliers: Supplier[];
   purchases: Purchase[];
+  supplierInvoices: SupplierInvoice[];
   canEdit: boolean;
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
   onAdd: () => void;
   onEdit: (selection: EditableEntity) => void;
 }) {
   const activeSuppliers = suppliers.filter((supplier) => supplier.isActive);
-  const totalDue = purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
+  const totalDue =
+    purchases.filter((purchase) => !purchase.invoiceId && purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0)
+    + supplierInvoices.reduce((sum, invoice) => sum + invoice.remainingAmount, 0);
   const openOrders = new Set(
     purchases
       .filter((purchase) => !["Reçu", "Annulé"].includes(purchase.procurementStatus))
@@ -3462,7 +3515,7 @@ function SuppliersPage({
       <section className="kpi-grid three">
         <Kpi label="Fournisseurs actifs" value={String(activeSuppliers.length)} detail={`${suppliers.length} fiche(s) au total`} />
         <Kpi label="Bons ouverts" value={String(openOrders)} detail="Brouillon, commandé ou partiellement reçu" />
-        <Kpi label="Reste fournisseur" value={money(totalDue)} detail="Achats encore marqués À payer" danger={totalDue > 0} />
+        <Kpi label="Reste fournisseur" value={money(totalDue)} detail="Factures et anciens achats restant à payer" danger={totalDue > 0} />
       </section>
 
       <section className="panel page-panel">
@@ -3482,7 +3535,8 @@ function SuppliersPage({
                   .filter((purchase) => purchase.supplierId === supplier.id || (!purchase.supplierId && purchase.supplier.toLocaleLowerCase("fr") === supplier.name.toLocaleLowerCase("fr")))
                   .sort((left, right) => (right.orderedAt || right.createdAt).localeCompare(left.orderedAt || left.createdAt));
                 const spent = rows.reduce((sum, purchase) => sum + purchase.totalCost, 0);
-                const due = rows.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
+                const invoiceDue = supplierInvoices.filter((invoice) => invoice.supplierId === supplier.id).reduce((sum, invoice) => sum + invoice.remainingAmount, 0);
+                const due = rows.filter((purchase) => !purchase.invoiceId && purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0) + invoiceDue;
                 const orderCount = new Set(rows.map((purchase) => purchase.purchaseRef || `legacy-${purchase.id}`)).size;
                 const lastPurchase = rows[0] || null;
                 const suppliedProducts = Array.from(new Set(rows.map((purchase) => purchase.productName || purchase.item).filter(Boolean)));
@@ -3551,7 +3605,7 @@ function SuppliersPage({
   );
 }
 
-function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd, onEdit, onDelete }: { purchases: Purchase[]; products: Product[]; suppliers: Supplier[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+function PurchasesPage({ purchases, supplierInvoices, products, suppliers, canEdit, submit, onAdd, onEdit, onDelete }: { purchases: Purchase[]; supplierInvoices: SupplierInvoice[]; products: Product[]; suppliers: Supplier[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
   const [receivingId, setReceivingId] = useState<number | null>(null);
   const todayKey = new Date().toISOString().slice(0, 10);
   const groups = new Map<string, Purchase[]>();
@@ -3581,7 +3635,11 @@ function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd,
           : draft
             ? "Brouillon"
             : "Commandé";
-    const paymentStatus = lines.every((line) => line.paymentStatus === "Payé") ? "Payé" : "À payer";
+    const paymentStatus = lines.every((line) => line.paymentStatus === "Payé")
+      ? "Payé"
+      : lines.some((line) => line.paymentStatus === "Partiellement payé")
+        ? "Partiellement payé"
+        : "À payer";
     const expectedAt = first.expectedAt;
     const overdue = Boolean(
       expectedAt
@@ -3607,8 +3665,11 @@ function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd,
   }).sort((left, right) => right.orderedAt.localeCompare(left.orderedAt) || right.first.id - left.first.id);
 
   const total = purchaseOrders.reduce((sum, order) => sum + order.totalCost, 0);
-  const paidTotal = purchaseOrders.reduce((sum, order) => sum + order.lines.filter((line) => line.paymentStatus === "Payé").reduce((lineSum, line) => lineSum + line.totalCost, 0), 0);
-  const dueTotal = purchaseOrders.reduce((sum, order) => sum + order.lines.filter((line) => line.paymentStatus !== "Payé").reduce((lineSum, line) => lineSum + line.totalCost, 0), 0);
+  const legacyLines = purchases.filter((purchase) => !purchase.invoiceId);
+  const paidTotal = legacyLines.filter((line) => line.paymentStatus === "Payé").reduce((sum, line) => sum + line.totalCost, 0)
+    + supplierInvoices.reduce((sum, invoice) => sum + invoice.paidAmount, 0);
+  const dueTotal = legacyLines.filter((line) => line.paymentStatus !== "Payé").reduce((sum, line) => sum + line.totalCost, 0)
+    + supplierInvoices.reduce((sum, invoice) => sum + invoice.remainingAmount, 0);
   const waitingLines = purchases.filter((purchase) => purchase.productId && purchase.receivedQuantity < purchase.quantity && ["Commandé", "Partiellement reçu"].includes(purchase.procurementStatus));
   const waitingOrders = purchaseOrders.filter((order) => order.remainingQuantity > 0 && ["Commandé", "Partiellement reçu"].includes(order.status));
   const receivedCount = purchaseOrders.filter((order) => order.status === "Reçu").length;
@@ -3737,6 +3798,193 @@ function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd,
           </table>
         </div>
       </section>
+    </>
+  );
+}
+
+function SupplierPaymentModal({ invoice, close, submit }: { invoice: SupplierInvoice; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  async function handle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setFormError("");
+    try {
+      await submit("addSupplierPayment", Object.fromEntries(new FormData(event.currentTarget)));
+      close();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Paiement impossible.");
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && close()}>
+      <section className="modal supplier-payment-modal" role="dialog" aria-modal="true">
+        <div className="modal-head">
+          <div><span className="card-kicker">Règlement fournisseur</span><h2>{invoice.invoiceNumber}</h2><p>{invoice.supplierName || "Fournisseur"} · {invoice.purchaseRef}</p></div>
+          <button type="button" onClick={close} aria-label="Fermer">×</button>
+        </div>
+        <form onSubmit={handle}>
+          <input type="hidden" name="invoiceId" value={invoice.id} />
+          <div className="invoice-payment-summary">
+            <span>Total <strong>{money(invoice.totalAmount)}</strong></span>
+            <span>Déjà payé <strong>{money(invoice.paidAmount)}</strong></span>
+            <span>Reste <strong>{money(invoice.remainingAmount)}</strong></span>
+          </div>
+          <div className="form-grid">
+            <Field label="Montant payé (MAD) *" name="amount" type="number" inputMode="decimal" min="0.01" max={String(invoice.remainingAmount)} step="0.01" defaultValue={String(invoice.remainingAmount)} required />
+            <Select label="Compte débité *" name="account" options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
+            <Field label="Date du paiement *" name="paidDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required />
+            <Field label="Référence paiement" name="reference" placeholder="Virement, reçu, référence…" maxLength={160} />
+            <Field label="Note" name="note" placeholder="Détail du règlement…" maxLength={500} />
+          </div>
+          {formError ? <div className="auth-error">{formError}</div> : null}
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={close}>Annuler</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Enregistrement…" : "Enregistrer le paiement"}</button></div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function SupplierInvoiceEditModal({ invoice, close, submit }: { invoice: SupplierInvoice; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  async function handle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setFormError("");
+    try {
+      await submit("updateSupplierInvoice", Object.fromEntries(new FormData(event.currentTarget)));
+      close();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Modification impossible.");
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && close()}>
+      <section className="modal" role="dialog" aria-modal="true">
+        <div className="modal-head">
+          <div><span className="card-kicker">Facture fournisseur</span><h2>Modifier {invoice.invoiceNumber}</h2><p>{invoice.purchaseRef} · montant verrouillé à {money(invoice.totalAmount)}</p></div>
+          <button type="button" onClick={close} aria-label="Fermer">×</button>
+        </div>
+        <form onSubmit={handle}>
+          <input type="hidden" name="id" value={invoice.id} />
+          <div className="form-grid">
+            <Field label="N° facture *" name="invoiceNumber" defaultValue={invoice.invoiceNumber} required maxLength={120} />
+            <Field label="Date de facture *" name="invoiceDate" type="date" defaultValue={invoice.invoiceDate} required />
+            <Field label="Échéance *" name="dueDate" type="date" defaultValue={invoice.dueDate} required />
+            <Field label="Note" name="note" defaultValue={invoice.note} maxLength={500} />
+          </div>
+          {formError ? <div className="auth-error">{formError}</div> : null}
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={close}>Annuler</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Enregistrement…" : "Enregistrer"}</button></div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function SupplierInvoicesPage({ invoices, payments, canEdit, onAdd, submit }: { invoices: SupplierInvoice[]; payments: SupplierPayment[]; canEdit: boolean; onAdd: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  const [paymentInvoice, setPaymentInvoice] = useState<SupplierInvoice | null>(null);
+  const [editingInvoice, setEditingInvoice] = useState<SupplierInvoice | null>(null);
+  const openInvoices = invoices.filter((invoice) => invoice.remainingAmount > 0);
+  const totalRemaining = openInvoices.reduce((sum, invoice) => sum + invoice.remainingAmount, 0);
+  const overdueInvoices = openInvoices.filter((invoice) => invoice.isOverdue);
+  const overdueAmount = overdueInvoices.reduce((sum, invoice) => sum + invoice.remainingAmount, 0);
+
+  async function removeInvoice(invoice: SupplierInvoice) {
+    if (!canEdit) return;
+    const invoicePayments = payments.filter((payment) => payment.invoiceId === invoice.id);
+    const message = invoicePayments.length
+      ? "Cette facture possède des paiements. Supprimez d’abord les règlements si vous devez retirer la facture."
+      : `Supprimer la facture ${invoice.invoiceNumber} liée au bon ${invoice.purchaseRef} ?`;
+    if (invoicePayments.length) {
+      window.alert(message);
+      return;
+    }
+    if (!window.confirm(message)) return;
+    await submit("deleteSupplierInvoice", { id: String(invoice.id) });
+  }
+
+  async function removePayment(payment: SupplierPayment) {
+    if (!canEdit || !window.confirm(`Supprimer ce paiement de ${money(payment.amount)} ?\n\nLe reste à payer de la facture sera recalculé automatiquement.`)) return;
+    await submit("deleteSupplierPayment", { id: String(payment.id) });
+  }
+
+  return (
+    <>
+      <section className="kpi-grid three">
+        <Kpi label="Factures ouvertes" value={String(openInvoices.length)} detail={`${invoices.length} facture(s) au total`} />
+        <Kpi label="Reste à payer" value={money(totalRemaining)} detail="Montant fournisseur encore engagé" danger={totalRemaining > 0} />
+        <Kpi label="En retard" value={money(overdueAmount)} detail={`${overdueInvoices.length} échéance(s) dépassée(s)`} danger={overdueAmount > 0} />
+      </section>
+      <section className="panel supplier-receiving-guide">
+        <div>
+          <span className="card-kicker">Comptes fournisseurs</span>
+          <h2>Facture ≠ paiement</h2>
+          <p>Une facture crée une dette fournisseur. Chaque règlement réduit uniquement le reste à payer et la trésorerie du compte réellement utilisé.</p>
+        </div>
+        <strong>{money(totalRemaining)} à régler</strong>
+      </section>
+      <section className="panel page-panel">
+        <div className="section-toolbar">
+          <div><h2>Factures fournisseurs</h2><p>Échéances, paiements partiels, soldes et historique des règlements liés aux bons de commande.</p></div>
+          <button className="primary-button" type="button" onClick={onAdd} disabled={!canEdit}>＋ Nouvelle facture</button>
+        </div>
+        {invoices.length ? (
+          <div className="invoice-list">
+            {invoices.map((invoice) => {
+              const invoicePayments = payments.filter((payment) => payment.invoiceId === invoice.id).sort((left, right) => right.paidAt.localeCompare(left.paidAt));
+              const displayStatus = invoice.isOverdue && invoice.remainingAmount > 0 ? "En retard" : invoice.paymentStatus;
+              return (
+                <article className={`supplier-invoice-card ${invoice.isOverdue && invoice.remainingAmount > 0 ? "overdue" : ""}`} key={invoice.id}>
+                  <div className="supplier-invoice-head">
+                    <div>
+                      <span className="card-kicker">{invoice.purchaseRef}</span>
+                      <h3>{invoice.invoiceNumber}</h3>
+                      <small>{invoice.supplierName || "Fournisseur"} · facture du {dateLabel(invoice.invoiceDate)} · échéance {dateLabel(invoice.dueDate)}</small>
+                    </div>
+                    <Status value={displayStatus} />
+                  </div>
+                  <div className="supplier-invoice-money">
+                    <span>Total<strong>{money(invoice.totalAmount)}</strong></span>
+                    <span>Payé<strong className="money-positive">{money(invoice.paidAmount)}</strong></span>
+                    <span>Reste<strong className={invoice.remainingAmount > 0 ? "money-negative" : "money-positive"}>{money(invoice.remainingAmount)}</strong></span>
+                  </div>
+                  {invoice.note ? <p className="supplier-invoice-note">{invoice.note}</p> : null}
+                  <div className="supplier-invoice-actions">
+                    {invoice.remainingAmount > 0 ? <button type="button" className="primary-button" disabled={!canEdit} onClick={() => setPaymentInvoice(invoice)}>＋ Enregistrer un paiement</button> : null}
+                    <button type="button" className="secondary-button" disabled={!canEdit} onClick={() => setEditingInvoice(invoice)}>Modifier la facture</button>
+                    <button type="button" className="secondary-button" disabled={!canEdit || invoicePayments.length > 0} onClick={() => void removeInvoice(invoice)}>Supprimer</button>
+                  </div>
+                  <details className="supplier-payment-history" open={invoicePayments.length > 0}>
+                    <summary>Paiements · {invoicePayments.length}</summary>
+                    {invoicePayments.length ? (
+                      <div className="table-scroll">
+                        <table>
+                          <thead><tr><th>Date</th><th>Montant</th><th>Compte</th><th>Référence</th><th>Note</th><th>Action</th></tr></thead>
+                          <tbody>{invoicePayments.map((payment) => (
+                            <tr key={payment.id}>
+                              <td>{dateLabel(payment.paidAt)}</td>
+                              <td className="money-negative"><strong>{money(payment.amount)}</strong></td>
+                              <td>{payment.account}</td>
+                              <td>{payment.reference || "—"}</td>
+                              <td>{payment.note || "—"}</td>
+                              <td><button type="button" className="text-button danger" disabled={!canEdit} onClick={() => void removePayment(payment)}>Supprimer</button></td>
+                            </tr>
+                          ))}</tbody>
+                        </table>
+                      </div>
+                    ) : <div className="pending-empty">Aucun règlement enregistré.</div>}
+                  </details>
+                </article>
+              );
+            })}
+          </div>
+        ) : <EmptyState title="Aucune facture fournisseur" text="Créez une facture depuis un bon de commande pour suivre l’échéance et les règlements réels." />}
+      </section>
+      {paymentInvoice ? <SupplierPaymentModal invoice={paymentInvoice} close={() => setPaymentInvoice(null)} submit={submit} /> : null}
+      {editingInvoice ? <SupplierInvoiceEditModal invoice={editingInvoice} close={() => setEditingInvoice(null)} submit={submit} /> : null}
     </>
   );
 }
@@ -4140,7 +4388,8 @@ function ReportsPage({ data }: { data: Data }) {
   const stockAlerts = data.stockRecommendations.filter((row) => row.status !== "OK");
   const delayed = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && elapsedDays(order.updatedAt || order.createdAt) >= 4);
   const unpaid = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus !== "Encaissé" && elapsedDays(order.updatedAt || order.createdAt) >= 3);
-  const supplierDue = data.purchases.filter((purchase) => purchase.paymentStatus !== "Payé");
+  const supplierDue = data.purchases.filter((purchase) => !purchase.invoiceId && purchase.paymentStatus !== "Payé");
+  const supplierInvoiceDue = data.supplierInvoices.filter((invoice) => invoice.remainingAmount > 0);
   const dormantProducts = data.products.filter((product) => {
     if (product.stockQuantity <= 0 || elapsedDays(product.createdAt) < 45) return false;
     const recentOutbound = data.stockMovements.some((movement) => movement.productId === product.id && ["Commande", "Vente", "Inventaire -"].includes(movement.movementType) && elapsedDays(movement.createdAt) < 45);
@@ -4149,6 +4398,7 @@ function ReportsPage({ data }: { data: Data }) {
   const treasury = calculateTreasuryAccounts({
     orders: data.orders,
     purchases: data.purchases,
+    supplierPayments: data.supplierPayments,
     expenses: data.expenses,
     ads: data.ads,
     capital: data.capital,
@@ -4174,6 +4424,12 @@ function ReportsPage({ data }: { data: Data }) {
     ...delayed.map((order) => ({ key: `delay-${order.id}`, level: "warning", title: `${order.orderRef} semble bloquée`, detail: `${order.carrier} · ${order.status} depuis ${elapsedDays(order.updatedAt || order.createdAt)} jours` })),
     ...unpaid.map((order) => ({ key: `unpaid-${order.id}`, level: "danger", title: `${order.orderRef} livrée mais non encaissée`, detail: `${order.carrier} · ${money(order.saleAmount - order.shippingCost - order.fees)} à vérifier` })),
     ...supplierDue.map((purchase) => ({ key: `supplier-${purchase.id}`, level: "danger", title: `${purchase.supplier} : paiement fournisseur à prévoir`, detail: `${purchase.item} · ${money(purchase.totalCost)} à payer` })),
+    ...supplierInvoiceDue.map((invoice) => ({
+      key: `supplier-invoice-${invoice.id}`,
+      level: invoice.isOverdue ? "danger" : "warning",
+      title: `${invoice.supplierName || "Fournisseur"} : facture ${invoice.invoiceNumber} ${invoice.isOverdue ? "en retard" : "à payer"}`,
+      detail: `${invoice.purchaseRef} · échéance ${dateLabel(invoice.dueDate)} · reste ${money(invoice.remainingAmount)}`,
+    })),
     ...unpaidExpenses.map((expense) => ({ key: `expense-${expense.id}`, level: "danger", title: `${expense.label} : dépense à payer`, detail: `${expense.category} · ${money(expense.amount)} à prévoir` })),
     ...dormantProducts.map((product) => ({ key: `dormant-${product.id}`, level: "warning", title: `${product.name} : stock dormant`, detail: `${product.stockQuantity} unité(s) sans sortie depuis au moins 45 jours` })),
   ];
@@ -4244,13 +4500,19 @@ function CapitalPage({
         date: order.updatedAt || order.createdAt,
       })),
     ...data.purchases
-      .filter((purchase) => purchase.paymentStatus === "Payé")
+      .filter((purchase) => !purchase.invoiceId && purchase.paymentStatus === "Payé")
       .map((purchase) => ({
         direction: "Sortie" as const,
         source: `Achats fournisseurs · ${purchase.account || "Banque"}`,
         amount: purchase.totalCost,
         date: purchase.paidAt || purchase.createdAt,
       })),
+    ...data.supplierPayments.map((payment) => ({
+      direction: "Sortie" as const,
+      source: `Paiement fournisseur · ${payment.account || "Banque"}`,
+      amount: payment.amount,
+      date: payment.paidAt,
+    })),
     ...data.ads
       .filter((ad) => ad.spend > 0)
       .map((ad) => ({
@@ -4733,11 +4995,12 @@ function CarrierQuoteChooser({ city, defaultCarrier = "", defaultFee = 0, locked
   );
 }
 
-function EntryModal({ kind, carrierNames, products, suppliers, ads, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; products: Product[]; suppliers: Supplier[]; ads: Ad[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function EntryModal({ kind, carrierNames, products, suppliers, purchases, supplierInvoices, ads, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; products: Product[]; suppliers: Supplier[]; purchases: Purchase[]; supplierInvoices: SupplierInvoice[]; ads: Ad[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const labels = {
     order: "Nouvelle commande",
     purchase: "Nouveau bon de commande",
     supplier: "Nouveau fournisseur",
+    supplierInvoice: "Nouvelle facture fournisseur",
     expense: "Nouvelle dépense",
     ad: "Performance Meta Ads",
     capital: "Mouvement de capital",
@@ -4840,6 +5103,8 @@ function EntryModal({ kind, carrierNames, products, suppliers, ads, close, submi
             unitCost: line.unitCost,
           }))),
         });
+      } else if (kind === "supplierInvoice") {
+        await submit("addSupplierInvoice", values);
       } else {
         await submit(kind === "order" ? "addOrder" : kind === "product" ? "addProduct" : kind === "supplier" ? "addSupplier" : kind === "expense" ? "addExpense" : kind === "ad" ? "addAd" : "addCapital", values);
       }
@@ -4892,6 +5157,41 @@ function EntryModal({ kind, carrierNames, products, suppliers, ads, close, submi
                 <Field label="Notes" name="notes" placeholder="Qualité, horaires, conditions particulières…" maxLength={500} />
               </>
             )}
+            {kind === "supplierInvoice" && (() => {
+              const invoiceRefs = new Set(supplierInvoices.map((invoice) => invoice.purchaseRef));
+              const groups = new Map<string, Purchase[]>();
+              for (const purchase of purchases) {
+                if (!purchase.purchaseRef || invoiceRefs.has(purchase.purchaseRef) || ["Brouillon", "Annulé"].includes(purchase.procurementStatus)) continue;
+                const rows = groups.get(purchase.purchaseRef) || [];
+                rows.push(purchase);
+                groups.set(purchase.purchaseRef, rows);
+              }
+              const eligible = Array.from(groups.entries()).map(([purchaseRef, rows]) => ({
+                purchaseRef,
+                supplier: rows[0]?.supplier || "Fournisseur",
+                total: rows.reduce((sum, row) => sum + row.totalCost, 0),
+              }));
+              const today = new Date().toISOString().slice(0, 10);
+              const due = new Date();
+              due.setDate(due.getDate() + 30);
+              return (
+                <>
+                  <label className="field">
+                    <span>Bon de commande à facturer *</span>
+                    <select name="purchaseRef" defaultValue="" required>
+                      <option value="" disabled>Choisir un bon sans facture</option>
+                      {eligible.map((row) => <option key={row.purchaseRef} value={row.purchaseRef}>{row.purchaseRef} · {row.supplier} · {money(row.total)}</option>)}
+                    </select>
+                    <small>Le montant de la facture sera repris automatiquement depuis le total du bon.</small>
+                  </label>
+                  <Field label="N° facture fournisseur *" name="invoiceNumber" required maxLength={120} />
+                  <Field label="Date de facture *" name="invoiceDate" type="date" defaultValue={today} required />
+                  <Field label="Échéance de paiement *" name="dueDate" type="date" defaultValue={due.toISOString().slice(0, 10)} required />
+                  <Field label="Note" name="note" placeholder="Référence interne, conditions particulières…" maxLength={500} />
+                  {!eligible.length ? <div className="form-warning">Aucun bon commandé sans facture n’est disponible.</div> : null}
+                </>
+              );
+            })()}
             {kind === "order" && (
               <>
                 <label className="field order-fulfillment-field">
@@ -5593,7 +5893,7 @@ function InventoryCountModal({ product, close, submit }: { product: Product; clo
     </div>
   );
 }
-function Field({ label, ...props }: { label: string; name: string; type?: string; required?: boolean; defaultValue?: string; inputMode?: "tel" | "numeric" | "decimal"; autoComplete?: string; min?: string; step?: string; placeholder?: string; maxLength?: number }) {
+function Field({ label, ...props }: { label: string; name: string; type?: string; required?: boolean; defaultValue?: string; inputMode?: "tel" | "numeric" | "decimal"; autoComplete?: string; min?: string; step?: string; placeholder?: string; maxLength?: number; max?: string }) {
   return (
     <label className="field">
       <span>{label}</span>

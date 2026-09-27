@@ -261,6 +261,45 @@ export const purchases = sqliteTable(
   ],
 );
 
+export const supplierInvoices = sqliteTable(
+  "supplier_invoices",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    supplierId: integer("supplier_id").notNull().references(() => suppliers.id),
+    purchaseRef: text("purchase_ref").notNull().unique(),
+    invoiceNumber: text("invoice_number").notNull(),
+    invoiceDate: text("invoice_date").notNull(),
+    dueDate: text("due_date").notNull(),
+    totalAmount: integer("total_amount").notNull(),
+    note: text("note").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at"),
+  },
+  (table) => [
+    uniqueIndex("supplier_invoices_supplier_number_unique_idx").on(table.supplierId, table.invoiceNumber),
+    index("supplier_invoices_supplier_id_idx").on(table.supplierId),
+    index("supplier_invoices_due_date_idx").on(table.dueDate),
+  ],
+);
+
+export const supplierPayments = sqliteTable(
+  "supplier_payments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    invoiceId: integer("invoice_id").notNull().references(() => supplierInvoices.id, { onDelete: "cascade" }),
+    amount: integer("amount").notNull(),
+    account: text("account").notNull().default("Banque"),
+    paidAt: text("paid_at").notNull(),
+    reference: text("reference").notNull().default(""),
+    note: text("note").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("supplier_payments_invoice_id_idx").on(table.invoiceId),
+    index("supplier_payments_paid_at_idx").on(table.paidAt),
+  ],
+);
+
 export const expenses = sqliteTable(
   "expenses",
   {
