@@ -206,6 +206,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   updateCarriers: { action: "Modification", entityType: "Transporteurs" },
   syncMetaNow: { action: "Synchronisation", entityType: "Meta Ads" },
   updateSetting: { action: "Modification", entityType: "Paramètre" },
+  updateAllocationPolicy: { action: "Modification", entityType: "Répartition du capital" },
 };
 
 async function writeAudit(user: AppUser, actionName: string, entityId: string | null, entityLabel: string) {
@@ -227,9 +228,9 @@ async function seedIfNeeded() {
   const db = await getDb();
   await db.insert(settings).values([
     { key: "safety_reserve", value: "12000" },
-    { key: "stock_allocation", value: "60" },
-    { key: "ads_allocation", value: "25" },
-    { key: "reserve_allocation", value: "15" },
+    { key: "reinvestment_allocation", value: "50" },
+    { key: "salary_allocation", value: "30" },
+    { key: "emergency_allocation", value: "20" },
     { key: "meta_status", value: "À connecter" },
     { key: "carrier_name", value: "À configurer" },
     { key: "carrier_names", value: "[]" },
@@ -1536,6 +1537,25 @@ export async function POST(request: Request) {
       } else {
         await db.batch([carriersSettingQuery, legacySettingQuery]);
       }
+    } else if (payload.action === "updateAllocationPolicy") {
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut modifier la répartition du capital." }, { status: 403 });
+      const reinvestment = numberValue(payload.reinvestment);
+      const salary = numberValue(payload.salary);
+      const emergency = numberValue(payload.emergency);
+      if ([reinvestment, salary, emergency].some((value) => value > 100)) {
+        return Response.json({ error: "Chaque pourcentage doit être compris entre 0 et 100." }, { status: 400 });
+      }
+      if (reinvestment + salary + emergency !== 100) {
+        return Response.json({ error: "La répartition doit totaliser exactement 100 %." }, { status: 400 });
+      }
+      const updatedAt = new Date().toISOString();
+      await db.batch([
+        db.insert(settings).values({ key: "reinvestment_allocation", value: String(reinvestment) }).onConflictDoUpdate({ target: settings.key, set: { value: String(reinvestment), updatedAt } }),
+        db.insert(settings).values({ key: "salary_allocation", value: String(salary) }).onConflictDoUpdate({ target: settings.key, set: { value: String(salary), updatedAt } }),
+        db.insert(settings).values({ key: "emergency_allocation", value: String(emergency) }).onConflictDoUpdate({ target: settings.key, set: { value: String(emergency), updatedAt } }),
+      ]);
+      await reconcileOrderAllocations();
+      auditEntityLabel = `${reinvestment}% réinvestissement · ${salary}% salaire · ${emergency}% urgence`;
     } else if (payload.action === "updateSetting") {
       const key = textValue(payload.key);
       if (!["theme", "carrier_name"].includes(key)) return Response.json({ error: "Réglage invalide." }, { status: 400 });

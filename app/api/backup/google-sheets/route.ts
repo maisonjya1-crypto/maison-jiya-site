@@ -243,9 +243,9 @@ export async function GET(request: Request) {
     const rows = await db.select().from(settings);
     const descriptions: Record<string, string> = {
       safety_reserve: "Réserve de sécurité",
-      stock_allocation: "Part du réinvestissement stock",
-      ads_allocation: "Part du réinvestissement publicité",
-      reserve_allocation: "Part du fonds d’urgence",
+      reinvestment_allocation: "Part de la marge affectée au réinvestissement",
+      salary_allocation: "Part de la marge affectée au salaire personnel",
+      emergency_allocation: "Part de la marge affectée au fonds d’urgence",
       meta_status: "État de la connexion Meta",
       carrier_name: "Agence historique principale",
       carrier_names: "Liste des agences",

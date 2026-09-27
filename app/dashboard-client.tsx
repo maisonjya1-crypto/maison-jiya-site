@@ -5,6 +5,7 @@ import AiPage from "./ai-page";
 import TrainingPage from "./training-page";
 import { calculateBusinessFinance, calculateOperatingProfit, orderContributionBeforeGlobalAds } from "../lib/finance";
 import { businessDateKey, deliveryRecognitionDate } from "../lib/accounting-dates";
+import { allocationPolicyFromSettings } from "../lib/allocation-policy";
 
 type Order = {
   id: number;
@@ -335,6 +336,7 @@ const retrySafeMutationActions = new Set([
   "addCapital",
   "importProducts",
   "importPortableExport",
+  "updateAllocationPolicy",
   "addProduct",
   "addStockMovement",
   "countInventory",
@@ -538,6 +540,7 @@ export default function DashboardClient() {
       updateMember: "Droits du partenaire mis à jour",
       updateAccountSettings: "Compte principal mis à jour",
       updateSetting: "Réglage appliqué",
+      updateAllocationPolicy: "Répartition financière recalculée",
       updateCarriers: "Liste des agences mise à jour",
       updateBackupToken: "Clé privée de sauvegarde créée",
       revokeBackupToken: "Sauvegarde Google Sheets désactivée",
@@ -1120,6 +1123,7 @@ function Page({
   countInventory: (product: Product) => void;
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
 }) {
+  const allocationPolicy = allocationPolicyFromSettings(data.settings);
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} onRestore={restoreProduct} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
@@ -1132,7 +1136,7 @@ function Page({
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
   if (active === "Mode entraînement") return <TrainingPage onExit={() => setActive("Vue d’ensemble")} />;
   if (active === "Corbeille") return <TrashPage orders={data.trash} canRestore={data.access.isOwner} submit={submit} />;
-  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} backupHealthStatus={data.settings.backup_health_status || ""} backupHealthCheckedAt={data.settings.backup_health_checked_at || ""} backupHealthCreatedAt={data.settings.backup_health_backup_created_at || ""} backupHealthRecordCount={Number(data.settings.backup_health_record_count || 0)} backupHealthLastError={data.settings.backup_health_last_error || ""} googleSheetsSync={data.googleSheetsSync} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditApiVerified={data.settings.sendit_api_verified === "true"} senditApiCheckedAt={data.settings.sendit_api_checked_at || ""} senditApiLastError={data.settings.sendit_api_last_error || ""} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} senditWebhookVerifiedAt={data.settings.sendit_webhook_verified_at || ""} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} forceLogApiVerified={data.settings.forcelog_api_verified === "true"} forceLogApiCheckedAt={data.settings.forcelog_api_checked_at || ""} forceLogApiLastError={data.settings.forcelog_api_last_error || ""} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} products={data.products} submit={submit} />;
+  if (active === "Paramètres") return <SettingsPage settings={data.settings} currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} backupHealthStatus={data.settings.backup_health_status || ""} backupHealthCheckedAt={data.settings.backup_health_checked_at || ""} backupHealthCreatedAt={data.settings.backup_health_backup_created_at || ""} backupHealthRecordCount={Number(data.settings.backup_health_record_count || 0)} backupHealthLastError={data.settings.backup_health_last_error || ""} googleSheetsSync={data.googleSheetsSync} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditApiVerified={data.settings.sendit_api_verified === "true"} senditApiCheckedAt={data.settings.sendit_api_checked_at || ""} senditApiLastError={data.settings.sendit_api_last_error || ""} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} senditWebhookVerifiedAt={data.settings.sendit_webhook_verified_at || ""} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} forceLogApiVerified={data.settings.forcelog_api_verified === "true"} forceLogApiCheckedAt={data.settings.forcelog_api_checked_at || ""} forceLogApiLastError={data.settings.forcelog_api_last_error || ""} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} products={data.products} submit={submit} />;
   const deliveryOrderCount = data.orders.filter((order) => order.fulfillmentType !== "Magasin physique").length;
   const total = Math.max(1, deliveryOrderCount);
   return (
@@ -1175,15 +1179,15 @@ function Page({
           <div className="allocation-legend">
             <span>
               <i className="stock-dot" />
-              Réinvestir 50%
+              Réinvestir {allocationPolicy.reinvestment}%
             </span>
             <span>
               <i className="ads-dot" />
-              Salaire 30%
+              Salaire {allocationPolicy.salary}%
             </span>
             <span>
               <i className="reserve-dot" />
-              Urgence 20%
+              Urgence {allocationPolicy.emergency}%
             </span>
           </div>
         </article>
@@ -1223,7 +1227,8 @@ function Page({
   );
 }
 
-function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, backupHealthStatus, backupHealthCheckedAt, backupHealthCreatedAt, backupHealthRecordCount, backupHealthLastError, googleSheetsSync, senditApiConfigured, senditApiVerified, senditApiCheckedAt, senditApiLastError, senditWebhookConfigured, senditWebhookVerifiedAt, forceLogApiConfigured, forceLogApiVerified, forceLogApiCheckedAt, forceLogApiLastError, carrierLastSyncAt, access, members, auditLogs, backups, products, submit }: {
+function SettingsPage({ settings, currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, backupHealthStatus, backupHealthCheckedAt, backupHealthCreatedAt, backupHealthRecordCount, backupHealthLastError, googleSheetsSync, senditApiConfigured, senditApiVerified, senditApiCheckedAt, senditApiLastError, senditWebhookConfigured, senditWebhookVerifiedAt, forceLogApiConfigured, forceLogApiVerified, forceLogApiCheckedAt, forceLogApiLastError, carrierLastSyncAt, access, members, auditLogs, backups, products, submit }: {
+  settings: Record<string, string>;
   currentTheme: ThemeKey;
   accountName: string;
   accountEmail: string;
@@ -1258,6 +1263,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
 }) {
   const [pendingTheme, setPendingTheme] = useState<ThemeKey | null>(null);
   const [savingAccount, setSavingAccount] = useState(false);
+  const [savingAllocation, setSavingAllocation] = useState(false);
   const [savingCarrier, setSavingCarrier] = useState(false);
   const [savingMember, setSavingMember] = useState(false);
   const [savingBackup, setSavingBackup] = useState(false);
@@ -1274,6 +1280,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   const [backupToken, setBackupToken] = useState("");
   const [copyState, setCopyState] = useState("");
   const selectedTheme = themeOptions.find((theme) => theme.key === currentTheme) || themeOptions[0];
+  const allocationPolicy = allocationPolicyFromSettings(settings);
   const syncState = googleSheetsSync.state;
   const syncStatusLabel = syncState.status === "synced"
     ? "À jour"
@@ -1482,6 +1489,34 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
       // Le message d’erreur global est affiché par le tableau de bord.
     } finally {
       setSavingAccount(false);
+    }
+  }
+
+  async function saveAllocationPolicy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (savingAllocation || !access.isOwner) return;
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const reinvestment = Number(formData.get("reinvestment") || 0);
+    const salary = Number(formData.get("salary") || 0);
+    const emergency = Number(formData.get("emergency") || 0);
+    if (![reinvestment, salary, emergency].every((value) => Number.isInteger(value) && value >= 0 && value <= 100)) {
+      form.reportValidity();
+      return;
+    }
+    if (reinvestment + salary + emergency !== 100) {
+      window.alert("La répartition doit totaliser exactement 100 %.");
+      return;
+    }
+    setSavingAllocation(true);
+    try {
+      await submit("updateAllocationPolicy", {
+        reinvestment: String(reinvestment),
+        salary: String(salary),
+        emergency: String(emergency),
+      });
+    } finally {
+      setSavingAllocation(false);
     }
   }
 
@@ -1943,6 +1978,45 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
           </div>
         </form>
       </section>
+
+      {access.isOwner && (
+        <section className="settings-panel account-settings-panel">
+          <div className="settings-panel-head">
+            <div>
+              <span className="card-kicker">Pilotage financier</span>
+              <h2>Répartition automatique de la marge encaissée</h2>
+            </div>
+            <p>Ces trois enveloppes doivent toujours totaliser 100 %. Toute modification recalcule uniquement les écritures automatiques, jamais vos mouvements manuels.</p>
+          </div>
+          <form
+            className="account-settings-form"
+            key={`${allocationPolicy.reinvestment}-${allocationPolicy.salary}-${allocationPolicy.emergency}`}
+            onSubmit={(event) => void saveAllocationPolicy(event)}
+          >
+            <label>
+              <span>Réinvestissement</span>
+              <input name="reinvestment" type="number" min="0" max="100" step="1" defaultValue={allocationPolicy.reinvestment} required />
+              <small>Part conservée pour réinvestir dans l’activité.</small>
+            </label>
+            <label>
+              <span>Salaire personnel</span>
+              <input name="salary" type="number" min="0" max="100" step="1" defaultValue={allocationPolicy.salary} required />
+              <small>Part théorique affectée au salaire personnel.</small>
+            </label>
+            <label>
+              <span>Fonds d’urgence</span>
+              <input name="emergency" type="number" min="0" max="100" step="1" defaultValue={allocationPolicy.emergency} required />
+              <small>Part protégée pour les imprévus.</small>
+            </label>
+            <div className="account-form-footer">
+              <p>Configuration active : {allocationPolicy.reinvestment}% / {allocationPolicy.salary}% / {allocationPolicy.emergency}%.</p>
+              <button className="primary-button" type="submit" disabled={savingAllocation}>
+                {savingAllocation ? "Recalcul…" : "Enregistrer la répartition"}
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
 
       <ImportOrdersPanel products={products} canEdit={access.canEdit} submit={submit} />
 
@@ -3317,6 +3391,7 @@ function AnalysisTable({ title, rows }: { title: string; rows: AnalysisRow[] }) 
   return <section className="panel report-table"><PanelHead kicker="Analyse automatique" title={title} total={`${rows.length} ligne${rows.length === 1 ? "" : "s"}`} /><div className="table-scroll"><table><thead><tr><th>Élément</th><th>Commandes</th><th>CA</th><th>Marge commandes</th><th>Taux</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={row.label}><td><strong>{row.label}</strong></td><td>{row.orders}</td><td>{money(row.revenue)}</td><td className={moneyTone(row.profit)}>{money(row.profit)}</td><td>{row.revenue ? `${((row.profit / row.revenue) * 100).toFixed(1)}%` : "0%"}</td></tr>) : <tr><td colSpan={5}>Aucune donnée pour le moment.</td></tr>}</tbody></table></div></section>;
 }
 function ReportsPage({ data }: { data: Data }) {
+  const allocationPolicy = allocationPolicyFromSettings(data.settings);
   const now = new Date();
   const today = businessDateKey(now);
   const weekStartKey = businessDateKey(new Date(now.getTime() - 6 * 86_400_000));
@@ -3391,7 +3466,7 @@ function ReportsPage({ data }: { data: Data }) {
     <section className="report-automation-banner"><div><span>↻</span><div><strong>Rapports automatiques actifs</strong><p>Les chiffres quotidiens, hebdomadaires et mensuels se recalculent à chaque commande, paiement, retour, achat, dépense ou publicité.</p></div></div><small>Actualisé maintenant</small></section>
     <section className="report-period-grid">{periods.map((period) => <article key={period.label}><span>{period.label}</span><strong>{money(period.profit)}</strong><p>{period.count} livrée{period.count === 1 ? "" : "s"} · CA {money(period.revenue)}</p><small>Meta {money(period.adSpend)} · charges {money(period.operatingExpenses)}</small></article>)}</section>
     <section className="financial-account-grid"><article><span>Caisse magasin</span><strong>{money(storeCash)}</strong><small>Encaissements remis sur place</small></article><article><span>Banque estimée</span><strong className={moneyTone(bank)}>{money(bank)}</strong><small>Virements moins achats, charges et publicités payées</small></article><article><span>Argent transporteurs</span><strong>{money(carrierMoney)}</strong><small>Livré, en attente de virement</small></article><article><span>Créances en cours</span><strong>{money(receivables)}</strong><small>Confirmé ou en transit</small></article></section>
-    <section className="allocation-report"><div><span className="card-kicker">Mouvements automatiques enregistrés</span><h2>{money(positiveProfit)} affectés</h2><p>Chaque vente encaissée crée trois enveloppes théoriques à partir de la marge commande. Les dépenses Meta réelles et charges restent déduites globalement pour éviter le double comptage.</p></div><div><article><span>Réinvestissement · 50%</span><strong>{money(allocationAmount("Réinvestissement"))}</strong></article><article><span>Salaire personnel · 30%</span><strong>{money(allocationAmount("Salaire personnel"))}</strong></article><article><span>Fonds d’urgence · 20%</span><strong>{money(allocationAmount("Fonds d’urgence"))}</strong></article></div></section>
+    <section className="allocation-report"><div><span className="card-kicker">Mouvements automatiques enregistrés</span><h2>{money(positiveProfit)} affectés</h2><p>Chaque vente encaissée crée trois enveloppes théoriques à partir de la marge commande. Les dépenses Meta réelles et charges restent déduites globalement pour éviter le double comptage.</p></div><div><article><span>Réinvestissement · {allocationPolicy.reinvestment}%</span><strong>{money(allocationAmount("Réinvestissement"))}</strong></article><article><span>Salaire personnel · {allocationPolicy.salary}%</span><strong>{money(allocationAmount("Salaire personnel"))}</strong></article><article><span>Fonds d’urgence · {allocationPolicy.emergency}%</span><strong>{money(allocationAmount("Fonds d’urgence"))}</strong></article></div></section>
     <section className="panel alerts-panel"><PanelHead kicker="Surveillance automatique" title="Alertes actives" total={String(alerts.length)} />{alerts.length ? <div className="alerts-list">{alerts.map((alert) => <article className={alert.level} key={alert.key}><span aria-hidden="true">{alert.level === "danger" ? "!" : "◷"}</span><div><strong>{alert.title}</strong><small>{alert.detail}</small></div></article>)}</div> : <div className="pending-empty">✓ Aucun stock critique, colis bloqué ou encaissement en retard détecté.</div>}</section>
     <div className="report-analysis-grid"><AnalysisTable title="Marge commandes par produit" rows={groupOrderAnalysis(completed, (order) => order.products)} /><AnalysisTable title="Marge commandes par ville" rows={groupOrderAnalysis(completed, (order) => order.city)} /><AnalysisTable title="Marge commandes par source" rows={groupOrderAnalysis(completed, (order) => order.source)} /><AnalysisTable title="Marge commandes par agence" rows={groupOrderAnalysis(completed.filter((order) => order.fulfillmentType !== "Magasin physique"), (order) => order.carrier)} /><AnalysisTable title="Facebook, Instagram, TikTok et WhatsApp" rows={platformRows} /><AnalysisTable title="Campagnes reliées aux commandes" rows={campaignRows} /></div>
     <section className="panel exact-profit-panel"><PanelHead kicker="Rentabilité" title="Marge par commande avant dépenses globales" total={`${completed.length} livrée${completed.length === 1 ? "" : "s"}`} /><p className="profitability-note">Cette marge retire le produit, la livraison, les frais et les retours. La dépense Meta réelle et les charges d’exploitation sont déduites au niveau global, pas artificiellement réparties sur chaque commande.</p><div className="table-scroll"><table><thead><tr><th>Commande</th><th>Produit</th><th>Source / campagne</th><th>Vente</th><th>Produit</th><th>Livraison</th><th>Frais</th><th>Pub attribuée*</th><th>Retour</th><th>Marge commande</th></tr></thead><tbody>{completed.slice(0, 200).map((order) => <tr key={order.id}><td><strong>{order.orderRef}</strong><small>{dateLabel(deliveryRecognitionDate(order, data.orderStatusHistory) || order.createdAt)}</small></td><td>{order.products}</td><td>{order.source}<small>{order.campaign || "Sans campagne"}</small></td><td>{money(order.saleAmount)}</td><td>{money(order.productCost)}</td><td>{money(order.shippingCost)}</td><td>{money(order.fees)}</td><td>{money(order.adCost)}</td><td>{money(order.returnCost)}</td><td className={moneyTone(exactOrderProfit(order))}><strong>{money(exactOrderProfit(order))}</strong></td></tr>)}</tbody></table></div></section>

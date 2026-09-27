@@ -1,4 +1,5 @@
 import { getRawDb } from ".";
+import { allocationAmounts, allocationPolicyFromSettings } from "../lib/allocation-policy";
 
 type AllocationOrder = {
   id: number;
@@ -14,6 +15,11 @@ type AllocationOrder = {
 
 export async function reconcileOrderAllocations(orderId?: number) {
   const database = await getRawDb();
+  const allocationSettings = (await database.prepare(
+    "SELECT key, value FROM settings WHERE key IN ('reinvestment_allocation', 'salary_allocation', 'emergency_allocation')",
+  ).all<{ key: string; value: string }>()).results;
+  const policy = allocationPolicyFromSettings(Object.fromEntries(allocationSettings.map((row) => [row.key, row.value])));
+
   const query = `SELECT id, order_ref, sale_amount, product_cost, shipping_cost, fees, return_cost, paid_at, created_at
     FROM orders WHERE deleted_at IS NULL AND payment_status = 'Encaissé'${orderId ? " AND id = ?" : ""}`;
   const rows = orderId
@@ -23,9 +29,7 @@ export async function reconcileOrderAllocations(orderId?: number) {
   if (orderId) await database.prepare("DELETE FROM capital_ledger WHERE is_automatic = 1 AND order_id = ?").bind(orderId).run();
   for (const order of rows) {
     const contribution = Math.max(0, order.sale_amount - order.product_cost - order.shipping_cost - order.fees - order.return_cost);
-    const reinvestment = Math.floor(contribution * 0.5);
-    const salary = Math.floor(contribution * 0.3);
-    const emergency = contribution - reinvestment - salary;
+    const { reinvestment, salary, emergency } = allocationAmounts(contribution, policy);
     const expected = new Map([[`order:${order.id}:reinvest`, reinvestment], [`order:${order.id}:salary`, salary], [`order:${order.id}:emergency`, emergency]]);
     const current = (await database.prepare("SELECT auto_key, amount FROM capital_ledger WHERE is_automatic = 1 AND order_id = ?").bind(order.id).all<{ auto_key: string; amount: number }>()).results;
     const alreadyCorrect = contribution > 0 && current.length === 3 && current.every((entry) => expected.get(entry.auto_key) === entry.amount);
@@ -34,9 +38,9 @@ export async function reconcileOrderAllocations(orderId?: number) {
     if (!contribution) continue;
     const entryDate = (order.paid_at || order.created_at).slice(0, 10);
     await database.batch([
-      database.prepare("INSERT INTO capital_ledger (direction, category, label, amount, account, order_id, is_automatic, auto_key, entry_date) VALUES ('Affectation', 'Réinvestissement', ?, ?, 'Réinvestissement', ?, 1, ?, ?)").bind(`50% marge commande · ${order.order_ref}`, reinvestment, order.id, `order:${order.id}:reinvest`, entryDate),
-      database.prepare("INSERT INTO capital_ledger (direction, category, label, amount, account, order_id, is_automatic, auto_key, entry_date) VALUES ('Affectation', 'Salaire personnel', ?, ?, 'Salaire personnel', ?, 1, ?, ?)").bind(`30% marge commande · ${order.order_ref}`, salary, order.id, `order:${order.id}:salary`, entryDate),
-      database.prepare("INSERT INTO capital_ledger (direction, category, label, amount, account, order_id, is_automatic, auto_key, entry_date) VALUES ('Affectation', 'Fonds d’urgence', ?, ?, 'Fonds d’urgence', ?, 1, ?, ?)").bind(`20% marge commande · ${order.order_ref}`, emergency, order.id, `order:${order.id}:emergency`, entryDate),
+      database.prepare("INSERT INTO capital_ledger (direction, category, label, amount, account, order_id, is_automatic, auto_key, entry_date) VALUES ('Affectation', 'Réinvestissement', ?, ?, 'Réinvestissement', ?, 1, ?, ?)").bind(`${policy.reinvestment}% marge commande · ${order.order_ref}`, reinvestment, order.id, `order:${order.id}:reinvest`, entryDate),
+      database.prepare("INSERT INTO capital_ledger (direction, category, label, amount, account, order_id, is_automatic, auto_key, entry_date) VALUES ('Affectation', 'Salaire personnel', ?, ?, 'Salaire personnel', ?, 1, ?, ?)").bind(`${policy.salary}% marge commande · ${order.order_ref}`, salary, order.id, `order:${order.id}:salary`, entryDate),
+      database.prepare("INSERT INTO capital_ledger (direction, category, label, amount, account, order_id, is_automatic, auto_key, entry_date) VALUES ('Affectation', 'Fonds d’urgence', ?, ?, 'Fonds d’urgence', ?, 1, ?, ?)").bind(`${policy.emergency}% marge commande · ${order.order_ref}`, emergency, order.id, `order:${order.id}:emergency`, entryDate),
     ]);
   }
   return rows.length;
