@@ -15,7 +15,7 @@ import { supplierInvoiceIsOverdue, supplierInvoicePaymentStatus, syncPurchaseOrd
 import { buildPurchaseReference, normalizedProcurementStatus, normalizeSupplierName, resolveSupplierProfile } from "../../../db/suppliers";
 import { normalizeOrderPaymentState, type OrderPaymentStatus } from "../../../lib/order-payment-lifecycle";
 import { moveOrderToTrash, releaseTrashedOrderStock, restoreOrderFromTrash } from "../../../db/order-trash";
-import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, dailyClosings, expenses, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../db/schema";
+import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, dailyClosings, expenses, inventoryCounts, inventorySessions, orders, orderStatusHistory, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
 type ActionPayload = Record<string, unknown> & { action?: string };
@@ -102,6 +102,15 @@ const fulfillmentTypes = ["Livraison", "Magasin physique"];
 const paymentStatuses = ["À encaisser", "Encaissé", "Non encaissé", "Remboursé"];
 const stockCommittedStatuses = new Set(["Confirmée", "Expédiée", "En livraison", "Livrée", "Retour"]);
 const returnReasons = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
+const inventoryDifferenceReasons = ["Casse", "Perte", "Vol", "Erreur de saisie", "Autre"];
+
+function inventoryDifferenceReason(value: unknown, difference: number) {
+  if (difference === 0) return "Aucun écart";
+  const reason = textValue(value);
+  if (!inventoryDifferenceReasons.includes(reason)) throw new Error("Choisissez un motif pour expliquer l’écart d’inventaire.");
+  return reason;
+}
+
 const productCategories = ["Montres", "Bijoux", "Wallets", "Électronique", "Boîtes", "Autre"];
 const themeOptions = ["mauve-froid", "rose-poudre", "sombre-prune", "bleu-brume", "sable-chic"];
 
@@ -390,7 +399,7 @@ async function snapshot(access: AccessInfo) {
   await createDailyBackup(rawDatabase);
   const db = await getDb();
   const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, campaign: orders.campaign, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, refundedAt: orders.refundedAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
-  const [orderRows, trashRows, customerRows, supplierRows, purchaseRows, invoiceRows, supplierPaymentRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, settingRows, memberRows, historyRows, auditRows, backupRows, closingRows] = await Promise.all([
+  const [orderRows, trashRows, customerRows, supplierRows, purchaseRows, invoiceRows, supplierPaymentRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, inventorySessionRows, settingRows, memberRows, historyRows, auditRows, backupRows, closingRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
       ? db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNotNull(orders.deletedAt)).orderBy(desc(orders.deletedAt))
@@ -440,7 +449,27 @@ async function snapshot(access: AccessInfo) {
     db.select().from(capitalLedger).orderBy(desc(capitalLedger.entryDate)),
     db.select().from(products).orderBy(desc(products.createdAt)),
     db.select({ id: stockMovements.id, productId: stockMovements.productId, orderId: stockMovements.orderId, purchaseId: stockMovements.purchaseId, orderRef: orders.orderRef, productCode: products.productCode, productName: products.name, movementType: stockMovements.movementType, quantity: stockMovements.quantity, note: stockMovements.note, createdAt: stockMovements.createdAt }).from(stockMovements).leftJoin(products, eq(stockMovements.productId, products.id)).leftJoin(orders, eq(stockMovements.orderId, orders.id)).orderBy(desc(stockMovements.createdAt)),
-    db.select({ id: inventoryCounts.id, countRef: inventoryCounts.countRef, productId: inventoryCounts.productId, productCode: products.productCode, productName: products.name, systemQuantity: inventoryCounts.systemQuantity, physicalQuantity: inventoryCounts.physicalQuantity, difference: inventoryCounts.difference, note: inventoryCounts.note, countedByUserId: inventoryCounts.countedByUserId, countedByName: inventoryCounts.countedByName, createdAt: inventoryCounts.createdAt }).from(inventoryCounts).leftJoin(products, eq(inventoryCounts.productId, products.id)).orderBy(desc(inventoryCounts.createdAt)).limit(500),
+    db.select({
+      id: inventoryCounts.id,
+      countRef: inventoryCounts.countRef,
+      sessionId: inventoryCounts.sessionId,
+      productId: inventoryCounts.productId,
+      productCode: products.productCode,
+      productName: products.name,
+      systemQuantity: inventoryCounts.systemQuantity,
+      physicalQuantity: inventoryCounts.physicalQuantity,
+      difference: inventoryCounts.difference,
+      reason: inventoryCounts.reason,
+      unitCost: inventoryCounts.unitCost,
+      valueBefore: inventoryCounts.valueBefore,
+      valueAfter: inventoryCounts.valueAfter,
+      lossValue: inventoryCounts.lossValue,
+      note: inventoryCounts.note,
+      countedByUserId: inventoryCounts.countedByUserId,
+      countedByName: inventoryCounts.countedByName,
+      createdAt: inventoryCounts.createdAt,
+    }).from(inventoryCounts).leftJoin(products, eq(inventoryCounts.productId, products.id)).orderBy(desc(inventoryCounts.createdAt)).limit(1000),
+    db.select().from(inventorySessions).orderBy(desc(inventorySessions.startedAt)).limit(100),
     db.select().from(settings),
     access.isOwner
       ? db.select({ id: users.id, username: users.username, displayName: users.displayName, role: users.role, isOwner: users.isOwner, isActive: users.isActive, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt))
@@ -500,6 +529,7 @@ async function snapshot(access: AccessInfo) {
     products: productRows,
     stockMovements: movementRows,
     inventoryCounts: inventoryRows,
+    inventorySessions: inventorySessionRows,
     members: memberRows,
     orderStatusHistory: historyRows,
     auditLogs: auditRows,
@@ -1860,6 +1890,194 @@ export async function POST(request: Request) {
         db.insert(stockMovements).values({ productId, movementType, quantity, note: textValue(payload.note) }),
         db.update(products).set({ stockQuantity: sql`${products.stockQuantity} + ${delta}` }).where(eq(products.id, productId)),
       ]);
+    } else if (payload.action === "startInventorySession") {
+      const duplicateSession = await protectMutation("startInventorySession");
+      if (duplicateSession) return duplicateSession;
+      const database = await getRawDb();
+      const existing = await database.prepare("SELECT id, session_ref AS sessionRef FROM inventory_sessions WHERE status = 'En cours' ORDER BY id DESC LIMIT 1").first<{ id: number; sessionRef: string }>();
+      if (existing) return Response.json({ error: `Une session d’inventaire est déjà en cours : ${existing.sessionRef}.` }, { status: 409 });
+      const totals = await database.prepare(`
+        SELECT
+          COUNT(*) AS productCount,
+          COALESCE(SUM(stock_quantity), 0) AS totalUnits,
+          COALESCE(SUM(stock_quantity * purchase_price), 0) AS stockValue
+        FROM products
+        WHERE archived_at IS NULL
+      `).first<{ productCount: number; totalUnits: number; stockValue: number }>();
+      const sessionRef = `INV-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${crypto.randomUUID().slice(0, 5).toUpperCase()}`;
+      const inserted = await database.prepare(`
+        INSERT INTO inventory_sessions (
+          session_ref, status, note, expected_product_count, counted_product_count,
+          total_system_units, total_physical_units, total_adjustment_units,
+          value_before, value_after, loss_value,
+          started_by_user_id, started_by_name
+        ) VALUES (?, 'En cours', ?, ?, 0, ?, 0, 0, ?, 0, 0, ?, ?)
+      `).bind(
+        sessionRef,
+        textValue(payload.note).slice(0, 500),
+        Number(totals?.productCount || 0),
+        Number(totals?.totalUnits || 0),
+        Number(totals?.stockValue || 0),
+        user.id,
+        user.displayName,
+      ).run();
+      auditEntityId = String(inserted.meta?.last_row_id || sessionRef);
+      auditEntityLabel = sessionRef;
+      integrationMessage = `Session ${sessionRef} démarrée · ${Number(totals?.productCount || 0)} produit(s) à compter · valeur théorique ${Number(totals?.stockValue || 0).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.`;
+    } else if (payload.action === "countInventorySessionProduct") {
+      const sessionId = numberValue(payload.sessionId);
+      const productId = numberValue(payload.productId);
+      const physicalRaw = Number(payload.physicalQuantity);
+      const expectedRaw = Number(payload.expectedSystemQuantity);
+      const note = textValue(payload.note).slice(0, 240);
+      if (!sessionId || !productId) return Response.json({ error: "Session ou produit d’inventaire invalide." }, { status: 400 });
+      if (!Number.isInteger(physicalRaw) || physicalRaw < 0 || physicalRaw > 1_000_000) {
+        return Response.json({ error: "La quantité physique doit être un nombre entier positif ou nul." }, { status: 400 });
+      }
+      if (!Number.isInteger(expectedRaw) || expectedRaw < 0 || expectedRaw > 1_000_000) {
+        return Response.json({ error: "Le stock de référence est invalide. Rechargez la session." }, { status: 400 });
+      }
+      const duplicateCount = await protectMutation("countInventorySessionProduct");
+      if (duplicateCount) return duplicateCount;
+      const database = await getRawDb();
+      const session = await database.prepare("SELECT session_ref AS sessionRef, status FROM inventory_sessions WHERE id = ? LIMIT 1").bind(sessionId).first<{ sessionRef: string; status: string }>();
+      if (!session) return Response.json({ error: "Session d’inventaire introuvable." }, { status: 404 });
+      if (session.status !== "En cours") return Response.json({ error: "Cette session d’inventaire est déjà clôturée." }, { status: 409 });
+      const alreadyCounted = await database.prepare("SELECT id FROM inventory_counts WHERE session_id = ? AND product_id = ? LIMIT 1").bind(sessionId, productId).first<{ id: number }>();
+      if (alreadyCounted) return Response.json({ error: "Ce produit a déjà été compté dans cette session." }, { status: 409 });
+      const product = await database.prepare(`
+        SELECT id, product_code AS productCode, name, stock_quantity AS stockQuantity, purchase_price AS purchasePrice
+        FROM products
+        WHERE id = ? AND archived_at IS NULL
+        LIMIT 1
+      `).bind(productId).first<{ id: number; productCode: string; name: string; stockQuantity: number; purchasePrice: number }>();
+      if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
+      if (Number(product.stockQuantity) !== expectedRaw) {
+        return Response.json({ error: `Le stock a changé pendant le comptage (${expectedRaw} → ${product.stockQuantity}). Rechargez la session puis recomptez ce produit.` }, { status: 409 });
+      }
+      const difference = physicalRaw - expectedRaw;
+      let reason: string;
+      try {
+        reason = inventoryDifferenceReason(payload.reason, difference);
+      } catch (error) {
+        return Response.json({ error: error instanceof Error ? error.message : "Motif d’écart invalide." }, { status: 400 });
+      }
+      const unitCost = Number(product.purchasePrice || 0);
+      const valueBefore = expectedRaw * unitCost;
+      const valueAfter = physicalRaw * unitCost;
+      const lossValue = difference < 0 ? Math.abs(difference) * unitCost : 0;
+      const countRef = `${session.sessionRef}-${product.productCode}-${crypto.randomUUID().slice(0, 3).toUpperCase()}`;
+      const statements = [
+        database.prepare(`
+          INSERT INTO inventory_counts (
+            count_ref, session_id, product_id, system_quantity, physical_quantity, difference,
+            reason, unit_cost, value_before, value_after, loss_value,
+            note, counted_by_user_id, counted_by_name
+          )
+          SELECT ?, ?, id, stock_quantity, ?, ?, ?, purchase_price, stock_quantity * purchase_price, ? * purchase_price, ?, ?, ?, ?
+          FROM products
+          WHERE id = ? AND stock_quantity = ?
+        `).bind(
+          countRef, sessionId, physicalRaw, difference, reason, physicalRaw, lossValue,
+          note, user.id, user.displayName, productId, expectedRaw,
+        ),
+      ];
+      if (difference !== 0) {
+        statements.push(
+          database.prepare(`
+            UPDATE products
+            SET stock_quantity = ?
+            WHERE id = ? AND stock_quantity = ?
+              AND EXISTS (SELECT 1 FROM inventory_counts WHERE count_ref = ?)
+          `).bind(physicalRaw, productId, expectedRaw, countRef),
+          database.prepare(`
+            INSERT INTO stock_movements (product_id, movement_type, quantity, note)
+            SELECT ?, ?, ?, ?
+            WHERE EXISTS (SELECT 1 FROM inventory_counts WHERE count_ref = ?)
+          `).bind(
+            productId,
+            difference > 0 ? "Inventaire +" : "Inventaire -",
+            Math.abs(difference),
+            `Inventaire ${session.sessionRef} · ${reason}${note ? ` · ${note}` : ""}`,
+            countRef,
+          ),
+        );
+      }
+      statements.push(
+        database.prepare(`
+          UPDATE inventory_sessions
+          SET counted_product_count = counted_product_count + 1,
+              total_physical_units = total_physical_units + ?,
+              total_adjustment_units = total_adjustment_units + ?,
+              value_after = value_after + ?,
+              loss_value = loss_value + ?
+          WHERE id = ? AND status = 'En cours'
+            AND EXISTS (SELECT 1 FROM inventory_counts WHERE count_ref = ?)
+        `).bind(physicalRaw, Math.abs(difference), valueAfter, lossValue, sessionId, countRef),
+      );
+      const results = await database.batch(statements);
+      const insertedCount = Number((results[0]?.meta as { changes?: number } | undefined)?.changes || 0);
+      if (insertedCount !== 1) {
+        return Response.json({ error: "Le stock a changé pendant la validation. Aucun comptage n’a été enregistré." }, { status: 409 });
+      }
+      auditEntityId = countRef;
+      auditEntityLabel = `${product.productCode} · ${session.sessionRef}`;
+      integrationMessage = difference === 0
+        ? `${product.name} compté : stock conforme (${physicalRaw}).`
+        : `${product.name} ajusté de ${difference > 0 ? "+" : ""}${difference} unité(s) · ${reason} · impact ${lossValue.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD de perte.`;
+    } else if (payload.action === "finalizeInventorySession") {
+      const sessionId = numberValue(payload.sessionId);
+      if (!sessionId) return Response.json({ error: "Session d’inventaire invalide." }, { status: 400 });
+      const duplicateFinalize = await protectMutation("finalizeInventorySession");
+      if (duplicateFinalize) return duplicateFinalize;
+      const database = await getRawDb();
+      const session = await database.prepare(`
+        SELECT id, session_ref AS sessionRef, status, expected_product_count AS expectedProductCount,
+          counted_product_count AS countedProductCount
+        FROM inventory_sessions WHERE id = ? LIMIT 1
+      `).bind(sessionId).first<{ id: number; sessionRef: string; status: string; expectedProductCount: number; countedProductCount: number }>();
+      if (!session) return Response.json({ error: "Session d’inventaire introuvable." }, { status: 404 });
+      if (session.status !== "En cours") return Response.json({ error: "Cette session est déjà clôturée." }, { status: 409 });
+      if (Number(session.countedProductCount) < Number(session.expectedProductCount)) {
+        return Response.json({ error: `Inventaire incomplet : ${session.countedProductCount}/${session.expectedProductCount} produit(s) compté(s).` }, { status: 409 });
+      }
+      const totals = await database.prepare(`
+        SELECT
+          COUNT(*) AS countedProductCount,
+          COALESCE(SUM(system_quantity), 0) AS totalSystemUnits,
+          COALESCE(SUM(physical_quantity), 0) AS totalPhysicalUnits,
+          COALESCE(SUM(ABS(difference)), 0) AS totalAdjustmentUnits,
+          COALESCE(SUM(value_before), 0) AS valueBefore,
+          COALESCE(SUM(value_after), 0) AS valueAfter,
+          COALESCE(SUM(loss_value), 0) AS lossValue
+        FROM inventory_counts
+        WHERE session_id = ?
+      `).bind(sessionId).first<{ countedProductCount: number; totalSystemUnits: number; totalPhysicalUnits: number; totalAdjustmentUnits: number; valueBefore: number; valueAfter: number; lossValue: number }>();
+      await database.prepare(`
+        UPDATE inventory_sessions
+        SET status = 'Clôturé',
+            counted_product_count = ?,
+            total_system_units = ?,
+            total_physical_units = ?,
+            total_adjustment_units = ?,
+            value_before = ?,
+            value_after = ?,
+            loss_value = ?,
+            completed_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND status = 'En cours'
+      `).bind(
+        Number(totals?.countedProductCount || 0),
+        Number(totals?.totalSystemUnits || 0),
+        Number(totals?.totalPhysicalUnits || 0),
+        Number(totals?.totalAdjustmentUnits || 0),
+        Number(totals?.valueBefore || 0),
+        Number(totals?.valueAfter || 0),
+        Number(totals?.lossValue || 0),
+        sessionId,
+      ).run();
+      auditEntityId = String(sessionId);
+      auditEntityLabel = session.sessionRef;
+      integrationMessage = `Inventaire ${session.sessionRef} clôturé · valeur réelle ${Number(totals?.valueAfter || 0).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD · pertes détectées ${Number(totals?.lossValue || 0).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.`;
     } else if (payload.action === "countInventory") {
       const productId = numberValue(payload.productId);
       const physicalRaw = Number(payload.physicalQuantity);
@@ -1884,20 +2102,34 @@ export async function POST(request: Request) {
       if (duplicateInventory) return duplicateInventory;
 
       const difference = physicalQuantity - expectedSystemQuantity;
+      let reason: string;
+      try {
+        reason = inventoryDifferenceReason(payload.reason, difference);
+      } catch (error) {
+        return Response.json({ error: error instanceof Error ? error.message : "Motif d’écart invalide." }, { status: 400 });
+      }
       const countRef = `INV-${Date.now().toString(36).slice(-6).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
       const rawDatabase = await getRawDb();
+      const unitCost = Number(product.purchasePrice || 0);
+      const valueBefore = expectedSystemQuantity * unitCost;
+      const valueAfter = physicalQuantity * unitCost;
+      const lossValue = difference < 0 ? Math.abs(difference) * unitCost : 0;
       const inventoryInsert = rawDatabase.prepare(`
         INSERT INTO inventory_counts (
           count_ref, product_id, system_quantity, physical_quantity, difference,
+          reason, unit_cost, value_before, value_after, loss_value,
           note, counted_by_user_id, counted_by_name
         )
-        SELECT ?, id, stock_quantity, ?, ?, ?, ?, ?
+        SELECT ?, id, stock_quantity, ?, ?, ?, purchase_price, stock_quantity * purchase_price, ? * purchase_price, ?, ?, ?, ?
         FROM products
         WHERE id = ? AND stock_quantity = ?
       `).bind(
         countRef,
         physicalQuantity,
         difference,
+        reason,
+        physicalQuantity,
+        lossValue,
         note,
         user.id,
         user.displayName,
@@ -1923,7 +2155,7 @@ export async function POST(request: Request) {
             productId,
             difference > 0 ? "Inventaire +" : "Inventaire -",
             Math.abs(difference),
-            `Inventaire ${countRef} · ${note || "Comptage physique"}`,
+            `Inventaire ${countRef} · ${reason}${note ? ` · ${note}` : ""}`,
             countRef,
           ),
         );
