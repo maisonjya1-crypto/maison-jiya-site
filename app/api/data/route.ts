@@ -481,6 +481,9 @@ export async function POST(request: Request) {
     let integrationMessage = "";
 
     if (payload.action === "saveDailyClosing") {
+      if ([payload.actualBank, payload.actualCash, payload.actualOther].some((value) => value === undefined || value === null || textValue(value) === "")) {
+        return Response.json({ error: "Renseignez les trois soldes réels avant de clôturer." }, { status: 400 });
+      }
       const duplicateClosing = await protectMutation("saveDailyClosing");
       if (duplicateClosing) return duplicateClosing;
       const actualBank = moneyValue(payload.actualBank);
