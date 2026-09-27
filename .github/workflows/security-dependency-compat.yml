@@ -1,0 +1,47 @@
+name: Security dependency compatibility probe
+
+on:
+  push:
+    branches:
+      - test/security-dependency-compat
+
+permissions:
+  contents: read
+
+jobs:
+  vinext-beta:
+    name: Test vinext 1.0.0-beta.11
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci
+      - name: Install candidate without touching lockfile
+        run: npm install --no-save --package-lock=false vinext@1.0.0-beta.11
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+      - name: Run source and integration tests
+        run: node --test tests/*.test.mjs
+
+  drizzle-latest:
+    name: Test drizzle-kit 0.31.11
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci
+      - name: Install candidate without touching lockfile
+        run: npm install --no-save --package-lock=false drizzle-kit@0.31.11
+      - run: npm run typecheck
+      - run: npm run db:generate
+      - name: Verify generation does not alter tracked schema artifacts
+        run: git diff --exit-code -- drizzle migrations
