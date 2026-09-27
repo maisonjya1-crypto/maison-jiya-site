@@ -3615,7 +3615,7 @@ function SuppliersPage({
 }) {
   const activeSuppliers = suppliers.filter((supplier) => supplier.isActive);
   const totalDue =
-    purchases.filter((purchase) => !purchase.invoiceId && purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0)
+    purchases.filter((purchase) => !purchase.invoiceId && !["Brouillon", "Annulé"].includes(purchase.procurementStatus) && purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0)
     + supplierInvoices.reduce((sum, invoice) => sum + invoice.remainingAmount, 0);
   const openOrders = new Set(
     purchases
@@ -3663,7 +3663,7 @@ function SuppliersPage({
                   .sort((left, right) => (right.orderedAt || right.createdAt).localeCompare(left.orderedAt || left.createdAt));
                 const spent = rows.reduce((sum, purchase) => sum + purchase.totalCost, 0);
                 const invoiceDue = supplierInvoices.filter((invoice) => invoice.supplierId === supplier.id).reduce((sum, invoice) => sum + invoice.remainingAmount, 0);
-                const due = rows.filter((purchase) => !purchase.invoiceId && purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0) + invoiceDue;
+                const due = rows.filter((purchase) => !purchase.invoiceId && !["Brouillon", "Annulé"].includes(purchase.procurementStatus) && purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0) + invoiceDue;
                 const orderCount = new Set(rows.map((purchase) => purchase.purchaseRef || `legacy-${purchase.id}`)).size;
                 const lastPurchase = rows[0] || null;
                 const suppliedProducts = Array.from(new Set(rows.map((purchase) => purchase.productName || purchase.item).filter(Boolean)));
@@ -3814,10 +3814,13 @@ function PurchasesPage({ purchases, supplierInvoices, products, suppliers, canEd
     .map((supplier) => {
       const rows = purchases.filter((purchase) => purchase.supplier === supplier);
       const operationKeys = new Set(rows.map((purchase) => purchase.purchaseRef || `legacy-${purchase.id}`));
+      const supplierIds = new Set(rows.map((purchase) => purchase.supplierId).filter((id): id is number => Boolean(id)));
+      const invoiceDue = supplierInvoices.filter((invoice) => supplierIds.has(invoice.supplierId)).reduce((sum, invoice) => sum + invoice.remainingAmount, 0);
+      const legacyDue = rows.filter((purchase) => !purchase.invoiceId && !["Brouillon", "Annulé"].includes(purchase.procurementStatus) && purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
       return {
         supplier,
-        purchased: rows.reduce((sum, purchase) => sum + purchase.totalCost, 0),
-        due: rows.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0),
+        purchased: rows.filter((purchase) => purchase.procurementStatus !== "Annulé").reduce((sum, purchase) => sum + purchase.totalCost, 0),
+        due: legacyDue + invoiceDue,
         operations: operationKeys.size,
         lastPurchase: rows.reduce((latest, purchase) => purchase.createdAt > latest ? purchase.createdAt : latest, ""),
       };
