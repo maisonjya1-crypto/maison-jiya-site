@@ -51,10 +51,17 @@ export async function resolveSupplierProfile(
     return { id: existing.id, name: existing.name };
   }
 
-  const inserted = await database.prepare(`
+  await database.prepare(`
     INSERT INTO suppliers (name)
     VALUES (?)
-    RETURNING id, name
+  `).bind(normalized).run();
+
+  const inserted = await database.prepare(`
+    SELECT id, name
+    FROM suppliers
+    WHERE lower(name) = lower(?)
+    ORDER BY id DESC
+    LIMIT 1
   `).bind(normalized).first<{ id: number; name: string }>();
 
   if (!inserted) throw new Error("Impossible de créer la fiche fournisseur.");
