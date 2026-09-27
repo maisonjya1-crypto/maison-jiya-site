@@ -70,7 +70,7 @@ const TABLE_SPECS: Record<string, TableSpec> = {
   achats: {
     table: "purchases",
     columns: [
-      "id", "supplier", "supplier_id", "purchase_ref", "purchase_line_no", "procurement_status", "ordered_at", "expected_at",
+      "id", "supplier", "supplier_id", "purchase_ref", "purchase_line_no", "purchase_mode", "procurement_status", "ordered_at", "expected_at",
       "item", "product_id", "quantity", "unit_cost", "total_cost",
       "account", "payment_status", "paid_at", "received_quantity", "received_at", "created_at",
     ],
@@ -78,6 +78,7 @@ const TABLE_SPECS: Record<string, TableSpec> = {
       supplier_id: null,
       purchase_ref: null,
       purchase_line_no: 1,
+      purchase_mode: "Retrait fournisseur",
       procurement_status: (row) => {
         const quantity = Number(row.quantity || 0);
         const received = Number(row.received_quantity || 0);
