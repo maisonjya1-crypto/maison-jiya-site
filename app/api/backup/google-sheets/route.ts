@@ -1,6 +1,6 @@
 import { desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { adPerformance, capitalLedger, customers, expenses, orders, products, purchases, settings, stockMovements, suppliers, users } from "../../../../db/schema";
+import { adPerformance, capitalLedger, customers, expenses, orders, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../../db/schema";
 import { orderContributionBeforeGlobalAds } from "../../../../lib/finance";
 
 const datasetNames = new Set([
@@ -10,6 +10,8 @@ const datasetNames = new Set([
   "customers",
   "purchases",
   "suppliers",
+  "supplier-invoices",
+  "supplier-payments",
   "expenses",
   "ads",
   "capital",
@@ -194,6 +196,57 @@ export async function GET(request: Request) {
       return csvResponse(
         ["ID", "Référence bon", "Ligne du bon", "ID fournisseur", "Fournisseur", "Contact fournisseur", "Téléphone fournisseur", "WhatsApp fournisseur", "État du bon", "Commandé le", "Livraison prévue", "Article", "ID produit", "SKU", "Produit", "Quantité commandée", "Quantité réceptionnée", "Reste à recevoir", "Coût unitaire (MAD)", "Coût total (MAD)", "Compte paiement", "Statut paiement", "Payé le", "Réceptionné le", "Créé le"],
         rows.map((row) => [row.id, row.purchaseRef, row.purchaseLineNo, row.supplierId, row.supplier, row.supplierContact, row.supplierPhone, row.supplierWhatsapp, row.procurementStatus, row.orderedAt, row.expectedAt, row.item, row.productId, row.productCode, row.productName, row.quantity, row.receivedQuantity, Math.max(0, row.quantity - row.receivedQuantity), row.unitCost, row.totalCost, row.account, row.paymentStatus, row.paidAt, row.receivedAt, row.createdAt]),
+      );
+    }
+
+    if (dataset === "supplier-invoices") {
+      const rows = await db.select({
+        id: supplierInvoices.id,
+        supplierId: supplierInvoices.supplierId,
+        supplierName: suppliers.name,
+        purchaseRef: supplierInvoices.purchaseRef,
+        invoiceNumber: supplierInvoices.invoiceNumber,
+        invoiceDate: supplierInvoices.invoiceDate,
+        dueDate: supplierInvoices.dueDate,
+        totalAmount: supplierInvoices.totalAmount,
+        note: supplierInvoices.note,
+        createdAt: supplierInvoices.createdAt,
+        updatedAt: supplierInvoices.updatedAt,
+      }).from(supplierInvoices)
+        .leftJoin(suppliers, eq(supplierInvoices.supplierId, suppliers.id))
+        .orderBy(desc(supplierInvoices.invoiceDate), desc(supplierInvoices.createdAt));
+      const payments = await db.select().from(supplierPayments);
+      return csvResponse(
+        ["ID", "N° facture", "Référence bon", "ID fournisseur", "Fournisseur", "Date facture", "Échéance", "Montant facture (MAD)", "Payé (MAD)", "Reste à payer (MAD)", "Statut", "Note", "Créé le", "Modifié le"],
+        rows.map((row) => {
+          const paid = payments.filter((payment) => payment.invoiceId === row.id).reduce((sum, payment) => sum + payment.amount, 0);
+          const remaining = Math.max(0, row.totalAmount - paid);
+          const status = remaining <= 0 ? "Payé" : paid > 0 ? "Partiellement payé" : "À payer";
+          return [row.id, row.invoiceNumber, row.purchaseRef, row.supplierId, row.supplierName, row.invoiceDate, row.dueDate, row.totalAmount, paid, remaining, status, row.note, row.createdAt, row.updatedAt];
+        }),
+      );
+    }
+
+    if (dataset === "supplier-payments") {
+      const rows = await db.select({
+        id: supplierPayments.id,
+        invoiceId: supplierPayments.invoiceId,
+        invoiceNumber: supplierInvoices.invoiceNumber,
+        purchaseRef: supplierInvoices.purchaseRef,
+        supplierName: suppliers.name,
+        amount: supplierPayments.amount,
+        account: supplierPayments.account,
+        paidAt: supplierPayments.paidAt,
+        reference: supplierPayments.reference,
+        note: supplierPayments.note,
+        createdAt: supplierPayments.createdAt,
+      }).from(supplierPayments)
+        .leftJoin(supplierInvoices, eq(supplierPayments.invoiceId, supplierInvoices.id))
+        .leftJoin(suppliers, eq(supplierInvoices.supplierId, suppliers.id))
+        .orderBy(desc(supplierPayments.paidAt), desc(supplierPayments.createdAt));
+      return csvResponse(
+        ["ID", "ID facture", "N° facture", "Référence bon", "Fournisseur", "Montant payé (MAD)", "Compte", "Date paiement", "Référence paiement", "Note", "Créé le"],
+        rows.map((row) => [row.id, row.invoiceId, row.invoiceNumber, row.purchaseRef, row.supplierName, row.amount, row.account, row.paidAt, row.reference, row.note, row.createdAt]),
       );
     }
 
