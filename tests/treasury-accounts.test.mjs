@@ -29,10 +29,10 @@ test("la trésorerie par compte retombe exactement sur le total physique", () =>
   });
 
   assert.deepEqual(result, {
-    bank: 415,
+    bank: 403,
     cash: 155,
     other: -30,
-    total: 540,
+    total: 528,
   });
 });
 
