@@ -348,6 +348,28 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
     database.prepare("DELETE FROM settings WHERE key NOT LIKE 'security_%' AND key <> 'backup_webhook_url'"),
     ...inserts,
   ]);
+  ]);
+
+  if (!restoreSuppliers) {
+    await database.batch([
+      database.prepare(`
+        INSERT OR IGNORE INTO suppliers (name, created_at)
+        SELECT trim(supplier), MIN(created_at)
+        FROM purchases
+        WHERE trim(supplier) <> ''
+        GROUP BY lower(trim(supplier))
+      `),
+      database.prepare(`
+        UPDATE purchases
+        SET supplier_id = COALESCE(
+              supplier_id,
+              (SELECT suppliers.id FROM suppliers WHERE lower(suppliers.name) = lower(trim(purchases.supplier)) LIMIT 1)
+            ),
+            purchase_ref = COALESCE(NULLIF(purchase_ref, ''), 'BC-' || printf('%06d', id)),
+            ordered_at = COALESCE(ordered_at, created_at)
+      `),
+    ]);
+  }
 }
 
 export async function purgeExpiredTrash(database: D1Database) {
