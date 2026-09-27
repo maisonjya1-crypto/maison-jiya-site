@@ -9,6 +9,7 @@ import { allocationPolicyFromSettings } from "../lib/allocation-policy";
 import { calculateTreasuryAccounts } from "../lib/treasury";
 import { buildSupplierStatement, type SupplierStatementEntry } from "../lib/supplier-statement";
 import { buildPurchasePlan, type PurchasePlanSupplierGroup } from "../lib/purchase-plan";
+import { buildCashflowForecast } from "../lib/cashflow-forecast";
 
 type Order = {
   id: number;
@@ -488,10 +489,10 @@ const dateTimeLabel = (value: string) =>
     minute: "2-digit",
   }).format(new Date(value));
 
-const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Inventaire", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs", "Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
+const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Inventaire", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs", "Dépenses", "Publicités", "Capital", "Trésorerie", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
 const navigationGroups = [
   { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Inventaire", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs"] },
-  { label: "Pilotage", items: ["Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA"] },
+  { label: "Pilotage", items: ["Dépenses", "Publicités", "Capital", "Trésorerie", "Clôture", "Rapports", "Assistant IA"] },
   { label: "Système", items: ["Mode entraînement", "Corbeille", "Paramètres"] },
 ];
 const sectionDescriptions: Record<string, string> = {
@@ -508,6 +509,7 @@ const sectionDescriptions: Record<string, string> = {
   Dépenses: "Enregistrez les charges réelles qui réduisent le résultat et la trésorerie.",
   Publicités: "Suivez vos campagnes, dépenses et performances Meta.",
   Capital: "Suivez les mouvements, enveloppes et capacités de réinvestissement.",
+  Trésorerie: "Anticipez les sorties connues, les échéances et le niveau de cash à 7, 30 et 60 jours.",
   Clôture: "Comparez la trésorerie théorique à l’argent réellement présent en fin de journée.",
   Rapports: "Analysez la performance commerciale et financière par période.",
   "Assistant IA": "Interrogez les données Maison Jiya et préparez vos actions.",
@@ -1389,6 +1391,7 @@ function Page({
   if (active === "Dépenses") return <ExpensesPage expenses={data.expenses} onAdd={() => open("expense")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Trésorerie") return <CashflowForecastPage data={data} metrics={metrics} />;
   if (active === "Clôture") return <DailyClosingPage data={data} submit={submit} />;
   if (active === "Rapports") return <ReportsPage data={data} />;
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
@@ -4792,6 +4795,151 @@ function DailyClosingPage({
           </div>
         ) : <div className="pending-empty">Aucune clôture enregistrée. La première apparaîtra ici.</div>}
       </section>
+    </div>
+  );
+}
+
+function CashflowForecastPage({
+  data,
+  metrics,
+}: {
+  data: Data;
+  metrics: {
+    cash: number;
+    reinvestable: number;
+    safetyReserve: number;
+  };
+}) {
+  const purchasePlan = useMemo(
+    () => buildPurchasePlan(data.stockRecommendations, metrics.reinvestable),
+    [data.stockRecommendations, metrics.reinvestable],
+  );
+  const executablePurchaseSpend = purchasePlan.supplierGroups
+    .filter((group) => group.meetsMinimumOrder)
+    .reduce((sum, group) => sum + group.totalCost, 0);
+  const forecastDate = businessDateKey(new Date());
+  const forecast = useMemo(
+    () => buildCashflowForecast({
+      asOf: forecastDate,
+      openingCash: metrics.cash,
+      safetyReserve: metrics.safetyReserve,
+      supplierInvoices: data.supplierInvoices,
+      expenses: data.expenses,
+      purchases: data.purchases,
+      orders: data.orders,
+      plannedPurchaseSpend: executablePurchaseSpend,
+    }),
+    [forecastDate, data.supplierInvoices, data.expenses, data.purchases, data.orders, executablePurchaseSpend, metrics.cash, metrics.safetyReserve],
+  );
+
+  const datedEvents = forecast.events.filter((event) => !event.scenario);
+  const purchaseScenario = forecast.events.find((event) => event.scenario);
+  const reserveRisk = forecast.firstReserveRiskDate;
+  const scenarioReserveRisk = forecast.scenarioFirstReserveRiskDate;
+  const negativeRisk = forecast.firstNegativeDate;
+  const scenarioNegativeRisk = forecast.scenarioFirstNegativeDate;
+  const totalUndatedReceivables = forecast.deliveredReceivables + forecast.transitReceivables;
+
+  return (
+    <div className="reports-page cashflow-page">
+      <section className="report-automation-banner cashflow-banner">
+        <div>
+          <span>↗</span>
+          <div>
+            <strong>Prévision prudente de trésorerie</strong>
+            <p>Les projections utilisent uniquement les sorties déjà connues et datées. Les ventes futures ne sont jamais inventées et les encaissements sans date restent séparés.</p>
+          </div>
+        </div>
+        <small>Base · {dateLabel(forecast.asOf)}</small>
+      </section>
+
+      <section className="kpi-grid cashflow-main-kpis">
+        <Kpi label="Trésorerie actuelle" value={money(forecast.openingCash)} detail="Point de départ de la prévision" danger={forecast.openingCash < forecast.safetyReserve} />
+        <Kpi label="Sorties datées · 60 j" value={money(forecast.scheduledOutflows60)} detail="Factures fournisseurs + dépenses non payées" danger={forecast.scheduledOutflows60 > forecast.openingCash} />
+        <Kpi label="Engagements sans date" value={money(forecast.undatedSupplierCommitments)} detail="Anciens achats fournisseurs non facturés" danger={forecast.undatedSupplierCommitments > 0} />
+        <Kpi label="À encaisser sans date" value={money(totalUndatedReceivables)} detail={`Livré ${money(forecast.deliveredReceivables)} · transit ${money(forecast.transitReceivables)}`} />
+      </section>
+
+      <section className="cashflow-horizon-grid">
+        {forecast.horizons.map((horizon) => (
+          <article key={horizon.days} className={horizon.baselineBalance < forecast.safetyReserve ? "cashflow-horizon danger" : "cashflow-horizon"}>
+            <div className="cashflow-horizon-head">
+              <span>Dans {horizon.days} jours</span>
+              <small>{dateLabel(horizon.date)}</small>
+            </div>
+            <strong className={moneyTone(horizon.baselineBalance)}>{money(horizon.baselineBalance)}</strong>
+            <p>Après {money(horizon.scheduledOutflows)} de sorties datées.</p>
+            <div className="cashflow-horizon-reserve">
+              <span>Vs réserve</span>
+              <strong className={moneyTone(horizon.reserveGap)}>{horizon.reserveGap >= 0 ? "+" : ""}{money(horizon.reserveGap)}</strong>
+            </div>
+            {forecast.plannedPurchaseSpend > 0 ? (
+              <div className="cashflow-horizon-scenario">
+                <span>Si plan d’achat exécuté maintenant</span>
+                <strong className={moneyTone(horizon.scenarioBalance)}>{money(horizon.scenarioBalance)}</strong>
+              </div>
+            ) : null}
+          </article>
+        ))}
+      </section>
+
+      <section className="panel cashflow-risk-panel">
+        <div>
+          <span className="card-kicker">À surveiller</span>
+          <h2>{negativeRisk ? `Cash négatif prévu le ${dateLabel(negativeRisk)}` : reserveRisk ? `Réserve touchée le ${dateLabel(reserveRisk)}` : "Aucun passage sous la réserve avec les flux datés connus"}</h2>
+          <p>Réserve de sécurité actuelle : {money(forecast.safetyReserve)}.</p>
+        </div>
+        {forecast.plannedPurchaseSpend > 0 ? (
+          <div className={scenarioNegativeRisk || scenarioReserveRisk ? "cashflow-scenario-warning" : "cashflow-scenario-ok"}>
+            <span>Scénario réapprovisionnement</span>
+            <strong>{money(forecast.plannedPurchaseSpend)}</strong>
+            <small>{scenarioNegativeRisk ? `Cash négatif dès le ${dateLabel(scenarioNegativeRisk)}` : scenarioReserveRisk ? `Réserve touchée le ${dateLabel(scenarioReserveRisk)}` : "Le plan reste au-dessus de la réserve avec les échéances connues."}</small>
+          </div>
+        ) : <div className="cashflow-scenario-ok"><span>Scénario réapprovisionnement</span><strong>0 MAD</strong><small>Aucun bon supplémentaire finançable proposé actuellement.</small></div>}
+      </section>
+
+      <section className="panel">
+        <PanelHead kicker="Échéancier" title="Sorties de trésorerie connues" total={String(datedEvents.length)} />
+        {datedEvents.length ? (
+          <div className="cashflow-timeline">
+            {datedEvents.slice(0, 100).map((event) => (
+              <article key={event.key}>
+                <div className="cashflow-date"><strong>{dateLabel(event.date)}</strong><small>{event.kind}</small></div>
+                <div><strong>{event.label}</strong><small>{event.detail}</small></div>
+                <strong className="money-negative">-{money(event.amount)}</strong>
+                <div><span>Solde après</span><strong className={moneyTone(event.balanceAfter)}>{money(event.balanceAfter)}</strong></div>
+              </article>
+            ))}
+          </div>
+        ) : <div className="pending-empty">✓ Aucune facture fournisseur ou dépense non payée avec échéance connue.</div>}
+      </section>
+
+      <section className="cashflow-secondary-grid">
+        <article className="panel">
+          <PanelHead kicker="Non daté" title="Engagements fournisseurs" total={money(forecast.undatedSupplierCommitments)} />
+          <p className="profitability-note">Ces achats sont bien des dettes, mais Maison Jiya ne connaît pas leur date de paiement. Ils sont donc affichés ici sans les placer artificiellement dans 7, 30 ou 60 jours.</p>
+          {forecast.undatedSupplierCommitments > 0 ? <div className="cashflow-callout warning"><strong>{money(forecast.undatedSupplierCommitments)}</strong><span>à garder disponible en plus des échéances datées.</span></div> : <div className="pending-empty">✓ Aucun engagement fournisseur non daté.</div>}
+        </article>
+        <article className="panel">
+          <PanelHead kicker="Encaissements" title="Argent attendu sans date" total={money(totalUndatedReceivables)} />
+          <p className="profitability-note">Cet argent n’augmente pas la projection tant qu’aucune date de virement réelle n’est connue. Cela évite de surestimer votre trésorerie future.</p>
+          <div className="cashflow-receivable-split">
+            <div><span>Livré · transporteur doit virer</span><strong>{money(forecast.deliveredReceivables)}</strong></div>
+            <div><span>Confirmé / en transit</span><strong>{money(forecast.transitReceivables)}</strong></div>
+          </div>
+        </article>
+      </section>
+
+      {purchaseScenario ? (
+        <section className="panel cashflow-purchase-scenario">
+          <div>
+            <span className="card-kicker">Scénario facultatif</span>
+            <h2>Plan d’achat intelligent · {money(purchaseScenario.amount)}</h2>
+            <p>La colonne « si plan d’achat exécuté » simule ce décaissement aujourd’hui. Aucun bon supplémentaire n’est créé depuis cette page.</p>
+          </div>
+          <div><span>Solde immédiatement après scénario</span><strong className={moneyTone(forecast.openingCash - purchaseScenario.amount)}>{money(forecast.openingCash - purchaseScenario.amount)}</strong></div>
+        </section>
+      ) : null}
     </div>
   );
 }
