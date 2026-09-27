@@ -204,6 +204,42 @@ test("une erreur SQL tardive annule toutes les suppressions et insertions, tout 
   assert.ok(db.sqlite.prepare("SELECT count(*) AS n FROM daily_backups WHERE reason = 'Avant import d’un export portable'").get().n >= 1);
 });
 
+test("la sauvegarde de sécurité inclut aussi la configuration boutique et reste compatible avec les anciennes copies", async t => {
+  const db = await databaseFor(t);
+  const cms = loadSource("db/storefront-cms.ts");
+  const backups = loadSource("db/backups.ts");
+  await cms.ensureStorefrontCms(db);
+  db.sqlite.prepare("UPDATE storefront_product_settings SET public_name = 'Avant import' WHERE product_id = 1").run();
+
+  await backups.createDailyBackup(db, "Sécurité boutique", true);
+  const backup = db.sqlite.prepare("SELECT id, snapshot_json FROM daily_backups ORDER BY id DESC LIMIT 1").get();
+  const parsed = JSON.parse(backup.snapshot_json);
+  assert.ok(Array.isArray(parsed.tables.storefrontProducts));
+  assert.ok(Array.isArray(parsed.tables.storefrontOffers));
+  assert.ok(Array.isArray(parsed.tables.storefrontOfferItems));
+  assert.ok(Array.isArray(parsed.tables.storefrontMedia));
+
+  db.sqlite.prepare("UPDATE storefront_product_settings SET public_name = 'Après import' WHERE product_id = 1").run();
+  await backups.restoreDailyBackup(db, backup.id);
+  assert.equal(db.sqlite.prepare("SELECT public_name FROM storefront_product_settings WHERE product_id = 1").get().public_name, "Avant import");
+
+  await backups.createDailyBackup(db, "Ancienne copie simulée", true);
+  const legacy = db.sqlite.prepare("SELECT id, snapshot_json FROM daily_backups ORDER BY id DESC LIMIT 1").get();
+  const legacySnapshot = JSON.parse(legacy.snapshot_json);
+  delete legacySnapshot.tables.storefrontProducts;
+  delete legacySnapshot.tables.storefrontOffers;
+  delete legacySnapshot.tables.storefrontOfferItems;
+  delete legacySnapshot.tables.storefrontMedia;
+  db.sqlite.prepare("UPDATE daily_backups SET snapshot_json = ?, record_count = ? WHERE id = ?").run(
+    JSON.stringify(legacySnapshot),
+    Object.values(legacySnapshot.tables).reduce((total, rows) => total + (Array.isArray(rows) ? rows.length : 0), 0),
+    legacy.id,
+  );
+  db.sqlite.prepare("UPDATE storefront_product_settings SET public_name = 'Boutique actuelle' WHERE product_id = 1").run();
+  await backups.restoreDailyBackup(db, legacy.id);
+  assert.equal(db.sqlite.prepare("SELECT public_name FROM storefront_product_settings WHERE product_id = 1").get().public_name, "Boutique actuelle");
+});
+
 test("la restauration complète reste propriétaire, idempotente et confirmée explicitement dans l’interface", async () => {
   const [route, dashboard, docs] = await Promise.all([
     import("node:fs/promises").then(({ readFile }) => readFile(new URL("../app/api/data/route.ts", import.meta.url), "utf8")),
