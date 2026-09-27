@@ -97,6 +97,10 @@ export function calculateOperatingProfit(
   };
 }
 
+export type FinanceCarrierSettlement = {
+  differenceAmount: number;
+};
+
 export type FinanceTotalsInput = {
   deliveredRevenue: number;
   deliveredOrderCosts: number;
@@ -113,11 +117,12 @@ export type FinanceTotalsInput = {
   manualCapitalNet: number;
   reinvestAllocation: number;
   safetyReserve?: number;
+  carrierSettlementAdjustment?: number;
 };
 
 export function calculateBusinessFinanceFromTotals(input: FinanceTotalsInput): FinanceSummary {
   const safetyReserve = Math.max(0, amount(input.safetyReserve));
-  const netCollected = amount(input.collected) - amount(input.shippingCollected) - amount(input.feesCollected);
+  const netCollected = amount(input.collected) - amount(input.shippingCollected) - amount(input.feesCollected) + amount(input.carrierSettlementAdjustment);
   const profit = amount(input.deliveredRevenue)
     - amount(input.deliveredOrderCosts)
     - amount(input.losses)
@@ -165,6 +170,7 @@ export function calculateBusinessFinance({
   ads,
   capital,
   supplierInvoices = [],
+  carrierSettlements = [],
   safetyReserve = 500,
 }: {
   orders: FinanceOrder[];
@@ -173,6 +179,7 @@ export function calculateBusinessFinance({
   ads: FinanceAd[];
   capital: FinanceCapital[];
   supplierInvoices?: FinanceSupplierInvoice[];
+  carrierSettlements?: FinanceCarrierSettlement[];
   safetyReserve?: number;
 }): FinanceSummary {
   const operating = calculateOperatingProfit(orders, ads, expenses);
@@ -203,6 +210,8 @@ export function calculateBusinessFinance({
     .filter((expense) => expense.paymentStatus !== "Payé")
     .reduce((sum, expense) => sum + amount(expense.amount), 0);
 
+  const carrierSettlementAdjustment = carrierSettlements.reduce((sum, settlement) => sum + amount(settlement.differenceAmount), 0);
+
   const manualCapitalNet = capital
     .filter((entry) => !entry.isAutomatic)
     .reduce((sum, entry) => sum + (entry.direction === "Entrée" ? amount(entry.amount) : -amount(entry.amount)), 0);
@@ -227,5 +236,6 @@ export function calculateBusinessFinance({
     manualCapitalNet,
     reinvestAllocation,
     safetyReserve,
+    carrierSettlementAdjustment,
   });
 }
