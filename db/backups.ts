@@ -18,6 +18,7 @@ type BusinessSnapshot = {
     orders: SnapshotRow[];
     products: SnapshotRow[];
     stockMovements: SnapshotRow[];
+    inventorySessions?: SnapshotRow[];
     inventoryCounts?: SnapshotRow[];
     suppliers?: SnapshotRow[];
     purchases: SnapshotRow[];
@@ -42,6 +43,7 @@ const TABLES = {
   orders: "orders",
   products: "products",
   stockMovements: "stock_movements",
+  inventorySessions: "inventory_sessions",
   inventoryCounts: "inventory_counts",
   suppliers: "suppliers",
   purchases: "purchases",
@@ -65,7 +67,8 @@ const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   orders: ["id", "order_ref", "customer_id", "product_id", "city", "address", "products", "quantity", "sale_amount", "product_cost", "shipping_cost", "ad_cost", "fees", "return_cost", "return_reason", "return_note", "source", "campaign", "fulfillment_type", "status", "payment_status", "carrier", "tracking_number", "carrier_dispatch_state", "carrier_authorized_at", "carrier_invoice_code", "stock_deducted", "paid_at", "refunded_at", "deleted_at", "deleted_by_user_id", "created_at", "updated_at", "items_json", "pack_name"],
   products: ["id", "product_code", "name", "category", "purchase_price", "sale_price", "minimum_sale_price", "stock_quantity", "stock_alert_threshold", "reorder_cover_days", "archived_at", "archived_by_user_id", "created_at"],
   stockMovements: ["id", "product_id", "order_id", "purchase_id", "movement_type", "quantity", "note", "created_at"],
-  inventoryCounts: ["id", "count_ref", "product_id", "system_quantity", "physical_quantity", "difference", "note", "counted_by_user_id", "counted_by_name", "created_at"],
+  inventorySessions: ["id", "session_ref", "status", "note", "expected_product_count", "counted_product_count", "total_system_units", "total_physical_units", "total_adjustment_units", "value_before", "value_after", "loss_value", "started_by_user_id", "started_by_name", "started_at", "completed_at"],
+  inventoryCounts: ["id", "count_ref", "session_id", "product_id", "system_quantity", "physical_quantity", "difference", "reason", "unit_cost", "value_before", "value_after", "loss_value", "note", "counted_by_user_id", "counted_by_name", "created_at"],
   suppliers: ["id", "name", "contact_name", "phone", "whatsapp", "city", "lead_time_days", "minimum_order_amount", "payment_terms", "notes", "is_active", "created_at", "updated_at"],
   purchases: ["id", "supplier", "supplier_id", "purchase_ref", "purchase_line_no", "purchase_mode", "procurement_status", "ordered_at", "expected_at", "item", "product_id", "quantity", "unit_cost", "total_cost", "account", "payment_status", "paid_at", "received_quantity", "received_at", "created_at"],
   supplierInvoices: ["id", "supplier_id", "purchase_ref", "invoice_number", "invoice_date", "due_date", "total_amount", "note", "created_at", "updated_at"],
@@ -106,11 +109,12 @@ async function readOptionalRows(database: D1Database, table: string) {
 }
 
 async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
-  const [customers, orders, products, stockMovements, inventoryCounts, suppliers, purchases, supplierInvoices, supplierPayments, expenses, ads, capital, dailyClosings, settings, orderStatusHistory, carrierEvents, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia] = await Promise.all([
+  const [customers, orders, products, stockMovements, inventorySessions, inventoryCounts, suppliers, purchases, supplierInvoices, supplierPayments, expenses, ads, capital, dailyClosings, settings, orderStatusHistory, carrierEvents, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia] = await Promise.all([
     readRows(database, TABLES.customers),
     readRows(database, TABLES.orders),
     readRows(database, TABLES.products),
     readRows(database, TABLES.stockMovements),
+    readOptionalRows(database, TABLES.inventorySessions),
     readRows(database, TABLES.inventoryCounts),
     readOptionalRows(database, TABLES.suppliers),
     readRows(database, TABLES.purchases),
@@ -132,7 +136,7 @@ async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
     version: 1,
     createdAt: new Date().toISOString(),
     tables: {
-      customers, orders, products, stockMovements, inventoryCounts, suppliers, purchases, supplierInvoices, supplierPayments, expenses, ads, capital, dailyClosings, settings,
+      customers, orders, products, stockMovements, inventorySessions, inventoryCounts, suppliers, purchases, supplierInvoices, supplierPayments, expenses, ads, capital, dailyClosings, settings,
       orderStatusHistory, carrierEvents, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia,
     },
   };
@@ -267,6 +271,14 @@ function insertStatement(database: D1Database, tableKey: keyof BusinessSnapshot[
   const values = columns.map((column) => {
     if (column === "stock_deducted") return row[column] ?? 0;
     if (column === "received_quantity") return row[column] ?? 0;
+    if (column === "session_id") return row[column] ?? null;
+    if (column === "reason") return row[column] ?? "Aucun écart";
+    if (["unit_cost", "value_before", "value_after", "loss_value", "expected_product_count", "counted_product_count", "total_system_units", "total_physical_units", "total_adjustment_units"].includes(column)) return row[column] ?? 0;
+    if (column === "status" && tableKey === "inventorySessions") return row[column] ?? "Clôturé";
+    if (column === "started_by_user_id") return row[column] ?? null;
+    if (column === "started_by_name") return row[column] ?? "Import Maison Jiya";
+    if (column === "started_at") return row[column] ?? row.created_at ?? new Date().toISOString();
+    if (column === "completed_at") return row[column] ?? null;
     if (column === "supplier_id") return row[column] ?? null;
     if (column === "purchase_ref") return row[column] ?? null;
     if (column === "purchase_line_no") return row[column] ?? 1;
@@ -316,13 +328,13 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
 
   const insertionOrder: Array<keyof BusinessSnapshot["tables"]> = [
     "settings", "customers", "products", "suppliers", "purchases", "supplierInvoices", "supplierPayments", "expenses", "ads", "capital", "orders", "stockMovements",
-    "inventoryCounts", "dailyClosings", "orderStatusHistory", "carrierEvents", "storefrontProducts", "storefrontOffers",
+    "inventorySessions", "inventoryCounts", "dailyClosings", "orderStatusHistory", "carrierEvents", "storefrontProducts", "storefrontOffers",
     "storefrontOfferItems", "storefrontMedia",
   ];
   const inserts = insertionOrder.flatMap((tableKey) => {
     const rows = snapshot.tables[tableKey];
     // Ces tables n'existaient pas dans les premières sauvegardes v1.
-    if (rows === undefined && ["inventoryCounts", "suppliers", "supplierInvoices", "supplierPayments", "carrierEvents", "expenses", "dailyClosings", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"].includes(tableKey)) return [];
+    if (rows === undefined && ["inventorySessions", "inventoryCounts", "suppliers", "supplierInvoices", "supplierPayments", "carrierEvents", "expenses", "dailyClosings", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"].includes(tableKey)) return [];
     if (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
       throw new Error("Format de sauvegarde incompatible.");
     }
@@ -344,6 +356,7 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
     ] : []),
     database.prepare("DELETE FROM stock_movements"),
     database.prepare("DELETE FROM inventory_counts"),
+    database.prepare("DELETE FROM inventory_sessions"),
     database.prepare("DELETE FROM daily_closings"),
     database.prepare("DELETE FROM order_status_history"),
     database.prepare("DELETE FROM carrier_events"),
