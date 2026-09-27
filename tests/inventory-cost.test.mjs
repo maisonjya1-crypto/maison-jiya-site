@@ -35,7 +35,9 @@ test("le coût moyen pondéré est calculé sur le stock encore disponible", asy
   assert.equal(purchase.received_at, "2026-09-27T13:00:00.000Z");
 
   const movement = db.sqlite.prepare("SELECT movement_type, quantity, purchase_id FROM stock_movements WHERE purchase_id = 10").get();
-  assert.deepEqual(movement, { movement_type: "Réception fournisseur", quantity: 4, purchase_id: 10 });
+  assert.equal(movement.movement_type, "Réception fournisseur");
+  assert.equal(movement.quantity, 4);
+  assert.equal(movement.purchase_id, 10);
 
   // Une commande historique garde le coût capturé au moment de la vente.
   assert.equal(db.sqlite.prepare("SELECT product_cost FROM orders WHERE id = 1").get().product_cost, 11.25);
