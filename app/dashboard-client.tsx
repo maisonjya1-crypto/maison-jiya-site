@@ -3867,7 +3867,7 @@ function ReportsPage({ data }: { data: Data }) {
     periodCard("7 derniers jours", weekStartKey, today),
     periodCard("Mois en cours", monthStartKey, today),
   ];
-  const lowStock = data.products.filter((product) => product.stockQuantity <= 3);
+  const stockAlerts = data.stockRecommendations.filter((row) => row.status !== "OK");
   const delayed = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && elapsedDays(order.updatedAt || order.createdAt) >= 4);
   const unpaid = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus !== "Encaissé" && elapsedDays(order.updatedAt || order.createdAt) >= 3);
   const supplierDue = data.purchases.filter((purchase) => purchase.paymentStatus !== "Payé");
@@ -3893,7 +3893,14 @@ function ReportsPage({ data }: { data: Data }) {
   const positiveProfit = automaticAllocations.reduce((sum, entry) => sum + entry.amount, 0);
   const allocationAmount = (category: string) => automaticAllocations.filter((entry) => entry.category === category).reduce((sum, entry) => sum + entry.amount, 0);
   const alerts = [
-    ...lowStock.map((product) => ({ key: `stock-${product.id}`, level: product.stockQuantity === 0 ? "danger" : "warning", title: `${product.name} : stock ${product.stockQuantity}`, detail: `SKU ${product.productCode} · seuil faible atteint` })),
+    ...stockAlerts.map((row) => ({
+      key: `stock-${row.productId}`,
+      level: row.status === "À prévoir" ? "warning" : "danger",
+      title: `${row.productName} : ${row.status.toLocaleLowerCase("fr")} · stock ${row.stockQuantity}`,
+      detail: row.recommendedQuantity > 0
+        ? `Seuil ${row.alertThreshold} · commander ${row.recommendedQuantity} unité(s) · ${row.supplier}`
+        : `Seuil ${row.alertThreshold} · ${row.pendingInbound} unité(s) déjà en attente de réception`,
+    })),
     ...delayed.map((order) => ({ key: `delay-${order.id}`, level: "warning", title: `${order.orderRef} semble bloquée`, detail: `${order.carrier} · ${order.status} depuis ${elapsedDays(order.updatedAt || order.createdAt)} jours` })),
     ...unpaid.map((order) => ({ key: `unpaid-${order.id}`, level: "danger", title: `${order.orderRef} livrée mais non encaissée`, detail: `${order.carrier} · ${money(order.saleAmount - order.shippingCost - order.fees)} à vérifier` })),
     ...supplierDue.map((purchase) => ({ key: `supplier-${purchase.id}`, level: "danger", title: `${purchase.supplier} : paiement fournisseur à prévoir`, detail: `${purchase.item} · ${money(purchase.totalCost)} à payer` })),
