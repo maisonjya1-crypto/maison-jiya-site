@@ -31,6 +31,7 @@ const CORE_SYNC_TABLES = [
   "orders",
   "products",
   "stock_movements",
+  "inventory_sessions",
   "inventory_counts",
   "suppliers",
   "purchases",
