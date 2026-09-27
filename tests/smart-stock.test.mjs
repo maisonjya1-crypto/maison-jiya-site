@@ -129,7 +129,7 @@ test("l’API, les sauvegardes et l’interface conservent les paramètres de r�
   assert.match(sheets, /Seuil alerte stock/);
   assert.match(sheets, /Couverture cible \(jours\)/);
   assert.match(dashboard, /Réapprovisionnement/);
-  assert.match(dashboard, /Préparer l’achat/);
+  assert.match(dashboard, /Préparer les achats/);
   assert.match(dashboard, /name="stockAlertThreshold"/);
   assert.match(dashboard, /name="reorderCoverDays"/);
 });
