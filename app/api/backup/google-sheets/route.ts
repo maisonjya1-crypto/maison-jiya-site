@@ -170,22 +170,24 @@ export async function GET(request: Request) {
         quantity: purchases.quantity,
         unitCost: purchases.unitCost,
         totalCost: purchases.totalCost,
+        account: purchases.account,
         paymentStatus: purchases.paymentStatus,
+        paidAt: purchases.paidAt,
         receivedQuantity: purchases.receivedQuantity,
         receivedAt: purchases.receivedAt,
         createdAt: purchases.createdAt,
       }).from(purchases).leftJoin(products, eq(purchases.productId, products.id)).orderBy(desc(purchases.createdAt));
       return csvResponse(
-        ["ID", "Fournisseur", "Article", "ID produit", "SKU", "Produit", "Quantité achetée", "Coût unitaire (MAD)", "Coût total (MAD)", "Statut paiement", "Quantité réceptionnée", "Réceptionné le", "Créé le"],
-        rows.map((row) => [row.id, row.supplier, row.item, row.productId, row.productCode, row.productName, row.quantity, row.unitCost, row.totalCost, row.paymentStatus, row.receivedQuantity, row.receivedAt, row.createdAt]),
+        ["ID", "Fournisseur", "Article", "ID produit", "SKU", "Produit", "Quantité achetée", "Coût unitaire (MAD)", "Coût total (MAD)", "Compte paiement", "Statut paiement", "Payé le", "Quantité réceptionnée", "Réceptionné le", "Créé le"],
+        rows.map((row) => [row.id, row.supplier, row.item, row.productId, row.productCode, row.productName, row.quantity, row.unitCost, row.totalCost, row.account, row.paymentStatus, row.paidAt, row.receivedQuantity, row.receivedAt, row.createdAt]),
       );
     }
 
     if (dataset === "expenses") {
       const rows = await db.select().from(expenses).orderBy(desc(expenses.expenseDate), desc(expenses.createdAt));
       return csvResponse(
-        ["ID", "Catégorie", "Libellé", "Montant (MAD)", "Compte", "Paiement", "Date de dépense", "Note", "Créé le"],
-        rows.map((row) => [row.id, row.category, row.label, row.amount, row.account, row.paymentStatus, row.expenseDate, row.note, row.createdAt]),
+        ["ID", "Catégorie", "Libellé", "Montant (MAD)", "Compte", "Paiement", "Payé le", "Date de dépense", "Note", "Créé le"],
+        rows.map((row) => [row.id, row.category, row.label, row.amount, row.account, row.paymentStatus, row.paidAt, row.expenseDate, row.note, row.createdAt]),
       );
     }
 
