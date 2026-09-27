@@ -15,7 +15,7 @@ import { supplierInvoiceIsOverdue, supplierInvoicePaymentStatus, syncPurchaseOrd
 import { buildPurchaseReference, normalizedProcurementStatus, normalizeSupplierName, resolveSupplierProfile } from "../../../db/suppliers";
 import { normalizeOrderPaymentState, type OrderPaymentStatus } from "../../../lib/order-payment-lifecycle";
 import { moveOrderToTrash, releaseTrashedOrderStock, restoreOrderFromTrash } from "../../../db/order-trash";
-import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, dailyClosings, expenses, inventoryCounts, inventorySessions, orders, orderStatusHistory, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../db/schema";
+import { adPerformance, auditLogs, capitalLedger, carrierEvents, carrierSettlementOrders, carrierSettlements, customers, dailyBackups, dailyClosings, expenses, inventoryCounts, inventorySessions, orders, orderStatusHistory, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
 type ActionPayload = Record<string, unknown> & { action?: string };
@@ -50,6 +50,22 @@ type PurchaseOrderLineInput = {
   quantity: number;
   unitCost: number;
 };
+
+function integerIdList(value: unknown, label: string, max = 200) {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`Sélectionnez au moins un ${label}.`);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error(`La sélection de ${label} est illisible.`);
+  }
+  if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > max) {
+    throw new Error(`Sélectionnez entre 1 et ${max} ${label}.`);
+  }
+  const ids = parsed.map((item) => Number(item));
+  if (ids.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error(`La sélection de ${label} est invalide.`);
+  return [...new Set(ids)];
+}
 
 function purchaseOrderLines(value: unknown): PurchaseOrderLineInput[] {
   if (typeof value !== "string" || !value.trim()) throw new Error("Ajoutez au moins un produit au bon de commande.");
@@ -307,6 +323,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   resetBusinessValues: { action: "Remise à zéro", entityType: "Données commerciales" },
   retryGoogleSheetsSync: { action: "Nouvelle tentative", entityType: "Google Sheets" },
   updateCarriers: { action: "Modification", entityType: "Transporteurs" },
+  addCarrierSettlement: { action: "Rapprochement", entityType: "Règlement transporteur" },
   syncMetaNow: { action: "Synchronisation", entityType: "Meta Ads" },
   updateSetting: { action: "Modification", entityType: "Paramètre" },
   updateAllocationPolicy: { action: "Modification", entityType: "Répartition du capital" },
@@ -412,7 +429,7 @@ async function snapshot(access: AccessInfo) {
   await createDailyBackup(rawDatabase);
   const db = await getDb();
   const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, campaign: orders.campaign, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, refundedAt: orders.refundedAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
-  const [orderRows, trashRows, customerRows, supplierRows, purchaseRows, invoiceRows, supplierPaymentRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, inventorySessionRows, settingRows, memberRows, historyRows, auditRows, backupRows, closingRows] = await Promise.all([
+  const [orderRows, trashRows, customerRows, supplierRows, purchaseRows, invoiceRows, supplierPaymentRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, inventorySessionRows, carrierSettlementRows, carrierSettlementOrderRows, settingRows, memberRows, historyRows, auditRows, backupRows, closingRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
       ? db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNotNull(orders.deletedAt)).orderBy(desc(orders.deletedAt))
@@ -483,6 +500,22 @@ async function snapshot(access: AccessInfo) {
       createdAt: inventoryCounts.createdAt,
     }).from(inventoryCounts).leftJoin(products, eq(inventoryCounts.productId, products.id)).orderBy(desc(inventoryCounts.createdAt)).limit(1000),
     db.select().from(inventorySessions).orderBy(desc(inventorySessions.startedAt)).limit(100),
+    db.select().from(carrierSettlements).orderBy(desc(carrierSettlements.settlementDate), desc(carrierSettlements.createdAt)).limit(500),
+    db.select({
+      id: carrierSettlementOrders.id,
+      settlementId: carrierSettlementOrders.settlementId,
+      orderId: carrierSettlementOrders.orderId,
+      expectedAmount: carrierSettlementOrders.expectedAmount,
+      orderRef: orders.orderRef,
+      carrier: orders.carrier,
+      trackingNumber: orders.trackingNumber,
+      customerName: customers.name,
+      createdAt: carrierSettlementOrders.createdAt,
+    }).from(carrierSettlementOrders)
+      .leftJoin(orders, eq(carrierSettlementOrders.orderId, orders.id))
+      .leftJoin(customers, eq(orders.customerId, customers.id))
+      .orderBy(desc(carrierSettlementOrders.createdAt))
+      .limit(2000),
     db.select().from(settings),
     access.isOwner
       ? db.select({ id: users.id, username: users.username, displayName: users.displayName, role: users.role, isOwner: users.isOwner, isActive: users.isActive, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt))
@@ -543,6 +576,8 @@ async function snapshot(access: AccessInfo) {
     stockMovements: movementRows,
     inventoryCounts: inventoryRows,
     inventorySessions: inventorySessionRows,
+    carrierSettlements: carrierSettlementRows,
+    carrierSettlementOrders: carrierSettlementOrderRows,
     members: memberRows,
     orderStatusHistory: historyRows,
     auditLogs: auditRows,
@@ -984,6 +1019,134 @@ export async function POST(request: Request) {
       integrationMessage = dispatch.message;
       auditEntityId = String(id);
       auditEntityLabel = `${carrier} · autorisation manuelle`;
+    } else if (payload.action === "addCarrierSettlement") {
+      const carrier = textValue(payload.carrier).slice(0, 80);
+      const reference = textValue(payload.reference).slice(0, 120);
+      const settlementDate = textValue(payload.settlementDate);
+      const actualAmount = moneyValue(payload.actualAmount);
+      const note = textValue(payload.note).slice(0, 500);
+      let orderIds: number[];
+      try {
+        orderIds = integerIdList(payload.orderIdsJson, "commande(s)", 200);
+      } catch (error) {
+        return Response.json({ error: error instanceof Error ? error.message : "Sélection de commandes invalide." }, { status: 400 });
+      }
+      if (!carrier || !reference || !/^\d{4}-\d{2}-\d{2}$/.test(settlementDate)) {
+        return Response.json({ error: "Transporteur, référence et date de virement sont obligatoires." }, { status: 400 });
+      }
+      if (actualAmount <= 0) return Response.json({ error: "Le montant réellement reçu doit être supérieur à 0 MAD." }, { status: 400 });
+
+      const database = await getRawDb();
+      const placeholders = orderIds.map(() => "?").join(",");
+      const selected = (await database.prepare(`
+        SELECT
+          id,
+          order_ref AS orderRef,
+          carrier,
+          status,
+          payment_status AS paymentStatus,
+          fulfillment_type AS fulfillmentType,
+          sale_amount AS saleAmount,
+          shipping_cost AS shippingCost,
+          fees
+        FROM orders
+        WHERE id IN (${placeholders}) AND deleted_at IS NULL
+      `).bind(...orderIds).all<{
+        id: number;
+        orderRef: string;
+        carrier: string;
+        status: string;
+        paymentStatus: string;
+        fulfillmentType: string;
+        saleAmount: number;
+        shippingCost: number;
+        fees: number;
+      }>()).results;
+
+      if (selected.length !== orderIds.length) return Response.json({ error: "Une ou plusieurs commandes sélectionnées sont introuvables." }, { status: 404 });
+      const normalizedCarrier = carrier.toLocaleLowerCase("fr").replace(/\s+/g, " ");
+      for (const order of selected) {
+        if (order.status !== "Livrée" || order.paymentStatus !== "À encaisser" || order.fulfillmentType === "Magasin physique") {
+          return Response.json({ error: `${order.orderRef} n’est plus une commande livrée en attente d’encaissement.` }, { status: 409 });
+        }
+        if (order.carrier.trim().toLocaleLowerCase("fr").replace(/\s+/g, " ") !== normalizedCarrier) {
+          return Response.json({ error: `${order.orderRef} appartient à ${order.carrier}, pas à ${carrier}.` }, { status: 409 });
+        }
+      }
+
+      const alreadyLinked = await database.prepare(`
+        SELECT orders.order_ref AS orderRef
+        FROM carrier_settlement_orders
+        JOIN orders ON orders.id = carrier_settlement_orders.order_id
+        WHERE carrier_settlement_orders.order_id IN (${placeholders})
+        LIMIT 1
+      `).bind(...orderIds).first<{ orderRef: string }>();
+      if (alreadyLinked) return Response.json({ error: `${alreadyLinked.orderRef} appartient déjà à un règlement transporteur.` }, { status: 409 });
+
+      const duplicateReference = await database.prepare(
+        "SELECT id FROM carrier_settlements WHERE lower(carrier) = lower(?) AND lower(reference) = lower(?) LIMIT 1",
+      ).bind(carrier, reference).first<{ id: number }>();
+      if (duplicateReference) return Response.json({ error: "Cette référence de virement existe déjà pour ce transporteur." }, { status: 409 });
+
+      const duplicateSettlement = await protectMutation("addCarrierSettlement");
+      if (duplicateSettlement) return duplicateSettlement;
+
+      const expectedByOrder = selected.map((order) => ({
+        ...order,
+        expectedAmount: Math.round((Math.max(0, Number(order.saleAmount || 0) - Number(order.shippingCost || 0) - Number(order.fees || 0)) + Number.EPSILON) * 100) / 100,
+      }));
+      const expectedAmount = Math.round((expectedByOrder.reduce((sum, order) => sum + order.expectedAmount, 0) + Number.EPSILON) * 100) / 100;
+      const differenceAmount = Math.round((actualAmount - expectedAmount + Number.EPSILON) * 100) / 100;
+      const settlementStatus = Math.abs(differenceAmount) < 0.01 ? "Rapproché" : "À vérifier";
+      const receivedAt = `${settlementDate}T12:00:00.000Z`;
+      const now = new Date().toISOString();
+
+      const inserted = await database.prepare(`
+        INSERT INTO carrier_settlements (
+          carrier, reference, settlement_date, expected_amount, actual_amount,
+          difference_amount, order_count, status, note, created_by_user_id, created_by_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        carrier,
+        reference,
+        settlementDate,
+        expectedAmount,
+        actualAmount,
+        differenceAmount,
+        expectedByOrder.length,
+        settlementStatus,
+        note,
+        user.id,
+        user.displayName,
+      ).run();
+      const settlementId = Number(inserted.meta?.last_row_id || 0);
+      if (!settlementId) return Response.json({ error: "Impossible d’enregistrer le règlement transporteur." }, { status: 500 });
+
+      const statements = [];
+      for (const order of expectedByOrder) {
+        statements.push(
+          database.prepare(`
+            INSERT INTO carrier_settlement_orders (settlement_id, order_id, expected_amount)
+            VALUES (?, ?, ?)
+          `).bind(settlementId, order.id, order.expectedAmount),
+          database.prepare(`
+            UPDATE orders
+            SET payment_status = 'Encaissé',
+                paid_at = ?,
+                carrier_invoice_code = CASE WHEN carrier_invoice_code = '' THEN ? ELSE carrier_invoice_code END,
+                updated_at = ?
+            WHERE id = ? AND payment_status = 'À encaisser' AND status = 'Livrée'
+          `).bind(receivedAt, reference, now, order.id),
+        );
+      }
+      await database.batch(statements);
+      await reconcileOrderAllocations();
+
+      auditEntityId = String(settlementId);
+      auditEntityLabel = `${carrier} · ${reference}`;
+      integrationMessage = settlementStatus === "Rapproché"
+        ? `Virement ${reference} rapproché : ${expectedByOrder.length} commande(s) · ${actualAmount.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD reçus.`
+        : `Virement ${reference} enregistré avec un écart de ${differenceAmount > 0 ? "+" : ""}${differenceAmount.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD à vérifier.`;
     } else if (payload.action === "syncCarriersNow") {
       if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut lancer une synchronisation complète." }, { status: 403 });
       const carrierSync = await syncCarrierOperations();
