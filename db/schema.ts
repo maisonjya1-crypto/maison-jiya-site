@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -256,6 +256,7 @@ export const purchases = sqliteTable(
     index("purchases_product_id_idx").on(table.productId),
     index("purchases_supplier_id_idx").on(table.supplierId),
     index("purchases_purchase_ref_idx").on(table.purchaseRef),
+    uniqueIndex("purchases_purchase_ref_line_unique_idx").on(table.purchaseRef, table.purchaseLineNo),
     index("purchases_procurement_status_idx").on(table.procurementStatus),
   ],
 );
