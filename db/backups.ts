@@ -166,7 +166,7 @@ function inspectSnapshot(raw: string, expectedRecordCount?: number) {
       throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
     }
   }
-  for (const tableKey of ["inventoryCounts", "suppliers", "expenses", "dailyClosings", "carrierEvents", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"] as const) {
+  for (const tableKey of ["inventorySessions", "inventoryCounts", "suppliers", "expenses", "dailyClosings", "carrierEvents", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"] as const) {
     const rows = snapshot.tables[tableKey];
     if (rows !== undefined && (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item)))) {
       throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
