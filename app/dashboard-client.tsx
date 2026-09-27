@@ -8,6 +8,7 @@ import { businessDateKey, deliveryRecognitionDate } from "../lib/accounting-date
 import { allocationPolicyFromSettings } from "../lib/allocation-policy";
 import { calculateTreasuryAccounts } from "../lib/treasury";
 import { buildSupplierStatement, type SupplierStatementEntry } from "../lib/supplier-statement";
+import { buildPurchasePlan, type PurchasePlanSupplierGroup } from "../lib/purchase-plan";
 
 type Order = {
   id: number;
@@ -331,6 +332,7 @@ type SmartStockRecommendation = {
   supplierId: number | null;
   supplier: string;
   supplierLeadTimeDays: number | null;
+  supplierMinimumOrderAmount: number | null;
   unitCost: number;
   estimatedCost: number;
   lastPurchaseAt: string | null;
@@ -1378,7 +1380,7 @@ function Page({
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Inventaire") return <InventoryPage products={data.products} sessions={data.inventorySessions} counts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} />;
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} onRestore={restoreProduct} />;
-  if (active === "Réapprovisionnement") return <ReorderingPage data={data} submit={submit} onEditProduct={editEntity} />;
+  if (active === "Réapprovisionnement") return <ReorderingPage data={data} metrics={metrics} submit={submit} onEditProduct={editEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Fournisseurs") return <SuppliersPage suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} supplierPayments={data.supplierPayments} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("supplier")} onEdit={editEntity} />;
@@ -3049,153 +3051,269 @@ function ImportProductsPanel({ products, canEdit, submit }: { products: Product[
 
 function ReorderingPage({
   data,
+  metrics,
   submit,
   onEditProduct,
 }: {
   data: Data;
+  metrics: {
+    cash: number;
+    reinvest: number;
+    reinvestable: number;
+    unpaidPurchases: number;
+    unpaidOperatingExpenses: number;
+    safetyReserve: number;
+  };
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
   onEditProduct: (selection: EditableEntity) => void;
 }) {
-  const [creatingId, setCreatingId] = useState<number | null>(null);
+  const [creatingSupplierId, setCreatingSupplierId] = useState<string | null>(null);
+  const [creatingAll, setCreatingAll] = useState(false);
   const recommendations = data.stockRecommendations;
-  const attention = recommendations.filter((row) => row.status !== "OK");
-  const reorderRows = recommendations.filter((row) => row.recommendedQuantity > 0);
+  const purchasePlan = useMemo(
+    () => buildPurchasePlan(recommendations, metrics.reinvestable),
+    [recommendations, metrics.reinvestable],
+  );
+  const attention = purchasePlan.lines.filter((row) => row.priority !== "Pas nécessaire");
   const ruptureCount = recommendations.filter((row) => row.status === "Rupture").length;
   const criticalCount = recommendations.filter((row) => row.status === "Critique").length;
-  const recommendedUnits = reorderRows.reduce((sum, row) => sum + row.recommendedQuantity, 0);
-  const estimatedBudget = reorderRows.reduce((sum, row) => sum + row.estimatedCost, 0);
   const pendingUnits = recommendations.reduce((sum, row) => sum + row.pendingInbound, 0);
-  const supplierNames = Array.from(new Set(attention.map((row) => row.supplier)))
-    .sort((left, right) => {
-      if (left === "Fournisseur à renseigner") return 1;
-      if (right === "Fournisseur à renseigner") return -1;
-      return left.localeCompare(right, "fr");
-    });
+  const protectedCash = Math.max(0, metrics.cash - metrics.unpaidPurchases - metrics.unpaidOperatingExpenses - metrics.safetyReserve);
+  const executableGroups = purchasePlan.supplierGroups.filter((group) => group.meetsMinimumOrder);
+  const blockedMinimumGroups = purchasePlan.supplierGroups.filter((group) => !group.meetsMinimumOrder);
 
-  async function preparePurchase(row: SmartStockRecommendation) {
-    if (!data.access.canEdit || creatingId || row.recommendedQuantity <= 0 || row.supplier === "Fournisseur à renseigner") return;
-    const deliveryHint = row.supplierLeadTimeDays === null
-      ? ""
-      : ` La date prévue sera calculée avec le délai fournisseur de ${row.supplierLeadTimeDays} jour(s).`;
+  function legacySupplierDebt(supplierId: number | null, supplierName: string) {
+    return data.purchases
+      .filter((purchase) =>
+        !purchase.invoiceId
+        && !["Brouillon", "Annulé"].includes(purchase.procurementStatus)
+        && purchase.paymentStatus !== "Payé"
+        && (supplierId ? purchase.supplierId === supplierId : purchase.supplier === supplierName),
+      )
+      .reduce((sum, purchase) => sum + purchase.totalCost, 0);
+  }
+
+  function supplierDebt(supplierId: number | null, supplierName: string) {
+    const invoiceDebt = supplierId
+      ? data.supplierInvoices.filter((invoice) => invoice.supplierId === supplierId).reduce((sum, invoice) => sum + invoice.remainingAmount, 0)
+      : 0;
+    return legacySupplierDebt(supplierId, supplierName) + invoiceDebt;
+  }
+
+  async function createSupplierOrder(group: PurchasePlanSupplierGroup) {
+    if (!data.access.canEdit || creatingAll || creatingSupplierId || !group.lines.length || !group.meetsMinimumOrder) return;
+    const key = group.supplierId ? String(group.supplierId) : group.supplier;
+    const debt = supplierDebt(group.supplierId, group.supplier);
     const confirmed = window.confirm(
-      `Créer un bon de commande de ${row.recommendedQuantity} unité(s) de ${row.productName} chez ${row.supplier} ?\n\nIl sera créé « Commandé » et « À payer ». Le stock ne changera qu’au moment où vous cliquerez sur Réceptionner dans Achats.${deliveryHint}`,
+      `Créer un bon d’achat chez ${group.supplier} ?\n\n${group.units} unité(s) · ${money(group.totalCost)}\nDette fournisseur actuelle : ${money(debt)}\n\nLe bon sera créé « Commandé », « À payer » et en retrait fournisseur. Le stock ne changera qu’à la réception.`,
     );
     if (!confirmed) return;
-    setCreatingId(row.productId);
+    setCreatingSupplierId(key);
     try {
-      await submit("addPurchase", {
-        supplierId: row.supplierId ? String(row.supplierId) : "",
-        supplier: row.supplier,
-        item: `Réapprovisionnement · ${row.productName}`,
-        productId: String(row.productId),
-        quantity: String(row.recommendedQuantity),
-        unitCost: String(row.unitCost),
+      await submit("addPurchaseOrder", {
+        supplierId: group.supplierId ? String(group.supplierId) : "",
+        supplier: group.supplier,
+        linesJson: JSON.stringify(group.lines.map((line) => ({
+          productId: line.productId,
+          item: `Réapprovisionnement intelligent · ${line.productName}`,
+          quantity: line.plannedQuantity,
+          unitCost: line.unitCost,
+        }))),
+        purchaseMode: "Retrait fournisseur",
+        receiveImmediately: "false",
         procurementStatus: "Commandé",
+        expectedDate: "",
         account: "Banque",
         paymentStatus: "À payer",
+        paidDate: new Date().toISOString().slice(0, 10),
+        travelCost: "0",
+        travelExpenseAccount: "Espèces",
       });
     } finally {
-      setCreatingId(null);
+      setCreatingSupplierId(null);
+    }
+  }
+
+  async function createAllFundedOrders() {
+    if (!data.access.canEdit || creatingAll || creatingSupplierId || !executableGroups.length) return;
+    const total = executableGroups.reduce((sum, group) => sum + group.totalCost, 0);
+    const units = executableGroups.reduce((sum, group) => sum + group.units, 0);
+    const blockedText = blockedMinimumGroups.length
+      ? `\n\n${blockedMinimumGroups.length} fournisseur(s) seront ignorés car leur minimum de commande n’est pas atteint.`
+      : "";
+    const confirmed = window.confirm(
+      `Préparer tous les achats financés ?\n\n${executableGroups.length} bon(s) fournisseur · ${units} unité(s) · ${money(total)}\nBudget maximum actuel : ${money(purchasePlan.availableBudget)}.${blockedText}`,
+    );
+    if (!confirmed) return;
+    setCreatingAll(true);
+    try {
+      for (const group of executableGroups) {
+        await submit("addPurchaseOrder", {
+          supplierId: group.supplierId ? String(group.supplierId) : "",
+          supplier: group.supplier,
+          linesJson: JSON.stringify(group.lines.map((line) => ({
+            productId: line.productId,
+            item: `Réapprovisionnement intelligent · ${line.productName}`,
+            quantity: line.plannedQuantity,
+            unitCost: line.unitCost,
+          }))),
+          purchaseMode: "Retrait fournisseur",
+          receiveImmediately: "false",
+          procurementStatus: "Commandé",
+          expectedDate: "",
+          account: "Banque",
+          paymentStatus: "À payer",
+          paidDate: new Date().toISOString().slice(0, 10),
+          travelCost: "0",
+          travelExpenseAccount: "Espèces",
+        });
+      }
+    } finally {
+      setCreatingAll(false);
     }
   }
 
   return (
     <div className="reports-page">
-      <section className="report-automation-banner">
+      <section className="report-automation-banner purchase-plan-banner">
         <div>
           <span>↻</span>
           <div>
-            <strong>Stock intelligent actif</strong>
-            <p>La recommandation combine le seuil du produit, les sorties des 30 derniers jours, la couverture cible et les achats déjà en attente de réception.</p>
+            <strong>Plan d’achat intelligent</strong>
+            <p>Maison Jiya priorise les ruptures et stocks critiques, puis limite les quantités au budget réellement réinvestissable après protection des dettes, charges et réserve.</p>
           </div>
         </div>
-        <small>Aucun achat n’est créé automatiquement</small>
+        <small>Aucun achat n’est créé sans votre confirmation</small>
       </section>
 
-      <section className="kpi-grid">
-        <Kpi label="Ruptures" value={String(ruptureCount)} detail={ruptureCount ? "À traiter en priorité" : "Aucune rupture"} danger={ruptureCount > 0} />
-        <Kpi label="Stocks critiques" value={String(criticalCount)} detail="Sous le seuil personnalisé" danger={criticalCount > 0} />
-        <Kpi label="Quantité conseillée" value={String(recommendedUnits)} detail={`${pendingUnits} unité(s) déjà en commande`} />
-        <Kpi label="Budget estimé" value={money(estimatedBudget)} detail="Dernier coût fournisseur connu ou prix d’achat" />
+      <section className="kpi-grid purchase-plan-kpis">
+        <Kpi label="Trésorerie estimée" value={money(metrics.cash)} detail="Argent théorique actuel" />
+        <Kpi label="Dettes fournisseurs" value={money(metrics.unpaidPurchases)} detail="Protégées avant tout nouvel achat" danger={metrics.unpaidPurchases > 0} />
+        <Kpi label="Réserve + charges" value={money(metrics.safetyReserve + metrics.unpaidOperatingExpenses)} detail={`Réserve ${money(metrics.safetyReserve)} · charges ${money(metrics.unpaidOperatingExpenses)}`} />
+        <Kpi label="Budget achat maximum" value={money(purchasePlan.availableBudget)} detail={`Cash protégé : ${money(protectedCash)} · enveloppe réinvestissement : ${money(metrics.reinvest)}`} />
       </section>
 
-      <section className="panel">
-        <PanelHead kicker="Méthode" title="Comment Maison Jiya calcule la commande" total="30 jours" />
+      <section className="panel purchase-plan-summary">
+        <div className="purchase-plan-summary-head">
+          <div>
+            <span className="card-kicker">Réinvestissement proposé</span>
+            <h2>{money(purchasePlan.plannedSpend)} à engager</h2>
+            <p>Besoin théorique total : {money(purchasePlan.totalRecommendedCost)} · reste de budget après le plan : {money(purchasePlan.remainingBudget)}.</p>
+          </div>
+          <button
+            className="primary-button"
+            type="button"
+            disabled={!data.access.canEdit || creatingAll || Boolean(creatingSupplierId) || executableGroups.length === 0}
+            onClick={() => void createAllFundedOrders()}
+          >
+            {creatingAll ? "Création des bons…" : `Préparer les achats · ${executableGroups.length} bon(s)`}
+          </button>
+        </div>
+        <div className="purchase-plan-budget-track">
+          <span style={{ width: `${purchasePlan.availableBudget ? Math.min(100, (purchasePlan.plannedSpend / purchasePlan.availableBudget) * 100) : 0}%` }} />
+        </div>
+        <div className="purchase-plan-stats">
+          <span><strong>{purchasePlan.fullyFundedLines}</strong> besoin(s) financé(s)</span>
+          <span><strong>{purchasePlan.partiallyFundedLines}</strong> partiellement financé(s)</span>
+          <span><strong>{purchasePlan.unfundedLines}</strong> hors budget</span>
+          <span><strong>{purchasePlan.incompleteLines}</strong> fournisseur/coût à compléter</span>
+        </div>
         <p className="profitability-note">
-          Cible = consommation moyenne sur 30 jours × couverture choisie + seuil de sécurité. Les quantités déjà commandées mais non réceptionnées sont retirées du besoin. Une sortie d’inventaire ou une perte manuelle n’augmente pas artificiellement la demande.
+          Budget maximum = minimum entre votre enveloppe de réinvestissement et la trésorerie restante après dettes fournisseurs, charges à payer et réserve de sécurité. Maison Jiya ne propose jamais plus que cette limite.
         </p>
       </section>
 
-      {supplierNames.length === 0 ? (
-        <section className="panel">
-          <EmptyState title="Stock suffisamment couvert" text="Aucune rupture ni commande complémentaire n’est recommandée pour le moment." />
-        </section>
-      ) : supplierNames.map((supplier) => {
-        const rows = attention.filter((row) => row.supplier === supplier);
-        const supplierUnits = rows.reduce((sum, row) => sum + row.recommendedQuantity, 0);
-        const supplierBudget = rows.reduce((sum, row) => sum + row.estimatedCost, 0);
-        return (
-          <section className="panel" key={supplier}>
-            <PanelHead
-              kicker={supplier === "Fournisseur à renseigner" ? "Fournisseur manquant" : "Fournisseur"}
-              title={supplier}
-              total={supplierUnits ? `${supplierUnits} unité(s) · ${money(supplierBudget)}` : "Achat déjà couvert"}
-            />
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Produit</th><th>État</th><th>Stock / seuil</th><th>Sorties 30 j</th><th>Couverture</th><th>Déjà commandé</th><th>Cible</th><th>Conseillé</th><th>Coût estimé</th><th>Actions</th>
+      <section className="panel">
+        <PanelHead kicker="Priorités" title="Quoi acheter maintenant" total={`${attention.length} besoin(s)`} />
+        {attention.length ? (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Priorité</th><th>Produit</th><th>Stock</th><th>Sorties 30 j</th><th>Besoin</th><th>Plan financé</th><th>Coût</th><th>Fournisseur</th><th>Financement</th><th>Réglages</th>
+                </tr>
+              </thead>
+              <tbody>{attention.map((row) => {
+                const product = data.products.find((item) => item.id === row.productId);
+                const debt = supplierDebt(row.supplierId, row.supplier);
+                return (
+                  <tr key={row.productId}>
+                    <td><Status value={row.priority} /><small>{row.status}</small></td>
+                    <td><strong>{row.productName}</strong><small>{row.productCode} · {row.daysOfCover === null ? "couverture inconnue" : `${row.daysOfCover} j de couverture`}</small></td>
+                    <td><strong>{row.stockQuantity}</strong><small>Seuil {row.alertThreshold}</small></td>
+                    <td>{row.soldUnits30}<small>{row.averageDailyDemand.toFixed(2)} / jour</small></td>
+                    <td><strong>{row.recommendedQuantity}</strong><small>{money(row.recommendedQuantity * row.unitCost)}</small></td>
+                    <td className={row.plannedQuantity > 0 ? "money-positive" : "money-negative"}><strong>{row.plannedQuantity}</strong><small>{row.plannedQuantity < row.recommendedQuantity ? `sur ${row.recommendedQuantity}` : "besoin couvert"}</small></td>
+                    <td>{row.plannedQuantity > 0 ? money(row.plannedCost) : "—"}<small>{row.unitCost > 0 ? `${money(row.unitCost)} / unité` : "Coût inconnu"}</small></td>
+                    <td>{row.supplier}<small>{row.supplierId ? `Dette actuelle : ${money(debt)}` : "Fournisseur non relié"}</small></td>
+                    <td><Status value={row.funding} /></td>
+                    <td>{product ? <button className="secondary-button" type="button" onClick={() => onEditProduct({ kind: "product", record: product })}>Réglages</button> : "—"}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => {
-                    const product = data.products.find((item) => item.id === row.productId);
-                    const covered = row.recommendedQuantity === 0 && row.pendingInbound > 0;
-                    return (
-                      <tr key={row.productId}>
-                        <td><strong>{row.productName}</strong><small>{row.productCode} · {row.category}</small></td>
-                        <td><Status value={row.status} />{covered ? <small>Besoin couvert par achat en attente</small> : null}</td>
-                        <td><strong>{row.stockQuantity}</strong><small>Seuil {row.alertThreshold}</small></td>
-                        <td>{row.soldUnits30}<small>{row.averageDailyDemand.toFixed(2)} / jour</small></td>
-                        <td>{row.daysOfCover === null ? "—" : `${row.daysOfCover} j`}<small>Cible {row.coverDays} j</small></td>
-                        <td>{row.pendingInbound}</td>
-                        <td>{row.targetStock}</td>
-                        <td className={row.recommendedQuantity > 0 ? "money-negative" : "money-positive"}><strong>{row.recommendedQuantity}</strong></td>
-                        <td>{row.recommendedQuantity > 0 ? money(row.estimatedCost) : "—"}<small>{row.unitCost ? `${money(row.unitCost)} / unité` : "Coût inconnu"}</small></td>
-                        <td>
-                          <div className="entity-actions-row">
-                            {product ? <button className="secondary-button" type="button" onClick={() => onEditProduct({ kind: "product", record: product })}>Réglages</button> : null}
-                            {row.recommendedQuantity > 0 && supplier !== "Fournisseur à renseigner" ? (
-                              <button className="primary-button" type="button" disabled={!data.access.canEdit || creatingId === row.productId} onClick={() => void preparePurchase(row)}>
-                                {creatingId === row.productId ? "Création…" : "Préparer l’achat"}
-                              </button>
-                            ) : row.recommendedQuantity > 0 ? <small>Ajoutez d’abord un achat lié à ce produit pour mémoriser son fournisseur.</small> : <small>Rien à commander</small>}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        );
-      })}
+                );
+              })}</tbody>
+            </table>
+          </div>
+        ) : <EmptyState title="Stock suffisamment couvert" text="Aucun achat complémentaire n’est recommandé pour le moment." />}
+      </section>
+
+      {purchasePlan.supplierGroups.length ? (
+        <section className="panel">
+          <PanelHead kicker="Bons fournisseurs" title="Achats prêts à créer" total={`${purchasePlan.supplierGroups.length} fournisseur(s)`} />
+          <div className="purchase-plan-supplier-grid">
+            {purchasePlan.supplierGroups.map((group) => {
+              const key = group.supplierId ? String(group.supplierId) : group.supplier;
+              const debt = supplierDebt(group.supplierId, group.supplier);
+              const missingMinimum = Math.max(0, group.minimumOrderAmount - group.totalCost);
+              return (
+                <article key={key} className={!group.meetsMinimumOrder ? "purchase-plan-supplier blocked" : "purchase-plan-supplier"}>
+                  <div className="purchase-plan-supplier-head">
+                    <div><span className="card-kicker">Fournisseur</span><h3>{group.supplier}</h3><small>Dette actuelle : {money(debt)}</small></div>
+                    <strong>{money(group.totalCost)}</strong>
+                  </div>
+                  <div className="purchase-plan-supplier-lines">
+                    {group.lines.map((line) => <span key={line.productId}><strong>{line.plannedQuantity}×</strong> {line.productName}<small>{money(line.plannedCost)}</small></span>)}
+                  </div>
+                  {group.minimumOrderAmount > 0 ? (
+                    <p className={group.meetsMinimumOrder ? "purchase-minimum-ok" : "purchase-minimum-warning"}>
+                      Minimum fournisseur : {money(group.minimumOrderAmount)} {group.meetsMinimumOrder ? "✓" : `· il manque ${money(missingMinimum)}`}
+                    </p>
+                  ) : null}
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={!data.access.canEdit || creatingAll || Boolean(creatingSupplierId) || !group.meetsMinimumOrder}
+                    onClick={() => void createSupplierOrder(group)}
+                  >
+                    {creatingSupplierId === key ? "Création…" : "Créer ce bon"}
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="panel">
+        <PanelHead kicker="Méthode" title="Comment le plan décide" total="30 jours" />
+        <p className="profitability-note">
+          La demande vient uniquement des ventes nettes des 30 derniers jours. Les pertes et corrections d’inventaire ne gonflent pas artificiellement la demande. Les achats déjà commandés sont retirés du besoin. Les ruptures passent avant les stocks critiques, puis les besoins « À prévoir ».
+        </p>
+      </section>
 
       <section className="panel">
         <PanelHead kicker="Vue complète" title="Tous les produits actifs" total={String(recommendations.length)} />
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Produit</th><th>Stock</th><th>Seuil</th><th>Couverture cible</th><th>Fournisseur connu</th><th>Conseil</th></tr></thead>
+            <thead><tr><th>Produit</th><th>Stock</th><th>Seuil</th><th>Couverture cible</th><th>Déjà commandé</th><th>Fournisseur connu</th><th>Conseil</th></tr></thead>
             <tbody>{recommendations.map((row) => (
               <tr key={row.productId}>
                 <td><strong>{row.productName}</strong><small>{row.productCode}</small></td>
                 <td><StockLevel quantity={row.stockQuantity} threshold={row.alertThreshold} /></td>
                 <td>{row.alertThreshold}</td>
                 <td>{row.coverDays} jours</td>
+                <td>{row.pendingInbound}</td>
                 <td>{row.supplier}<small>{row.lastPurchaseAt ? `Dernier achat : ${dateLabel(row.lastPurchaseAt)}` : "Aucun achat lié"}</small></td>
-                <td><Status value={row.status} /><small>{row.recommendedQuantity > 0 ? `Commander ${row.recommendedQuantity}` : row.pendingInbound > 0 ? `${row.pendingInbound} en réception` : "Stock couvert"}</small></td>
+                <td><Status value={row.status} /><small>{row.recommendedQuantity > 0 ? `Besoin ${row.recommendedQuantity}` : row.pendingInbound > 0 ? `${row.pendingInbound} en réception` : "Stock couvert"}</small></td>
               </tr>
             ))}</tbody>
           </table>
