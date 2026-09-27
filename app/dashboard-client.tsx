@@ -1345,8 +1345,9 @@ function Page({
   if (active === "Réapprovisionnement") return <ReorderingPage data={data} submit={submit} onEditProduct={editEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
-  if (active === "Fournisseurs") return <SuppliersPage suppliers={data.suppliers} purchases={data.purchases} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("supplier")} onEdit={editEntity} />;
-  if (active === "Achats") return <PurchasesPage purchases={data.purchases} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Fournisseurs") return <SuppliersPage suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("supplier")} onEdit={editEntity} />;
+  if (active === "Achats") return <PurchasesPage purchases={data.purchases} supplierInvoices={data.supplierInvoices} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Factures fournisseurs") return <SupplierInvoicesPage invoices={data.supplierInvoices} payments={data.supplierPayments} canEdit={data.access.canEdit} onAdd={() => open("supplierInvoice")} submit={submit} />;
   if (active === "Dépenses") return <ExpensesPage expenses={data.expenses} onAdd={() => open("expense")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
@@ -4387,7 +4388,8 @@ function ReportsPage({ data }: { data: Data }) {
   const stockAlerts = data.stockRecommendations.filter((row) => row.status !== "OK");
   const delayed = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && elapsedDays(order.updatedAt || order.createdAt) >= 4);
   const unpaid = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus !== "Encaissé" && elapsedDays(order.updatedAt || order.createdAt) >= 3);
-  const supplierDue = data.purchases.filter((purchase) => purchase.paymentStatus !== "Payé");
+  const supplierDue = data.purchases.filter((purchase) => !purchase.invoiceId && purchase.paymentStatus !== "Payé");
+  const supplierInvoiceDue = data.supplierInvoices.filter((invoice) => invoice.remainingAmount > 0);
   const dormantProducts = data.products.filter((product) => {
     if (product.stockQuantity <= 0 || elapsedDays(product.createdAt) < 45) return false;
     const recentOutbound = data.stockMovements.some((movement) => movement.productId === product.id && ["Commande", "Vente", "Inventaire -"].includes(movement.movementType) && elapsedDays(movement.createdAt) < 45);
@@ -4396,6 +4398,7 @@ function ReportsPage({ data }: { data: Data }) {
   const treasury = calculateTreasuryAccounts({
     orders: data.orders,
     purchases: data.purchases,
+    supplierPayments: data.supplierPayments,
     expenses: data.expenses,
     ads: data.ads,
     capital: data.capital,
@@ -4421,6 +4424,12 @@ function ReportsPage({ data }: { data: Data }) {
     ...delayed.map((order) => ({ key: `delay-${order.id}`, level: "warning", title: `${order.orderRef} semble bloquée`, detail: `${order.carrier} · ${order.status} depuis ${elapsedDays(order.updatedAt || order.createdAt)} jours` })),
     ...unpaid.map((order) => ({ key: `unpaid-${order.id}`, level: "danger", title: `${order.orderRef} livrée mais non encaissée`, detail: `${order.carrier} · ${money(order.saleAmount - order.shippingCost - order.fees)} à vérifier` })),
     ...supplierDue.map((purchase) => ({ key: `supplier-${purchase.id}`, level: "danger", title: `${purchase.supplier} : paiement fournisseur à prévoir`, detail: `${purchase.item} · ${money(purchase.totalCost)} à payer` })),
+    ...supplierInvoiceDue.map((invoice) => ({
+      key: `supplier-invoice-${invoice.id}`,
+      level: invoice.isOverdue ? "danger" : "warning",
+      title: `${invoice.supplierName || "Fournisseur"} : facture ${invoice.invoiceNumber} ${invoice.isOverdue ? "en retard" : "à payer"}`,
+      detail: `${invoice.purchaseRef} · échéance ${dateLabel(invoice.dueDate)} · reste ${money(invoice.remainingAmount)}`,
+    })),
     ...unpaidExpenses.map((expense) => ({ key: `expense-${expense.id}`, level: "danger", title: `${expense.label} : dépense à payer`, detail: `${expense.category} · ${money(expense.amount)} à prévoir` })),
     ...dormantProducts.map((product) => ({ key: `dormant-${product.id}`, level: "warning", title: `${product.name} : stock dormant`, detail: `${product.stockQuantity} unité(s) sans sortie depuis au moins 45 jours` })),
   ];
@@ -4491,13 +4500,19 @@ function CapitalPage({
         date: order.updatedAt || order.createdAt,
       })),
     ...data.purchases
-      .filter((purchase) => purchase.paymentStatus === "Payé")
+      .filter((purchase) => !purchase.invoiceId && purchase.paymentStatus === "Payé")
       .map((purchase) => ({
         direction: "Sortie" as const,
         source: `Achats fournisseurs · ${purchase.account || "Banque"}`,
         amount: purchase.totalCost,
         date: purchase.paidAt || purchase.createdAt,
       })),
+    ...data.supplierPayments.map((payment) => ({
+      direction: "Sortie" as const,
+      source: `Paiement fournisseur · ${payment.account || "Banque"}`,
+      amount: payment.amount,
+      date: payment.paidAt,
+    })),
     ...data.ads
       .filter((ad) => ad.spend > 0)
       .map((ad) => ({
