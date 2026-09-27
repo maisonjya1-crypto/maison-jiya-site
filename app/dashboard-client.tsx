@@ -4978,14 +4978,15 @@ function PrintOrderSheet({ order }: { order: Order }) {
     </section>
   );
 }
-function EntityModal({ selection, products, close, submit }: { selection: EditableEntity; products: Product[]; close: () => void; submit: (action: string, values: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function EntityModal({ selection, products, suppliers, close, submit }: { selection: EditableEntity; products: Product[]; suppliers: Supplier[]; close: () => void; submit: (action: string, values: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const titles = {
     product: "Modifier le produit",
     movement: "Modifier le mouvement de stock",
     customer: "Modifier le client",
-    purchase: "Modifier l’achat",
+    supplier: "Modifier le fournisseur",
+    purchase: "Modifier le bon de commande",
     expense: "Modifier la dépense",
     ad: "Modifier la publicité",
     capital: "Modifier le mouvement de capital",
@@ -4994,6 +4995,7 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
     product: "updateProduct",
     movement: "updateStockMovement",
     customer: "updateCustomer",
+    supplier: "updateSupplier",
     purchase: "updatePurchase",
     expense: "updateExpense",
     ad: "updateAd",
@@ -5041,8 +5043,27 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
               <Field label="Téléphone *" name="phone" type="tel" inputMode="tel" defaultValue={selection.record.phone} autoComplete="tel" placeholder="06 12 34 56 78" maxLength={18} required />
               <Field label="Ville *" name="city" defaultValue={selection.record.city} autoComplete="address-level2" required />
             </>}
+            {selection.kind === "supplier" && <>
+              <Field label="Nom du fournisseur *" name="name" defaultValue={selection.record.name} required />
+              <Field label="Contact" name="contactName" defaultValue={selection.record.contactName} />
+              <Field label="Téléphone" name="phone" type="tel" inputMode="tel" defaultValue={selection.record.phone} />
+              <Field label="WhatsApp" name="whatsapp" type="tel" inputMode="tel" defaultValue={selection.record.whatsapp} />
+              <Field label="Ville" name="city" defaultValue={selection.record.city} />
+              <Field label="Délai moyen (jours) *" name="leadTimeDays" type="number" inputMode="numeric" min="0" defaultValue={String(selection.record.leadTimeDays)} required />
+              <Field label="Minimum de commande (MAD)" name="minimumOrderAmount" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={String(selection.record.minimumOrderAmount)} />
+              <Field label="Conditions de paiement" name="paymentTerms" defaultValue={selection.record.paymentTerms} />
+              <Field label="Notes" name="notes" defaultValue={selection.record.notes} maxLength={500} />
+            </>}
             {selection.kind === "purchase" && <>
-              <Field label="Fournisseur *" name="supplier" defaultValue={selection.record.supplier} required />
+              {suppliers.length ? (
+                <label className="field">
+                  <span>Fournisseur *</span>
+                  <select name="supplierId" defaultValue={selection.record.supplierId || ""} required>
+                    {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.isActive ? "" : " · inactif"}</option>)}
+                  </select>
+                </label>
+              ) : <Field label="Fournisseur *" name="supplier" defaultValue={selection.record.supplier} required />}
+              <Field label="Référence du bon" name="purchaseRef" defaultValue={selection.record.purchaseRef || ""} />
               <Field label="Article / motif *" name="item" defaultValue={selection.record.item} required />
               {selection.record.receivedQuantity > 0 ? (
                 <>
@@ -5066,6 +5087,15 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
                 </>
               )}
               <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={String(selection.record.unitCost)} required />
+              {selection.record.receivedQuantity > 0 ? (
+                <div className="movement-edit-note">
+                  <strong>{selection.record.procurementStatus}</strong>
+                  <small>Le statut de réception est calculé automatiquement dès qu’une quantité entre en stock.</small>
+                </div>
+              ) : (
+                <Select label="État du bon" name="procurementStatus" defaultValue={selection.record.procurementStatus} options={["Brouillon", "Commandé", "Annulé"]} />
+              )}
+              <Field label="Livraison prévue" name="expectedDate" type="date" defaultValue={selection.record.expectedAt?.slice(0, 10) || ""} />
               <Select label="Compte de paiement" name="account" defaultValue={selection.record.account || "Banque"} options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
               <Select label="Paiement" name="paymentStatus" defaultValue={selection.record.paymentStatus} options={["Payé", "À payer"]} />
               <Field label="Date de paiement (si payé)" name="paidDate" type="date" defaultValue={selection.record.paidAt?.slice(0, 10) || ""} />
