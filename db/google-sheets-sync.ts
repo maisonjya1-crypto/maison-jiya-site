@@ -42,6 +42,8 @@ const CORE_SYNC_TABLES = [
   "capital_ledger",
   "order_status_history",
   "carrier_events",
+  "carrier_settlements",
+  "carrier_settlement_orders",
 ] as const;
 
 const STOREFRONT_SYNC_TABLES = [
