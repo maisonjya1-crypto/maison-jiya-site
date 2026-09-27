@@ -294,6 +294,8 @@ export const products = sqliteTable(
     salePrice: integer("sale_price").notNull(),
     minimumSalePrice: integer("minimum_sale_price").notNull().default(0),
     stockQuantity: integer("stock_quantity").notNull().default(0),
+    stockAlertThreshold: integer("stock_alert_threshold").notNull().default(5),
+    reorderCoverDays: integer("reorder_cover_days").notNull().default(30),
     archivedAt: text("archived_at"),
     archivedByUserId: integer("archived_by_user_id"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
