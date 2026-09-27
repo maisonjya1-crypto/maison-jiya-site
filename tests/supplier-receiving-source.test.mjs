@@ -22,7 +22,7 @@ test("les achats peuvent être liés à un produit et mémorisent leur réceptio
 });
 
 test("la réception fournisseur ajoute le stock une seule fois et crée un mouvement traçable", () => {
-  assert.match(route, /receivePurchaseIntoStock\(await getRawDb\(\), id\)/);
+  assert.match(route, /receivePurchaseIntoStock\(await getRawDb\(\), id, receiveQuantity \|\| undefined\)/);
   assert.match(receiving, /received_quantity < quantity/);
   assert.match(receiving, /stock_quantity = stock_quantity \+ \?/);
   assert.match(receiving, /'Réception fournisseur'/);
@@ -46,7 +46,7 @@ test("un achat réceptionné ne peut plus être supprimé ni changer de produit 
 
 test("l’interface sépare l’achat de la réception réelle du stock", () => {
   assert.match(dashboard, /Achat ≠ stock reçu/);
-  assert.match(dashboard, /Réceptionner le stock/);
+  assert.match(dashboard, /Réceptions? fournisseur/);
   assert.match(dashboard, /receivePurchase/);
   assert.match(dashboard, /Produit lié au stock/);
   assert.match(dashboard, /Réception fournisseur/);
