@@ -286,7 +286,7 @@ export const supplierPayments = sqliteTable(
   "supplier_payments",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    invoiceId: integer("invoice_id").notNull().references(() => supplierInvoices.id),
+    invoiceId: integer("invoice_id").notNull().references(() => supplierInvoices.id, { onDelete: "cascade" }),
     amount: integer("amount").notNull(),
     account: text("account").notNull().default("Banque"),
     paidAt: text("paid_at").notNull(),
