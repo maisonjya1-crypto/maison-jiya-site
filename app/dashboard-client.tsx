@@ -501,7 +501,8 @@ export default function DashboardClient() {
       updateBackupToken: "Clé privée de sauvegarde créée",
       revokeBackupToken: "Sauvegarde Google Sheets désactivée",
       updateBackupWebhook: "Synchronisation instantanée connectée",
-      createBackupNow: "Sauvegarde complète créée",
+      createBackupNow: "Sauvegarde complète créée et contrôlée",
+      verifyBackupNow: "Contrôle de sauvegarde terminé",
       restoreBackup: "Sauvegarde restaurée avec succès",
       resetBusinessValues: "Valeurs commerciales remises à zéro",
       deleteOrder: "Commande placée dans la corbeille pendant 90 jours",
@@ -1089,7 +1090,7 @@ function Page({
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
   if (active === "Mode entraînement") return <TrainingPage onExit={() => setActive("Vue d’ensemble")} />;
   if (active === "Corbeille") return <TrashPage orders={data.trash} canRestore={data.access.isOwner} submit={submit} />;
-  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} googleSheetsSync={data.googleSheetsSync} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditApiVerified={data.settings.sendit_api_verified === "true"} senditApiCheckedAt={data.settings.sendit_api_checked_at || ""} senditApiLastError={data.settings.sendit_api_last_error || ""} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} senditWebhookVerifiedAt={data.settings.sendit_webhook_verified_at || ""} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} forceLogApiVerified={data.settings.forcelog_api_verified === "true"} forceLogApiCheckedAt={data.settings.forcelog_api_checked_at || ""} forceLogApiLastError={data.settings.forcelog_api_last_error || ""} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} products={data.products} submit={submit} />;
+  if (active === "Paramètres") return <SettingsPage currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} backupHealthStatus={data.settings.backup_health_status || ""} backupHealthCheckedAt={data.settings.backup_health_checked_at || ""} backupHealthCreatedAt={data.settings.backup_health_backup_created_at || ""} backupHealthRecordCount={Number(data.settings.backup_health_record_count || 0)} backupHealthLastError={data.settings.backup_health_last_error || ""} googleSheetsSync={data.googleSheetsSync} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditApiVerified={data.settings.sendit_api_verified === "true"} senditApiCheckedAt={data.settings.sendit_api_checked_at || ""} senditApiLastError={data.settings.sendit_api_last_error || ""} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} senditWebhookVerifiedAt={data.settings.sendit_webhook_verified_at || ""} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} forceLogApiVerified={data.settings.forcelog_api_verified === "true"} forceLogApiCheckedAt={data.settings.forcelog_api_checked_at || ""} forceLogApiLastError={data.settings.forcelog_api_last_error || ""} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} products={data.products} submit={submit} />;
   const deliveryOrderCount = data.orders.filter((order) => order.fulfillmentType !== "Magasin physique").length;
   const total = Math.max(1, deliveryOrderCount);
   return (
@@ -1180,7 +1181,7 @@ function Page({
   );
 }
 
-function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, googleSheetsSync, senditApiConfigured, senditApiVerified, senditApiCheckedAt, senditApiLastError, senditWebhookConfigured, senditWebhookVerifiedAt, forceLogApiConfigured, forceLogApiVerified, forceLogApiCheckedAt, forceLogApiLastError, carrierLastSyncAt, access, members, auditLogs, backups, products, submit }: {
+function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, backupHealthStatus, backupHealthCheckedAt, backupHealthCreatedAt, backupHealthRecordCount, backupHealthLastError, googleSheetsSync, senditApiConfigured, senditApiVerified, senditApiCheckedAt, senditApiLastError, senditWebhookConfigured, senditWebhookVerifiedAt, forceLogApiConfigured, forceLogApiVerified, forceLogApiCheckedAt, forceLogApiLastError, carrierLastSyncAt, access, members, auditLogs, backups, products, submit }: {
   currentTheme: ThemeKey;
   accountName: string;
   accountEmail: string;
@@ -1189,6 +1190,11 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   backupSheetUrl: string;
   backupWebhookUrl: string;
   backupWebhookConfigured: boolean;
+  backupHealthStatus: string;
+  backupHealthCheckedAt: string;
+  backupHealthCreatedAt: string;
+  backupHealthRecordCount: number;
+  backupHealthLastError: string;
   googleSheetsSync: GoogleSheetsSync;
   senditApiConfigured: boolean;
   senditApiVerified: boolean;
@@ -1215,6 +1221,7 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   const [savingBackup, setSavingBackup] = useState(false);
   const [savingWebhook, setSavingWebhook] = useState(false);
   const [savingFullBackup, setSavingFullBackup] = useState(false);
+  const [checkingBackup, setCheckingBackup] = useState(false);
   const [resettingBusinessValues, setResettingBusinessValues] = useState(false);
   const [retryingSheets, setRetryingSheets] = useState(false);
   const [backupToken, setBackupToken] = useState("");
@@ -1332,6 +1339,16 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
       await submit("createBackupNow", {});
     } finally {
       setSavingFullBackup(false);
+    }
+  }
+
+  async function verifyRecoveryBackup() {
+    if (checkingBackup || !access.isOwner) return;
+    setCheckingBackup(true);
+    try {
+      await submit("verifyBackupNow", {});
+    } finally {
+      setCheckingBackup(false);
     }
   }
 
@@ -1618,10 +1635,35 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
         </summary>
         <div className="settings-disclosure-body">
           <div className="settings-disclosure-actions">
-            <p>Une copie complète des données commerciales est créée chaque jour et conservée pendant 90 jours. Les comptes, mots de passe et clés privées restent séparés.</p>
+            <p>Une copie complète des données commerciales est créée chaque jour et conservée pendant 90 jours. Google Sheets fournit en plus une copie lisible hors D1. Les comptes, mots de passe et clés privées restent séparés.</p>
+            <div className="sheets-backup-grid">
+              <div className="backup-key-card">
+                <span className="card-kicker">1 · Copie D1 restaurable</span>
+                <h3>{backupHealthStatus === "verified" ? "Dernière sauvegarde contrôlée" : backupHealthStatus === "error" ? "Contrôle à corriger" : "Contrôle en attente"}</h3>
+                <span className={`backup-status ${backupHealthStatus === "verified" ? "active" : ""}`}>{backupHealthStatus === "verified" ? "Structure vérifiée" : backupHealthStatus === "error" ? "Erreur" : "À vérifier"}</span>
+                {backupHealthCreatedAt && <small>Sauvegarde : {dateTimeLabel(backupHealthCreatedAt)} · {backupHealthRecordCount.toLocaleString("fr-MA")} enregistrement(s)</small>}
+                {backupHealthCheckedAt && <small>Dernier contrôle non destructif : {dateTimeLabel(backupHealthCheckedAt)}</small>}
+                {backupHealthLastError && <small className="meta-sync-error">{backupHealthLastError}</small>}
+              </div>
+              <div className="backup-key-card">
+                <span className="card-kicker">2 · Copie indépendante hors D1</span>
+                <h3>Google Sheets</h3>
+                <span className={`backup-status ${syncState.status === "synced" ? "active" : ""}`}>{syncStatusLabel}</span>
+                <small>{syncState.status === "synced" && syncState.lastSyncAt ? `Dernière copie confirmée : ${dateTimeLabel(syncState.lastSyncAt)}` : "La copie externe reste distincte des sauvegardes D1."}</small>
+              </div>
+              <div className="backup-key-card">
+                <span className="card-kicker">3 · Test de restauration</span>
+                <h3>Chemin de restauration testé en CI</h3>
+                <span className="backup-status active">Test isolé</span>
+                <small>Les tests reconstruisent une base isolée et vérifient le rollback en cas d’erreur. La production n’est jamais écrasée pour un simple test.</small>
+              </div>
+            </div>
             <div className="backup-export-actions">
               {access.isOwner && <a className="secondary-button" href="/api/export?format=json">Exporter tout en JSON</a>}
               {access.isOwner && <a className="secondary-button" href="/api/export?format=csv">Exporter les CSV (.zip)</a>}
+              <button className="secondary-button" type="button" onClick={() => void verifyRecoveryBackup()} disabled={checkingBackup || !access.isOwner}>
+                {checkingBackup ? "Contrôle…" : "✓ Vérifier la dernière sauvegarde"}
+              </button>
               <button className="primary-button" type="button" onClick={() => void createFullBackup()} disabled={savingFullBackup || !access.isOwner}>
                 {savingFullBackup ? "Préparation…" : "＋ Sauvegarder maintenant"}
               </button>
