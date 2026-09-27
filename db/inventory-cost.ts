@@ -304,3 +304,22 @@ export async function receivePurchaseLine(
   };
 }
 
+export async function receivePurchaseOrderImmediately(
+  database: D1Database,
+  purchaseRef: string,
+  receivedAtInput = new Date().toISOString(),
+) {
+  const result = await database.prepare(`
+    SELECT id, quantity
+    FROM purchases
+    WHERE purchase_ref = ?
+    ORDER BY purchase_line_no, id
+  `).bind(purchaseRef).all<{ id: number; quantity: number }>();
+
+  if (!result.results.length) throw new Error("Bon de commande introuvable.");
+  const receipts: PurchaseLineReceiptResult[] = [];
+  for (const line of result.results) {
+    receipts.push(await receivePurchaseLine(database, line.id, Number(line.quantity || 0), receivedAtInput));
+  }
+  return receipts;
+}

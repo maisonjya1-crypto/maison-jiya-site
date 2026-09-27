@@ -74,6 +74,7 @@ type Purchase = {
   supplierId: number | null;
   purchaseRef: string | null;
   purchaseLineNo: number;
+  purchaseMode: "Retrait fournisseur" | "Livraison fournisseur";
   invoiceId: number | null;
   procurementStatus: string;
   orderedAt: string | null;
@@ -3885,7 +3886,7 @@ function PurchasesPage({ purchases, supplierInvoices, products, suppliers, canEd
                 <tr key={order.key}>
                   <td>
                     <strong>{order.ref}</strong>
-                    <small>{order.lines.length} ligne{order.lines.length === 1 ? "" : "s"}</small>
+                    <small>{order.first.purchaseMode || "Retrait fournisseur"} · {order.lines.length} ligne{order.lines.length === 1 ? "" : "s"}</small>
                   </td>
                   <td>{dateLabel(order.orderedAt)}</td>
                   <td><strong>{order.first.supplier}</strong><small>{suppliers.find((supplier) => supplier.id === order.first.supplierId)?.city || ""}</small></td>
@@ -5154,6 +5155,8 @@ function EntryModal({ kind, carrierNames, products, suppliers, purchases, suppli
   const [selectedOrderStatus, setSelectedOrderStatus] = useState("En attente");
   const [orderCity, setOrderCity] = useState("");
   const [orderFulfillment, setOrderFulfillment] = useState<"Livraison" | "Magasin physique">("Livraison");
+  const [purchaseMode, setPurchaseMode] = useState<"Retrait fournisseur" | "Livraison fournisseur">("Retrait fournisseur");
+  const [receiveImmediately, setReceiveImmediately] = useState(true);
   const selectedProduct = products.find((product) => String(product.id) === selectedProductId) || null;
 
   const initialPurchaseProduct = products[0] || null;
@@ -5204,6 +5207,12 @@ function EntryModal({ kind, carrierNames, products, suppliers, purchases, suppli
 
   function removePurchaseLine(key: number) {
     setPurchaseLines((current) => current.length > 1 ? current.filter((line) => line.key !== key) : current);
+  }
+
+  function changePurchaseMode(value: string) {
+    const next = value === "Livraison fournisseur" ? "Livraison fournisseur" : "Retrait fournisseur";
+    setPurchaseMode(next);
+    setReceiveImmediately(next === "Retrait fournisseur");
   }
 
   function selectOrderProduct(productId: string) {
@@ -5464,10 +5473,41 @@ function EntryModal({ kind, carrierNames, products, suppliers, purchases, suppli
                     <strong>Total du bon : {money(purchaseOrderTotal)}</strong>
                   </div>
                 </div>
-                <Select label="État du bon" name="procurementStatus" options={["Commandé", "Brouillon"]} />
-                <Field label="Livraison prévue" name="expectedDate" type="date" />
-                <Select label="Compte de paiement" name="account" options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
-                <Select label="Paiement" name="paymentStatus" options={["À payer", "Payé"]} />
+                <label className="field purchase-mode-field">
+                  <span>Comment récupérez-vous cet achat ? *</span>
+                  <select name="purchaseMode" value={purchaseMode} onChange={(event) => changePurchaseMode(event.target.value)}>
+                    <option>Retrait fournisseur</option>
+                    <option>Livraison fournisseur</option>
+                  </select>
+                  <small>{purchaseMode === "Retrait fournisseur" ? "Mode habituel : vous vous déplacez chez le fournisseur et repartez avec la marchandise." : "À utiliser seulement quand le fournisseur vous envoie la marchandise."}</small>
+                </label>
+                <label className="purchase-immediate-toggle">
+                  <input
+                    type="checkbox"
+                    name="receiveImmediately"
+                    value="true"
+                    checked={receiveImmediately}
+                    onChange={(event) => setReceiveImmediately(event.target.checked)}
+                  />
+                  <span>
+                    <strong>{purchaseMode === "Retrait fournisseur" ? "Je repars avec la marchandise maintenant" : "Marchandise déjà reçue"}</strong>
+                    <small>Si activé, toutes les lignes sont réceptionnées immédiatement et le stock est mis à jour automatiquement.</small>
+                  </span>
+                </label>
+                {receiveImmediately ? <input type="hidden" name="procurementStatus" value="Commandé" /> : <Select label="État du bon" name="procurementStatus" options={["Commandé", "Brouillon"]} />}
+                {!receiveImmediately ? <Field label={purchaseMode === "Retrait fournisseur" ? "Date de retrait prévue" : "Livraison prévue"} name="expectedDate" type="date" /> : null}
+                {purchaseMode === "Retrait fournisseur" ? (
+                  <div className="purchase-travel-expense">
+                    <div>
+                      <strong>Frais de déplacement</strong>
+                      <small>Taxi, essence, parking… Ils seront enregistrés séparément en dépense Transport et ne modifieront pas le coût du stock.</small>
+                    </div>
+                    <Field label="Montant (MAD)" name="travelCost" type="number" inputMode="decimal" min="0" step="0.01" defaultValue="0" />
+                    <Select label="Compte utilisé" name="travelExpenseAccount" options={["Espèces", "Caisse", "Banque", "Carte", "Autre"]} />
+                  </div>
+                ) : null}
+                <Select label="Compte de paiement fournisseur" name="account" options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
+                <Select label="Paiement fournisseur" name="paymentStatus" options={["À payer", "Payé"]} />
                 <Field label="Date de paiement (si payé)" name="paidDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
               </>
             )}
