@@ -397,6 +397,32 @@ export const stockMovements = sqliteTable(
   ],
 );
 
+export const inventorySessions = sqliteTable(
+  "inventory_sessions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    sessionRef: text("session_ref").notNull().unique(),
+    status: text("status").notNull().default("En cours"),
+    note: text("note").notNull().default(""),
+    expectedProductCount: integer("expected_product_count").notNull().default(0),
+    countedProductCount: integer("counted_product_count").notNull().default(0),
+    totalSystemUnits: integer("total_system_units").notNull().default(0),
+    totalPhysicalUnits: integer("total_physical_units").notNull().default(0),
+    totalAdjustmentUnits: integer("total_adjustment_units").notNull().default(0),
+    valueBefore: integer("value_before").notNull().default(0),
+    valueAfter: integer("value_after").notNull().default(0),
+    lossValue: integer("loss_value").notNull().default(0),
+    startedByUserId: integer("started_by_user_id"),
+    startedByName: text("started_by_name").notNull(),
+    startedAt: text("started_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    completedAt: text("completed_at"),
+  },
+  (table) => [
+    index("inventory_sessions_status_idx").on(table.status),
+    index("inventory_sessions_started_at_idx").on(table.startedAt),
+  ],
+);
+
 export const inventoryCounts = sqliteTable(
   "inventory_counts",
   {
@@ -406,10 +432,19 @@ export const inventoryCounts = sqliteTable(
     systemQuantity: integer("system_quantity").notNull(),
     physicalQuantity: integer("physical_quantity").notNull(),
     difference: integer("difference").notNull(),
+    sessionId: integer("session_id").references(() => inventorySessions.id),
+    reason: text("reason").notNull().default("Aucun écart"),
+    unitCost: integer("unit_cost").notNull().default(0),
+    valueBefore: integer("value_before").notNull().default(0),
+    valueAfter: integer("value_after").notNull().default(0),
+    lossValue: integer("loss_value").notNull().default(0),
     note: text("note").notNull().default(""),
     countedByUserId: integer("counted_by_user_id"),
     countedByName: text("counted_by_name").notNull(),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
-  (table) => [index("inventory_counts_product_id_idx").on(table.productId)],
+  (table) => [
+    index("inventory_counts_product_id_idx").on(table.productId),
+    index("inventory_counts_session_id_idx").on(table.sessionId),
+  ],
 );
