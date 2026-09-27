@@ -58,8 +58,8 @@ const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   products: ["id", "product_code", "name", "category", "purchase_price", "sale_price", "minimum_sale_price", "stock_quantity", "archived_at", "archived_by_user_id", "created_at"],
   stockMovements: ["id", "product_id", "order_id", "purchase_id", "movement_type", "quantity", "note", "created_at"],
   inventoryCounts: ["id", "count_ref", "product_id", "system_quantity", "physical_quantity", "difference", "note", "counted_by_user_id", "counted_by_name", "created_at"],
-  purchases: ["id", "supplier", "item", "product_id", "quantity", "unit_cost", "total_cost", "payment_status", "received_quantity", "received_at", "created_at"],
-  expenses: ["id", "category", "label", "amount", "account", "payment_status", "expense_date", "note", "created_at"],
+  purchases: ["id", "supplier", "item", "product_id", "quantity", "unit_cost", "total_cost", "account", "payment_status", "paid_at", "received_quantity", "received_at", "created_at"],
+  expenses: ["id", "category", "label", "amount", "account", "payment_status", "paid_at", "expense_date", "note", "created_at"],
   ads: ["id", "platform", "campaign", "external_id", "spend", "revenue", "order_count", "native_spend_cents", "native_revenue_cents", "native_currency", "source", "performance_date", "created_at"],
   capital: ["id", "direction", "category", "label", "amount", "account", "order_id", "is_automatic", "auto_key", "entry_date", "created_at"],
   settings: ["key", "value", "updated_at"],
@@ -251,6 +251,11 @@ function insertStatement(database: D1Database, tableKey: keyof BusinessSnapshot[
   const values = columns.map((column) => {
     if (column === "stock_deducted") return row[column] ?? 0;
     if (column === "received_quantity") return row[column] ?? 0;
+    if (column === "paid_at") {
+      if (row[column] !== undefined) return row[column];
+      if (row.payment_status !== "Payé") return null;
+      return row.created_at ?? row.expense_date ?? null;
+    }
     if (column === "minimum_sale_price") return row[column] ?? row.sale_price ?? 0;
     if (column === "fulfillment_type") return row[column] ?? "Livraison";
     if (column === "items_json") return row[column] ?? "[]";
