@@ -2241,6 +2241,8 @@ function parseDelimitedProducts(text: string) {
     prixdeventeminimumdh: "minimumSalePrice", prixminimum: "minimumSalePrice", minimumsaleprice: "minimumSalePrice",
     quantitestockinitial: "initialQuantity", quantiteinitiale: "initialQuantity", stockinitial: "initialQuantity", initialquantity: "initialQuantity",
     stockrestant: "stockRemaining", quantiterestante: "stockRemaining", stockremaining: "stockRemaining",
+    seuilalertestock: "stockAlertThreshold", seuilstock: "stockAlertThreshold", stockalertthreshold: "stockAlertThreshold",
+    couvertureciblejours: "reorderCoverDays", couverturejours: "reorderCoverDays", reordercoverdays: "reorderCoverDays",
   });
   return rows.filter((row) => String(row.productCode || "").trim() || String(row.name || "").trim());
 }
@@ -2900,8 +2902,8 @@ function ImportProductsPanel({ products, canEdit, submit }: { products: Product[
             <small>Le stock importé correspond à « Stock restant ». Les ventes et bénéfices historiques du fichier ne créent pas de fausses commandes.</small>
           </div>
           <div className="table-scroll product-import-table">
-            <table><thead><tr><th>ID</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Minimum</th><th>Stock restant</th></tr></thead><tbody>
-              {parsed.slice(0, 5).map((row, index) => <tr key={`${row.productCode}-${index}`}><td><strong>{row.productCode}</strong></td><td>{row.name}</td><td>{row.category}</td><td>{row.purchasePrice || "0"} MAD</td><td>{row.salePrice || "0"} MAD</td><td>{row.minimumSalePrice || row.salePrice || "0"} MAD</td><td>{row.stockRemaining || row.initialQuantity || "0"}</td></tr>)}
+            <table><thead><tr><th>ID</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Minimum</th><th>Stock restant</th><th>Seuil</th><th>Couverture</th></tr></thead><tbody>
+              {parsed.slice(0, 5).map((row, index) => <tr key={`${row.productCode}-${index}`}><td><strong>{row.productCode}</strong></td><td>{row.name}</td><td>{row.category}</td><td>{row.purchasePrice || "0"} MAD</td><td>{row.salePrice || "0"} MAD</td><td>{row.minimumSalePrice || row.salePrice || "0"} MAD</td><td>{row.stockRemaining || row.initialQuantity || "0"}</td><td>{row.stockAlertThreshold || "5"}</td><td>{row.reorderCoverDays || "30"} j</td></tr>)}
             </tbody></table>
           </div>
           <div className="product-import-actions">
@@ -2925,7 +2927,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
   const units = activeProducts.reduce((sum, product) => sum + product.stockQuantity, 0),
     purchaseValue = activeProducts.reduce((sum, product) => sum + product.stockQuantity * product.purchasePrice, 0),
     saleValue = activeProducts.reduce((sum, product) => sum + product.stockQuantity * product.salePrice, 0),
-    lowStock = activeProducts.filter((product) => product.stockQuantity <= 5).length;
+    lowStock = activeProducts.filter((product) => product.stockQuantity <= product.stockAlertThreshold).length;
   const quantityForProduct = (order: Order, product: Product) => {
     if (order.productId === product.id) return order.quantity;
     const linkedQuantity = movements
@@ -3047,7 +3049,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
             <>
               <div className="desktop-product-table table-scroll">
                 <table>
-                  <thead><tr><th>ID produit</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Minimum</th><th>Restant</th><th>Actions</th></tr></thead>
+                  <thead><tr><th>ID produit</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Minimum</th><th>Seuil stock</th><th>Restant</th><th>Actions</th></tr></thead>
                   <tbody>
                     {filteredProducts.map((product) => (
                       <tr key={product.id}>
@@ -3057,7 +3059,8 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                         <td>{money(product.purchasePrice)}</td>
                         <td><strong>{money(product.salePrice)}</strong></td>
                         <td>{money(product.minimumSalePrice || product.salePrice)}</td>
-                        <td><StockLevel quantity={product.stockQuantity} /></td>
+                        <td>{product.stockAlertThreshold}</td>
+                        <td><StockLevel quantity={product.stockQuantity} threshold={product.stockAlertThreshold} /></td>
                         <td>
                           <div className="entity-actions-row">
                             {product.archivedAt ? (
@@ -3088,7 +3091,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                     <div className="product-card-head">
                       <div><span>{product.productCode}</span><h3>{product.name}</h3></div>
                       <div className="product-card-actions">
-                        <StockLevel quantity={product.stockQuantity} />
+                        <StockLevel quantity={product.stockQuantity} threshold={product.stockAlertThreshold} />
                         {product.archivedAt ? <Status value="Archivé" /> : <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />}
                       </div>
                     </div>
@@ -3097,6 +3100,8 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                       <p>Prix d’achat<strong>{money(product.purchasePrice)}</strong></p>
                       <p>Prix de vente<strong>{money(product.salePrice)}</strong></p>
                       <p>Prix minimum<strong>{money(product.minimumSalePrice || product.salePrice)}</strong></p>
+                      <p>Seuil stock<strong>{product.stockAlertThreshold}</strong></p>
+                      <p>Couverture cible<strong>{product.reorderCoverDays} j</strong></p>
                     </div>
                     {product.archivedAt ? (
                       <div className="stock-actions">
@@ -3196,11 +3201,11 @@ function ProductFilterBar({ search, category, categories, resultCount, totalCoun
     </div>
   );
 }
-function StockLevel({ quantity }: { quantity: number }) {
+function StockLevel({ quantity, threshold = 5 }: { quantity: number; threshold?: number }) {
   return (
-    <span className={`stock-level ${quantity === 0 ? "empty" : quantity <= 5 ? "low" : "ok"}`}>
+    <span className={`stock-level ${quantity === 0 ? "empty" : quantity <= threshold ? "low" : "ok"}`}>
       <strong>{quantity}</strong> unité{quantity === 1 ? "" : "s"}
-      <small>{quantity === 0 ? "Rupture" : quantity <= 5 ? "Stock faible" : "Disponible"}</small>
+      <small>{quantity === 0 ? "Rupture" : quantity <= threshold ? `Stock faible · seuil ${threshold}` : "Disponible"}</small>
     </span>
   );
 }
@@ -4375,6 +4380,8 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
                 <Field label="Nom du produit *" name="name" required />
                 <Select label="Catégorie *" name="category" options={productCategoryOptions} />
                 <Field label="Quantité initiale *" name="initialQuantity" type="number" inputMode="numeric" defaultValue="0" min="0" required />
+                <Field label="Seuil d’alerte stock *" name="stockAlertThreshold" type="number" inputMode="numeric" defaultValue="5" min="0" required />
+                <Field label="Couverture cible (jours) *" name="reorderCoverDays" type="number" inputMode="numeric" defaultValue="30" min="1" required />
                 <ProductPricingFields />
               </>
             )}
@@ -4791,6 +4798,8 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
               <Field label="ID produit / SKU *" name="productCode" defaultValue={selection.record.productCode} required />
               <Field label="Nom du produit *" name="name" defaultValue={selection.record.name} required />
               <Select label="Catégorie *" name="category" defaultValue={selection.record.category} options={productCategoryOptions} />
+              <Field label="Seuil d’alerte stock *" name="stockAlertThreshold" type="number" inputMode="numeric" min="0" defaultValue={String(selection.record.stockAlertThreshold)} required />
+              <Field label="Couverture cible (jours) *" name="reorderCoverDays" type="number" inputMode="numeric" min="1" defaultValue={String(selection.record.reorderCoverDays)} required />
               <ProductPricingFields initialPurchasePrice={selection.record.purchasePrice} initialSalePrice={selection.record.salePrice} initialMinimumSalePrice={selection.record.minimumSalePrice} />
             </>}
             {selection.kind === "movement" && <>
