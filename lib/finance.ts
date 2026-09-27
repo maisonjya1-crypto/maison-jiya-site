@@ -188,8 +188,6 @@ export function calculateBusinessFinance({
   const collected = collectedOrders.reduce((sum, order) => sum + amount(order.saleAmount), 0);
   const shippingCollected = collectedOrders.reduce((sum, order) => sum + amount(order.shippingCost), 0);
   const feesCollected = collectedOrders.reduce((sum, order) => sum + amount(order.fees), 0);
-  const netCollected = collected - shippingCollected - feesCollected;
-
   const legacyPurchases = purchases.filter((purchase) =>
     !purchase.invoiceId
     && !["Brouillon", "Annulé"].includes(purchase.procurementStatus || ""),
