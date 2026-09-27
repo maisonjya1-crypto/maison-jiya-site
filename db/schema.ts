@@ -125,6 +125,45 @@ export const carrierEvents = sqliteTable(
   ],
 );
 
+export const carrierSettlements = sqliteTable(
+  "carrier_settlements",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    carrier: text("carrier").notNull(),
+    reference: text("reference").notNull(),
+    settlementDate: text("settlement_date").notNull(),
+    expectedAmount: integer("expected_amount").notNull().default(0),
+    actualAmount: integer("actual_amount").notNull().default(0),
+    differenceAmount: integer("difference_amount").notNull().default(0),
+    orderCount: integer("order_count").notNull().default(0),
+    status: text("status").notNull().default("Rapproché"),
+    note: text("note").notNull().default(""),
+    createdByUserId: integer("created_by_user_id"),
+    createdByName: text("created_by_name").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("carrier_settlements_carrier_reference_unique_idx").on(table.carrier, table.reference),
+    index("carrier_settlements_date_idx").on(table.settlementDate),
+    index("carrier_settlements_status_idx").on(table.status),
+  ],
+);
+
+export const carrierSettlementOrders = sqliteTable(
+  "carrier_settlement_orders",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    settlementId: integer("settlement_id").notNull().references(() => carrierSettlements.id, { onDelete: "cascade" }),
+    orderId: integer("order_id").notNull().references(() => orders.id),
+    expectedAmount: integer("expected_amount").notNull().default(0),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("carrier_settlement_orders_order_unique_idx").on(table.orderId),
+    index("carrier_settlement_orders_settlement_id_idx").on(table.settlementId),
+  ],
+);
+
 export const mutationReceipts = sqliteTable(
   "mutation_receipts",
   {
