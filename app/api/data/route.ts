@@ -1911,8 +1911,6 @@ export async function POST(request: Request) {
         db.update(products).set({ stockQuantity: sql`${products.stockQuantity} + ${delta}` }).where(eq(products.id, productId)),
       ]);
     } else if (payload.action === "startInventorySession") {
-      const duplicateSession = await protectMutation("startInventorySession");
-      if (duplicateSession) return duplicateSession;
       const database = await getRawDb();
       const existing = await database.prepare("SELECT id, session_ref AS sessionRef FROM inventory_sessions WHERE status = 'En cours' ORDER BY id DESC LIMIT 1").first<{ id: number; sessionRef: string }>();
       if (existing) return Response.json({ error: `Une session d’inventaire est déjà en cours : ${existing.sessionRef}.` }, { status: 409 });
@@ -1924,6 +1922,8 @@ export async function POST(request: Request) {
         FROM products
         WHERE archived_at IS NULL
       `).first<{ productCount: number; totalUnits: number; stockValue: number }>();
+      const duplicateSession = await protectMutation("startInventorySession");
+      if (duplicateSession) return duplicateSession;
       const sessionRef = `INV-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${crypto.randomUUID().slice(0, 5).toUpperCase()}`;
       const inserted = await database.prepare(`
         INSERT INTO inventory_sessions (
@@ -1957,8 +1957,6 @@ export async function POST(request: Request) {
       if (!Number.isInteger(expectedRaw) || expectedRaw < 0 || expectedRaw > 1_000_000) {
         return Response.json({ error: "Le stock de référence est invalide. Rechargez la session." }, { status: 400 });
       }
-      const duplicateCount = await protectMutation("countInventorySessionProduct");
-      if (duplicateCount) return duplicateCount;
       const database = await getRawDb();
       const session = await database.prepare("SELECT session_ref AS sessionRef, status FROM inventory_sessions WHERE id = ? LIMIT 1").bind(sessionId).first<{ sessionRef: string; status: string }>();
       if (!session) return Response.json({ error: "Session d’inventaire introuvable." }, { status: 404 });
@@ -1982,6 +1980,8 @@ export async function POST(request: Request) {
       } catch (error) {
         return Response.json({ error: error instanceof Error ? error.message : "Motif d’écart invalide." }, { status: 400 });
       }
+      const duplicateCount = await protectMutation("countInventorySessionProduct");
+      if (duplicateCount) return duplicateCount;
       const unitCost = Number(product.purchasePrice || 0);
       const valueBefore = expectedRaw * unitCost;
       const valueAfter = physicalRaw * unitCost;
@@ -2048,8 +2048,6 @@ export async function POST(request: Request) {
     } else if (payload.action === "finalizeInventorySession") {
       const sessionId = numberValue(payload.sessionId);
       if (!sessionId) return Response.json({ error: "Session d’inventaire invalide." }, { status: 400 });
-      const duplicateFinalize = await protectMutation("finalizeInventorySession");
-      if (duplicateFinalize) return duplicateFinalize;
       const database = await getRawDb();
       const session = await database.prepare(`
         SELECT id, session_ref AS sessionRef, status, expected_product_count AS expectedProductCount,
@@ -2061,6 +2059,8 @@ export async function POST(request: Request) {
       if (Number(session.countedProductCount) < Number(session.expectedProductCount)) {
         return Response.json({ error: `Inventaire incomplet : ${session.countedProductCount}/${session.expectedProductCount} produit(s) compté(s).` }, { status: 409 });
       }
+      const duplicateFinalize = await protectMutation("finalizeInventorySession");
+      if (duplicateFinalize) return duplicateFinalize;
       const totals = await database.prepare(`
         SELECT
           COUNT(*) AS countedProductCount,
