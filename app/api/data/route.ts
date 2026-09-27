@@ -1323,8 +1323,6 @@ export async function POST(request: Request) {
       if (!purchaseRef || !invoiceNumber || !/^\d{4}-\d{2}-\d{2}$/.test(invoiceDate) || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || dueDate < invoiceDate) {
         return Response.json({ error: "Facture fournisseur invalide. Vérifiez le bon, le numéro et les dates." }, { status: 400 });
       }
-      const duplicateInvoice = await protectMutation("addSupplierInvoice");
-      if (duplicateInvoice) return duplicateInvoice;
       const database = await getRawDb();
       const purchaseOrder = await database.prepare(`
         SELECT
@@ -1347,6 +1345,8 @@ export async function POST(request: Request) {
       const duplicateNumber = await database.prepare("SELECT id FROM supplier_invoices WHERE supplier_id = ? AND lower(invoice_number) = lower(?) LIMIT 1").bind(purchaseOrder.supplierId, invoiceNumber).first<{ id: number }>();
       if (duplicateNumber) return Response.json({ error: "Ce numéro de facture existe déjà pour ce fournisseur." }, { status: 409 });
 
+      const duplicateInvoice = await protectMutation("addSupplierInvoice");
+      if (duplicateInvoice) return duplicateInvoice;
       const inserted = await database.prepare(`
         INSERT INTO supplier_invoices (supplier_id, purchase_ref, invoice_number, invoice_date, due_date, total_amount, note)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -1386,8 +1386,6 @@ export async function POST(request: Request) {
       if (!invoiceId || amount <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(paidDate)) {
         return Response.json({ error: "Paiement fournisseur invalide." }, { status: 400 });
       }
-      const duplicatePayment = await protectMutation("addSupplierPayment");
-      if (duplicatePayment) return duplicatePayment;
       const database = await getRawDb();
       const invoice = await database.prepare(`
         SELECT
@@ -1402,6 +1400,8 @@ export async function POST(request: Request) {
       if (!invoice) return Response.json({ error: "Facture fournisseur introuvable." }, { status: 404 });
       const remaining = Math.round((Math.max(0, Number(invoice.totalAmount || 0) - Number(invoice.paidAmount || 0)) + Number.EPSILON) * 100) / 100;
       if (amount > remaining + 0.005) return Response.json({ error: `Le reste à payer est de ${remaining.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.` }, { status: 409 });
+      const duplicatePayment = await protectMutation("addSupplierPayment");
+      if (duplicatePayment) return duplicatePayment;
       const paidAt = paidAtFromInput(paidDate);
       const inserted = await database.prepare(`
         INSERT INTO supplier_payments (invoice_id, amount, account, paid_at, reference, note)
