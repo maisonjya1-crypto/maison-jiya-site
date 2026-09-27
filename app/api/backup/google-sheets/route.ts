@@ -155,8 +155,8 @@ export async function GET(request: Request) {
     if (dataset === "products") {
       const rows = await db.select().from(products).orderBy(desc(products.createdAt));
       return csvResponse(
-        ["ID", "ID produit", "Nom du produit", "Catégorie", "Prix d’achat (MAD)", "Prix de vente (MAD)", "Prix de vente minimum (MAD)", "Quantité restante", "Valeur du stock (MAD)", "Créé le"],
-        rows.map((row) => [row.id, row.productCode, row.name, row.category, row.purchasePrice, row.salePrice, row.minimumSalePrice, row.stockQuantity, row.purchasePrice * row.stockQuantity, row.createdAt]),
+        ["ID", "ID produit", "Nom du produit", "Catégorie", "Prix d’achat (MAD)", "Prix de vente (MAD)", "Prix de vente minimum (MAD)", "Quantité restante", "Seuil alerte stock", "Couverture cible (jours)", "Valeur du stock (MAD)", "Créé le"],
+        rows.map((row) => [row.id, row.productCode, row.name, row.category, row.purchasePrice, row.salePrice, row.minimumSalePrice, row.stockQuantity, row.stockAlertThreshold, row.reorderCoverDays, row.purchasePrice * row.stockQuantity, row.createdAt]),
       );
     }
 
