@@ -9,6 +9,7 @@ import { reconcileOrderAllocations } from "../../../db/allocations";
 import { getGoogleSheetsSyncSnapshot, markGoogleSheetsSyncPending, processGoogleSheetsSyncQueue } from "../../../db/google-sheets-sync";
 import { ensureStorefrontCms } from "../../../db/storefront-cms";
 import { receivePurchaseIntoStock } from "../../../db/inventory-cost";
+import { moveOrderToTrash, releaseTrashedOrderStock, restoreOrderFromTrash } from "../../../db/order-trash";
 import { adPerformance, auditLogs, capitalLedger, carrierEvents, customers, dailyBackups, expenses, inventoryCounts, orders, orderStatusHistory, products, purchases, settings, stockMovements, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
@@ -802,15 +803,21 @@ export async function POST(request: Request) {
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
       const [existingOrder] = await db.select({ id: orders.id, orderRef: orders.orderRef }).from(orders).where(and(eq(orders.id, id), isNull(orders.deletedAt))).limit(1);
       if (!existingOrder) return Response.json({ error: "Commande introuvable." }, { status: 404 });
-      await db.update(orders).set({ deletedAt: new Date().toISOString(), deletedByUserId: user.id, updatedAt: new Date().toISOString() }).where(eq(orders.id, id));
+      const trashResult = await moveOrderToTrash(await getRawDb(), id, user.id);
       auditEntityLabel = existingOrder.orderRef;
+      integrationMessage = trashResult.stockRestored
+        ? "Commande placée dans la corbeille et stock réintégré automatiquement."
+        : "Commande placée dans la corbeille.";
     } else if (payload.action === "restoreOrder") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
       const [existingOrder] = await db.select({ id: orders.id, orderRef: orders.orderRef }).from(orders).where(and(eq(orders.id, id), isNotNull(orders.deletedAt))).limit(1);
       if (!existingOrder) return Response.json({ error: "Commande absente de la corbeille." }, { status: 404 });
-      await db.update(orders).set({ deletedAt: null, deletedByUserId: null, updatedAt: new Date().toISOString() }).where(eq(orders.id, id));
+      const restoreResult = await restoreOrderFromTrash(await getRawDb(), id);
       auditEntityLabel = existingOrder.orderRef;
+      integrationMessage = restoreResult.stockDeducted
+        ? "Commande restaurée et stock réservé à nouveau automatiquement."
+        : "Commande restaurée sans mouvement de stock.";
     } else if (payload.action === "deleteOrderPermanently") {
       if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut supprimer définitivement une commande." }, { status: 403 });
       const id = numberValue(payload.id);
@@ -818,6 +825,7 @@ export async function POST(request: Request) {
       const [existingOrder] = await db.select({ id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId }).from(orders).where(and(eq(orders.id, id), isNotNull(orders.deletedAt))).limit(1);
       if (!existingOrder) return Response.json({ error: "Cette commande n’est pas dans la corbeille." }, { status: 404 });
       const database = await getRawDb();
+      await releaseTrashedOrderStock(database, id);
       await createDailyBackup(database, `Avant suppression ${existingOrder.orderRef}`, true);
       await database.batch([
         database.prepare("UPDATE stock_movements SET order_id = NULL WHERE order_id = ?").bind(id),
