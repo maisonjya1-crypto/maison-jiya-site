@@ -3472,6 +3472,7 @@ function EmptyState({ title, text }: { title: string; text: string }) {
 function SuppliersPage({
   suppliers,
   purchases,
+  supplierInvoices,
   canEdit,
   submit,
   onAdd,
@@ -3479,13 +3480,16 @@ function SuppliersPage({
 }: {
   suppliers: Supplier[];
   purchases: Purchase[];
+  supplierInvoices: SupplierInvoice[];
   canEdit: boolean;
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
   onAdd: () => void;
   onEdit: (selection: EditableEntity) => void;
 }) {
   const activeSuppliers = suppliers.filter((supplier) => supplier.isActive);
-  const totalDue = purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
+  const totalDue =
+    purchases.filter((purchase) => !purchase.invoiceId && purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0)
+    + supplierInvoices.reduce((sum, invoice) => sum + invoice.remainingAmount, 0);
   const openOrders = new Set(
     purchases
       .filter((purchase) => !["Reçu", "Annulé"].includes(purchase.procurementStatus))
@@ -3510,7 +3514,7 @@ function SuppliersPage({
       <section className="kpi-grid three">
         <Kpi label="Fournisseurs actifs" value={String(activeSuppliers.length)} detail={`${suppliers.length} fiche(s) au total`} />
         <Kpi label="Bons ouverts" value={String(openOrders)} detail="Brouillon, commandé ou partiellement reçu" />
-        <Kpi label="Reste fournisseur" value={money(totalDue)} detail="Achats encore marqués À payer" danger={totalDue > 0} />
+        <Kpi label="Reste fournisseur" value={money(totalDue)} detail="Factures et anciens achats restant à payer" danger={totalDue > 0} />
       </section>
 
       <section className="panel page-panel">
@@ -3530,7 +3534,8 @@ function SuppliersPage({
                   .filter((purchase) => purchase.supplierId === supplier.id || (!purchase.supplierId && purchase.supplier.toLocaleLowerCase("fr") === supplier.name.toLocaleLowerCase("fr")))
                   .sort((left, right) => (right.orderedAt || right.createdAt).localeCompare(left.orderedAt || left.createdAt));
                 const spent = rows.reduce((sum, purchase) => sum + purchase.totalCost, 0);
-                const due = rows.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
+                const invoiceDue = supplierInvoices.filter((invoice) => invoice.supplierId === supplier.id).reduce((sum, invoice) => sum + invoice.remainingAmount, 0);
+                const due = rows.filter((purchase) => !purchase.invoiceId && purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0) + invoiceDue;
                 const orderCount = new Set(rows.map((purchase) => purchase.purchaseRef || `legacy-${purchase.id}`)).size;
                 const lastPurchase = rows[0] || null;
                 const suppliedProducts = Array.from(new Set(rows.map((purchase) => purchase.productName || purchase.item).filter(Boolean)));
@@ -3599,7 +3604,7 @@ function SuppliersPage({
   );
 }
 
-function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd, onEdit, onDelete }: { purchases: Purchase[]; products: Product[]; suppliers: Supplier[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+function PurchasesPage({ purchases, supplierInvoices, products, suppliers, canEdit, submit, onAdd, onEdit, onDelete }: { purchases: Purchase[]; supplierInvoices: SupplierInvoice[]; products: Product[]; suppliers: Supplier[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
   const [receivingId, setReceivingId] = useState<number | null>(null);
   const todayKey = new Date().toISOString().slice(0, 10);
   const groups = new Map<string, Purchase[]>();
@@ -3629,7 +3634,11 @@ function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd,
           : draft
             ? "Brouillon"
             : "Commandé";
-    const paymentStatus = lines.every((line) => line.paymentStatus === "Payé") ? "Payé" : "À payer";
+    const paymentStatus = lines.every((line) => line.paymentStatus === "Payé")
+      ? "Payé"
+      : lines.some((line) => line.paymentStatus === "Partiellement payé")
+        ? "Partiellement payé"
+        : "À payer";
     const expectedAt = first.expectedAt;
     const overdue = Boolean(
       expectedAt
@@ -3655,8 +3664,11 @@ function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd,
   }).sort((left, right) => right.orderedAt.localeCompare(left.orderedAt) || right.first.id - left.first.id);
 
   const total = purchaseOrders.reduce((sum, order) => sum + order.totalCost, 0);
-  const paidTotal = purchaseOrders.reduce((sum, order) => sum + order.lines.filter((line) => line.paymentStatus === "Payé").reduce((lineSum, line) => lineSum + line.totalCost, 0), 0);
-  const dueTotal = purchaseOrders.reduce((sum, order) => sum + order.lines.filter((line) => line.paymentStatus !== "Payé").reduce((lineSum, line) => lineSum + line.totalCost, 0), 0);
+  const legacyLines = purchases.filter((purchase) => !purchase.invoiceId);
+  const paidTotal = legacyLines.filter((line) => line.paymentStatus === "Payé").reduce((sum, line) => sum + line.totalCost, 0)
+    + supplierInvoices.reduce((sum, invoice) => sum + invoice.paidAmount, 0);
+  const dueTotal = legacyLines.filter((line) => line.paymentStatus !== "Payé").reduce((sum, line) => sum + line.totalCost, 0)
+    + supplierInvoices.reduce((sum, invoice) => sum + invoice.remainingAmount, 0);
   const waitingLines = purchases.filter((purchase) => purchase.productId && purchase.receivedQuantity < purchase.quantity && ["Commandé", "Partiellement reçu"].includes(purchase.procurementStatus));
   const waitingOrders = purchaseOrders.filter((order) => order.remainingQuantity > 0 && ["Commandé", "Partiellement reçu"].includes(order.status));
   const receivedCount = purchaseOrders.filter((order) => order.status === "Reçu").length;
@@ -3785,6 +3797,193 @@ function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd,
           </table>
         </div>
       </section>
+    </>
+  );
+}
+
+function SupplierPaymentModal({ invoice, close, submit }: { invoice: SupplierInvoice; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  async function handle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setFormError("");
+    try {
+      await submit("addSupplierPayment", Object.fromEntries(new FormData(event.currentTarget)));
+      close();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Paiement impossible.");
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && close()}>
+      <section className="modal supplier-payment-modal" role="dialog" aria-modal="true">
+        <div className="modal-head">
+          <div><span className="card-kicker">Règlement fournisseur</span><h2>{invoice.invoiceNumber}</h2><p>{invoice.supplierName || "Fournisseur"} · {invoice.purchaseRef}</p></div>
+          <button type="button" onClick={close} aria-label="Fermer">×</button>
+        </div>
+        <form onSubmit={handle}>
+          <input type="hidden" name="invoiceId" value={invoice.id} />
+          <div className="invoice-payment-summary">
+            <span>Total <strong>{money(invoice.totalAmount)}</strong></span>
+            <span>Déjà payé <strong>{money(invoice.paidAmount)}</strong></span>
+            <span>Reste <strong>{money(invoice.remainingAmount)}</strong></span>
+          </div>
+          <div className="form-grid">
+            <Field label="Montant payé (MAD) *" name="amount" type="number" inputMode="decimal" min="0.01" max={String(invoice.remainingAmount)} step="0.01" defaultValue={String(invoice.remainingAmount)} required />
+            <Select label="Compte débité *" name="account" options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
+            <Field label="Date du paiement *" name="paidDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required />
+            <Field label="Référence paiement" name="reference" placeholder="Virement, reçu, référence…" maxLength={160} />
+            <Field label="Note" name="note" placeholder="Détail du règlement…" maxLength={500} />
+          </div>
+          {formError ? <div className="auth-error">{formError}</div> : null}
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={close}>Annuler</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Enregistrement…" : "Enregistrer le paiement"}</button></div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function SupplierInvoiceEditModal({ invoice, close, submit }: { invoice: SupplierInvoice; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  async function handle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setFormError("");
+    try {
+      await submit("updateSupplierInvoice", Object.fromEntries(new FormData(event.currentTarget)));
+      close();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Modification impossible.");
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && close()}>
+      <section className="modal" role="dialog" aria-modal="true">
+        <div className="modal-head">
+          <div><span className="card-kicker">Facture fournisseur</span><h2>Modifier {invoice.invoiceNumber}</h2><p>{invoice.purchaseRef} · montant verrouillé à {money(invoice.totalAmount)}</p></div>
+          <button type="button" onClick={close} aria-label="Fermer">×</button>
+        </div>
+        <form onSubmit={handle}>
+          <input type="hidden" name="id" value={invoice.id} />
+          <div className="form-grid">
+            <Field label="N° facture *" name="invoiceNumber" defaultValue={invoice.invoiceNumber} required maxLength={120} />
+            <Field label="Date de facture *" name="invoiceDate" type="date" defaultValue={invoice.invoiceDate} required />
+            <Field label="Échéance *" name="dueDate" type="date" defaultValue={invoice.dueDate} required />
+            <Field label="Note" name="note" defaultValue={invoice.note} maxLength={500} />
+          </div>
+          {formError ? <div className="auth-error">{formError}</div> : null}
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={close}>Annuler</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Enregistrement…" : "Enregistrer"}</button></div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function SupplierInvoicesPage({ invoices, payments, canEdit, onAdd, submit }: { invoices: SupplierInvoice[]; payments: SupplierPayment[]; canEdit: boolean; onAdd: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  const [paymentInvoice, setPaymentInvoice] = useState<SupplierInvoice | null>(null);
+  const [editingInvoice, setEditingInvoice] = useState<SupplierInvoice | null>(null);
+  const openInvoices = invoices.filter((invoice) => invoice.remainingAmount > 0);
+  const totalRemaining = openInvoices.reduce((sum, invoice) => sum + invoice.remainingAmount, 0);
+  const overdueInvoices = openInvoices.filter((invoice) => invoice.isOverdue);
+  const overdueAmount = overdueInvoices.reduce((sum, invoice) => sum + invoice.remainingAmount, 0);
+
+  async function removeInvoice(invoice: SupplierInvoice) {
+    if (!canEdit) return;
+    const invoicePayments = payments.filter((payment) => payment.invoiceId === invoice.id);
+    const message = invoicePayments.length
+      ? "Cette facture possède des paiements. Supprimez d’abord les règlements si vous devez retirer la facture."
+      : `Supprimer la facture ${invoice.invoiceNumber} liée au bon ${invoice.purchaseRef} ?`;
+    if (invoicePayments.length) {
+      window.alert(message);
+      return;
+    }
+    if (!window.confirm(message)) return;
+    await submit("deleteSupplierInvoice", { id: String(invoice.id) });
+  }
+
+  async function removePayment(payment: SupplierPayment) {
+    if (!canEdit || !window.confirm(`Supprimer ce paiement de ${money(payment.amount)} ?\n\nLe reste à payer de la facture sera recalculé automatiquement.`)) return;
+    await submit("deleteSupplierPayment", { id: String(payment.id) });
+  }
+
+  return (
+    <>
+      <section className="kpi-grid three">
+        <Kpi label="Factures ouvertes" value={String(openInvoices.length)} detail={`${invoices.length} facture(s) au total`} />
+        <Kpi label="Reste à payer" value={money(totalRemaining)} detail="Montant fournisseur encore engagé" danger={totalRemaining > 0} />
+        <Kpi label="En retard" value={money(overdueAmount)} detail={`${overdueInvoices.length} échéance(s) dépassée(s)`} danger={overdueAmount > 0} />
+      </section>
+      <section className="panel supplier-receiving-guide">
+        <div>
+          <span className="card-kicker">Comptes fournisseurs</span>
+          <h2>Facture ≠ paiement</h2>
+          <p>Une facture crée une dette fournisseur. Chaque règlement réduit uniquement le reste à payer et la trésorerie du compte réellement utilisé.</p>
+        </div>
+        <strong>{money(totalRemaining)} à régler</strong>
+      </section>
+      <section className="panel page-panel">
+        <div className="section-toolbar">
+          <div><h2>Factures fournisseurs</h2><p>Échéances, paiements partiels, soldes et historique des règlements liés aux bons de commande.</p></div>
+          <button className="primary-button" type="button" onClick={onAdd} disabled={!canEdit}>＋ Nouvelle facture</button>
+        </div>
+        {invoices.length ? (
+          <div className="invoice-list">
+            {invoices.map((invoice) => {
+              const invoicePayments = payments.filter((payment) => payment.invoiceId === invoice.id).sort((left, right) => right.paidAt.localeCompare(left.paidAt));
+              const displayStatus = invoice.isOverdue && invoice.remainingAmount > 0 ? "En retard" : invoice.paymentStatus;
+              return (
+                <article className={`supplier-invoice-card ${invoice.isOverdue && invoice.remainingAmount > 0 ? "overdue" : ""}`} key={invoice.id}>
+                  <div className="supplier-invoice-head">
+                    <div>
+                      <span className="card-kicker">{invoice.purchaseRef}</span>
+                      <h3>{invoice.invoiceNumber}</h3>
+                      <small>{invoice.supplierName || "Fournisseur"} · facture du {dateLabel(invoice.invoiceDate)} · échéance {dateLabel(invoice.dueDate)}</small>
+                    </div>
+                    <Status value={displayStatus} />
+                  </div>
+                  <div className="supplier-invoice-money">
+                    <span>Total<strong>{money(invoice.totalAmount)}</strong></span>
+                    <span>Payé<strong className="money-positive">{money(invoice.paidAmount)}</strong></span>
+                    <span>Reste<strong className={invoice.remainingAmount > 0 ? "money-negative" : "money-positive"}>{money(invoice.remainingAmount)}</strong></span>
+                  </div>
+                  {invoice.note ? <p className="supplier-invoice-note">{invoice.note}</p> : null}
+                  <div className="supplier-invoice-actions">
+                    {invoice.remainingAmount > 0 ? <button type="button" className="primary-button" disabled={!canEdit} onClick={() => setPaymentInvoice(invoice)}>＋ Enregistrer un paiement</button> : null}
+                    <button type="button" className="secondary-button" disabled={!canEdit} onClick={() => setEditingInvoice(invoice)}>Modifier la facture</button>
+                    <button type="button" className="secondary-button" disabled={!canEdit || invoicePayments.length > 0} onClick={() => void removeInvoice(invoice)}>Supprimer</button>
+                  </div>
+                  <details className="supplier-payment-history" open={invoicePayments.length > 0}>
+                    <summary>Paiements · {invoicePayments.length}</summary>
+                    {invoicePayments.length ? (
+                      <div className="table-scroll">
+                        <table>
+                          <thead><tr><th>Date</th><th>Montant</th><th>Compte</th><th>Référence</th><th>Note</th><th>Action</th></tr></thead>
+                          <tbody>{invoicePayments.map((payment) => (
+                            <tr key={payment.id}>
+                              <td>{dateLabel(payment.paidAt)}</td>
+                              <td className="money-negative"><strong>{money(payment.amount)}</strong></td>
+                              <td>{payment.account}</td>
+                              <td>{payment.reference || "—"}</td>
+                              <td>{payment.note || "—"}</td>
+                              <td><button type="button" className="text-button danger" disabled={!canEdit} onClick={() => void removePayment(payment)}>Supprimer</button></td>
+                            </tr>
+                          ))}</tbody>
+                        </table>
+                      </div>
+                    ) : <div className="pending-empty">Aucun règlement enregistré.</div>}
+                  </details>
+                </article>
+              );
+            })}
+          </div>
+        ) : <EmptyState title="Aucune facture fournisseur" text="Créez une facture depuis un bon de commande pour suivre l’échéance et les règlements réels." />}
+      </section>
+      {paymentInvoice ? <SupplierPaymentModal invoice={paymentInvoice} close={() => setPaymentInvoice(null)} submit={submit} /> : null}
+      {editingInvoice ? <SupplierInvoiceEditModal invoice={editingInvoice} close={() => setEditingInvoice(null)} submit={submit} /> : null}
     </>
   );
 }
