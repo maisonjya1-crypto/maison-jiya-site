@@ -1,5 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb, getRawDb } from "./index";
+import { reconcileOrderAllocations } from "./allocations";
 import { moroccanPhoneHelp, normalizeMoroccanPhone } from "./phone";
 import { customers, orders } from "./schema";
 import { normalizeOrderPaymentState, type OrderPaymentStatus } from "../lib/order-payment-lifecycle";
@@ -677,6 +678,7 @@ export async function syncCarrierOperations(): Promise<CarrierSyncResult> {
   if (result.sendit.verified) tasks.push(syncSendit(senditPublic, senditPrivate, senditVerifiedToken));
   const operations = await Promise.allSettled(tasks);
   result.updated = operations.reduce((total, operation) => total + (operation.status === "fulfilled" ? operation.value : 0), 0);
+  if (result.updated > 0) await reconcileOrderAllocations();
   return result;
 }
 
@@ -776,5 +778,6 @@ export async function applySenditStatusUpdate(input: {
     );
   }
   await rawDb.batch(statements);
+  await reconcileOrderAllocations(order.id);
   return { duplicate: false, internalStatus: nextStatus, matched: true, updated: true };
 }
