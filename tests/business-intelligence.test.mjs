@@ -14,10 +14,11 @@ test("la recherche est limitée au bloc actif et couvre les principaux blocs mé
   for (const source of ["data.orders", "data.products", "data.customers", "data.purchases", "data.ads", "data.capital", "data.trash"]) assert.match(dashboard, new RegExp(source.replace(".", "\\.")));
 });
 
-test("le rapport sépare les quatre emplacements d’argent et distingue la marge commande du bénéfice global", () => {
+test("le rapport sépare les comptes physiques, transporteurs et créances et distingue la marge commande du bénéfice global", () => {
   assert.match(dashboard, /function ReportsPage/);
-  assert.match(dashboard, /Caisse magasin/);
-  assert.match(dashboard, /Banque estimée/);
+  assert.match(dashboard, /Caisse \/ espèces/);
+  assert.match(dashboard, /Banque \/ carte/);
+  assert.match(dashboard, /Autres comptes/);
   assert.match(dashboard, /Argent transporteurs/);
   assert.match(dashboard, /Créances en cours/);
   assert.match(dashboard, /Marge par commande avant dépenses globales/);
@@ -99,7 +100,7 @@ test("les montants décimaux sont conservés dans les commandes et les autres mo
   assert.match(api, /moneyValue\(payload\.returnCost\)/);
   assert.match(api, /const unitCost = moneyValue\(payload\.unitCost\)/);
   assert.match(api, /spend: moneyValue\(payload\.spend\), revenue: moneyValue\(payload\.revenue\)/);
-  assert.match(api, /amount: moneyValue\(payload\.amount\)/);
+  assert.match(api, /const amount = moneyValue\(payload\.amount\)/);
   assert.doesNotMatch(api, /numberValue\(payload\.(?:saleAmount|shippingCost|adCost|fees|returnCost)\)/);
   assert.match(dashboard, /name="saleAmount"[^>]*step="0\.01"/);
   assert.match(dashboard, /name="returnCost"[^>]*step="0\.01"/);
