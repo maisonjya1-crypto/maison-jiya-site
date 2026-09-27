@@ -44,11 +44,18 @@ Google Sheets constitue la copie opérationnelle indépendante de D1 :
 
 Cette copie est destinée à garder les données lisibles même si le Worker ou D1 deviennent temporairement indisponibles. Elle ne remplace pas à elle seule une restauration applicative complète.
 
-### 5. Exports portables
+### 5. Exports portables et réimportation
 
 Le propriétaire principal peut télécharger :
-- un export JSON complet ;
-- une archive CSV.
+- un export JSON complet, réimportable par Maison Jiya ;
+- une archive CSV destinée à la lecture et au contrôle externe.
+
+L’import JSON complet :
+- vérifie la version, la date, les tables, les doublons et les références avant toute suppression ;
+- crée une sauvegarde de sécurité de l’état courant avant l’opération ;
+- restaure les données métier et la configuration de la boutique dans un seul batch D1 atomique ;
+- conserve les comptes, mots de passe, sessions, e-mail principal, secrets et clés d’intégration actuels ;
+- ne rejoue pas l’ancien journal de synchronisation Google Sheets et programme une nouvelle synchronisation après restauration.
 
 Pour une conservation hors plateforme, ces fichiers doivent être stockés dans un emplacement indépendant du compte Cloudflare.
 
@@ -63,9 +70,15 @@ Pour une conservation hors plateforme, ces fichiers doivent être stockés dans 
 
 ### Incident D1 majeur
 1. Recréer/appliquer le schéma avec la chaîne `migrations/`.
-2. Conserver les exports JSON/CSV et le Google Sheet comme copies indépendantes de référence.
-3. Ne jamais réintroduire les secrets depuis un export : les secrets Cloudflare et mots de passe restent gérés séparément.
+2. Se connecter avec le compte propriétaire actuel.
+3. Ouvrir Paramètres → Sauvegardes → Réimportation complète.
+4. Sélectionner le dernier fichier `maison-jiya-export-AAAA-MM-JJ.json`.
+5. Vérifier l’aperçu puis confirmer en tapant `RESTAURER`.
+6. Contrôler ensuite les produits, commandes, stock, achats, capital et la boutique, puis laisser la synchronisation Google Sheets se refaire.
+7. Ne jamais réintroduire les secrets depuis un export : les secrets Cloudflare et mots de passe restent gérés séparément.
 
-## Limite actuelle connue
+## Limites actuelles connues
 
-La copie Google Sheets est indépendante et lisible, mais la réimportation automatique de l’intégralité d’un export portable vers une D1 neuve n’est pas encore automatisée. Une telle fonction devra être conçue comme une opération propriétaire, validée et atomique avant d’être ajoutée.
+- L’archive CSV est un format de consultation et n’est pas utilisée pour une restauration complète automatique.
+- Les anciens fichiers Excel/Google Sheets de produits ou commandes passent encore par les imports CSV/TSV dédiés. Leur migration doit rester séparée d’une restauration JSON complète afin d’éviter les doublons et les fausses ventes historiques.
+- Les comptes utilisateurs exportés à titre informatif ne remplacent jamais les comptes actuels, car les mots de passe et sessions ne font pas partie des exports.
