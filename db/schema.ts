@@ -207,11 +207,38 @@ export const dailyClosings = sqliteTable(
   (table) => [index("daily_closings_date_idx").on(table.closeDate)],
 );
 
+export const suppliers = sqliteTable(
+  "suppliers",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    contactName: text("contact_name").notNull().default(""),
+    phone: text("phone").notNull().default(""),
+    whatsapp: text("whatsapp").notNull().default(""),
+    city: text("city").notNull().default(""),
+    leadTimeDays: integer("lead_time_days").notNull().default(7),
+    minimumOrderAmount: integer("minimum_order_amount").notNull().default(0),
+    paymentTerms: text("payment_terms").notNull().default(""),
+    notes: text("notes").notNull().default(""),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at"),
+  },
+  (table) => [
+    index("suppliers_active_idx").on(table.isActive),
+  ],
+);
+
 export const purchases = sqliteTable(
   "purchases",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     supplier: text("supplier").notNull(),
+    supplierId: integer("supplier_id").references(() => suppliers.id),
+    purchaseRef: text("purchase_ref"),
+    procurementStatus: text("procurement_status").notNull().default("Commandé"),
+    orderedAt: text("ordered_at"),
+    expectedAt: text("expected_at"),
     item: text("item").notNull(),
     productId: integer("product_id").references(() => products.id),
     quantity: integer("quantity").notNull(),
@@ -224,7 +251,11 @@ export const purchases = sqliteTable(
     receivedAt: text("received_at"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
-  (table) => [index("purchases_product_id_idx").on(table.productId)],
+  (table) => [
+    index("purchases_product_id_idx").on(table.productId),
+    index("purchases_supplier_id_idx").on(table.supplierId),
+    index("purchases_procurement_status_idx").on(table.procurementStatus),
+  ],
 );
 
 export const expenses = sqliteTable(

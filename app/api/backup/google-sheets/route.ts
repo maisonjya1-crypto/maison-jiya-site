@@ -1,6 +1,6 @@
 import { desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { adPerformance, capitalLedger, customers, expenses, orders, products, purchases, settings, stockMovements, users } from "../../../../db/schema";
+import { adPerformance, capitalLedger, customers, expenses, orders, products, purchases, settings, stockMovements, suppliers, users } from "../../../../db/schema";
 import { orderContributionBeforeGlobalAds } from "../../../../lib/finance";
 
 const datasetNames = new Set([
@@ -9,6 +9,7 @@ const datasetNames = new Set([
   "shipments",
   "customers",
   "purchases",
+  "suppliers",
   "expenses",
   "ads",
   "capital",
@@ -163,7 +164,15 @@ export async function GET(request: Request) {
     if (dataset === "purchases") {
       const rows = await db.select({
         id: purchases.id,
+        purchaseRef: purchases.purchaseRef,
+        supplierId: purchases.supplierId,
         supplier: purchases.supplier,
+        supplierContact: suppliers.contactName,
+        supplierPhone: suppliers.phone,
+        supplierWhatsapp: suppliers.whatsapp,
+        procurementStatus: purchases.procurementStatus,
+        orderedAt: purchases.orderedAt,
+        expectedAt: purchases.expectedAt,
         item: purchases.item,
         productId: purchases.productId,
         productCode: products.productCode,
@@ -177,10 +186,21 @@ export async function GET(request: Request) {
         receivedQuantity: purchases.receivedQuantity,
         receivedAt: purchases.receivedAt,
         createdAt: purchases.createdAt,
-      }).from(purchases).leftJoin(products, eq(purchases.productId, products.id)).orderBy(desc(purchases.createdAt));
+      }).from(purchases)
+        .leftJoin(products, eq(purchases.productId, products.id))
+        .leftJoin(suppliers, eq(purchases.supplierId, suppliers.id))
+        .orderBy(desc(purchases.createdAt));
       return csvResponse(
-        ["ID", "Fournisseur", "Article", "ID produit", "SKU", "Produit", "Quantité achetée", "Coût unitaire (MAD)", "Coût total (MAD)", "Compte paiement", "Statut paiement", "Payé le", "Quantité réceptionnée", "Réceptionné le", "Créé le"],
-        rows.map((row) => [row.id, row.supplier, row.item, row.productId, row.productCode, row.productName, row.quantity, row.unitCost, row.totalCost, row.account, row.paymentStatus, row.paidAt, row.receivedQuantity, row.receivedAt, row.createdAt]),
+        ["ID", "Référence bon", "ID fournisseur", "Fournisseur", "Contact fournisseur", "Téléphone fournisseur", "WhatsApp fournisseur", "État du bon", "Commandé le", "Livraison prévue", "Article", "ID produit", "SKU", "Produit", "Quantité achetée", "Coût unitaire (MAD)", "Coût total (MAD)", "Compte paiement", "Statut paiement", "Payé le", "Quantité réceptionnée", "Réceptionné le", "Créé le"],
+        rows.map((row) => [row.id, row.purchaseRef, row.supplierId, row.supplier, row.supplierContact, row.supplierPhone, row.supplierWhatsapp, row.procurementStatus, row.orderedAt, row.expectedAt, row.item, row.productId, row.productCode, row.productName, row.quantity, row.unitCost, row.totalCost, row.account, row.paymentStatus, row.paidAt, row.receivedQuantity, row.receivedAt, row.createdAt]),
+      );
+    }
+
+    if (dataset === "suppliers") {
+      const rows = await db.select().from(suppliers).orderBy(desc(suppliers.isActive), desc(suppliers.createdAt));
+      return csvResponse(
+        ["ID", "Fournisseur", "Contact", "Téléphone", "WhatsApp", "Ville", "Délai moyen (jours)", "Minimum de commande (MAD)", "Conditions de paiement", "Notes", "Actif", "Créé le", "Modifié le"],
+        rows.map((row) => [row.id, row.name, row.contactName, row.phone, row.whatsapp, row.city, row.leadTimeDays, row.minimumOrderAmount, row.paymentTerms, row.notes, row.isActive ? "Oui" : "Non", row.createdAt, row.updatedAt]),
       );
     }
 

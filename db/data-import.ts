@@ -48,13 +48,42 @@ const TABLE_SPECS: Record<string, TableSpec> = {
       archived_by_user_id: null,
     },
   },
+  fournisseurs: {
+    table: "suppliers",
+    columns: [
+      "id", "name", "contact_name", "phone", "whatsapp", "city", "lead_time_days",
+      "minimum_order_amount", "payment_terms", "notes", "is_active", "created_at", "updated_at",
+    ],
+    defaults: {
+      contact_name: "",
+      phone: "",
+      whatsapp: "",
+      city: "",
+      lead_time_days: 7,
+      minimum_order_amount: 0,
+      payment_terms: "",
+      notes: "",
+      is_active: 1,
+      updated_at: null,
+    },
+  },
   achats: {
     table: "purchases",
     columns: [
-      "id", "supplier", "item", "product_id", "quantity", "unit_cost", "total_cost",
+      "id", "supplier", "supplier_id", "purchase_ref", "procurement_status", "ordered_at", "expected_at",
+      "item", "product_id", "quantity", "unit_cost", "total_cost",
       "account", "payment_status", "paid_at", "received_quantity", "received_at", "created_at",
     ],
     defaults: {
+      supplier_id: null,
+      purchase_ref: null,
+      procurement_status: (row) => {
+        const quantity = Number(row.quantity || 0);
+        const received = Number(row.received_quantity || 0);
+        return quantity > 0 && received >= quantity ? "Reçu" : received > 0 ? "Partiellement reçu" : "Commandé";
+      },
+      ordered_at: (row) => scalar(row.created_at, null),
+      expected_at: null,
       product_id: null,
       account: "Banque",
       payment_status: "Payé",
@@ -206,7 +235,7 @@ const REQUIRED_TABLES = [
 ] as const;
 
 const OPTIONAL_TABLES = [
-  "inventaires", "depenses", "clotures_journalieres", "historique_commandes", "evenements_transporteurs", "journal_actions",
+  "fournisseurs", "inventaires", "depenses", "clotures_journalieres", "historique_commandes", "evenements_transporteurs", "journal_actions",
   "boutique_produits", "boutique_offres", "boutique_composition_offres", "boutique_medias",
 ] as const;
 
@@ -281,6 +310,7 @@ function protectedSettingKey(key: string) {
 function validateReferences(tables: Record<string, ImportRow[]>) {
   const customerIds = new Set(rowsFor(tables, "clients").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
   const productIds = new Set(rowsFor(tables, "produits").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
+  const supplierIds = new Set(rowsFor(tables, "fournisseurs").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
   const purchaseIds = new Set(rowsFor(tables, "achats").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
   const orderIds = new Set(rowsFor(tables, "commandes").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
   const offerIds = new Set(rowsFor(tables, "boutique_offres").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
@@ -307,7 +337,10 @@ function validateReferences(tables: Record<string, ImportRow[]>) {
       }
     }
   }
-  for (const row of rowsFor(tables, "achats")) assertForeignKey(row.product_id, productIds, "produit d’achat", true);
+  for (const row of rowsFor(tables, "achats")) {
+    assertForeignKey(row.product_id, productIds, "produit d’achat", true);
+    assertForeignKey(row.supplier_id, supplierIds, "fournisseur d’achat", true);
+  }
   for (const row of rowsFor(tables, "mouvements_stock")) {
     assertForeignKey(row.product_id, productIds, "produit de mouvement de stock", false);
     assertForeignKey(row.order_id, orderIds, "commande de mouvement de stock", true);
@@ -367,7 +400,10 @@ function parsePortableExport(raw: string) {
   assertUnique(tables, "clients", "phone", "téléphone client");
   assertUnique(tables, "produits", "id", "produit");
   assertUnique(tables, "produits", "product_code", "référence produit");
+  assertUnique(tables, "fournisseurs", "id", "fournisseur");
+  assertUnique(tables, "fournisseurs", "name", "nom fournisseur");
   assertUnique(tables, "achats", "id", "achat");
+  assertUnique(tables, "achats", "purchase_ref", "référence de bon de commande", true);
   assertUnique(tables, "commandes", "id", "commande");
   assertUnique(tables, "commandes", "order_ref", "référence commande");
   assertUnique(tables, "mouvements_stock", "id", "mouvement de stock");
@@ -487,6 +523,7 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
     database.prepare("DELETE FROM orders"),
     database.prepare("DELETE FROM customers"),
     database.prepare("DELETE FROM purchases"),
+    database.prepare("DELETE FROM suppliers"),
     database.prepare("DELETE FROM expenses"),
     database.prepare("DELETE FROM ad_performance"),
     database.prepare("DELETE FROM products"),
@@ -512,6 +549,7 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
   const orderedKeys = [
     "clients",
     "produits",
+    "fournisseurs",
     "achats",
     "depenses",
     "commandes",
@@ -536,6 +574,35 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
   }
 
   await database.batch(statements);
+
+  // Compatibilité avec les exports créés avant le module Fournisseurs.
+  await database.batch([
+    database.prepare(`
+      INSERT OR IGNORE INTO suppliers (name, created_at)
+      SELECT trim(supplier), MIN(created_at)
+      FROM purchases
+      WHERE trim(supplier) <> ''
+      GROUP BY lower(trim(supplier))
+    `),
+    database.prepare(`
+      UPDATE purchases
+      SET supplier_id = COALESCE(
+            supplier_id,
+            (SELECT suppliers.id FROM suppliers WHERE lower(suppliers.name) = lower(trim(purchases.supplier)) LIMIT 1)
+          ),
+          purchase_ref = COALESCE(NULLIF(purchase_ref, ''), 'BC-' || printf('%06d', id)),
+          procurement_status = CASE
+            WHEN procurement_status IS NULL OR procurement_status = '' THEN
+              CASE
+                WHEN received_quantity >= quantity AND quantity > 0 THEN 'Reçu'
+                WHEN received_quantity > 0 THEN 'Partiellement reçu'
+                ELSE 'Commandé'
+              END
+            ELSE procurement_status
+          END,
+          ordered_at = COALESCE(ordered_at, created_at)
+    `),
+  ]);
 
   // Les triggers marquent déjà la copie externe comme modifiée ; on explicite néanmoins
   // une nouvelle tentative et on reconstruit les valeurs par défaut manquantes.

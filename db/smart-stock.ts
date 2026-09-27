@@ -83,6 +83,7 @@ export async function buildSmartStockRecommendations(database: D1Database): Prom
       FROM purchases
       WHERE product_id IS NOT NULL
         AND quantity > received_quantity
+        AND procurement_status IN ('Commandé', 'Partiellement reçu')
       GROUP BY product_id
     `).all<PendingRow>(),
     database.prepare(`
@@ -96,6 +97,7 @@ export async function buildSmartStockRecommendations(database: D1Database): Prom
           ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY datetime(created_at) DESC, id DESC) AS rowNumber
         FROM purchases
         WHERE product_id IS NOT NULL
+          AND procurement_status <> 'Annulé'
       )
       WHERE rowNumber = 1
     `).all<SupplierRow>(),

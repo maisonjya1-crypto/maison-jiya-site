@@ -75,6 +75,7 @@ export async function fixture() {
   database.sqlite.exec(readFileSync(resolve(root, 'migrations/0002_order_refund_tracking.sql'), 'utf8'));
   database.sqlite.exec(readFileSync(resolve(root, 'migrations/0003_daily_closings.sql'), 'utf8'));
   database.sqlite.exec(readFileSync(resolve(root, 'migrations/0004_smart_stock_reordering.sql'), 'utf8'));
+  database.sqlite.exec(readFileSync(resolve(root, 'migrations/0005_suppliers_purchase_orders.sql'), 'utf8'));
   await loadSource('db/google-sheets-sync.ts').ensureGoogleSheetsSyncSchema(database);
   database.sqlite.exec(`
     INSERT INTO customers (id, name, phone, city) VALUES (1, 'Client test', '0612345678', 'Casablanca');
