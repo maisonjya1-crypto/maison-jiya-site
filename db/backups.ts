@@ -86,12 +86,11 @@ async function readRows(database: D1Database, table: string, where = "") {
 }
 
 async function readOptionalRows(database: D1Database, table: string) {
-  try {
-    return await readRows(database, table);
-  } catch {
-    // Les toutes premières bases Maison Jiya ne possédaient pas encore le CMS boutique.
-    return undefined;
-  }
+  const existing = await database.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+  ).bind(table).first<{ name: string }>();
+  if (!existing?.name) return undefined;
+  return readRows(database, table);
 }
 
 async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
