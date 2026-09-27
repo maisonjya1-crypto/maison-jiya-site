@@ -260,7 +260,7 @@ test("API, interface, export et sync Sheets connaissent les fournisseurs et bons
   assert.match(dashboard, /Produits fournis/);
   assert.match(dashboard, /Dernier prix/);
   assert.match(dashboard, /En retard/);
-  assert.match(dashboard, /supplierId: row\.supplierId/);
+  assert.match(dashboard, /supplierId: group\.supplierId/);
   assert.match(dashboard, /Ajouter un produit/);
   assert.match(dashboard, /linesJson/);
   assert.match(dashboard, /purchaseLineNo/);

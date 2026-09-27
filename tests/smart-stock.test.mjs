@@ -23,10 +23,13 @@ test("le réapprovisionnement utilise la demande 30 jours, le seuil et les achat
       (1, 'Commande', 99, 'trop ancienne', datetime('now', '-45 days')),
       (1, 'Inventaire -', 50, 'perte qui ne doit pas devenir demande', datetime('now', '-2 days'));
 
-    INSERT INTO purchases (id, supplier, item, product_id, quantity, unit_cost, total_cost, account, payment_status, received_quantity, created_at)
+    INSERT INTO suppliers (id, name, lead_time_days, minimum_order_amount)
+    VALUES (20, 'Fournisseur actuel', 3, 120);
+
+    INSERT INTO purchases (id, supplier, supplier_id, item, product_id, quantity, unit_cost, total_cost, account, payment_status, received_quantity, created_at)
     VALUES
-      (30, 'Fournisseur historique', 'Ancien achat', 1, 10, 9, 90, 'Banque', 'Payé', 10, datetime('now', '-60 days')),
-      (31, 'Fournisseur actuel', 'Réassort', 1, 3, 8, 24, 'Banque', 'À payer', 0, datetime('now', '-1 day'));
+      (30, 'Fournisseur historique', NULL, 'Ancien achat', 1, 10, 9, 90, 'Banque', 'Payé', 10, datetime('now', '-60 days')),
+      (31, 'Fournisseur actuel', 20, 'Réassort', 1, 3, 8, 24, 'Banque', 'À payer', 0, datetime('now', '-1 day'));
   `);
 
   const rows = await smartStock.buildSmartStockRecommendations(db);
@@ -41,6 +44,8 @@ test("le réapprovisionnement utilise la demande 30 jours, le seuil et les achat
   assert.equal(row.pendingInbound, 3);
   assert.equal(row.recommendedQuantity, 12);
   assert.equal(row.supplier, "Fournisseur actuel");
+  assert.equal(row.supplierLeadTimeDays, 3);
+  assert.equal(row.supplierMinimumOrderAmount, 120);
   assert.equal(row.unitCost, 8);
   assert.equal(row.estimatedCost, 96);
   assert.equal(row.status, "Critique");
@@ -124,7 +129,7 @@ test("l’API, les sauvegardes et l’interface conservent les paramètres de r�
   assert.match(sheets, /Seuil alerte stock/);
   assert.match(sheets, /Couverture cible \(jours\)/);
   assert.match(dashboard, /Réapprovisionnement/);
-  assert.match(dashboard, /Préparer l’achat/);
+  assert.match(dashboard, /Préparer les achats/);
   assert.match(dashboard, /name="stockAlertThreshold"/);
   assert.match(dashboard, /name="reorderCoverDays"/);
 });
