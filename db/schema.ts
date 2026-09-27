@@ -446,5 +446,6 @@ export const inventoryCounts = sqliteTable(
   (table) => [
     index("inventory_counts_product_id_idx").on(table.productId),
     index("inventory_counts_session_id_idx").on(table.sessionId),
+    uniqueIndex("inventory_counts_session_product_unique_idx").on(table.sessionId, table.productId),
   ],
 );
