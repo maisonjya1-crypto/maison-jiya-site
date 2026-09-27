@@ -1091,7 +1091,7 @@ export async function POST(request: Request) {
       const paidAt = nextPaymentStatus === "Payé"
         ? paidAtFromInput(payload.paidDate, purchase.paymentStatus === "Payé" && purchase.paidAt ? purchase.paidAt : new Date().toISOString())
         : null;
-      let expectedAt = textValue(payload.expectedDate);
+      const expectedAt = textValue(payload.expectedDate);
       if (expectedAt && !/^\d{4}-\d{2}-\d{2}$/.test(expectedAt)) return Response.json({ error: "Date de livraison prévue invalide." }, { status: 400 });
       const orderedAt = procurementStatus === "Brouillon" ? null : purchase.orderedAt || new Date().toISOString();
       await db.update(purchases).set({
