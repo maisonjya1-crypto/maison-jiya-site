@@ -3505,7 +3505,7 @@ function SuppliersPage({
 function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd, onEdit, onDelete }: { purchases: Purchase[]; products: Product[]; suppliers: Supplier[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
   const [receivingId, setReceivingId] = useState<number | null>(null);
   const total = purchases.reduce((sum, purchase) => sum + purchase.totalCost, 0);
-  const waitingReceipt = purchases.filter((purchase) => purchase.productId && purchase.receivedQuantity < purchase.quantity);
+  const waitingReceipt = purchases.filter((purchase) => purchase.productId && purchase.receivedQuantity < purchase.quantity && ["Commandé", "Partiellement reçu"].includes(purchase.procurementStatus));
   const receivedCount = purchases.filter((purchase) => purchase.receivedQuantity >= purchase.quantity && purchase.quantity > 0).length;
   const supplierRows = Array.from(new Set(purchases.map((purchase) => purchase.supplier).filter(Boolean)))
     .map((supplier) => {
@@ -3590,6 +3590,10 @@ function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd,
                     <td>
                       {received ? (
                         <span className="purchase-received"><strong>✓ {purchase.receivedQuantity}/{purchase.quantity}</strong><small>{purchase.receivedAt ? dateLabel(purchase.receivedAt) : "Réceptionné"}</small></span>
+                      ) : purchase.procurementStatus === "Brouillon" ? (
+                        <span className="purchase-unlinked">Passez le bon à « Commandé » avant réception</span>
+                      ) : purchase.procurementStatus === "Annulé" ? (
+                        <span className="purchase-unlinked">Bon annulé</span>
                       ) : purchase.productId ? (
                         <button className="secondary-button purchase-receive-button" type="button" disabled={!canEdit || receivingId === purchase.id} onClick={() => void receive(purchase)}>
                           {receivingId === purchase.id ? "Réception…" : `Réceptionner ${purchase.receivedQuantity}/${purchase.quantity}`}
