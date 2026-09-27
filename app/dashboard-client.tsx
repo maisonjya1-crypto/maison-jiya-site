@@ -186,15 +186,39 @@ type StockMovement = {
   note: string;
   createdAt: string;
 };
+type InventorySession = {
+  id: number;
+  sessionRef: string;
+  status: "En cours" | "Clôturé";
+  note: string;
+  expectedProductCount: number;
+  countedProductCount: number;
+  totalSystemUnits: number;
+  totalPhysicalUnits: number;
+  totalAdjustmentUnits: number;
+  valueBefore: number;
+  valueAfter: number;
+  lossValue: number;
+  startedByUserId: number | null;
+  startedByName: string;
+  startedAt: string;
+  completedAt: string | null;
+};
 type InventoryCount = {
   id: number;
   countRef: string;
+  sessionId: number | null;
   productId: number;
   productCode: string | null;
   productName: string | null;
   systemQuantity: number;
   physicalQuantity: number;
   difference: number;
+  reason: string;
+  unitCost: number;
+  valueBefore: number;
+  valueAfter: number;
+  lossValue: number;
   note: string;
   countedByUserId: number | null;
   countedByName: string;
@@ -354,6 +378,7 @@ type Data = {
   products: Product[];
   stockMovements: StockMovement[];
   inventoryCounts: InventoryCount[];
+  inventorySessions: InventorySession[];
   members: Member[];
   orderStatusHistory: OrderStatusHistory[];
   auditLogs: AuditLog[];
@@ -410,6 +435,7 @@ const emptyData: Data = {
   products: [],
   stockMovements: [],
   inventoryCounts: [],
+  inventorySessions: [],
   members: [],
   orderStatusHistory: [],
   auditLogs: [],
@@ -460,9 +486,9 @@ const dateTimeLabel = (value: string) =>
     minute: "2-digit",
   }).format(new Date(value));
 
-const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs", "Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
+const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Inventaire", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs", "Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
 const navigationGroups = [
-  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs"] },
+  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Inventaire", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs"] },
   { label: "Pilotage", items: ["Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA"] },
   { label: "Système", items: ["Mode entraînement", "Corbeille", "Paramètres"] },
 ];
@@ -470,6 +496,7 @@ const sectionDescriptions: Record<string, string> = {
   "Vue d’ensemble": "Synthèse de l’activité, de la trésorerie et des opérations.",
   Commandes: "Suivez les ventes, statuts, paiements et expéditions.",
   Produits: "Pilotez le catalogue, les coûts, les marges et le stock.",
+  Inventaire: "Comptez le stock réel, expliquez les écarts et valorisez les pertes.",
   Réapprovisionnement: "Anticipez les ruptures et préparez les quantités à commander par fournisseur.",
   Colis: "Contrôlez les expéditions et le suivi des transporteurs.",
   Clients: "Centralisez les coordonnées et l’historique de vos clientes.",
@@ -517,6 +544,9 @@ const retrySafeMutationActions = new Set([
   "addProduct",
   "addStockMovement",
   "countInventory",
+  "startInventorySession",
+  "countInventorySessionProduct",
+  "finalizeInventorySession",
   "archiveProduct",
   "restoreProduct",
 ]);
@@ -736,6 +766,9 @@ export default function DashboardClient() {
       updateStockMovement: "Mouvement de stock mis à jour",
       deleteStockMovement: "Mouvement de stock supprimé",
       countInventory: "Inventaire enregistré et stock corrigé",
+      startInventorySession: "Session d’inventaire démarrée",
+      countInventorySessionProduct: "Produit compté et stock contrôlé",
+      finalizeInventorySession: "Session d’inventaire clôturée",
       updateCustomer: "Client mis à jour",
       deleteCustomer: "Client supprimé",
       addSupplier: "Fournisseur créé",
@@ -1343,6 +1376,7 @@ function Page({
 }) {
   const allocationPolicy = allocationPolicyFromSettings(data.settings);
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
+  if (active === "Inventaire") return <InventoryPage products={data.products} sessions={data.inventorySessions} counts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} />;
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} onRestore={restoreProduct} />;
   if (active === "Réapprovisionnement") return <ReorderingPage data={data} submit={submit} onEditProduct={editEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
@@ -3168,6 +3202,162 @@ function ReorderingPage({
         </div>
       </section>
     </div>
+  );
+}
+
+function InventorySessionCountModal({ session, product, close, submit }: { session: InventorySession; product: Product; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [physicalQuantity, setPhysicalQuantity] = useState(String(product.stockQuantity));
+  const parsed = Math.max(0, Math.round(Number(physicalQuantity) || 0));
+  const difference = parsed - product.stockQuantity;
+  const loss = difference < 0 ? Math.abs(difference) * product.purchasePrice : 0;
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && close()}>
+      <section className="modal compact inventory-modal" role="dialog" aria-modal="true">
+        <div className="modal-head">
+          <div><span className="card-kicker">{session.sessionRef} · {product.productCode}</span><h2>Compter {product.name}</h2><p>Stock affiché : {product.stockQuantity} · valeur actuelle : {money(product.stockQuantity * product.purchasePrice)}</p></div>
+          <button type="button" onClick={close} aria-label="Fermer">×</button>
+        </div>
+        <form onSubmit={async (event) => {
+          event.preventDefault();
+          setSaving(true);
+          setFormError("");
+          try {
+            if (!Number.isInteger(Number(physicalQuantity)) || Number(physicalQuantity) < 0) throw new Error("La quantité physique doit être un entier positif ou nul.");
+            await submit("countInventorySessionProduct", {
+              sessionId: String(session.id),
+              productId: String(product.id),
+              expectedSystemQuantity: String(product.stockQuantity),
+              ...Object.fromEntries(new FormData(event.currentTarget)),
+            });
+            close();
+          } catch (error) {
+            setFormError(error instanceof Error ? error.message : "Comptage impossible.");
+            setSaving(false);
+          }
+        }}>
+          <div className="inventory-summary">
+            <div><span>Système</span><strong>{product.stockQuantity}</strong></div>
+            <div><span>Physique</span><strong>{parsed}</strong></div>
+            <div className={difference > 0 ? "positive" : difference < 0 ? "negative" : "neutral"}><span>Écart</span><strong>{difference > 0 ? "+" : ""}{difference}</strong></div>
+          </div>
+          <div className="form-grid">
+            <label className="field"><span>Quantité physique *</span><input name="physicalQuantity" type="number" inputMode="numeric" min="0" value={physicalQuantity} onChange={(event) => setPhysicalQuantity(event.target.value)} required /></label>
+            {difference !== 0 ? <Select label="Motif de l’écart *" name="reason" options={["Casse", "Perte", "Vol", "Erreur de saisie", "Autre"]} /> : <input type="hidden" name="reason" value="Aucun écart" />}
+            <Field label="Note complémentaire" name="note" maxLength={240} />
+          </div>
+          <p className="inventory-warning">{difference === 0 ? "✓ Stock conforme." : difference < 0 ? `Le stock sera corrigé à ${parsed}. Perte valorisée : ${money(loss)}.` : `Le stock sera corrigé à ${parsed}. L’écart positif sera tracé.`}</p>
+          {formError ? <p className="form-error" role="alert">{formError}</p> : null}
+          <div className="modal-actions"><button type="button" className="cancel-button" onClick={close}>Annuler</button><button className="primary-button" disabled={saving}>{saving ? "Validation…" : "Valider le comptage"}</button></div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function InventoryPage({ products, sessions, counts, canEdit, submit }: { products: Product[]; sessions: InventorySession[]; counts: InventoryCount[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [search, setSearch] = useState("");
+  const [starting, setStarting] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
+  const activeProducts = products.filter((product) => !product.archivedAt);
+  const activeSession = sessions.find((session) => session.status === "En cours") || null;
+  const sessionCounts = activeSession ? counts.filter((count) => count.sessionId === activeSession.id) : [];
+  const countedIds = new Set(sessionCounts.map((count) => count.productId));
+  const remaining = activeProducts.filter((product) => !countedIds.has(product.id));
+  const normalizedSearch = search.trim().toLocaleLowerCase("fr");
+  const visibleProducts = remaining.filter((product) => !normalizedSearch || `${product.productCode} ${product.name} ${product.category}`.toLocaleLowerCase("fr").includes(normalizedSearch));
+  const neverCounted = activeProducts.filter((product) => !counts.some((count) => count.productId === product.id));
+  const frequent = activeProducts.map((product) => ({
+    product,
+    differences: counts.filter((count) => count.productId === product.id && count.difference !== 0).length,
+    loss: counts.filter((count) => count.productId === product.id).reduce((sum, count) => sum + count.lossValue, 0),
+  })).filter((row) => row.differences > 0).sort((a, b) => b.differences - a.differences || b.loss - a.loss).slice(0, 8);
+  const latestClosed = sessions.filter((session) => session.status === "Clôturé").slice(0, 10);
+
+  async function startSession() {
+    if (!canEdit || starting) return;
+    setStarting(true);
+    try { await submit("startInventorySession", { note: "" }); } finally { setStarting(false); }
+  }
+  async function finalizeSession() {
+    if (!activeSession || !canEdit || finalizing) return;
+    if (activeSession.countedProductCount < activeSession.expectedProductCount) return;
+    if (!window.confirm(`Clôturer ${activeSession.sessionRef} ?\n\nLes corrections de stock déjà validées resteront définitives et le bilan sera figé.`)) return;
+    setFinalizing(true);
+    try { await submit("finalizeInventorySession", { sessionId: String(activeSession.id) }); } finally { setFinalizing(false); }
+  }
+
+  const currentValue = activeProducts.reduce((sum, product) => sum + product.stockQuantity * product.purchasePrice, 0);
+  return (
+    <>
+      <section className="kpi-grid stock-kpis">
+        <Kpi label="Valeur stock réelle" value={money(currentValue)} detail="Quantités actuelles × coût d’achat" />
+        <Kpi label="Jamais comptés" value={String(neverCounted.length)} detail={`${activeProducts.length} produit(s) actif(s)`} danger={neverCounted.length > 0} />
+        <Kpi label="Sessions clôturées" value={String(sessions.filter((session) => session.status === "Clôturé").length)} detail="Historique conservé" />
+        <Kpi label="Pertes inventaire" value={money(sessions.reduce((sum, session) => sum + session.lossValue, 0))} detail="Valeur des écarts négatifs" danger={sessions.some((session) => session.lossValue > 0)} />
+      </section>
+
+      {activeSession ? (
+        <section className="panel inventory-session-active">
+          <div className="inventory-session-head">
+            <div><span className="card-kicker">Session en cours</span><h2>{activeSession.sessionRef}</h2><p>Démarrée par {activeSession.startedByName} · {dateTimeLabel(activeSession.startedAt)}</p></div>
+            <Status value="En cours" />
+          </div>
+          <div className="inventory-session-progress">
+            <div><span>Progression</span><strong>{activeSession.countedProductCount} / {activeSession.expectedProductCount}</strong></div>
+            <div className="progress"><span className="green" style={{ width: `${activeSession.expectedProductCount ? Math.min(100, (activeSession.countedProductCount / activeSession.expectedProductCount) * 100) : 100}%` }} /></div>
+            <div><span>Ajustements</span><strong>{activeSession.totalAdjustmentUnits} unité(s)</strong></div>
+            <div><span>Pertes détectées</span><strong className={activeSession.lossValue > 0 ? "money-negative" : ""}>{money(activeSession.lossValue)}</strong></div>
+          </div>
+          <div className="inventory-session-toolbar">
+            <label><span>Rechercher un produit à compter</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="SKU, nom ou catégorie" /></label>
+            <button className="primary-button" type="button" disabled={!canEdit || activeSession.countedProductCount < activeSession.expectedProductCount || finalizing} onClick={() => void finalizeSession()}>{finalizing ? "Clôture…" : "Clôturer l’inventaire"}</button>
+          </div>
+          {visibleProducts.length ? (
+            <div className="inventory-product-grid">{visibleProducts.map((product) => (
+              <article key={product.id}>
+                <div><strong>{product.name}</strong><small>{product.productCode} · {product.category}</small></div>
+                <div><span>Stock système</span><strong>{product.stockQuantity}</strong></div>
+                <div><span>Valeur</span><strong>{money(product.stockQuantity * product.purchasePrice)}</strong></div>
+                <button type="button" className="secondary-button" disabled={!canEdit} onClick={() => setSelectedProduct(product)}>Compter</button>
+              </article>
+            ))}</div>
+          ) : remaining.length ? <EmptyState title="Aucun produit trouvé" text="Modifiez la recherche." /> : <div className="inventory-ready-to-close"><strong>✓ Tous les produits de la session sont comptés.</strong><p>Vous pouvez maintenant clôturer l’inventaire.</p></div>}
+
+          {sessionCounts.length ? (
+            <details className="inventory-counted-details">
+              <summary>Déjà comptés · {sessionCounts.length}</summary>
+              <div className="table-scroll"><table><thead><tr><th>Produit</th><th>Système</th><th>Physique</th><th>Écart</th><th>Motif</th><th>Perte</th></tr></thead><tbody>
+                {sessionCounts.map((count) => <tr key={count.id}><td><strong>{count.productName}</strong><small>{count.productCode}</small></td><td>{count.systemQuantity}</td><td>{count.physicalQuantity}</td><td className={moneyTone(count.difference)}>{count.difference > 0 ? "+" : ""}{count.difference}</td><td>{count.reason}</td><td className={count.lossValue > 0 ? "money-negative" : ""}>{money(count.lossValue)}</td></tr>)}
+              </tbody></table></div>
+            </details>
+          ) : null}
+        </section>
+      ) : (
+        <section className="panel inventory-start-card">
+          <div><span className="card-kicker">Inventaire physique</span><h2>Démarrer un nouveau comptage</h2><p>La session fige le nombre de produits à contrôler. Chaque écart corrigera le stock et restera justifié dans l’historique.</p></div>
+          <button className="primary-button" type="button" disabled={!canEdit || starting} onClick={() => void startSession()}>{starting ? "Création…" : "＋ Démarrer l’inventaire"}</button>
+        </section>
+      )}
+
+      <section className="panel page-panel">
+        <PanelHead kicker="Contrôle" title="Produits jamais comptés" total={String(neverCounted.length)} />
+        {neverCounted.length ? <div className="inventory-never-grid">{neverCounted.slice(0, 12).map((product) => <article key={product.id}><strong>{product.name}</strong><small>{product.productCode} · stock {product.stockQuantity}</small></article>)}</div> : <div className="pending-empty">✓ Tous les produits actifs ont déjà été contrôlés au moins une fois.</div>}
+      </section>
+
+      <section className="panel page-panel">
+        <PanelHead kicker="Anomalies" title="Écarts fréquents" total={String(frequent.length)} />
+        {frequent.length ? <div className="table-scroll"><table><thead><tr><th>Produit</th><th>Inventaires avec écart</th><th>Pertes cumulées</th></tr></thead><tbody>{frequent.map((row) => <tr key={row.product.id}><td><strong>{row.product.name}</strong><small>{row.product.productCode}</small></td><td>{row.differences}</td><td className={row.loss > 0 ? "money-negative" : ""}>{money(row.loss)}</td></tr>)}</tbody></table></div> : <div className="pending-empty">Aucun écart d’inventaire récurrent détecté.</div>}
+      </section>
+
+      <section className="panel page-panel">
+        <PanelHead kicker="Historique" title="Sessions clôturées" total={String(sessions.filter((session) => session.status === "Clôturé").length)} />
+        {latestClosed.length ? <div className="table-scroll"><table><thead><tr><th>Session</th><th>Date</th><th>Responsable</th><th>Produits</th><th>Unités système</th><th>Unités réelles</th><th>Valeur avant</th><th>Valeur après</th><th>Pertes</th></tr></thead><tbody>{latestClosed.map((session) => <tr key={session.id}><td><strong>{session.sessionRef}</strong></td><td>{session.completedAt ? dateTimeLabel(session.completedAt) : "—"}</td><td>{session.startedByName}</td><td>{session.countedProductCount}</td><td>{session.totalSystemUnits}</td><td>{session.totalPhysicalUnits}</td><td>{money(session.valueBefore)}</td><td>{money(session.valueAfter)}</td><td className={session.lossValue > 0 ? "money-negative" : ""}>{money(session.lossValue)}</td></tr>)}</tbody></table></div> : <EmptyState title="Aucun inventaire clôturé" text="Le premier bilan apparaîtra ici après la clôture d’une session." />}
+      </section>
+      {activeSession && selectedProduct ? <InventorySessionCountModal session={activeSession} product={selectedProduct} close={() => setSelectedProduct(null)} submit={submit} /> : null}
+    </>
   );
 }
 
@@ -6060,7 +6250,8 @@ function InventoryCountModal({ product, close, submit }: { product: Product; clo
               <span>Quantité physique comptée *</span>
               <input name="physicalQuantity" type="number" inputMode="numeric" min="0" value={physicalQuantity} onChange={(event) => setPhysicalQuantity(event.target.value)} required />
             </label>
-            <Field label="Note / explication de l’écart" name="note" />
+            {difference !== 0 ? <Select label="Motif de l’écart *" name="reason" options={["Casse", "Perte", "Vol", "Erreur de saisie", "Autre"]} /> : <input type="hidden" name="reason" value="Aucun écart" />}
+            <Field label="Note complémentaire" name="note" />
           </div>
           <p className="inventory-warning">{difference === 0 ? "✓ Aucun écart : le contrôle sera quand même enregistré." : `Le site corrigera automatiquement le stock de ${product.stockQuantity} à ${parsedPhysicalQuantity} unité(s).`}</p>
           {formError && <p className="form-error" role="alert">{formError}</p>}
