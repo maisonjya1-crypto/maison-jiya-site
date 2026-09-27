@@ -22,6 +22,7 @@ export type PurchasePlanRecommendation = {
   unitCost: number;
   estimatedCost: number;
   lastPurchaseAt: string | null;
+  status: "Rupture" | "Critique" | "À prévoir" | "OK";
 };
 
 export type PurchasePlanLine = PurchasePlanRecommendation & {
