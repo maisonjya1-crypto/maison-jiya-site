@@ -178,10 +178,39 @@ const TABLE_SPECS: Record<string, TableSpec> = {
     columns: ["id", "product_id", "order_id", "purchase_id", "movement_type", "quantity", "note", "created_at"],
     defaults: { order_id: null, purchase_id: null, note: "" },
   },
+  sessions_inventaire: {
+    table: "inventory_sessions",
+    columns: ["id", "session_ref", "status", "note", "expected_product_count", "counted_product_count", "total_system_units", "total_physical_units", "total_adjustment_units", "value_before", "value_after", "loss_value", "started_by_user_id", "started_by_name", "started_at", "completed_at"],
+    defaults: {
+      status: "Clôturé",
+      note: "",
+      expected_product_count: 0,
+      counted_product_count: 0,
+      total_system_units: 0,
+      total_physical_units: 0,
+      total_adjustment_units: 0,
+      value_before: 0,
+      value_after: 0,
+      loss_value: 0,
+      started_by_user_id: null,
+      started_by_name: "Import Maison Jiya",
+      completed_at: null,
+    },
+  },
   inventaires: {
     table: "inventory_counts",
-    columns: ["id", "count_ref", "product_id", "system_quantity", "physical_quantity", "difference", "note", "counted_by_user_id", "counted_by_name", "created_at"],
-    defaults: { note: "", counted_by_user_id: null, counted_by_name: "Import Maison Jiya" },
+    columns: ["id", "count_ref", "session_id", "product_id", "system_quantity", "physical_quantity", "difference", "reason", "unit_cost", "value_before", "value_after", "loss_value", "note", "counted_by_user_id", "counted_by_name", "created_at"],
+    defaults: {
+      session_id: null,
+      reason: "Aucun écart",
+      unit_cost: 0,
+      value_before: 0,
+      value_after: 0,
+      loss_value: 0,
+      note: "",
+      counted_by_user_id: null,
+      counted_by_name: "Import Maison Jiya",
+    },
   },
   historique_commandes: {
     table: "order_status_history",
@@ -247,14 +276,14 @@ const REQUIRED_TABLES = [
 ] as const;
 
 const OPTIONAL_TABLES = [
-  "fournisseurs", "factures_fournisseurs", "paiements_fournisseurs", "inventaires", "depenses", "clotures_journalieres", "historique_commandes", "evenements_transporteurs", "journal_actions",
+  "fournisseurs", "factures_fournisseurs", "paiements_fournisseurs", "sessions_inventaire", "inventaires", "depenses", "clotures_journalieres", "historique_commandes", "evenements_transporteurs", "journal_actions",
   "boutique_produits", "boutique_offres", "boutique_composition_offres", "boutique_medias",
 ] as const;
 
 const INFORMATIONAL_TABLES = ["membres", "journal_sync_google_sheets"] as const;
 
 const USER_REFERENCE_COLUMNS = new Set([
-  "deleted_by_user_id", "archived_by_user_id", "counted_by_user_id", "changed_by_user_id", "closed_by_user_id", "user_id",
+  "deleted_by_user_id", "archived_by_user_id", "counted_by_user_id", "started_by_user_id", "changed_by_user_id", "closed_by_user_id", "user_id",
 ]);
 
 function isPlainRow(value: unknown): value is ImportRow {
@@ -328,6 +357,7 @@ function validateReferences(tables: Record<string, ImportRow[]>) {
   const supplierInvoiceIds = new Set(rowsFor(tables, "factures_fournisseurs").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
   const orderIds = new Set(rowsFor(tables, "commandes").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
   const offerIds = new Set(rowsFor(tables, "boutique_offres").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
+  const inventorySessionIds = new Set(rowsFor(tables, "sessions_inventaire").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
 
   for (const row of rowsFor(tables, "commandes")) {
     assertForeignKey(row.customer_id, customerIds, "client de commande", false);
@@ -368,7 +398,10 @@ function validateReferences(tables: Record<string, ImportRow[]>) {
     assertForeignKey(row.order_id, orderIds, "commande de mouvement de stock", true);
     assertForeignKey(row.purchase_id, purchaseIds, "achat de mouvement de stock", true);
   }
-  for (const row of rowsFor(tables, "inventaires")) assertForeignKey(row.product_id, productIds, "produit d’inventaire", false);
+  for (const row of rowsFor(tables, "inventaires")) {
+    assertForeignKey(row.product_id, productIds, "produit d’inventaire", false);
+    assertForeignKey(row.session_id, inventorySessionIds, "session d’inventaire", true);
+  }
   for (const row of rowsFor(tables, "historique_commandes")) assertForeignKey(row.order_id, orderIds, "commande d’historique", false);
   for (const row of rowsFor(tables, "evenements_transporteurs")) assertForeignKey(row.order_id, orderIds, "commande d’événement transporteur", true);
   for (const row of rowsFor(tables, "tresorerie_capital")) assertForeignKey(row.order_id, orderIds, "commande de mouvement de capital", true);
@@ -425,6 +458,10 @@ function parsePortableExport(raw: string) {
   assertUnique(tables, "fournisseurs", "id", "fournisseur");
   assertUnique(tables, "fournisseurs", "name", "nom fournisseur");
   assertUnique(tables, "achats", "id", "achat");
+  assertUnique(tables, "sessions_inventaire", "id", "session d’inventaire");
+  assertUnique(tables, "sessions_inventaire", "session_ref", "référence de session d’inventaire");
+  assertUnique(tables, "inventaires", "id", "comptage d’inventaire");
+  assertUnique(tables, "inventaires", "count_ref", "référence de comptage d’inventaire");
   assertUnique(tables, "factures_fournisseurs", "id", "facture fournisseur");
   assertUnique(tables, "factures_fournisseurs", "purchase_ref", "bon facturé");
   assertUnique(tables, "paiements_fournisseurs", "id", "paiement fournisseur");
@@ -556,6 +593,7 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
     database.prepare("DELETE FROM storefront_product_settings"),
     database.prepare("DELETE FROM stock_movements"),
     database.prepare("DELETE FROM inventory_counts"),
+    database.prepare("DELETE FROM inventory_sessions"),
     database.prepare("DELETE FROM daily_closings"),
     database.prepare("DELETE FROM order_status_history"),
     database.prepare("DELETE FROM carrier_events"),
@@ -600,6 +638,7 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
     "tresorerie_capital",
     "clotures_journalieres",
     "mouvements_stock",
+    "sessions_inventaire",
     "inventaires",
     "historique_commandes",
     "evenements_transporteurs",
