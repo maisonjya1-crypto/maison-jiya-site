@@ -30,7 +30,7 @@ test("la clôture calcule les comptes, obligations et flux du jour sans modifier
       (4, 'REFUNDED', 1, 1, 'Casablanca', 'Adresse', 'Produit test', 1, 150, 10, 20, 5, 10, 'Livraison', 'Retour', 'Remboursé', 'Sendit');
 
     UPDATE orders
-    SET paid_at = '2026-09-25T09:00:00.000Z',
+    SET paid_at = '2026-09-27T08:00:00.000Z',
         refunded_at = '2026-09-27T11:00:00.000Z'
     WHERE id = 4;
 
