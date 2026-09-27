@@ -1348,6 +1348,7 @@ function Page({
   if (active === "Fournisseurs") return <SuppliersPage suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("supplier")} onEdit={editEntity} />;
   if (active === "Achats") return <PurchasesPage purchases={data.purchases} supplierInvoices={data.supplierInvoices} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Factures fournisseurs") return <SupplierInvoicesPage invoices={data.supplierInvoices} payments={data.supplierPayments} canEdit={data.access.canEdit} onAdd={() => open("supplierInvoice")} submit={submit} />;
+  if (active === "Factures fournisseurs") return <SupplierInvoicesPage invoices={data.supplierInvoices} payments={data.supplierPayments} canEdit={data.access.canEdit} onAdd={() => open("supplierInvoice")} submit={submit} />;
   if (active === "Dépenses") return <ExpensesPage expenses={data.expenses} onAdd={() => open("expense")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
