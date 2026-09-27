@@ -538,10 +538,10 @@ export async function POST(request: Request) {
         const customerName = textValue(row.customerName);
         const orderRef = `MJ-I${Date.now().toString(36).slice(-4).toUpperCase()}${crypto.randomUUID().slice(0, 3).toUpperCase()}`;
         const shouldDeduct = commitsStock(status);
-        const saleAmount = numberValue(row.saleAmount, product.salePrice * quantity);
-        const shippingCost = isStoreSale ? 0 : numberValue(row.shippingCost);
-        const adCost = numberValue(row.adCost);
-        const fees = numberValue(row.fees);
+        const saleAmount = moneyValue(row.saleAmount, product.salePrice * quantity);
+        const shippingCost = isStoreSale ? 0 : moneyValue(row.shippingCost);
+        const adCost = moneyValue(row.adCost);
+        const fees = moneyValue(row.fees);
         const source = isStoreSale ? "Magasin physique" : orderSource(row.source);
         const campaign = isStoreSale ? "" : textValue(row.campaign).slice(0, 120);
         const nextPaymentStatus = isStoreSale ? "Encaissé" : paymentStatus(row.paymentStatus, "À encaisser");
@@ -646,12 +646,12 @@ export async function POST(request: Request) {
       const orderRef = `MJ-${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
       const now = new Date().toISOString();
       const productLabel = `${selectedProduct.name} · ${selectedProduct.productCode}`;
-      const saleAmount = numberValue(payload.saleAmount, selectedProduct.salePrice * quantity);
+      const saleAmount = moneyValue(payload.saleAmount, selectedProduct.salePrice * quantity);
       const selectedPaymentStatus = isStoreSale ? "Encaissé" : "À encaisser";
       const selectedSource = isStoreSale ? "Magasin physique" : orderSource(payload.source);
       const requestedCampaign = textValue(payload.campaign).slice(0, 120);
       const selectedCampaign = isStoreSale || requestedCampaign === "Aucune campagne" ? "" : requestedCampaign;
-      const selectedShippingCost = isStoreSale ? 0 : numberValue(payload.shippingCost);
+      const selectedShippingCost = isStoreSale ? 0 : moneyValue(payload.shippingCost);
       const selectedTrackingNumber = isStoreSale ? "" : textValue(payload.trackingNumber);
       const selectedDispatchState = isStoreSale ? "Non requis" : "À autoriser";
       const selectedPaidAt = isStoreSale ? now : null;
@@ -666,7 +666,7 @@ export async function POST(request: Request) {
           ON CONFLICT(phone) DO UPDATE SET name = excluded.name, city = excluded.city
         `).bind(name, phone, city),
         rawDb.prepare(`INSERT INTO orders (order_ref, customer_id, product_id, city, address, products, quantity, sale_amount, product_cost, shipping_cost, ad_cost, fees, return_cost, return_reason, return_note, source, campaign, fulfillment_type, status, payment_status, carrier, tracking_number, carrier_dispatch_state, stock_deducted, paid_at, updated_at)
-          VALUES (?, (SELECT id FROM customers WHERE phone = ? LIMIT 1), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(orderRef, phone, productId, city, address, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, selectedShippingCost, numberValue(payload.adCost), numberValue(payload.fees), selectedReturnReason, selectedReturnNote, selectedSource, selectedCampaign, selectedFulfillmentType, selectedStatus, selectedPaymentStatus, selectedCarrier, selectedTrackingNumber, selectedDispatchState, shouldDeductStock ? 1 : 0, selectedPaidAt, now),
+          VALUES (?, (SELECT id FROM customers WHERE phone = ? LIMIT 1), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(orderRef, phone, productId, city, address, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, selectedShippingCost, moneyValue(payload.adCost), moneyValue(payload.fees), selectedReturnReason, selectedReturnNote, selectedSource, selectedCampaign, selectedFulfillmentType, selectedStatus, selectedPaymentStatus, selectedCarrier, selectedTrackingNumber, selectedDispatchState, shouldDeductStock ? 1 : 0, selectedPaidAt, now),
         rawDb.prepare(`INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at)
           SELECT id, NULL, ?, ?, ?, ? FROM orders WHERE order_ref = ?`).bind(selectedStatus, user.id, user.displayName, now, orderRef),
       ];
@@ -732,7 +732,7 @@ export async function POST(request: Request) {
       const statements = [
         rawDb.prepare("UPDATE customers SET phone = ? WHERE id = ?").bind(nextPhone, existingOrder.customerId),
         rawDb.prepare(`UPDATE orders SET fulfillment_type = ?, status = ?, payment_status = ?, source = ?, campaign = ?, address = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, carrier_dispatch_state = ?, carrier_authorized_at = ?, carrier_invoice_code = ?, return_cost = ?, return_reason = ?, return_note = ?, paid_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
-          .bind(nextFulfillmentType, nextStatus, nextPaymentStatus, nextSource, nextCampaign, nextAddress, isStoreSale ? 0 : numberValue(payload.shippingCost), nextCarrier, nextTrackingNumber, nextDispatchState, nextCarrierAuthorizedAt, nextCarrierInvoiceCode, numberValue(payload.returnCost), nextReturnReason, nextReturnNote, paidAt, nextStockDeducted ? 1 : 0, now, id),
+          .bind(nextFulfillmentType, nextStatus, nextPaymentStatus, nextSource, nextCampaign, nextAddress, isStoreSale ? 0 : moneyValue(payload.shippingCost), nextCarrier, nextTrackingNumber, nextDispatchState, nextCarrierAuthorizedAt, nextCarrierInvoiceCode, moneyValue(payload.returnCost), nextReturnReason, nextReturnNote, paidAt, nextStockDeducted ? 1 : 0, now, id),
       ];
       if (nextStatus !== existingOrder.status) {
         statements.push(rawDb.prepare("INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at) VALUES (?, ?, ?, ?, ?, ?)").bind(id, existingOrder.status, nextStatus, user.id, user.displayName, now));
@@ -767,7 +767,7 @@ export async function POST(request: Request) {
       if (duplicatePhone && duplicatePhone.id !== orderToDispatch.customerId) return Response.json({ error: "Ce numéro appartient déjà à un autre client." }, { status: 409 });
       await db.batch([
         db.update(customers).set({ phone }).where(eq(customers.id, orderToDispatch.customerId)),
-        db.update(orders).set({ address, carrier, shippingCost: numberValue(payload.shippingCost), updatedAt: new Date().toISOString() }).where(and(eq(orders.id, id), isNull(orders.deletedAt))),
+        db.update(orders).set({ address, carrier, shippingCost: moneyValue(payload.shippingCost), updatedAt: new Date().toISOString() }).where(and(eq(orders.id, id), isNull(orders.deletedAt))),
       ]);
       const dispatch = await dispatchAuthorizedOrder(id, carrier);
       if (!dispatch.success) return Response.json({ error: dispatch.message }, { status: 409 });
