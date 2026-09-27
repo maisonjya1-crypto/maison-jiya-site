@@ -2041,6 +2041,10 @@ export async function POST(request: Request) {
       const results = await database.batch(statements);
       const insertedCount = Number((results[0]?.meta as { changes?: number } | undefined)?.changes || 0);
       if (insertedCount !== 1) {
+        if (mutationReceiptReserved) {
+          await releaseMutationReceipt(mutationReceiptKey, mutationReceiptUserId, mutationReceiptAction);
+          mutationReceiptReserved = false;
+        }
         return Response.json({ error: "Le stock a changé pendant la validation. Aucun comptage n’a été enregistré." }, { status: 409 });
       }
       auditEntityId = countRef;
@@ -2187,6 +2191,10 @@ export async function POST(request: Request) {
       const inventoryResults = await rawDatabase.batch(statements);
       const insertedCount = Number((inventoryResults[0]?.meta as { changes?: number } | undefined)?.changes || 0);
       if (insertedCount !== 1) {
+        if (mutationReceiptReserved) {
+          await releaseMutationReceipt(mutationReceiptKey, mutationReceiptUserId, mutationReceiptAction);
+          mutationReceiptReserved = false;
+        }
         return Response.json({ error: "Le stock a changé pendant la validation. Aucun inventaire n’a été enregistré. Rechargez puis recommencez." }, { status: 409 });
       }
       auditEntityId = countRef;
