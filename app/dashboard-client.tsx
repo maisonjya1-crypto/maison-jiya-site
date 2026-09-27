@@ -3925,11 +3925,11 @@ function ProductPricingFields({ initialPurchasePrice = 0, initialSalePrice = 0, 
           <span>Calcul en MAD</span>
         </div>
         <div className="product-pricing-inputs">
-          <label><span>Emballage</span><input type="number" inputMode="decimal" min="0" step="1" value={packagingCost} onChange={(event) => setPackagingCost(event.target.value)} /></label>
-          <label><span>Publicité / vente</span><input type="number" inputMode="decimal" min="0" step="1" value={adCost} onChange={(event) => setAdCost(event.target.value)} /></label>
-          <label><span>Livraison à votre charge</span><input type="number" inputMode="decimal" min="0" step="1" value={deliveryCost} onChange={(event) => setDeliveryCost(event.target.value)} /></label>
-          <label><span>Autres coûts</span><input type="number" inputMode="decimal" min="0" step="1" value={otherCost} onChange={(event) => setOtherCost(event.target.value)} /></label>
-          <label><span>Bénéfice souhaité</span><input type="number" inputMode="decimal" min="0" step="1" value={targetProfit} onChange={(event) => setTargetProfit(event.target.value)} /></label>
+          <label><span>Emballage</span><input type="number" inputMode="decimal" min="0" step="0.01" value={packagingCost} onChange={(event) => setPackagingCost(event.target.value)} /></label>
+          <label><span>Publicité / vente</span><input type="number" inputMode="decimal" min="0" step="0.01" value={adCost} onChange={(event) => setAdCost(event.target.value)} /></label>
+          <label><span>Livraison à votre charge</span><input type="number" inputMode="decimal" min="0" step="0.01" value={deliveryCost} onChange={(event) => setDeliveryCost(event.target.value)} /></label>
+          <label><span>Autres coûts</span><input type="number" inputMode="decimal" min="0" step="0.01" value={otherCost} onChange={(event) => setOtherCost(event.target.value)} /></label>
+          <label><span>Bénéfice souhaité</span><input type="number" inputMode="decimal" min="0" step="0.01" value={targetProfit} onChange={(event) => setTargetProfit(event.target.value)} /></label>
         </div>
         <div className="product-pricing-results">
           <div><span>Coût total estimé</span><strong>{money(totalCost)}</strong></div>
@@ -4146,7 +4146,7 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
                   </>
                 )}
                 <label className="field"><span>Quantité *</span><input name="quantity" type="number" inputMode="numeric" min="1" value={orderQuantity} onChange={(event) => updateOrderQuantity(event.target.value)} required /></label>
-                <label className="field"><span>Vente totale (MAD) *</span><input name="saleAmount" type="number" inputMode="decimal" min="0" value={orderSaleAmount} onChange={(event) => setOrderSaleAmount(event.target.value)} required /></label>
+                <label className="field"><span>Vente totale (MAD) *</span><input name="saleAmount" type="number" inputMode="decimal" min="0" step="0.01" value={orderSaleAmount} onChange={(event) => setOrderSaleAmount(event.target.value)} required /></label>
                 {selectedProduct && (
                   <div className="order-product-summary">
                     <div><small>Stock disponible</small><strong>{selectedProduct.stockQuantity} unité{selectedProduct.stockQuantity === 1 ? "" : "s"}</strong></div>
@@ -4154,8 +4154,8 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
                     <p>{orderFulfillment === "Magasin physique" ? "Le stock sera déduit immédiatement avec la vente magasin." : "Le stock sera déduit une seule fois dès que le statut devient « Confirmée »."}</p>
                   </div>
                 )}
-                <Field label="Publicité attribuée (MAD)" name="adCost" type="number" inputMode="decimal" min="0" />
-                <Field label="Autres frais (MAD)" name="fees" type="number" inputMode="decimal" min="0" />
+                <Field label="Publicité attribuée (MAD)" name="adCost" type="number" inputMode="decimal" min="0" step="0.01" />
+                <Field label="Autres frais (MAD)" name="fees" type="number" inputMode="decimal" min="0" step="0.01" />
                 {orderFulfillment === "Livraison" ? (
                   <>
                     <CarrierQuoteChooser city={orderCity} defaultCarrier={carrierNames.find((carrier) => ["Sendit", "ForceLog"].includes(carrier)) || carrierNames[0]} />
@@ -4179,7 +4179,7 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
                   <small>Si vous choisissez un produit, l’achat pourra être réceptionné ensuite et ajouter automatiquement la quantité au stock.</small>
                 </label>
                 <Field label="Quantité achetée *" name="quantity" type="number" inputMode="numeric" defaultValue="1" min="1" required />
-                <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" required />
+                <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" step="0.01" required />
                 <Select label="Paiement" name="paymentStatus" options={["Payé", "À payer"]} />
               </>
             )}
@@ -4197,8 +4197,8 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
             {kind === "ad" && (
               <>
                 <Field label="Campagne *" name="campaign" required />
-                <Field label="Dépenses (MAD) *" name="spend" type="number" inputMode="decimal" min="0" required />
-                <Field label="CA attribué (MAD) *" name="revenue" type="number" inputMode="decimal" min="0" required />
+                <Field label="Dépenses (MAD) *" name="spend" type="number" inputMode="decimal" min="0" step="0.01" required />
+                <Field label="CA attribué (MAD) *" name="revenue" type="number" inputMode="decimal" min="0" step="0.01" required />
                 <Field label="Commandes *" name="orderCount" type="number" inputMode="numeric" min="0" required />
                 <Field label="Date *" name="performanceDate" type="date" required />
               </>
@@ -4208,7 +4208,7 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
                 <Select label="Type" name="direction" options={["Entrée", "Sortie"]} />
                 <Field label="Source du capital *" name="category" defaultValue="Apport" required />
                 <Field label="Libellé *" name="label" required />
-                <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0" required />
+                <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0" step="0.01" required />
                 <Field label="Date *" name="entryDate" type="date" required />
               </>
             )}
@@ -4311,7 +4311,7 @@ function OrderModal({ order, history, carrierNames, ads, close, print, submit }:
             <Select label="Encaissement" name="paymentStatus" defaultValue={order.paymentStatus} options={["À encaisser", "Encaissé", "Non encaissé", "Remboursé"]} />
             <Field label={isStoreSale ? "Téléphone de la cliente *" : "Téléphone de livraison *"} name="phone" type="tel" inputMode="tel" defaultValue={order.phone || ""} autoComplete="tel" placeholder="06 12 34 56 78" maxLength={18} required />
             {isStoreSale ? <input type="hidden" name="address" value="Magasin Maison Jiya" /> : <Field label="Adresse de livraison *" name="address" defaultValue={order.address === "Magasin Maison Jiya" ? "" : order.address} autoComplete="street-address" required />}
-            <Field label="Coût retour (MAD)" name="returnCost" type="number" inputMode="decimal" min="0" defaultValue={String(order.returnCost)} />
+            <Field label="Coût retour (MAD)" name="returnCost" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={String(order.returnCost)} />
             {isStoreSale ? (
               <div className="order-carrier-safety-note store-sale-note"><strong>Aucun transporteur</strong><small>Cette vente est remise sur place : 0 MAD de livraison, aucun colis et aucun numéro de suivi.</small></div>
             ) : (
@@ -4529,7 +4529,7 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
                   <Field label="Quantité *" name="quantity" type="number" inputMode="numeric" min="1" defaultValue={String(selection.record.quantity)} required />
                 </>
               )}
-              <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.unitCost)} required />
+              <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={String(selection.record.unitCost)} required />
               <Select label="Paiement" name="paymentStatus" defaultValue={selection.record.paymentStatus} options={["Payé", "À payer"]} />
             </>}
             {selection.kind === "expense" && <>
@@ -4543,8 +4543,8 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
             </>}
             {selection.kind === "ad" && <>
               <Field label="Campagne *" name="campaign" defaultValue={selection.record.campaign} required />
-              <Field label="Dépenses (MAD) *" name="spend" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.spend)} required />
-              <Field label="CA attribué (MAD) *" name="revenue" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.revenue)} required />
+              <Field label="Dépenses (MAD) *" name="spend" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={String(selection.record.spend)} required />
+              <Field label="CA attribué (MAD) *" name="revenue" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={String(selection.record.revenue)} required />
               <Field label="Commandes *" name="orderCount" type="number" inputMode="numeric" min="0" defaultValue={String(selection.record.orderCount)} required />
               <Field label="Date *" name="performanceDate" type="date" defaultValue={selection.record.performanceDate.slice(0, 10)} required />
             </>}
@@ -4552,7 +4552,7 @@ function EntityModal({ selection, products, close, submit }: { selection: Editab
               <Select label="Type" name="direction" defaultValue={selection.record.direction} options={["Entrée", "Sortie"]} />
               <Field label="Source du capital *" name="category" defaultValue={selection.record.category} required />
               <Field label="Libellé *" name="label" defaultValue={selection.record.label} required />
-              <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0" defaultValue={String(selection.record.amount)} required />
+              <Field label="Montant (MAD) *" name="amount" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={String(selection.record.amount)} required />
               <Field label="Date *" name="entryDate" type="date" defaultValue={selection.record.entryDate.slice(0, 10)} required />
             </>}
           </div>
