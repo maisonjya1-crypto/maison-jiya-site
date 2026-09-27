@@ -1719,6 +1719,9 @@ export async function POST(request: Request) {
       return Response.json({ error: errorMessage }, { status: 400 });
     }
     if (errorMessage.startsWith("Ligne ")) return Response.json({ error: errorMessage }, { status: 400 });
+    if (errorMessage.startsWith("Le seuil d’alerte stock") || errorMessage.startsWith("La couverture de réapprovisionnement")) {
+      return Response.json({ error: errorMessage }, { status: 400 });
+    }
     if (/^(Le fichier|Version d.export|La date de l.export|Les tables de l.export|La table |L.export contient|Référence |Cet export)/.test(errorMessage)) return Response.json({ error: errorMessage }, { status: 400 });
     return Response.json({ error: "L’enregistrement n’a pas abouti. Vérifiez les champs puis réessayez." }, { status: 500 });
   }
