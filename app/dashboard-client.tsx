@@ -4504,10 +4504,11 @@ function CarrierQuoteChooser({ city, defaultCarrier = "", defaultFee = 0, locked
   );
 }
 
-function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; products: Product[]; ads: Ad[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function EntryModal({ kind, carrierNames, products, suppliers, ads, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; products: Product[]; suppliers: Supplier[]; ads: Ad[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const labels = {
     order: "Nouvelle commande",
-    purchase: "Nouvel achat",
+    purchase: "Nouveau bon de commande",
+    supplier: "Nouveau fournisseur",
     expense: "Nouvelle dépense",
     ad: "Performance Meta Ads",
     capital: "Mouvement de capital",
@@ -4549,7 +4550,7 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
     setSaving(true);
     setFormError("");
     try {
-      await submit(kind === "order" ? "addOrder" : kind === "product" ? "addProduct" : kind === "purchase" ? "addPurchase" : kind === "expense" ? "addExpense" : kind === "ad" ? "addAd" : "addCapital", Object.fromEntries(new FormData(e.currentTarget)));
+      await submit(kind === "order" ? "addOrder" : kind === "product" ? "addProduct" : kind === "supplier" ? "addSupplier" : kind === "purchase" ? "addPurchase" : kind === "expense" ? "addExpense" : kind === "ad" ? "addAd" : "addCapital", Object.fromEntries(new FormData(e.currentTarget)));
     } catch (c) {
       setFormError(c instanceof Error ? c.message : "Erreur");
       setSaving(false);
@@ -4584,6 +4585,19 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
                 <Field label="Seuil d’alerte stock *" name="stockAlertThreshold" type="number" inputMode="numeric" defaultValue="5" min="0" required />
                 <Field label="Couverture cible (jours) *" name="reorderCoverDays" type="number" inputMode="numeric" defaultValue="30" min="1" required />
                 <ProductPricingFields />
+              </>
+            )}
+            {kind === "supplier" && (
+              <>
+                <Field label="Nom du fournisseur *" name="name" required />
+                <Field label="Contact" name="contactName" placeholder="Nom de la personne à contacter" />
+                <Field label="Téléphone" name="phone" type="tel" inputMode="tel" />
+                <Field label="WhatsApp" name="whatsapp" type="tel" inputMode="tel" />
+                <Field label="Ville" name="city" />
+                <Field label="Délai moyen (jours) *" name="leadTimeDays" type="number" inputMode="numeric" min="0" defaultValue="7" required />
+                <Field label="Minimum de commande (MAD)" name="minimumOrderAmount" type="number" inputMode="decimal" min="0" step="0.01" defaultValue="0" />
+                <Field label="Conditions de paiement" name="paymentTerms" placeholder="Ex. Comptant, 50% avance…" />
+                <Field label="Notes" name="notes" placeholder="Qualité, horaires, conditions particulières…" maxLength={500} />
               </>
             )}
             {kind === "order" && (
@@ -4659,7 +4673,18 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
             )}
             {kind === "purchase" && (
               <>
-                <Field label="Fournisseur *" name="supplier" required />
+                {suppliers.some((supplier) => supplier.isActive) ? (
+                  <label className="field">
+                    <span>Fournisseur *</span>
+                    <select name="supplierId" defaultValue="" required>
+                      <option value="" disabled>Choisir un fournisseur</option>
+                      {suppliers.filter((supplier) => supplier.isActive).map((supplier) => (
+                        <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.city ? ` · ${supplier.city}` : ""}</option>
+                      ))}
+                    </select>
+                    <small>Créez ou modifiez les fiches dans le module Fournisseurs.</small>
+                  </label>
+                ) : <Field label="Fournisseur *" name="supplier" required />}
                 <Field label="Article / motif *" name="item" placeholder="Ex. Réassort montre dorée" required />
                 <label className="field">
                   <span>Produit lié au stock</span>
@@ -4671,6 +4696,8 @@ function EntryModal({ kind, carrierNames, products, ads, close, submit }: { kind
                 </label>
                 <Field label="Quantité achetée *" name="quantity" type="number" inputMode="numeric" defaultValue="1" min="1" required />
                 <Field label="Coût unitaire (MAD) *" name="unitCost" type="number" inputMode="decimal" min="0" step="0.01" required />
+                <Select label="État du bon" name="procurementStatus" options={["Commandé", "Brouillon"]} />
+                <Field label="Livraison prévue" name="expectedDate" type="date" />
                 <Select label="Compte de paiement" name="account" options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
                 <Select label="Paiement" name="paymentStatus" options={["Payé", "À payer"]} />
                 <Field label="Date de paiement (si payé)" name="paidDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
