@@ -3505,6 +3505,7 @@ function CapitalPage({
   onDelete: (selection: EditableEntity) => void;
 }) {
   const currentYear = new Date().getFullYear();
+  const allocationPolicy = allocationPolicyFromSettings(data.settings);
   const automaticAllocations = data.capital.filter((entry) => entry.isAutomatic);
   const personalSalary = automaticAllocations.filter((entry) => entry.category === "Salaire personnel").reduce((sum, entry) => sum + entry.amount, 0);
   const emergencyFund = automaticAllocations.filter((entry) => entry.category === "Fonds d’urgence").reduce((sum, entry) => sum + entry.amount, 0);
