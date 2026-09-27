@@ -74,6 +74,8 @@ test("webhook et synchronisation transporteur partagent la même règle de rembo
   assert.match(carriers, /refunded_at = \?/);
   assert.match(carriers, /Remboursement transporteur/);
   assert.match(carriers, /paymentState\.paymentStatus === order\.paymentStatus/);
+  assert.match(carriers, /await reconcileOrderAllocations\(order\.id\)/);
+  assert.match(carriers, /if \(result\.updated > 0\) await reconcileOrderAllocations\(\)/);
 });
 
 test("la modification manuelle d’une commande applique la même règle et expose l’historique", async () => {
