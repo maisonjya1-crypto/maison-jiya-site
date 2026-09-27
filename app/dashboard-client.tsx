@@ -3657,7 +3657,7 @@ function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd,
       <section className="panel supplier-receiving-guide">
         <div>
           <span className="card-kicker">Réception fournisseur</span>
-          <h2>Un bon peut maintenant contenir plusieurs produits</h2>
+          <h2>Achat ≠ stock reçu — même avec plusieurs produits</h2>
           <p>Chaque ligne est réceptionnée séparément. Le stock augmente uniquement du produit et de la quantité réellement reçus, même si les autres lignes du même bon restent en attente.</p>
         </div>
         <strong>{waitingLines.length} ligne{waitingLines.length === 1 ? "" : "s"} à réceptionner</strong>
