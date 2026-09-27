@@ -32,7 +32,8 @@ test("le bandeau supérieur utilise des actions contextuelles et retire le faux 
   assert.match(dashboard, /addActionLabels/);
   assert.match(dashboard, /Nouvelle commande/);
   assert.match(dashboard, /Nouveau produit/);
-  assert.match(dashboard, /Nouvel achat/);
+  assert.match(dashboard, /Nouveau bon de commande/);
+  assert.match(dashboard, /Nouveau fournisseur/);
   assert.doesNotMatch(dashboard, /<button className="period-button">Toutes les données<\/button>/);
 });
 
