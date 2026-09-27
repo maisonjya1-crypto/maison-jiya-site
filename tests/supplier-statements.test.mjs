@@ -62,6 +62,8 @@ test("l’interface fournisseurs expose le relevé, les échéances et l’expor
   assert.match(dashboard, /Factures ouvertes/);
   assert.match(dashboard, /Débit = dette créée · crédit = règlement/);
   assert.match(dashboard, /supplierPayments={data\.supplierPayments}/);
+  assert.match(dashboard, /due: legacyDue \+ invoiceDue/);
+  assert.match(dashboard, /!\["Brouillon", "Annulé"\]\.includes\(purchase\.procurementStatus\)/);
   assert.match(styles, /supplier-statement-kpis/);
   assert.match(styles, /supplier-statement-table/);
 });
