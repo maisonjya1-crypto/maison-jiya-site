@@ -39,6 +39,20 @@ function moneyValue(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed * 100) / 100) : fallback;
 }
 
+const treasuryAccounts = ["Banque", "Caisse", "Espèces", "Carte", "Autre"];
+
+function treasuryAccount(value: unknown, fallback = "Banque") {
+  const account = textValue(value, fallback);
+  return treasuryAccounts.includes(account) ? account : fallback;
+}
+
+function paidAtFromInput(value: unknown, fallbackIso = new Date().toISOString()) {
+  const raw = textValue(value);
+  if (!raw) return fallbackIso;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return fallbackIso;
+  return `${raw}T12:00:00.000Z`;
+}
+
 const orderStatuses = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
 const orderSources = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre", "Non renseignée"];
 const fulfillmentTypes = ["Livraison", "Magasin physique"];
@@ -326,7 +340,9 @@ async function snapshot(access: AccessInfo) {
       quantity: purchases.quantity,
       unitCost: purchases.unitCost,
       totalCost: purchases.totalCost,
+      account: purchases.account,
       paymentStatus: purchases.paymentStatus,
+      paidAt: purchases.paidAt,
       receivedQuantity: purchases.receivedQuantity,
       receivedAt: purchases.receivedAt,
       createdAt: purchases.createdAt,
@@ -863,7 +879,9 @@ export async function POST(request: Request) {
       const quantity = numberValue(payload.quantity, 1);
       const unitCost = moneyValue(payload.unitCost);
       const productId = numberValue(payload.productId) || null;
+      const account = treasuryAccount(payload.account);
       const nextPaymentStatus = textValue(payload.paymentStatus, "Payé");
+      const paidAt = nextPaymentStatus === "Payé" ? paidAtFromInput(payload.paidDate) : null;
       if (quantity < 1 || !["Payé", "À payer"].includes(nextPaymentStatus)) return Response.json({ error: "Achat invalide." }, { status: 400 });
       if (productId) {
         const [linkedProduct] = await db.select({ id: products.id }).from(products).where(and(eq(products.id, productId), isNull(products.archivedAt))).limit(1);
@@ -879,7 +897,9 @@ export async function POST(request: Request) {
         quantity,
         unitCost,
         totalCost: quantity * unitCost,
+        account,
         paymentStatus: nextPaymentStatus,
+        paidAt,
         receivedQuantity: 0,
       });
     } else if (payload.action === "updatePurchase") {
@@ -889,9 +909,10 @@ export async function POST(request: Request) {
       const productId = numberValue(payload.productId) || null;
       const quantity = numberValue(payload.quantity);
       const unitCost = moneyValue(payload.unitCost);
+      const account = treasuryAccount(payload.account);
       const nextPaymentStatus = textValue(payload.paymentStatus, "Payé");
       if (!id || !supplier || !item || quantity < 1 || !["Payé", "À payer"].includes(nextPaymentStatus)) return Response.json({ error: "Achat invalide." }, { status: 400 });
-      const [purchase] = await db.select({ id: purchases.id, productId: purchases.productId, quantity: purchases.quantity, receivedQuantity: purchases.receivedQuantity }).from(purchases).where(eq(purchases.id, id)).limit(1);
+      const [purchase] = await db.select({ id: purchases.id, productId: purchases.productId, quantity: purchases.quantity, receivedQuantity: purchases.receivedQuantity, paymentStatus: purchases.paymentStatus, paidAt: purchases.paidAt }).from(purchases).where(eq(purchases.id, id)).limit(1);
       if (!purchase) return Response.json({ error: "Achat introuvable." }, { status: 404 });
       if (productId) {
         const [linkedProduct] = await db.select({ id: products.id }).from(products).where(and(eq(products.id, productId), isNull(products.archivedAt))).limit(1);
@@ -900,7 +921,10 @@ export async function POST(request: Request) {
       if (purchase.receivedQuantity > 0 && (purchase.productId !== productId || purchase.quantity !== quantity)) {
         return Response.json({ error: "Cet achat a déjà été réceptionné. Le produit et la quantité doivent rester inchangés pour préserver l’historique du stock." }, { status: 409 });
       }
-      await db.update(purchases).set({ supplier, item, productId, quantity, unitCost, totalCost: quantity * unitCost, paymentStatus: nextPaymentStatus }).where(eq(purchases.id, id));
+      const paidAt = nextPaymentStatus === "Payé"
+        ? paidAtFromInput(payload.paidDate, purchase.paymentStatus === "Payé" && purchase.paidAt ? purchase.paidAt : new Date().toISOString())
+        : null;
+      await db.update(purchases).set({ supplier, item, productId, quantity, unitCost, totalCost: quantity * unitCost, account, paymentStatus: nextPaymentStatus, paidAt }).where(eq(purchases.id, id));
     } else if (payload.action === "receivePurchase") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Achat invalide." }, { status: 400 });
@@ -922,8 +946,9 @@ export async function POST(request: Request) {
       const category = textValue(payload.category).slice(0, 80);
       const label = textValue(payload.label).slice(0, 160);
       const amount = moneyValue(payload.amount);
-      const account = textValue(payload.account, "Banque").slice(0, 60);
+      const account = treasuryAccount(payload.account);
       const nextPaymentStatus = textValue(payload.paymentStatus, "Payé");
+      const paidAt = nextPaymentStatus === "Payé" ? paidAtFromInput(payload.paidDate) : null;
       const expenseDate = textValue(payload.expenseDate, new Date().toISOString().slice(0, 10));
       const note = textValue(payload.note).slice(0, 300);
       if (!category || !label || amount <= 0 || !["Payé", "À payer"].includes(nextPaymentStatus) || !/^\d{4}-\d{2}-\d{2}$/.test(expenseDate)) {
@@ -931,23 +956,26 @@ export async function POST(request: Request) {
       }
       const duplicateExpense = await protectMutation("addExpense");
       if (duplicateExpense) return duplicateExpense;
-      await db.insert(expenses).values({ category, label, amount, account, paymentStatus: nextPaymentStatus, expenseDate, note });
+      await db.insert(expenses).values({ category, label, amount, account, paymentStatus: nextPaymentStatus, paidAt, expenseDate, note });
       auditEntityLabel = `${category} · ${label}`;
     } else if (payload.action === "updateExpense") {
       const id = numberValue(payload.id);
       const category = textValue(payload.category).slice(0, 80);
       const label = textValue(payload.label).slice(0, 160);
       const amount = moneyValue(payload.amount);
-      const account = textValue(payload.account, "Banque").slice(0, 60);
+      const account = treasuryAccount(payload.account);
       const nextPaymentStatus = textValue(payload.paymentStatus, "Payé");
       const expenseDate = textValue(payload.expenseDate);
       const note = textValue(payload.note).slice(0, 300);
       if (!id || !category || !label || amount <= 0 || !["Payé", "À payer"].includes(nextPaymentStatus) || !/^\d{4}-\d{2}-\d{2}$/.test(expenseDate)) {
         return Response.json({ error: "Dépense invalide." }, { status: 400 });
       }
-      const [expense] = await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.id, id)).limit(1);
+      const [expense] = await db.select({ id: expenses.id, paymentStatus: expenses.paymentStatus, paidAt: expenses.paidAt }).from(expenses).where(eq(expenses.id, id)).limit(1);
       if (!expense) return Response.json({ error: "Dépense introuvable." }, { status: 404 });
-      await db.update(expenses).set({ category, label, amount, account, paymentStatus: nextPaymentStatus, expenseDate, note }).where(eq(expenses.id, id));
+      const paidAt = nextPaymentStatus === "Payé"
+        ? paidAtFromInput(payload.paidDate, expense.paymentStatus === "Payé" && expense.paidAt ? expense.paidAt : new Date().toISOString())
+        : null;
+      await db.update(expenses).set({ category, label, amount, account, paymentStatus: nextPaymentStatus, paidAt, expenseDate, note }).where(eq(expenses.id, id));
       auditEntityLabel = `${category} · ${label}`;
     } else if (payload.action === "deleteExpense") {
       const id = numberValue(payload.id);
@@ -975,20 +1003,31 @@ export async function POST(request: Request) {
       if (!ad) return Response.json({ error: "Publicité introuvable." }, { status: 404 });
       await db.delete(adPerformance).where(eq(adPerformance.id, id));
     } else if (payload.action === "addCapital") {
+      const direction = textValue(payload.direction, "Entrée");
+      const category = textValue(payload.category, "Ajustement").slice(0, 80);
+      const label = textValue(payload.label, "Mouvement de capital").slice(0, 160);
+      const account = treasuryAccount(payload.account);
+      const amount = moneyValue(payload.amount);
+      const entryDate = textValue(payload.entryDate, new Date().toISOString().slice(0, 10));
+      if (!["Entrée", "Sortie"].includes(direction) || !category || !label || amount <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) {
+        return Response.json({ error: "Mouvement de capital invalide." }, { status: 400 });
+      }
       const duplicateCapital = await protectMutation("addCapital");
       if (duplicateCapital) return duplicateCapital;
-      await db.insert(capitalLedger).values({ direction: textValue(payload.direction, "Entrée"), category: textValue(payload.category, "Ajustement"), label: textValue(payload.label, "Mouvement de capital"), amount: moneyValue(payload.amount), entryDate: textValue(payload.entryDate, new Date().toISOString().slice(0, 10)) });
+      await db.insert(capitalLedger).values({ direction, category, label, amount, account, entryDate });
     } else if (payload.action === "updateCapital") {
       const id = numberValue(payload.id);
       const direction = textValue(payload.direction);
       const category = textValue(payload.category);
       const label = textValue(payload.label);
+      const account = treasuryAccount(payload.account);
+      const amount = moneyValue(payload.amount);
       const entryDate = textValue(payload.entryDate);
-      if (!id || !["Entrée", "Sortie"].includes(direction) || !category || !label || !/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) return Response.json({ error: "Mouvement de capital invalide." }, { status: 400 });
+      if (!id || !["Entrée", "Sortie"].includes(direction) || !category || !label || amount <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) return Response.json({ error: "Mouvement de capital invalide." }, { status: 400 });
       const [entry] = await db.select({ id: capitalLedger.id, isAutomatic: capitalLedger.isAutomatic }).from(capitalLedger).where(eq(capitalLedger.id, id)).limit(1);
       if (!entry) return Response.json({ error: "Mouvement de capital introuvable." }, { status: 404 });
       if (entry.isAutomatic) return Response.json({ error: "Une affectation automatique liée à une commande ne peut pas être modifiée manuellement." }, { status: 409 });
-      await db.update(capitalLedger).set({ direction, category, label, amount: moneyValue(payload.amount), entryDate }).where(eq(capitalLedger.id, id));
+      await db.update(capitalLedger).set({ direction, category, label, amount, account, entryDate }).where(eq(capitalLedger.id, id));
     } else if (payload.action === "deleteCapital") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Mouvement de capital invalide." }, { status: 400 });
