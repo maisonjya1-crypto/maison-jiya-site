@@ -66,3 +66,10 @@ test("l'export Google Sheets expose les dépenses et une marge commande cohéren
   assert.match(route, /Marge commande avant dépenses globales/);
   assert.doesNotMatch(route, /"Gain exact \(MAD\)"/);
 });
+
+test("la liste des commandes affiche la même marge canonique que les rapports", async () => {
+  const dashboard = await read("app/dashboard-client.tsx");
+  assert.match(dashboard, /const gain = exactOrderProfit\(o\);/);
+  assert.match(dashboard, /<th>Marge commande<\/th>/);
+  assert.doesNotMatch(dashboard, /const gain = o\.saleAmount - o\.productCost - o\.shippingCost - o\.adCost - o\.fees - o\.returnCost/);
+});
