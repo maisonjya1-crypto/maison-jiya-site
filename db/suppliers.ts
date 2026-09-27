@@ -22,6 +22,7 @@ export async function resolveSupplierProfile(
   database: D1Database,
   supplierId: number | null,
   supplierName: string,
+  allowInactive = false,
 ) {
   if (supplierId) {
     const byId = await database.prepare(`
@@ -31,7 +32,7 @@ export async function resolveSupplierProfile(
       LIMIT 1
     `).bind(supplierId).first<{ id: number; name: string; isActive: number }>();
     if (!byId) throw new Error("Fournisseur introuvable.");
-    if (!byId.isActive) throw new Error("Ce fournisseur est désactivé.");
+    if (!byId.isActive && !allowInactive) throw new Error("Ce fournisseur est désactivé.");
     return { id: byId.id, name: byId.name };
   }
 
@@ -46,7 +47,7 @@ export async function resolveSupplierProfile(
   `).bind(normalized).first<{ id: number; name: string; isActive: number }>();
 
   if (existing) {
-    if (!existing.isActive) throw new Error("Ce fournisseur existe mais il est désactivé. Réactivez-le avant de créer un achat.");
+    if (!existing.isActive && !allowInactive) throw new Error("Ce fournisseur existe mais il est désactivé. Réactivez-le avant de créer un achat.");
     return { id: existing.id, name: existing.name };
   }
 
