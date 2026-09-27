@@ -940,8 +940,6 @@ export async function POST(request: Request) {
       if (!customer) return Response.json({ error: "Client introuvable." }, { status: 404 });
       await db.delete(customers).where(eq(customers.id, id));
     } else if (payload.action === "addSupplier") {
-      const duplicateSupplier = await protectMutation("addSupplier");
-      if (duplicateSupplier) return duplicateSupplier;
       const name = normalizeSupplierName(payload.name);
       const contactName = textValue(payload.contactName).slice(0, 120);
       const phone = textValue(payload.phone).slice(0, 40);
@@ -952,6 +950,8 @@ export async function POST(request: Request) {
       const paymentTerms = textValue(payload.paymentTerms).slice(0, 160);
       const notes = textValue(payload.notes).slice(0, 500);
       if (!name || leadTimeDays > 365) return Response.json({ error: "Fournisseur invalide." }, { status: 400 });
+      const duplicateSupplier = await protectMutation("addSupplier");
+      if (duplicateSupplier) return duplicateSupplier;
       const database = await getRawDb();
       const duplicate = await database.prepare("SELECT id FROM suppliers WHERE lower(name) = lower(?) LIMIT 1").bind(name).first();
       if (duplicate) return Response.json({ error: "Ce fournisseur existe déjà." }, { status: 409 });
@@ -1005,9 +1005,12 @@ export async function POST(request: Request) {
       const nextPaymentStatus = textValue(payload.paymentStatus, "À payer");
       const procurementStatus = normalizedProcurementStatus(payload.procurementStatus, "Commandé");
       const paidAt = nextPaymentStatus === "Payé" ? paidAtFromInput(payload.paidDate) : null;
-      if (quantity < 1 || !["Payé", "À payer"].includes(nextPaymentStatus) || ["Partiellement reçu", "Reçu"].includes(procurementStatus)) {
+      const item = textValue(payload.item);
+      let expectedAt = textValue(payload.expectedDate);
+      if (quantity < 1 || !item || !["Payé", "À payer"].includes(nextPaymentStatus) || ["Partiellement reçu", "Reçu", "Annulé"].includes(procurementStatus)) {
         return Response.json({ error: "Bon de commande invalide." }, { status: 400 });
       }
+      if (expectedAt && !/^\d{4}-\d{2}-\d{2}$/.test(expectedAt)) return Response.json({ error: "Date de livraison prévue invalide." }, { status: 400 });
       if (productId) {
         const [linkedProduct] = await db.select({ id: products.id }).from(products).where(and(eq(products.id, productId), isNull(products.archivedAt))).limit(1);
         if (!linkedProduct) return Response.json({ error: "Le produit lié à cet achat est introuvable." }, { status: 404 });
@@ -1018,8 +1021,6 @@ export async function POST(request: Request) {
       const database = await getRawDb();
       const supplierProfile = await resolveSupplierProfile(database, numberValue(payload.supplierId) || null, textValue(payload.supplier));
       const orderedAt = procurementStatus === "Brouillon" ? null : new Date().toISOString();
-      let expectedAt = textValue(payload.expectedDate);
-      if (expectedAt && !/^\d{4}-\d{2}-\d{2}$/.test(expectedAt)) return Response.json({ error: "Date de livraison prévue invalide." }, { status: 400 });
       if (!expectedAt && procurementStatus !== "Brouillon") {
         const profile = await database.prepare("SELECT lead_time_days AS leadTimeDays FROM suppliers WHERE id = ?").bind(supplierProfile.id).first<{ leadTimeDays: number }>();
         const date = new Date();
@@ -1034,7 +1035,7 @@ export async function POST(request: Request) {
         procurementStatus,
         orderedAt,
         expectedAt: expectedAt || null,
-        item: textValue(payload.item, "Achat"),
+        item,
         productId,
         quantity,
         unitCost,
