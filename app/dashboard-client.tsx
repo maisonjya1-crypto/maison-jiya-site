@@ -52,9 +52,29 @@ type Customer = {
   city: string;
   createdAt: string;
 };
+type Supplier = {
+  id: number;
+  name: string;
+  contactName: string;
+  phone: string;
+  whatsapp: string;
+  city: string;
+  leadTimeDays: number;
+  minimumOrderAmount: number;
+  paymentTerms: string;
+  notes: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string | null;
+};
 type Purchase = {
   id: number;
   supplier: string;
+  supplierId: number | null;
+  purchaseRef: string | null;
+  procurementStatus: string;
+  orderedAt: string | null;
+  expectedAt: string | null;
   item: string;
   productId: number | null;
   productCode: string | null;
@@ -291,6 +311,7 @@ type Data = {
   orders: Order[];
   trash: Order[];
   customers: Customer[];
+  suppliers: Supplier[];
   purchases: Purchase[];
   expenses: Expense[];
   ads: Ad[];
@@ -318,7 +339,7 @@ type Data = {
     displayName: string;
   };
 };
-type ModalName = "order" | "purchase" | "expense" | "ad" | "capital" | "product" | null;
+type ModalName = "order" | "purchase" | "supplier" | "expense" | "ad" | "capital" | "product" | null;
 type StockSelection = { product: Product; type: "Entrée" | "Vente" } | null;
 type InventorySelection = Product | null;
 type ThemeKey = "mauve-froid" | "rose-poudre" | "sombre-prune" | "bleu-brume" | "sable-chic";
@@ -334,6 +355,7 @@ type EditableEntity =
   | { kind: "product"; record: Product }
   | { kind: "movement"; record: StockMovement }
   | { kind: "customer"; record: Customer }
+  | { kind: "supplier"; record: Supplier }
   | { kind: "purchase"; record: Purchase }
   | { kind: "expense"; record: Expense }
   | { kind: "ad"; record: Ad }
@@ -343,6 +365,7 @@ const emptyData: Data = {
   orders: [],
   trash: [],
   customers: [],
+  suppliers: [],
   purchases: [],
   expenses: [],
   ads: [],
@@ -400,9 +423,9 @@ const dateTimeLabel = (value: string) =>
     minute: "2-digit",
   }).format(new Date(value));
 
-const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Achats", "Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
+const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
 const navigationGroups = [
-  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Achats"] },
+  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats"] },
   { label: "Pilotage", items: ["Dépenses", "Publicités", "Capital", "Clôture", "Rapports", "Assistant IA"] },
   { label: "Système", items: ["Mode entraînement", "Corbeille", "Paramètres"] },
 ];
@@ -413,6 +436,7 @@ const sectionDescriptions: Record<string, string> = {
   Réapprovisionnement: "Anticipez les ruptures et préparez les quantités à commander par fournisseur.",
   Colis: "Contrôlez les expéditions et le suivi des transporteurs.",
   Clients: "Centralisez les coordonnées et l’historique de vos clientes.",
+  Fournisseurs: "Centralisez contacts, délais, conditions et historique de vos fournisseurs.",
   Achats: "Gérez les fournisseurs, réceptions et coûts d’approvisionnement.",
   Dépenses: "Enregistrez les charges réelles qui réduisent le résultat et la trésorerie.",
   Publicités: "Suivez vos campagnes, dépenses et performances Meta.",
@@ -428,7 +452,8 @@ const addActionLabels: Record<string, string> = {
   "Vue d’ensemble": "Nouvelle commande",
   Commandes: "Nouvelle commande",
   Produits: "Nouveau produit",
-  Achats: "Nouvel achat",
+  Fournisseurs: "Nouveau fournisseur",
+  Achats: "Nouveau bon de commande",
   Dépenses: "Nouvelle dépense",
   Publicités: "Nouvelle campagne",
   Capital: "Nouveau mouvement",
@@ -437,6 +462,7 @@ const addableSections = new Set(Object.keys(addActionLabels));
 const retrySafeMutationActions = new Set([
   "addOrder",
   "importOrders",
+  "addSupplier",
   "addPurchase",
   "receivePurchase",
   "addExpense",
