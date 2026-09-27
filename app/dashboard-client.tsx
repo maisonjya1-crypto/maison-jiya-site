@@ -582,6 +582,7 @@ const retrySafeMutationActions = new Set([
   "startInventorySession",
   "countInventorySessionProduct",
   "finalizeInventorySession",
+  "addCarrierSettlement",
   "archiveProduct",
   "restoreProduct",
 ]);
@@ -4897,6 +4898,7 @@ function CarrierSettlementsPage({
 
   async function saveSettlement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
     if (saving || !data.access.canEdit) return;
     if (!carrier || !selectedIds.length) {
       setFormError("Sélectionnez un transporteur et au moins une commande.");
@@ -4909,7 +4911,7 @@ function CarrierSettlementsPage({
     setSaving(true);
     setFormError("");
     try {
-      const values = Object.fromEntries(new FormData(event.currentTarget));
+      const values = Object.fromEntries(new FormData(form));
       await submit("addCarrierSettlement", {
         ...values,
         carrier,
@@ -4918,7 +4920,7 @@ function CarrierSettlementsPage({
       });
       setSelectedIds([]);
       setActualAmount("");
-      event.currentTarget.reset();
+      form.reset();
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Rapprochement impossible.");
     } finally {
@@ -5720,7 +5722,7 @@ function MonthlyCapitalChart({
   );
 }
 function Status({ value }: { value: string }) {
-  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration", "OK", "Actif", "Reçu"].includes(value) ? "success" : ["Retour", "Annulée", "Annulé", "Inactif", "Refusée", "Retournée", "Remboursé", "Non encaissé", "Rupture", "Critique", "En retard"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande", "Commandé"].includes(value) ? "info" : "warning";
+  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration", "OK", "Actif", "Reçu", "Rapproché"].includes(value) ? "success" : ["Retour", "Annulée", "Annulé", "Inactif", "Refusée", "Retournée", "Remboursé", "Non encaissé", "Rupture", "Critique", "En retard"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande", "Commandé"].includes(value) ? "info" : "warning";
   return <span className={`status ${tone}`}>{value}</span>;
 }
 
