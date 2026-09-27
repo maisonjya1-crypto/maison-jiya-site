@@ -26,6 +26,10 @@ type BusinessSnapshot = {
     settings: SnapshotRow[];
     orderStatusHistory: SnapshotRow[];
     carrierEvents?: SnapshotRow[];
+    storefrontProducts?: SnapshotRow[];
+    storefrontOffers?: SnapshotRow[];
+    storefrontOfferItems?: SnapshotRow[];
+    storefrontMedia?: SnapshotRow[];
   };
 };
 
@@ -42,6 +46,10 @@ const TABLES = {
   settings: "settings",
   orderStatusHistory: "order_status_history",
   carrierEvents: "carrier_events",
+  storefrontProducts: "storefront_product_settings",
+  storefrontOffers: "storefront_offers",
+  storefrontOfferItems: "storefront_offer_items",
+  storefrontMedia: "storefront_media",
 } as const;
 
 const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
@@ -57,6 +65,10 @@ const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   settings: ["key", "value", "updated_at"],
   orderStatusHistory: ["id", "order_id", "from_status", "to_status", "changed_by_user_id", "changed_by_name", "changed_at"],
   carrierEvents: ["id", "provider", "event_type", "external_code", "external_status", "payload_hash", "message", "proof_image", "occurred_at", "order_id", "processed", "error_message", "received_at"],
+  storefrontProducts: ["product_id", "public_name", "public_price", "is_visible", "availability_mode", "badge", "description", "sort_order", "updated_at"],
+  storefrontOffers: ["id", "name", "description", "price", "compare_price", "badge", "is_active", "sort_order", "created_at", "updated_at"],
+  storefrontOfferItems: ["offer_id", "product_id", "quantity"],
+  storefrontMedia: ["id", "owner_type", "owner_id", "kind", "mime_type", "data_base64", "byte_size", "sort_order", "created_at"],
 };
 
 function casablancaDate(value = new Date()) {
@@ -73,8 +85,16 @@ async function readRows(database: D1Database, table: string, where = "") {
   return result.results;
 }
 
+async function readOptionalRows(database: D1Database, table: string) {
+  const existing = await database.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+  ).bind(table).first<{ name: string }>();
+  if (!existing?.name) return undefined;
+  return readRows(database, table);
+}
+
 async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
-  const [customers, orders, products, stockMovements, inventoryCounts, purchases, expenses, ads, capital, settings, orderStatusHistory, carrierEvents] = await Promise.all([
+  const [customers, orders, products, stockMovements, inventoryCounts, purchases, expenses, ads, capital, settings, orderStatusHistory, carrierEvents, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia] = await Promise.all([
     readRows(database, TABLES.customers),
     readRows(database, TABLES.orders),
     readRows(database, TABLES.products),
@@ -87,11 +107,18 @@ async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
     readRows(database, TABLES.settings, " WHERE key NOT LIKE 'security_%' AND key <> 'backup_webhook_url'"),
     readRows(database, TABLES.orderStatusHistory),
     readRows(database, TABLES.carrierEvents),
+    readOptionalRows(database, TABLES.storefrontProducts),
+    readOptionalRows(database, TABLES.storefrontOffers),
+    readOptionalRows(database, TABLES.storefrontOfferItems),
+    readOptionalRows(database, TABLES.storefrontMedia),
   ]);
   return {
     version: 1,
     createdAt: new Date().toISOString(),
-    tables: { customers, orders, products, stockMovements, inventoryCounts, purchases, expenses, ads, capital, settings, orderStatusHistory, carrierEvents },
+    tables: {
+      customers, orders, products, stockMovements, inventoryCounts, purchases, expenses, ads, capital, settings,
+      orderStatusHistory, carrierEvents, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia,
+    },
   };
 }
 
@@ -119,13 +146,18 @@ function inspectSnapshot(raw: string, expectedRecordCount?: number) {
       throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
     }
   }
-  for (const tableKey of ["inventoryCounts", "expenses", "carrierEvents"] as const) {
+  for (const tableKey of ["inventoryCounts", "expenses", "carrierEvents", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"] as const) {
     const rows = snapshot.tables[tableKey];
     if (rows !== undefined && (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item)))) {
       throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
     }
   }
-  if (!Number.isFinite(Date.parse(snapshot.createdAt))) throw new Error("Date de sauvegarde invalide.");
+  const storefrontKeys = ["storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"] as const;
+  const storefrontTableCount = storefrontKeys.filter((key) => snapshot.tables[key] !== undefined).length;
+  if (storefrontTableCount !== 0 && storefrontTableCount !== storefrontKeys.length) {
+    throw new Error("Sauvegarde boutique incomplète.");
+  }
+    if (!Number.isFinite(Date.parse(snapshot.createdAt))) throw new Error("Date de sauvegarde invalide.");
   const recordCount = countRecords(snapshot);
   if (expectedRecordCount !== undefined && recordCount !== expectedRecordCount) {
     throw new Error(`Nombre d’enregistrements incohérent : ${recordCount} au lieu de ${expectedRecordCount}.`);
@@ -243,12 +275,14 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
   const { snapshot } = inspectSnapshot(row.snapshot_json);
 
   const insertionOrder: Array<keyof BusinessSnapshot["tables"]> = [
-    "settings", "customers", "products", "purchases", "expenses", "ads", "capital", "orders", "stockMovements", "inventoryCounts", "orderStatusHistory", "carrierEvents",
+    "settings", "customers", "products", "purchases", "expenses", "ads", "capital", "orders", "stockMovements",
+    "inventoryCounts", "orderStatusHistory", "carrierEvents", "storefrontProducts", "storefrontOffers",
+    "storefrontOfferItems", "storefrontMedia",
   ];
   const inserts = insertionOrder.flatMap((tableKey) => {
     const rows = snapshot.tables[tableKey];
     // Ces tables n'existaient pas dans les premières sauvegardes v1.
-    if (rows === undefined && (tableKey === "inventoryCounts" || tableKey === "carrierEvents" || tableKey === "expenses")) return [];
+    if (rows === undefined && ["inventoryCounts", "carrierEvents", "expenses", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"].includes(tableKey)) return [];
     if (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
       throw new Error("Format de sauvegarde incompatible.");
     }
@@ -257,8 +291,16 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
       .map((item) => insertStatement(database, tableKey, item));
   });
 
+  const restoreStorefront = snapshot.tables.storefrontProducts !== undefined;
+
   // Un seul batch D1 : toute erreur annule aussi les suppressions précédentes.
   await database.batch([
+    ...(restoreStorefront ? [
+      database.prepare("DELETE FROM storefront_offer_items"),
+      database.prepare("DELETE FROM storefront_media"),
+      database.prepare("DELETE FROM storefront_offers"),
+      database.prepare("DELETE FROM storefront_product_settings"),
+    ] : []),
     database.prepare("DELETE FROM stock_movements"),
     database.prepare("DELETE FROM inventory_counts"),
     database.prepare("DELETE FROM order_status_history"),

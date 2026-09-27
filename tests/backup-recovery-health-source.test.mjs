@@ -43,7 +43,8 @@ test("la stratégie distingue D1, copie hors D1 et restauration isolée", async 
   assert.match(dashboard, /Copie indépendante hors D1/);
   assert.match(dashboard, /Chemin de restauration testé en CI/);
   assert.match(docs, /Google Sheets constitue la copie opérationnelle indépendante de D1/);
-  assert.match(docs, /réimportation automatique[^\n]*n’est pas encore automatisée/);
+  assert.match(docs, /export JSON complet, réimportable par Maison Jiya/);
+  assert.match(docs, /restaure les données métier et la configuration de la boutique dans un seul batch D1 atomique/);
   assert.match(integrityTests, /annule toutes les suppressions et insertions/);
   assert.match(integrityTests, /FOREIGN KEY constraint failed/);
 });

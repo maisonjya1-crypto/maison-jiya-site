@@ -334,6 +334,7 @@ const retrySafeMutationActions = new Set([
   "addAd",
   "addCapital",
   "importProducts",
+  "importPortableExport",
   "addProduct",
   "addStockMovement",
   "countInventory",
@@ -360,6 +361,46 @@ const themeOptions: { key: ThemeKey; name: string; mode: "Clair" | "Sombre"; des
   { key: "bleu-brume", name: "Bleu brume", mode: "Clair", description: "Bleu froid, gris perle et blanc net.", colors: ["#546f8c", "#829ab1", "#f3f6f8", "#ffffff"] },
   { key: "sable-chic", name: "Sable chic", mode: "Clair", description: "Beige raffiné, cacao doux et ivoire.", colors: ["#806452", "#b59377", "#f8f5ef", "#ffffff"] },
 ];
+
+type PortableExportPreview = {
+  exportedAt: string;
+  totalRows: number;
+  counts: Record<string, number>;
+  warnings: string[];
+};
+
+function inspectPortableExportFile(content: string): PortableExportPreview {
+  if (!content.trim()) throw new Error("Le fichier JSON est vide.");
+  if (content.length > 12_000_000) throw new Error("Le fichier dépasse la limite de 12 Mo.");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error("Le fichier JSON est illisible.");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Ce fichier n’est pas un export Maison Jiya.");
+  const root = parsed as Record<string, unknown>;
+  if (Number(root.exportVersion) !== 1 || root.source !== "Maison Jiya") throw new Error("Version d’export Maison Jiya incompatible.");
+  if (typeof root.exportedAt !== "string" || !Number.isFinite(Date.parse(root.exportedAt))) throw new Error("Date de l’export invalide.");
+  if (!root.tables || typeof root.tables !== "object" || Array.isArray(root.tables)) throw new Error("Tables de l’export manquantes.");
+  const rawTables = root.tables as Record<string, unknown>;
+  const required = ["clients", "produits", "commandes", "mouvements_stock", "achats", "publicites", "tresorerie_capital", "parametres"];
+  for (const key of required) {
+    if (!Array.isArray(rawTables[key])) throw new Error(`Table obligatoire manquante : ${key}.`);
+  }
+  const counts: Record<string, number> = {};
+  let totalRows = 0;
+  for (const [key, rows] of Object.entries(rawTables)) {
+    if (!Array.isArray(rows)) throw new Error(`Table invalide : ${key}.`);
+    counts[key] = rows.length;
+    totalRows += rows.length;
+  }
+  const warnings: string[] = [];
+  if ((counts.membres || 0) > 0) warnings.push("Les comptes et mots de passe actuels seront conservés.");
+  if ((counts.journal_sync_google_sheets || 0) > 0) warnings.push("L’ancien journal Google Sheets ne sera pas rejoué.");
+  if (!Array.isArray(rawTables.depenses)) warnings.push("Cet ancien export ne contient pas de table Dépenses : elle sera restaurée vide.");
+  return { exportedAt: root.exportedAt, totalRows, counts, warnings };
+}
 
 function safeTheme(value: string | undefined): ThemeKey {
   return themeOptions.some((theme) => theme.key === value) ? (value as ThemeKey) : "mauve-froid";
@@ -504,6 +545,7 @@ export default function DashboardClient() {
       createBackupNow: "Sauvegarde complète créée et contrôlée",
       verifyBackupNow: "Contrôle de sauvegarde terminé",
       restoreBackup: "Sauvegarde restaurée avec succès",
+      importPortableExport: "Export complet restauré avec succès",
       resetBusinessValues: "Valeurs commerciales remises à zéro",
       deleteOrder: "Commande placée dans la corbeille pendant 90 jours",
       restoreOrder: "Commande restaurée",
@@ -1222,6 +1264,11 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
   const [savingWebhook, setSavingWebhook] = useState(false);
   const [savingFullBackup, setSavingFullBackup] = useState(false);
   const [checkingBackup, setCheckingBackup] = useState(false);
+  const [portableImportContent, setPortableImportContent] = useState("");
+  const [portableImportFileName, setPortableImportFileName] = useState("");
+  const [portableImportPreview, setPortableImportPreview] = useState<PortableExportPreview | null>(null);
+  const [portableImportError, setPortableImportError] = useState("");
+  const [importingPortableExport, setImportingPortableExport] = useState(false);
   const [resettingBusinessValues, setResettingBusinessValues] = useState(false);
   const [retryingSheets, setRetryingSheets] = useState(false);
   const [backupToken, setBackupToken] = useState("");
@@ -1349,6 +1396,41 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
       await submit("verifyBackupNow", {});
     } finally {
       setCheckingBackup(false);
+    }
+  }
+
+  async function loadPortableExport(file: File | undefined) {
+    if (!file || !access.isOwner || importingPortableExport) return;
+    setPortableImportError("");
+    setPortableImportPreview(null);
+    setPortableImportFileName(file.name);
+    try {
+      const content = await file.text();
+      const preview = inspectPortableExportFile(content);
+      setPortableImportContent(content);
+      setPortableImportPreview(preview);
+    } catch (caught) {
+      setPortableImportContent("");
+      setPortableImportPreview(null);
+      setPortableImportError(caught instanceof Error ? caught.message : "Export invalide.");
+    }
+  }
+
+  async function restorePortableExport() {
+    if (!portableImportPreview || !portableImportContent || !access.isOwner || importingPortableExport) return;
+    const typed = window.prompt(
+      `Restaurer l’export du ${dateTimeLabel(portableImportPreview.exportedAt)} ?\n\nLes données métier actuelles seront remplacées par cet export. Une sauvegarde de sécurité sera créée avant l’import.\n\nLes comptes, mots de passe, e-mail principal, sessions et secrets actuels ne seront pas remplacés.\n\nTapez RESTAURER pour confirmer.`,
+    );
+    if (typed !== "RESTAURER") return;
+    setImportingPortableExport(true);
+    try {
+      await submit("importPortableExport", { portableExport: portableImportContent });
+      setPortableImportContent("");
+      setPortableImportFileName("");
+      setPortableImportPreview(null);
+      setPortableImportError("");
+    } finally {
+      setImportingPortableExport(false);
     }
   }
 
@@ -1668,6 +1750,40 @@ function SettingsPage({ currentTheme, accountName, accountEmail, carriers, backu
                 {savingFullBackup ? "Préparation…" : "＋ Sauvegarder maintenant"}
               </button>
             </div>
+            {access.isOwner && (
+              <div className="sheets-backup-grid">
+                <div className="backup-key-card">
+                  <span className="card-kicker">4 · Réimportation complète</span>
+                  <h3>Restaurer depuis un export JSON</h3>
+                  <small>Utilisez un fichier « maison-jiya-export-AAAA-MM-JJ.json ». Le fichier est contrôlé avant toute modification.</small>
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    disabled={importingPortableExport}
+                    onChange={(event) => void loadPortableExport(event.target.files?.[0])}
+                  />
+                  {portableImportFileName && <small>Fichier : {portableImportFileName}</small>}
+                  {portableImportError && <small className="meta-sync-error">{portableImportError}</small>}
+                  {portableImportPreview && (
+                    <>
+                      <span className="backup-status active">Export reconnu</span>
+                      <small>
+                        {dateTimeLabel(portableImportPreview.exportedAt)} · {portableImportPreview.totalRows.toLocaleString("fr-MA")} ligne(s) · {Number(portableImportPreview.counts.produits || 0).toLocaleString("fr-MA")} produit(s) · {Number(portableImportPreview.counts.commandes || 0).toLocaleString("fr-MA")} commande(s)
+                      </small>
+                      {portableImportPreview.warnings.map((warning) => <small key={warning}>{warning}</small>)}
+                      <button
+                        className="primary-button"
+                        type="button"
+                        onClick={() => void restorePortableExport()}
+                        disabled={importingPortableExport}
+                      >
+                        {importingPortableExport ? "Restauration…" : "Restaurer cet export"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           {access.isOwner ? (
             <div className="backup-history-list">
