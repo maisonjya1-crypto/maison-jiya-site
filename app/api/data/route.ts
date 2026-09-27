@@ -43,6 +43,37 @@ function moneyValue(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed * 100) / 100) : fallback;
 }
 
+type PurchaseOrderLineInput = {
+  item: string;
+  productId: number | null;
+  quantity: number;
+  unitCost: number;
+};
+
+function purchaseOrderLines(value: unknown): PurchaseOrderLineInput[] {
+  if (typeof value !== "string" || !value.trim()) throw new Error("Ajoutez au moins un produit au bon de commande.");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("Les lignes du bon de commande sont illisibles.");
+  }
+  if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 50) {
+    throw new Error("Un bon de commande doit contenir entre 1 et 50 lignes.");
+  }
+  return parsed.map((raw, index) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error(`Ligne ${index + 1} invalide.`);
+    const row = raw as Record<string, unknown>;
+    const item = textValue(row.item).slice(0, 160);
+    const productId = numberValue(row.productId) || null;
+    const quantity = numberValue(row.quantity);
+    const unitCost = moneyValue(row.unitCost);
+    if (!item || quantity < 1) throw new Error(`Complétez l’article et la quantité de la ligne ${index + 1}.`);
+    if (unitCost < 0) throw new Error(`Coût invalide sur la ligne ${index + 1}.`);
+    return { item, productId, quantity, unitCost };
+  });
+}
+
 const treasuryAccounts = ["Banque", "Caisse", "Espèces", "Carte", "Autre"];
 
 function treasuryAccount(value: unknown, fallback = "Banque") {
@@ -358,6 +389,7 @@ async function snapshot(access: AccessInfo) {
       supplier: purchases.supplier,
       supplierId: purchases.supplierId,
       purchaseRef: purchases.purchaseRef,
+      purchaseLineNo: purchases.purchaseLineNo,
       procurementStatus: purchases.procurementStatus,
       orderedAt: purchases.orderedAt,
       expectedAt: purchases.expectedAt,
@@ -997,6 +1029,76 @@ export async function POST(request: Request) {
       if (!supplier) return Response.json({ error: "Fournisseur introuvable." }, { status: 404 });
       await database.prepare("UPDATE suppliers SET is_active = ?, updated_at = ? WHERE id = ?").bind(active ? 1 : 0, new Date().toISOString(), id).run();
       auditEntityLabel = supplier.name;
+    } else if (payload.action === "addPurchaseOrder") {
+      let lines: PurchaseOrderLineInput[];
+      try {
+        lines = purchaseOrderLines(payload.linesJson);
+      } catch (error) {
+        return Response.json({ error: error instanceof Error ? error.message : "Bon de commande invalide." }, { status: 400 });
+      }
+      const account = treasuryAccount(payload.account);
+      const nextPaymentStatus = textValue(payload.paymentStatus, "À payer");
+      const procurementStatus = normalizedProcurementStatus(payload.procurementStatus, "Commandé");
+      const paidAt = nextPaymentStatus === "Payé" ? paidAtFromInput(payload.paidDate) : null;
+      let expectedAt = textValue(payload.expectedDate);
+      if (!["Payé", "À payer"].includes(nextPaymentStatus) || ["Partiellement reçu", "Reçu", "Annulé"].includes(procurementStatus)) {
+        return Response.json({ error: "Bon de commande invalide." }, { status: 400 });
+      }
+      if (expectedAt && !/^\d{4}-\d{2}-\d{2}$/.test(expectedAt)) return Response.json({ error: "Date de livraison prévue invalide." }, { status: 400 });
+      const duplicatePurchaseOrder = await protectMutation("addPurchaseOrder");
+      if (duplicatePurchaseOrder) return duplicatePurchaseOrder;
+
+      const database = await getRawDb();
+      for (const [index, line] of lines.entries()) {
+        if (!line.productId) continue;
+        const linkedProduct = await database.prepare(
+          "SELECT id FROM products WHERE id = ? AND archived_at IS NULL LIMIT 1",
+        ).bind(line.productId).first<{ id: number }>();
+        if (!linkedProduct) return Response.json({ error: `Le produit de la ligne ${index + 1} est introuvable ou archivé.` }, { status: 404 });
+      }
+
+      const supplierProfile = await resolveSupplierProfile(database, numberValue(payload.supplierId) || null, textValue(payload.supplier));
+      const orderedAt = procurementStatus === "Brouillon" ? null : new Date().toISOString();
+      if (!expectedAt && procurementStatus !== "Brouillon") {
+        const profile = await database.prepare("SELECT lead_time_days AS leadTimeDays FROM suppliers WHERE id = ?").bind(supplierProfile.id).first<{ leadTimeDays: number }>();
+        const date = new Date();
+        date.setUTCDate(date.getUTCDate() + Math.max(0, Number(profile?.leadTimeDays || 0)));
+        expectedAt = date.toISOString().slice(0, 10);
+      }
+
+      let purchaseRef = buildPurchaseReference();
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const existing = await database.prepare("SELECT id FROM purchases WHERE purchase_ref = ? LIMIT 1").bind(purchaseRef).first();
+        if (!existing) break;
+        purchaseRef = buildPurchaseReference();
+      }
+      const stillExisting = await database.prepare("SELECT id FROM purchases WHERE purchase_ref = ? LIMIT 1").bind(purchaseRef).first();
+      if (stillExisting) return Response.json({ error: "Impossible de générer une référence de bon unique. Réessayez." }, { status: 409 });
+
+      await database.batch(lines.map((line, index) => database.prepare(`
+        INSERT INTO purchases (
+          supplier, supplier_id, purchase_ref, purchase_line_no, procurement_status, ordered_at, expected_at,
+          item, product_id, quantity, unit_cost, total_cost, account, payment_status, paid_at, received_quantity
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      `).bind(
+        supplierProfile.name,
+        supplierProfile.id,
+        purchaseRef,
+        index + 1,
+        procurementStatus,
+        orderedAt,
+        expectedAt || null,
+        line.item,
+        line.productId,
+        line.quantity,
+        line.unitCost,
+        line.quantity * line.unitCost,
+        account,
+        nextPaymentStatus,
+        paidAt,
+      )));
+      auditEntityLabel = `${purchaseRef} · ${supplierProfile.name} · ${lines.length} ligne(s)`;
+      integrationMessage = `${purchaseRef} créé avec ${lines.length} ligne(s) pour ${supplierProfile.name}.`;
     } else if (payload.action === "addPurchase") {
       const quantity = numberValue(payload.quantity, 1);
       const unitCost = moneyValue(payload.unitCost);
@@ -1059,6 +1161,7 @@ export async function POST(request: Request) {
       const [purchase] = await db.select({
         id: purchases.id,
         supplierId: purchases.supplierId,
+        purchaseRef: purchases.purchaseRef,
         productId: purchases.productId,
         quantity: purchases.quantity,
         receivedQuantity: purchases.receivedQuantity,
@@ -1087,7 +1190,11 @@ export async function POST(request: Request) {
         : purchase.receivedQuantity > 0
           ? "Partiellement reçu"
           : requestedProcurementStatus;
-      if (purchase.receivedQuantity > 0 && procurementStatus === "Annulé") return Response.json({ error: "Un bon déjà partiellement réceptionné ne peut pas être annulé." }, { status: 409 });
+      const databaseGroup = await getRawDb();
+      const orderReception = purchase.purchaseRef
+        ? await databaseGroup.prepare("SELECT COALESCE(SUM(received_quantity), 0) AS totalReceived FROM purchases WHERE purchase_ref = ?").bind(purchase.purchaseRef).first<{ totalReceived: number }>()
+        : { totalReceived: purchase.receivedQuantity };
+      if (Number(orderReception?.totalReceived || 0) > 0 && procurementStatus === "Annulé") return Response.json({ error: "Un bon déjà partiellement réceptionné ne peut pas être annulé." }, { status: 409 });
       const paidAt = nextPaymentStatus === "Payé"
         ? paidAtFromInput(payload.paidDate, purchase.paymentStatus === "Payé" && purchase.paidAt ? purchase.paidAt : new Date().toISOString())
         : null;
@@ -1109,7 +1216,31 @@ export async function POST(request: Request) {
         orderedAt,
         expectedAt: expectedAt || null,
       }).where(eq(purchases.id, id));
-      auditEntityLabel = `${supplierProfile.name} · ${item}`;
+      if (purchase.purchaseRef) {
+        await database.prepare(`
+          UPDATE purchases
+          SET supplier = ?, supplier_id = ?, account = ?, payment_status = ?, paid_at = ?,
+              ordered_at = ?, expected_at = ?,
+              procurement_status = CASE
+                WHEN received_quantity >= quantity AND quantity > 0 THEN 'Reçu'
+                WHEN received_quantity > 0 THEN 'Partiellement reçu'
+                ELSE ?
+              END
+          WHERE purchase_ref = ? AND id <> ?
+        `).bind(
+          supplierProfile.name,
+          supplierProfile.id,
+          account,
+          nextPaymentStatus,
+          paidAt,
+          orderedAt,
+          expectedAt || null,
+          requestedProcurementStatus,
+          purchase.purchaseRef,
+          id,
+        ).run();
+      }
+      auditEntityLabel = `${purchase.purchaseRef || supplierProfile.name} · ${item}`;
     } else if (payload.action === "receivePurchase") {
       const id = numberValue(payload.id);
       const receiveQuantity = numberValue(payload.receiveQuantity);
