@@ -3627,10 +3627,10 @@ function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd,
     .sort((left, right) => right.due - left.due || right.purchased - left.purchased);
 
   async function receive(purchase: Purchase) {
-    if (!canEdit || receivingId || !purchase.productId || purchase.receivedQuantity >= purchase.quantity || purchase.procurementStatus === "Annulé") return;
+    if (!canEdit || receivingId || purchase.receivedQuantity >= purchase.quantity || purchase.procurementStatus === "Annulé") return;
     const remaining = purchase.quantity - purchase.receivedQuantity;
     const raw = window.prompt(
-      `Quantité reçue pour ${purchase.productName || purchase.item} ?\n\nReste à recevoir sur cette ligne : ${remaining} unité(s). Le stock sera augmenté uniquement de la quantité saisie.`,
+      `Quantité reçue pour ${purchase.productName || purchase.item} ?\n\nReste à recevoir sur cette ligne : ${remaining} unité(s). ${purchase.productId ? "Le stock sera augmenté uniquement de la quantité saisie." : "Cette ligne n’est pas liée au stock : aucun stock ne sera modifié."}`,
       String(remaining),
     );
     if (raw === null) return;
@@ -3712,12 +3712,10 @@ function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd,
                                 <span className="purchase-unlinked">Brouillon</span>
                               ) : line.procurementStatus === "Annulé" ? (
                                 <span className="purchase-unlinked">Annulé</span>
-                              ) : line.productId ? (
-                                <button className="secondary-button purchase-receive-button" type="button" disabled={!canEdit || receivingId === line.id} onClick={() => void receive(line)}>
-                                  {receivingId === line.id ? "Réception…" : `Réceptionner ${remaining}`}
-                                </button>
                               ) : (
-                                <span className="purchase-unlinked">Non lié au stock</span>
+                                <button className="secondary-button purchase-receive-button" type="button" disabled={!canEdit || receivingId === line.id} onClick={() => void receive(line)}>
+                                  {receivingId === line.id ? "Réception…" : line.productId ? `Réceptionner ${remaining}` : `Marquer reçu · ${remaining}`}
+                                </button>
                               )}
                               <RecordActions label={`la ligne ${line.purchaseLineNo} du bon ${order.ref}`} onEdit={() => onEdit({ kind: "purchase", record: line })} onDelete={() => onDelete({ kind: "purchase", record: line })} />
                             </div>
