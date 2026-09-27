@@ -7,6 +7,7 @@ import { calculateBusinessFinance, calculateOperatingProfit, orderContributionBe
 import { businessDateKey, deliveryRecognitionDate } from "../lib/accounting-dates";
 import { allocationPolicyFromSettings } from "../lib/allocation-policy";
 import { calculateTreasuryAccounts } from "../lib/treasury";
+import { buildSupplierStatement, type SupplierStatementEntry } from "../lib/supplier-statement";
 
 type Order = {
   id: number;
@@ -1345,7 +1346,7 @@ function Page({
   if (active === "Réapprovisionnement") return <ReorderingPage data={data} submit={submit} onEditProduct={editEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
-  if (active === "Fournisseurs") return <SuppliersPage suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("supplier")} onEdit={editEntity} />;
+  if (active === "Fournisseurs") return <SuppliersPage suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} supplierPayments={data.supplierPayments} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("supplier")} onEdit={editEntity} />;
   if (active === "Achats") return <PurchasesPage purchases={data.purchases} supplierInvoices={data.supplierInvoices} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Factures fournisseurs") return <SupplierInvoicesPage invoices={data.supplierInvoices} payments={data.supplierPayments} canEdit={data.access.canEdit} onAdd={() => open("supplierInvoice")} submit={submit} />;
   if (active === "Dépenses") return <ExpensesPage expenses={data.expenses} onAdd={() => open("expense")} onEdit={editEntity} onDelete={removeEntity} />;
@@ -3470,10 +3471,134 @@ function EmptyState({ title, text }: { title: string; text: string }) {
     </div>
   );
 }
+function supplierStatementCsvCell(value: string | number) {
+  const text = String(value ?? "").replaceAll('"', '""');
+  return `"${text}"`;
+}
+
+function downloadSupplierStatementCsv(supplier: Supplier, entries: SupplierStatementEntry[]) {
+  const headers = ["Date", "Type", "Référence", "Détail", "Débit (MAD)", "Crédit (MAD)", "Solde (MAD)"];
+  const rows = entries.map((entry) => [
+    entry.date.slice(0, 10),
+    entry.kind,
+    entry.reference,
+    entry.detail,
+    entry.debit ? entry.debit.toFixed(2) : "",
+    entry.credit ? entry.credit.toFixed(2) : "",
+    entry.balance.toFixed(2),
+  ]);
+  const csv = "\uFEFF" + [headers, ...rows].map((row) => row.map(supplierStatementCsvCell).join(";")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  const safeName = supplier.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "fournisseur";
+  anchor.href = url;
+  anchor.download = `releve-${safeName}.csv`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function SupplierStatementModal({
+  supplier,
+  purchases,
+  invoices,
+  payments,
+  close,
+}: {
+  supplier: Supplier;
+  purchases: Purchase[];
+  invoices: SupplierInvoice[];
+  payments: SupplierPayment[];
+  close: () => void;
+}) {
+  const statement = useMemo(
+    () => buildSupplierStatement(supplier.id, supplier.name, purchases, invoices, payments),
+    [supplier, purchases, invoices, payments],
+  );
+  const supplierInvoices = invoices
+    .filter((invoice) => invoice.supplierId === supplier.id)
+    .sort((left, right) => left.dueDate.localeCompare(right.dueDate));
+  const openInvoices = supplierInvoices.filter((invoice) => invoice.remainingAmount > 0);
+
+  return (
+    <div className="modal-backdrop supplier-statement-backdrop" onMouseDown={(event) => event.target === event.currentTarget && close()}>
+      <section className="modal supplier-statement-modal" role="dialog" aria-modal="true" aria-label={`Relevé fournisseur ${supplier.name}`}>
+        <div className="modal-head supplier-statement-head">
+          <div>
+            <span className="card-kicker">Compte fournisseur</span>
+            <h2>{supplier.name}</h2>
+            <p>{supplier.contactName || "Contact non renseigné"} · {supplier.city || "Ville non renseignée"} · {supplier.phone || supplier.whatsapp || "Sans téléphone"}</p>
+          </div>
+          <button type="button" onClick={close} aria-label="Fermer">×</button>
+        </div>
+
+        <div className="supplier-statement-actions">
+          <button type="button" className="secondary-button" onClick={() => downloadSupplierStatementCsv(supplier, statement.entries)}>Exporter CSV</button>
+          <button type="button" className="secondary-button" onClick={close}>Fermer</button>
+        </div>
+
+        <section className="supplier-statement-kpis">
+          <article><span>Total facturé / acheté</span><strong>{money(statement.totalBilled)}</strong><small>{statement.orderCount} bon(s) · {statement.invoiceCount} facture(s)</small></article>
+          <article><span>Total réglé</span><strong className="money-positive">{money(statement.totalPaid)}</strong><small>{statement.paymentCount} paiement(s) de facture</small></article>
+          <article><span>Solde fournisseur</span><strong className={statement.balance > 0 ? "money-negative" : "money-positive"}>{money(statement.balance)}</strong><small>{statement.openInvoiceCount} facture(s) ouverte(s)</small></article>
+          <article className={statement.overdueAmount > 0 ? "statement-overdue-kpi" : ""}><span>Échu</span><strong className={statement.overdueAmount > 0 ? "money-negative" : ""}>{money(statement.overdueAmount)}</strong><small>Échéances dépassées non soldées</small></article>
+        </section>
+
+        <section className="supplier-statement-section">
+          <div className="supplier-statement-section-head">
+            <div><span className="card-kicker">Échéances</span><h3>Factures ouvertes</h3></div>
+            <strong>{money(openInvoices.reduce((sum, invoice) => sum + invoice.remainingAmount, 0))}</strong>
+          </div>
+          {openInvoices.length ? (
+            <div className="supplier-open-invoices">
+              {openInvoices.map((invoice) => (
+                <article key={invoice.id} className={invoice.isOverdue ? "overdue" : ""}>
+                  <div><strong>{invoice.invoiceNumber}</strong><small>{invoice.purchaseRef} · facture {dateLabel(invoice.invoiceDate)}</small></div>
+                  <div><span>Échéance</span><strong>{dateLabel(invoice.dueDate)}</strong></div>
+                  <div><span>Reste</span><strong>{money(invoice.remainingAmount)}</strong></div>
+                  <Status value={invoice.isOverdue ? "En retard" : invoice.paymentStatus} />
+                </article>
+              ))}
+            </div>
+          ) : <div className="pending-empty">✓ Aucune facture fournisseur ouverte.</div>}
+        </section>
+
+        <section className="supplier-statement-section">
+          <div className="supplier-statement-section-head">
+            <div><span className="card-kicker">Grand livre</span><h3>Historique du compte</h3></div>
+            <small>Débit = dette créée · crédit = règlement</small>
+          </div>
+          {statement.entries.length ? (
+            <div className="table-scroll supplier-statement-table">
+              <table>
+                <thead><tr><th>Date</th><th>Type</th><th>Référence</th><th>Détail</th><th>Débit</th><th>Crédit</th><th>Solde</th></tr></thead>
+                <tbody>{statement.entries.map((entry) => (
+                  <tr key={entry.key}>
+                    <td>{dateLabel(entry.date)}</td>
+                    <td><span className={`statement-entry-kind ${entry.credit > 0 ? "credit" : "debit"}`}>{entry.kind}</span></td>
+                    <td><strong>{entry.reference}</strong></td>
+                    <td>{entry.detail}</td>
+                    <td className={entry.debit > 0 ? "money-negative" : ""}>{entry.debit > 0 ? money(entry.debit) : "—"}</td>
+                    <td className={entry.credit > 0 ? "money-positive" : ""}>{entry.credit > 0 ? money(entry.credit) : "—"}</td>
+                    <td className={entry.balance > 0 ? "money-negative" : "money-positive"}><strong>{money(entry.balance)}</strong></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : <EmptyState title="Aucun mouvement fournisseur" text="Les factures, paiements et anciens achats de ce fournisseur apparaîtront ici." />}
+        </section>
+      </section>
+    </div>
+  );
+}
+
 function SuppliersPage({
   suppliers,
   purchases,
   supplierInvoices,
+  supplierPayments,
   canEdit,
   submit,
   onAdd,
@@ -3482,6 +3607,7 @@ function SuppliersPage({
   suppliers: Supplier[];
   purchases: Purchase[];
   supplierInvoices: SupplierInvoice[];
+  supplierPayments: SupplierPayment[];
   canEdit: boolean;
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
   onAdd: () => void;
@@ -3497,6 +3623,7 @@ function SuppliersPage({
       .map((purchase) => purchase.purchaseRef || `legacy-${purchase.id}`),
   ).size;
   const todayKey = new Date().toISOString().slice(0, 10);
+  const [statementSupplier, setStatementSupplier] = useState<Supplier | null>(null);
 
   async function toggle(supplier: Supplier) {
     if (!canEdit) return;
@@ -3590,6 +3717,7 @@ function SuppliersPage({
                     <td><Status value={supplier.isActive ? "Actif" : "Inactif"} /></td>
                     <td>
                       <div className="entity-actions-row">
+                        <button className="secondary-button" type="button" onClick={() => setStatementSupplier(supplier)}>Relevé</button>
                         <button className="secondary-button" type="button" onClick={() => onEdit({ kind: "supplier", record: supplier })} disabled={!canEdit}>Modifier</button>
                         <button className="secondary-button" type="button" onClick={() => void toggle(supplier)} disabled={!canEdit}>{supplier.isActive ? "Désactiver" : "Réactiver"}</button>
                       </div>
@@ -3601,6 +3729,15 @@ function SuppliersPage({
           </div>
         ) : <EmptyState title="Aucun fournisseur" text="Créez votre première fiche fournisseur pour centraliser contacts et conditions d’achat." />}
       </section>
+      {statementSupplier ? (
+        <SupplierStatementModal
+          supplier={statementSupplier}
+          purchases={purchases}
+          invoices={supplierInvoices}
+          payments={supplierPayments}
+          close={() => setStatementSupplier(null)}
+        />
+      ) : null}
     </>
   );
 }
