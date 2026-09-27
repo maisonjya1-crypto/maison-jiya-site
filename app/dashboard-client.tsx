@@ -3411,7 +3411,98 @@ function EmptyState({ title, text }: { title: string; text: string }) {
     </div>
   );
 }
-function PurchasesPage({ purchases, products, canEdit, submit, onAdd, onEdit, onDelete }: { purchases: Purchase[]; products: Product[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
+function SuppliersPage({
+  suppliers,
+  purchases,
+  canEdit,
+  submit,
+  onAdd,
+  onEdit,
+}: {
+  suppliers: Supplier[];
+  purchases: Purchase[];
+  canEdit: boolean;
+  submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
+  onAdd: () => void;
+  onEdit: (selection: EditableEntity) => void;
+}) {
+  const activeSuppliers = suppliers.filter((supplier) => supplier.isActive);
+  const totalDue = purchases.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
+  const openOrders = purchases.filter((purchase) => !["Reçu", "Annulé"].includes(purchase.procurementStatus)).length;
+
+  async function toggle(supplier: Supplier) {
+    if (!canEdit) return;
+    const next = !supplier.isActive;
+    const confirmed = window.confirm(
+      next
+        ? `Réactiver ${supplier.name} ?`
+        : `Désactiver ${supplier.name} ?\n\nSon historique reste conservé. Il ne sera plus proposé pour de nouveaux bons de commande.`,
+    );
+    if (!confirmed) return;
+    await submit("toggleSupplier", { id: String(supplier.id), active: String(next) });
+  }
+
+  return (
+    <>
+      <section className="kpi-grid three">
+        <Kpi label="Fournisseurs actifs" value={String(activeSuppliers.length)} detail={`${suppliers.length} fiche(s) au total`} />
+        <Kpi label="Bons ouverts" value={String(openOrders)} detail="Brouillon, commandé ou partiellement reçu" />
+        <Kpi label="Reste fournisseur" value={money(totalDue)} detail="Achats encore marqués À payer" danger={totalDue > 0} />
+      </section>
+
+      <section className="panel page-panel">
+        <div className="section-toolbar">
+          <div>
+            <h2>Répertoire fournisseurs</h2>
+            <p>Contacts, délais moyens, minimums de commande, conditions de paiement et historique d’achat.</p>
+          </div>
+          <button className="primary-button" type="button" onClick={onAdd} disabled={!canEdit}>＋ Nouveau fournisseur</button>
+        </div>
+        {suppliers.length ? (
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Fournisseur</th><th>Contact</th><th>Ville</th><th>Délai</th><th>Minimum</th><th>Conditions</th><th>Achats</th><th>À payer</th><th>Dernier achat</th><th>Statut</th><th>Actions</th></tr></thead>
+              <tbody>{suppliers.map((supplier) => {
+                const rows = purchases.filter((purchase) => purchase.supplierId === supplier.id || (!purchase.supplierId && purchase.supplier.toLocaleLowerCase("fr") === supplier.name.toLocaleLowerCase("fr")));
+                const spent = rows.reduce((sum, purchase) => sum + purchase.totalCost, 0);
+                const due = rows.filter((purchase) => purchase.paymentStatus !== "Payé").reduce((sum, purchase) => sum + purchase.totalCost, 0);
+                const last = rows.reduce((latest, purchase) => {
+                  const value = purchase.orderedAt || purchase.createdAt;
+                  return value > latest ? value : latest;
+                }, "");
+                return (
+                  <tr key={supplier.id}>
+                    <td><strong>{supplier.name}</strong><small>{supplier.notes || "Aucune note"}</small></td>
+                    <td>
+                      <strong>{supplier.contactName || "—"}</strong>
+                      <small>{supplier.phone || supplier.whatsapp || "Coordonnées non renseignées"}</small>
+                    </td>
+                    <td>{supplier.city || "—"}</td>
+                    <td>{supplier.leadTimeDays} j</td>
+                    <td>{supplier.minimumOrderAmount ? money(supplier.minimumOrderAmount) : "—"}</td>
+                    <td>{supplier.paymentTerms || "—"}</td>
+                    <td><strong>{money(spent)}</strong><small>{rows.length} bon(s)</small></td>
+                    <td className={moneyTone(-due)}><strong>{money(due)}</strong></td>
+                    <td>{last ? dateLabel(last) : "—"}</td>
+                    <td><Status value={supplier.isActive ? "Actif" : "Inactif"} /></td>
+                    <td>
+                      <div className="entity-actions-row">
+                        <button className="secondary-button" type="button" onClick={() => onEdit({ kind: "supplier", record: supplier })} disabled={!canEdit}>Modifier</button>
+                        <button className="secondary-button" type="button" onClick={() => void toggle(supplier)} disabled={!canEdit}>{supplier.isActive ? "Désactiver" : "Réactiver"}</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>
+        ) : <EmptyState title="Aucun fournisseur" text="Créez votre première fiche fournisseur pour centraliser contacts et conditions d’achat." />}
+      </section>
+    </>
+  );
+}
+
+function PurchasesPage({ purchases, products, suppliers, canEdit, submit, onAdd, onEdit, onDelete }: { purchases: Purchase[]; products: Product[]; suppliers: Supplier[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
   const [receivingId, setReceivingId] = useState<number | null>(null);
   const total = purchases.reduce((sum, purchase) => sum + purchase.totalCost, 0);
   const waitingReceipt = purchases.filter((purchase) => purchase.productId && purchase.receivedQuantity < purchase.quantity);
@@ -3430,15 +3521,21 @@ function PurchasesPage({ purchases, products, canEdit, submit, onAdd, onEdit, on
     .sort((left, right) => right.due - left.due || right.purchased - left.purchased);
 
   async function receive(purchase: Purchase) {
-    if (!canEdit || receivingId || !purchase.productId || purchase.receivedQuantity >= purchase.quantity) return;
+    if (!canEdit || receivingId || !purchase.productId || purchase.receivedQuantity >= purchase.quantity || purchase.procurementStatus === "Annulé") return;
     const remaining = purchase.quantity - purchase.receivedQuantity;
-    const confirmed = window.confirm(
-      `Réceptionner ${remaining} unité(s) de ${purchase.productName || purchase.item} ?\n\nLe stock du produit sera augmenté automatiquement. Cette réception restera dans l’historique.`,
+    const raw = window.prompt(
+      `Quantité reçue pour ${purchase.productName || purchase.item} ?\n\nReste à recevoir : ${remaining} unité(s). Le stock sera augmenté uniquement de la quantité saisie.`,
+      String(remaining),
     );
-    if (!confirmed) return;
+    if (raw === null) return;
+    const quantity = Number(raw);
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > remaining) {
+      window.alert(`Saisissez un nombre entier entre 1 et ${remaining}.`);
+      return;
+    }
     setReceivingId(purchase.id);
     try {
-      await submit("receivePurchase", { id: String(purchase.id) });
+      await submit("receivePurchase", { id: String(purchase.id), receiveQuantity: String(quantity) });
     } finally {
       setReceivingId(null);
     }
@@ -3470,31 +3567,32 @@ function PurchasesPage({ purchases, products, canEdit, submit, onAdd, onEdit, on
       </section>
       <section className="panel page-panel">
         <div className="section-toolbar">
-          <div><h2>Achats fournisseurs</h2><p>Stock, tissu, emballages et autres coûts. Une réception liée au catalogue augmente automatiquement le stock.</p></div>
-          <button className="primary-button" onClick={onAdd}>＋ Ajouter un achat</button>
+          <div><h2>Bons de commande fournisseurs</h2><p>Suivez chaque commande de Brouillon jusqu’à Reçu. Les réceptions partielles alimentent le stock au fur et à mesure.</p></div>
+          <button className="primary-button" onClick={onAdd}>＋ Nouveau bon de commande</button>
         </div>
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Date</th><th>Fournisseur</th><th>Achat</th><th>Produit stock</th><th>Qté</th><th>Total</th><th>Compte</th><th>Paiement</th><th>Réception</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Bon</th><th>Fournisseur</th><th>Achat</th><th>Produit stock</th><th>Qté</th><th>Total</th><th>État</th><th>Prévu</th><th>Paiement</th><th>Réception</th><th>Actions</th></tr></thead>
             <tbody>
               {purchases.map((purchase) => {
                 const received = purchase.receivedQuantity >= purchase.quantity && purchase.quantity > 0;
                 return (
                   <tr key={purchase.id}>
-                    <td>{dateLabel(purchase.createdAt)}</td>
-                    <td><strong>{purchase.supplier}</strong></td>
+                    <td><strong>{purchase.purchaseRef || `#${purchase.id}`}</strong><small>{dateLabel(purchase.orderedAt || purchase.createdAt)}</small></td>
+                    <td><strong>{purchase.supplier}</strong><small>{suppliers.find((supplier) => supplier.id === purchase.supplierId)?.city || ""}</small></td>
                     <td>{purchase.item}</td>
                     <td>{purchase.productId ? <><strong>{purchase.productName || "Produit"}</strong><small>{purchase.productCode || `#${purchase.productId}`}</small></> : <small>Non lié au stock</small>}</td>
                     <td>{purchase.quantity}</td>
                     <td><strong>{money(purchase.totalCost)}</strong></td>
-                    <td>{purchase.account || "Banque"}</td>
+                    <td><Status value={purchase.procurementStatus} /></td>
+                    <td>{purchase.expectedAt ? dateLabel(purchase.expectedAt) : "—"}</td>
                     <td><Status value={purchase.paymentStatus} />{purchase.paymentStatus === "Payé" && purchase.paidAt ? <small>{dateLabel(purchase.paidAt)}</small> : null}</td>
                     <td>
                       {received ? (
-                        <span className="purchase-received"><strong>✓ +{purchase.receivedQuantity}</strong><small>{purchase.receivedAt ? dateLabel(purchase.receivedAt) : "Réceptionné"}</small></span>
+                        <span className="purchase-received"><strong>✓ {purchase.receivedQuantity}/{purchase.quantity}</strong><small>{purchase.receivedAt ? dateLabel(purchase.receivedAt) : "Réceptionné"}</small></span>
                       ) : purchase.productId ? (
                         <button className="secondary-button purchase-receive-button" type="button" disabled={!canEdit || receivingId === purchase.id} onClick={() => void receive(purchase)}>
-                          {receivingId === purchase.id ? "Réception…" : `Réceptionner +${purchase.quantity - purchase.receivedQuantity}`}
+                          {receivingId === purchase.id ? "Réception…" : `Réceptionner ${purchase.receivedQuantity}/${purchase.quantity}`}
                         </button>
                       ) : (
                         <span className="purchase-unlinked">Modifier pour lier un produit</span>
