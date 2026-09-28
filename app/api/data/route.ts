@@ -322,6 +322,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   updateBackupToken: { action: "Clé créée", entityType: "Sauvegarde" },
   revokeBackupToken: { action: "Désactivation", entityType: "Sauvegarde" },
   updateBackupWebhook: { action: "Connexion", entityType: "Google Sheets" },
+  updateBackupAuthMode: { action: "Sécurisation", entityType: "Google Sheets" },
   createBackupNow: { action: "Création", entityType: "Sauvegarde" },
   verifyBackupNow: { action: "Vérification", entityType: "Sauvegarde" },
   restoreBackup: { action: "Restauration", entityType: "Sauvegarde" },
@@ -365,6 +366,7 @@ async function seedIfNeeded() {
     { key: "theme", value: "mauve-froid" },
     { key: "account_name", value: "Maison Jiya" },
     { key: "backup_sheet_url", value: "" },
+    { key: "backup_bearer_only", value: "false" },
     { key: "security_backup_webhook_url", value: "" },
   ]).onConflictDoNothing();
 
@@ -2537,6 +2539,18 @@ export async function POST(request: Request) {
       const rawDatabase = await getRawDb();
       await markGoogleSheetsSyncPending(rawDatabase);
       await processGoogleSheetsSyncQueue(rawDatabase, { force: true });
+    } else if (payload.action === "updateBackupAuthMode") {
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut sécuriser la sauvegarde." }, { status: 403 });
+      const enabled = textValue(payload.enabled) === "true";
+      const updatedAt = new Date().toISOString();
+      await db.insert(settings).values({ key: "backup_bearer_only", value: enabled ? "true" : "false" }).onConflictDoUpdate({
+        target: settings.key,
+        set: { value: enabled ? "true" : "false", updatedAt },
+      });
+      integrationMessage = enabled
+        ? "Mode sécurisé Google Sheets activé : les clés dans l’URL sont désormais refusées."
+        : "Compatibilité temporaire Google Sheets réactivée.";
+      auditEntityLabel = enabled ? "Authorization Bearer uniquement" : "Compatibilité temporaire";
     } else if (payload.action === "updateBackupWebhook") {
       if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut connecter la synchronisation instantanée." }, { status: 403 });
       const webhookUrl = textValue(payload.url);

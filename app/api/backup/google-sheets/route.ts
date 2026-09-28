@@ -39,11 +39,15 @@ function secureEqual(left: string, right: string) {
   return difference === 0;
 }
 
-function backupKeyFromRequest(request: Request, url: URL) {
+function backupKeyFromRequest(request: Request, url: URL, allowLegacyQuery: boolean) {
   const authorization = request.headers.get("authorization") || "";
   const bearerMatch = authorization.match(/^Bearer\s+([A-Za-z0-9_-]{32,200})$/i);
-  if (bearerMatch) return bearerMatch[1];
-  return url.searchParams.get("key") || "";
+  if (bearerMatch) return { key: bearerMatch[1], source: "bearer" as const };
+  if (allowLegacyQuery) {
+    const legacyKey = url.searchParams.get("key") || "";
+    if (legacyKey) return { key: legacyKey, source: "query" as const };
+  }
+  return { key: "", source: "none" as const };
 }
 
 function safeText(value: unknown) {
@@ -89,13 +93,18 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const dataset = url.searchParams.get("dataset") || "";
-    const key = backupKeyFromRequest(request, url);
     if (!datasetNames.has(dataset)) return Response.json({ error: "Jeu de données inconnu." }, { status: 400 });
-    if (key.length < 32 || key.length > 200) return Response.json({ error: "Accès refusé." }, { status: 401 });
 
     const db = await getDb();
-    const [storedToken] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, "security_backup_token_hash")).limit(1);
-    if (!storedToken?.value || !secureEqual(await sha256Hex(key), storedToken.value)) {
+    const [storedToken, authMode] = await Promise.all([
+      db.select({ value: settings.value }).from(settings).where(eq(settings.key, "security_backup_token_hash")).limit(1),
+      db.select({ value: settings.value }).from(settings).where(eq(settings.key, "backup_bearer_only")).limit(1),
+    ]);
+    const bearerOnly = authMode[0]?.value === "true";
+    const credential = backupKeyFromRequest(request, url, !bearerOnly);
+    const key = credential.key;
+    if (key.length < 32 || key.length > 200) return Response.json({ error: "Accès refusé." }, { status: 401 });
+    if (!storedToken[0]?.value || !secureEqual(await sha256Hex(key), storedToken[0].value)) {
       return Response.json({ error: "Accès refusé." }, { status: 401 });
     }
 
