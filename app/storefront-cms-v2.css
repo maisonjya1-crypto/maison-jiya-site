@@ -177,3 +177,23 @@
   background: #fff;
   color: inherit;
 }
+
+/* Onglets CMS : rester cliquables et garder le catalogue léger. */
+.storefront-cms-v2 .storefront-cms-tabs {
+  top: 0;
+  z-index: 20;
+  isolation: isolate;
+  box-shadow: 0 8px 24px rgba(42, 32, 45, .06);
+}
+.storefront-cms-v2 .storefront-cms-tabs button {
+  position: relative;
+  z-index: 1;
+}
+.storefront-cms-load-more-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 18px 0 4px;
+}
+.storefront-cms-load-more-wrap .secondary-button {
+  min-height: 42px;
+}
