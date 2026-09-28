@@ -173,6 +173,46 @@ const TABLE_SPECS: Record<string, TableSpec> = {
     ],
     defaults: { note: "", closed_by_user_id: null, closed_by_name: "Import Maison Jiya", updated_at: null },
   },
+  clotures_mensuelles: {
+    table: "monthly_closings",
+    columns: [
+      "id", "month_key", "period_start", "period_end",
+      "delivered_orders", "delivered_revenue", "collected_amount",
+      "product_cost", "shipping_cost", "fees", "return_cost",
+      "ad_spend", "operating_expenses", "inventory_loss", "carrier_adjustment",
+      "contribution_margin", "net_profit", "reinvestment_allocated",
+      "manual_capital_in", "manual_capital_out",
+      "stock_value_start", "stock_value_end", "stock_value_source",
+      "cash_end", "cash_end_source", "note",
+      "closed_by_user_id", "closed_by_name", "created_at",
+    ],
+    defaults: {
+      delivered_orders: 0,
+      delivered_revenue: 0,
+      collected_amount: 0,
+      product_cost: 0,
+      shipping_cost: 0,
+      fees: 0,
+      return_cost: 0,
+      ad_spend: 0,
+      operating_expenses: 0,
+      inventory_loss: 0,
+      carrier_adjustment: 0,
+      contribution_margin: 0,
+      net_profit: 0,
+      reinvestment_allocated: 0,
+      manual_capital_in: 0,
+      manual_capital_out: 0,
+      stock_value_start: null,
+      stock_value_end: 0,
+      stock_value_source: "",
+      cash_end: 0,
+      cash_end_source: "",
+      note: "",
+      closed_by_user_id: null,
+      closed_by_name: "Import Maison Jiya",
+    },
+  },
   mouvements_stock: {
     table: "stock_movements",
     columns: ["id", "product_id", "order_id", "purchase_id", "movement_type", "quantity", "note", "created_at"],
@@ -298,7 +338,7 @@ const REQUIRED_TABLES = [
 ] as const;
 
 const OPTIONAL_TABLES = [
-  "fournisseurs", "factures_fournisseurs", "paiements_fournisseurs", "sessions_inventaire", "inventaires", "depenses", "clotures_journalieres", "historique_commandes", "evenements_transporteurs", "reglements_transporteurs", "reglement_commandes_transporteurs", "journal_actions",
+  "fournisseurs", "factures_fournisseurs", "paiements_fournisseurs", "sessions_inventaire", "inventaires", "depenses", "clotures_journalieres", "clotures_mensuelles", "historique_commandes", "evenements_transporteurs", "reglements_transporteurs", "reglement_commandes_transporteurs", "journal_actions",
   "boutique_produits", "boutique_offres", "boutique_composition_offres", "boutique_medias",
 ] as const;
 
@@ -525,6 +565,8 @@ function parsePortableExport(raw: string) {
   assertUnique(tables, "tresorerie_capital", "auto_key", "clé automatique de capital", true);
   assertUnique(tables, "clotures_journalieres", "id", "clôture journalière");
   assertUnique(tables, "clotures_journalieres", "close_date", "date de clôture");
+  assertUnique(tables, "clotures_mensuelles", "id", "clôture mensuelle");
+  assertUnique(tables, "clotures_mensuelles", "month_key", "mois de clôture");
   assertUnique(tables, "historique_commandes", "id", "historique de commande");
   assertUnique(tables, "evenements_transporteurs", "id", "événement transporteur");
   assertUnique(tables, "evenements_transporteurs", "payload_hash", "empreinte transporteur");
@@ -632,6 +674,7 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
     database.prepare("DELETE FROM inventory_counts"),
     database.prepare("DELETE FROM inventory_sessions"),
     database.prepare("DELETE FROM daily_closings"),
+    database.prepare("DELETE FROM monthly_closings"),
     database.prepare("DELETE FROM order_status_history"),
     database.prepare("DELETE FROM carrier_settlement_orders"),
     database.prepare("DELETE FROM carrier_settlements"),
@@ -676,6 +719,7 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
     "commandes",
     "tresorerie_capital",
     "clotures_journalieres",
+    "clotures_mensuelles",
     "mouvements_stock",
     "sessions_inventaire",
     "inventaires",
