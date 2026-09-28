@@ -54,3 +54,54 @@
 .storefront-v3 :where(input,select,textarea):focus-visible{
   border-color:#6d526f!important;
 }
+
+
+/* Mobile : la photo produit suit son ratio réel au lieu d'être enfermée
+   dans un cadre quasi carré qui crée de larges bandes latérales. */
+@media(max-width:760px){
+  .storefront-approved-design .storefront-v3-overlay.product-gallery{
+    padding:0!important;
+    align-items:flex-start!important;
+    justify-content:flex-start!important;
+  }
+
+  .storefront-approved-design .storefront-v3-product-dialog{
+    width:100%!important;
+    max-width:none!important;
+    margin:0!important;
+  }
+
+  .storefront-approved-design .storefront-v3-product-gallery{
+    width:100%!important;
+    margin:0!important;
+    padding:0 0 10px!important;
+  }
+
+  .storefront-approved-design .storefront-v3-product-gallery-main{
+    width:100%!important;
+    max-width:none!important;
+    height:auto!important;
+    min-height:0!important;
+    margin:0!important;
+    aspect-ratio:auto!important;
+  }
+
+  .storefront-approved-design .storefront-v3-product-gallery-main>img{
+    display:block!important;
+    width:100%!important;
+    height:auto!important;
+    max-width:none!important;
+    max-height:none!important;
+    object-fit:contain!important;
+  }
+
+  .storefront-approved-design .storefront-v3-product-thumbnails{
+    width:100%!important;
+    box-sizing:border-box!important;
+  }
+
+  .storefront-approved-design .storefront-v3-product-dialog-info{
+    width:100%!important;
+    box-sizing:border-box!important;
+  }
+}
