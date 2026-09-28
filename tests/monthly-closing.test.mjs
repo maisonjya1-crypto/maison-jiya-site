@@ -8,8 +8,8 @@ test("le compte de résultat mensuel utilise les bonnes dates et calcule le bén
   const snapshot = buildMonthlyFinancialSnapshot({
     monthKey: "2020-01",
     orders: [
-      { id: 1, status: "Livrée", paymentStatus: "Encaissé", saleAmount: 500, productCost: 100, shippingCost: 40, fees: 10, returnCost: 20, paidAt: "2020-01-20T12:00:00.000Z", createdAt: "2020-01-05T12:00:00.000Z", updatedAt: "2020-01-10T12:00:00.000Z" },
-      { id: 2, status: "Livrée", paymentStatus: "Encaissé", saleAmount: 300, productCost: 80, shippingCost: 30, fees: 5, returnCost: 0, paidAt: "2020-02-03T12:00:00.000Z", createdAt: "2020-01-30T12:00:00.000Z", updatedAt: "2020-02-02T12:00:00.000Z" },
+      { id: 1, status: "Livrée", paymentStatus: "Encaissé", saleAmount: 500, productCost: 100, shippingCost: 40, fees: 10, returnCost: 0, paidAt: "2020-01-20T12:00:00.000Z", refundedAt: null, createdAt: "2020-01-05T12:00:00.000Z", updatedAt: "2020-01-10T12:00:00.000Z" },
+      { id: 2, status: "Livrée", paymentStatus: "Encaissé", saleAmount: 300, productCost: 80, shippingCost: 30, fees: 5, returnCost: 0, paidAt: "2020-02-03T12:00:00.000Z", refundedAt: null, createdAt: "2020-01-30T12:00:00.000Z", updatedAt: "2020-02-02T12:00:00.000Z" },
     ],
     history: [
       { orderId: 1, toStatus: "Livrée", changedAt: "2020-01-10T12:00:00.000Z" },
@@ -37,19 +37,58 @@ test("le compte de résultat mensuel utilise les bonnes dates et calcule le bén
   assert.equal(snapshot.productCost, 100);
   assert.equal(snapshot.shippingCost, 40);
   assert.equal(snapshot.fees, 10);
-  assert.equal(snapshot.returnCost, 20);
-  assert.equal(snapshot.contributionMargin, 330);
+  assert.equal(snapshot.returnCost, 0);
+  assert.equal(snapshot.contributionMargin, 350);
   assert.equal(snapshot.adSpend, 60);
   assert.equal(snapshot.operatingExpenses, 50);
   assert.equal(snapshot.inventoryLoss, 25);
   assert.equal(snapshot.carrierAdjustment, -15);
-  assert.equal(snapshot.netProfit, 180);
+  assert.equal(snapshot.netProfit, 200);
   assert.equal(snapshot.reinvestmentAllocated, 70);
   assert.equal(snapshot.manualCapitalIn, 100);
   assert.equal(snapshot.manualCapitalOut, 30);
   assert.equal(snapshot.stockValueStart, 200);
   assert.equal(snapshot.stockValueEnd, 400);
   assert.equal(snapshot.cashEnd, 700);
+});
+
+test("un retour ultérieur ne réécrit pas le mois de livraison et est comptabilisé au mois du retour", () => {
+  const { buildMonthlyFinancialSnapshot } = loadSource("lib/monthly-closing.ts");
+  const base = {
+    orders: [
+      { id: 9, status: "Retour", paymentStatus: "Remboursé", saleAmount: 500, productCost: 100, shippingCost: 40, fees: 10, returnCost: 25, paidAt: "2020-01-20T12:00:00.000Z", refundedAt: "2020-02-05T12:00:00.000Z", createdAt: "2020-01-05T12:00:00.000Z", updatedAt: "2020-02-05T12:00:00.000Z" },
+    ],
+    history: [
+      { orderId: 9, toStatus: "Livrée", changedAt: "2020-01-10T12:00:00.000Z" },
+      { orderId: 9, toStatus: "Retour", changedAt: "2020-02-05T12:00:00.000Z" },
+    ],
+    expenses: [],
+    ads: [],
+    inventoryCounts: [],
+    capital: [],
+    carrierSettlements: [],
+    stockValueStart: null,
+    stockValueEnd: null,
+    stockValueSource: "",
+    cashEnd: 0,
+    cashEndSource: "",
+  };
+
+  const january = buildMonthlyFinancialSnapshot({ monthKey: "2020-01", ...base });
+  assert.equal(january.deliveredOrders, 1);
+  assert.equal(january.deliveredRevenue, 500);
+  assert.equal(january.productCost, 100);
+  assert.equal(january.returnCost, 0);
+  assert.equal(january.collectedAmount, 500);
+  assert.equal(january.netProfit, 350);
+
+  const february = buildMonthlyFinancialSnapshot({ monthKey: "2020-02", ...base });
+  assert.equal(february.deliveredOrders, 0);
+  assert.equal(february.deliveredRevenue, -500);
+  assert.equal(february.productCost, 0);
+  assert.equal(february.returnCost, 25);
+  assert.equal(february.collectedAmount, -500);
+  assert.equal(february.netProfit, -525);
 });
 
 test("une clôture mensuelle enregistrée reste immuable après modification d’anciennes données", async t => {
