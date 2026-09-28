@@ -18,6 +18,9 @@ CREATE TABLE carrier_settlements (
   UNIQUE(carrier, reference)
 );
 
+CREATE UNIQUE INDEX carrier_settlements_carrier_reference_nocase_idx
+  ON carrier_settlements(lower(carrier), lower(reference));
+
 CREATE INDEX carrier_settlements_date_idx
   ON carrier_settlements(settlement_date);
 
