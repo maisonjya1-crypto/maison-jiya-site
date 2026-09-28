@@ -67,4 +67,8 @@ test("le correctif final garde le titre lisible et sépare Voir du bouton panier
   assert.match(hotfix, /height:auto!important/);
   assert.match(hotfix, /storefront-v3-product-gallery-main>img/);
   assert.match(hotfix, /width:100%!important/);
+  assert.match(hotfix, /@media \(display-mode: standalone\) and \(max-width:760px\)/);
+  assert.match(hotfix, /safe-area-inset-top/);
+  assert.match(hotfix, /storefront-v3-overlay/);
+  assert.match(hotfix, /max-height:calc\(100dvh - env\(safe-area-inset-top,0px\) - env\(safe-area-inset-bottom,0px\)\)!important/);
 });
