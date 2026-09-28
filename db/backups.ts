@@ -388,7 +388,7 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
     database.prepare("DELETE FROM purchases"),
     ...(restoreSuppliers ? [database.prepare("DELETE FROM suppliers")] : []),
     database.prepare("DELETE FROM expenses"),
-    ...(snapshot.tables.recurringExpenses !== undefined ? [database.prepare("DELETE FROM recurring_expenses")] : []),
+    database.prepare("DELETE FROM recurring_expenses"),
     database.prepare("DELETE FROM ad_performance"),
     database.prepare("DELETE FROM capital_ledger"),
     database.prepare("DELETE FROM products"),
