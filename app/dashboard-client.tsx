@@ -5886,8 +5886,20 @@ function CapitalPage({
     cash: number;
     capitalNet: number;
     netCollected: number;
+    profit: number;
     reinvest: number;
     reinvestable: number;
+    theoreticalSalary: number;
+    theoreticalEmergency: number;
+    salaryWithdrawable: number;
+    emergencyAvailable: number;
+    cashBackedProfit: number;
+    protectedTotal: number;
+    protectionShortfall: number;
+    freeCashAfterProtection: number;
+    fundedEnvelopePool: number;
+    allocationFundingRate: number;
+    unallocatedFreeCash: number;
     unpaidPurchases: number;
     unpaidOperatingExpenses: number;
     safetyReserve: number;
@@ -5899,9 +5911,10 @@ function CapitalPage({
   const currentYear = new Date().getFullYear();
   const allocationPolicy = allocationPolicyFromSettings(data.settings);
   const automaticAllocations = data.capital.filter((entry) => entry.isAutomatic);
-  const personalSalary = automaticAllocations.filter((entry) => entry.category === "Salaire personnel").reduce((sum, entry) => sum + entry.amount, 0);
-  const emergencyFund = automaticAllocations.filter((entry) => entry.category === "Fonds d’urgence").reduce((sum, entry) => sum + entry.amount, 0);
+  const personalSalary = metrics.theoreticalSalary;
+  const emergencyFund = metrics.theoreticalEmergency;
   const distributableCapital = metrics.reinvest + personalSalary + emergencyFund;
+  const fundingPercent = Math.round(metrics.allocationFundingRate * 100);
   const automatedFlows: CapitalFlow[] = [
     ...data.orders
       .filter((order) => order.paymentStatus === "Encaissé")
@@ -6023,38 +6036,38 @@ function CapitalPage({
         <article className="hero-card">
           <div className="hero-heading">
             <div>
-              <p>Capital disponible estimé</p>
+              <p>Capital liquide réel estimé</p>
               <h2>{money(metrics.cash)}</h2>
-              <small className="capital-main-note">Encaissements reçus − sorties confirmées</small>
+              <small className="capital-main-note">Après le dernier rapprochement caisse / banque</small>
             </div>
           </div>
           <div className="capital-summary">
             <p>
-              Ventes encaissées nettes
-              <strong>{money(metrics.netCollected)}</strong>
+              Fournisseurs réservés
+              <strong>{money(metrics.unpaidPurchases)}</strong>
             </p>
             <p>
-              Ajustements manuels<strong>{money(metrics.capitalNet)}</strong>
+              Charges réservées<strong>{money(metrics.unpaidOperatingExpenses)}</strong>
             </p>
             <p>
-              Réinvestissable maintenant<strong>{money(metrics.reinvestable)}</strong>
+              Réserve de sécurité<strong>{money(metrics.safetyReserve)}</strong>
             </p>
             <p>
-              Fournisseurs à payer<strong>{money(metrics.unpaidPurchases)}</strong>
+              Cash libre après protection<strong className={moneyTone(metrics.freeCashAfterProtection)}>{money(metrics.freeCashAfterProtection)}</strong>
             </p>
             <p>
-              Charges à payer<strong>{money(metrics.unpaidOperatingExpenses)}</strong>
+              Bénéfice disponible en cash<strong className={moneyTone(metrics.cashBackedProfit)}>{money(metrics.cashBackedProfit)}</strong>
             </p>
             <p>
-              Réserve protégée<strong>{money(metrics.safetyReserve)}</strong>
+              Manque de couverture<strong className={metrics.protectionShortfall > 0 ? "money-negative" : "money-positive"}>{money(metrics.protectionShortfall)}</strong>
             </p>
           </div>
         </article>
         <article className="reinvest-card unallocated-card">
           <span className="card-kicker">Répartition automatique</span>
-          <h2>100%</h2>
-          <p>Chaque montant encaissé est réparti automatiquement entre vos trois enveloppes.</p>
-          <small>{money(distributableCapital)} répartis</small>
+          <h2>{fundingPercent}% financé</h2>
+          <p>Les enveloppes automatiques restent théoriques tant que le bénéfice net et la trésorerie libre ne permettent pas réellement de les financer.</p>
+          <small>{money(metrics.fundedEnvelopePool)} disponibles sur {money(distributableCapital)} affectés</small>
         </article>
       </section>
       <section className="capital-envelope-section">
@@ -6068,24 +6081,46 @@ function CapitalPage({
             <span className="envelope-icon">↗</span>
             <span className="envelope-label">Montant de réinvestissement</span>
             <h3>{money(metrics.reinvestable)}</h3>
-            <p>Montant mobilisable aujourd’hui sans consommer les factures fournisseurs dues, les charges à payer ni la réserve de sécurité.</p>
-            <small>Affectation théorique : {money(metrics.reinvest)} · disponible protégé</small>
+            <p>Montant réellement réinvestissable aujourd’hui sans toucher aux fournisseurs, charges, réserve ni dépasser le bénéfice disponible.</p>
+            <small>Affectation théorique : {money(metrics.reinvest)} · financée à {fundingPercent}%</small>
           </article>
           <article className="capital-envelope-card salary-envelope">
             <span className="envelope-icon">◎</span>
-            <span className="envelope-label">Salaire personnel</span>
-            <h3>{money(personalSalary)}</h3>
-            <p>{allocationPolicy.salary}% de la marge commande positive encaissée affectés à votre rémunération personnelle.</p>
-            <small>Écritures automatiques · {allocationPolicy.salary}%</small>
+            <span className="envelope-label">Retirable personnel maintenant</span>
+            <h3>{money(metrics.salaryWithdrawable)}</h3>
+            <p>Part réellement retirable aujourd’hui après protection du magasin et plafonnement par le bénéfice net disponible.</p>
+            <small>Affectation théorique : {money(personalSalary)} · {allocationPolicy.salary}%</small>
           </article>
           <article className="capital-envelope-card emergency-envelope">
             <span className="envelope-icon">◇</span>
-            <span className="envelope-label">Fonds d’urgence</span>
-            <h3>{money(emergencyFund)}</h3>
-            <p>{allocationPolicy.emergency}% de la marge commande positive encaissée conservés pour les imprévus.</p>
-            <small>Écritures automatiques · {allocationPolicy.emergency}%</small>
+            <span className="envelope-label">Fonds d’urgence réellement couvert</span>
+            <h3>{money(metrics.emergencyAvailable)}</h3>
+            <p>Part de l’enveloppe urgence réellement couverte par le bénéfice disponible et la trésorerie libre.</p>
+            <small>Affectation théorique : {money(emergencyFund)} · {allocationPolicy.emergency}%</small>
           </article>
         </div>
+      </section>
+      <section className="panel capital-protection-panel">
+        <PanelHead kicker="Capital intelligent" title="Ce que vous pouvez réellement utiliser" total={money(metrics.cashBackedProfit)} />
+        <div className="financial-account-grid">
+          <article><span>Capital liquide réel</span><strong className={moneyTone(metrics.cash)}>{money(metrics.cash)}</strong><small>Argent estimé présent après rapprochement</small></article>
+          <article><span>Argent protégé</span><strong>{money(metrics.protectedTotal)}</strong><small>Fournisseurs + charges + réserve sécurité</small></article>
+          <article><span>Bénéfice disponible</span><strong className={moneyTone(metrics.cashBackedProfit)}>{money(metrics.cashBackedProfit)}</strong><small>Plafonné par le bénéfice net et le cash libre</small></article>
+          <article><span>Retirable personnel</span><strong className={moneyTone(metrics.salaryWithdrawable)}>{money(metrics.salaryWithdrawable)}</strong><small>Sans fragiliser les obligations du magasin</small></article>
+          <article><span>Réinvestissable</span><strong className={moneyTone(metrics.reinvestable)}>{money(metrics.reinvestable)}</strong><small>Disponible pour nouveaux achats / croissance</small></article>
+          <article><span>Cash libre non affecté</span><strong className={moneyTone(metrics.unallocatedFreeCash)}>{money(metrics.unallocatedFreeCash)}</strong><small>Reste après financement des enveloppes</small></article>
+        </div>
+        {metrics.protectionShortfall > 0 ? (
+          <div className="cashflow-callout warning">
+            <strong>{money(metrics.protectionShortfall)}</strong>
+            <span>manquent pour couvrir fournisseurs, charges et réserve. Salaire et réinvestissement restent donc bloqués.</span>
+          </div>
+        ) : (
+          <div className="cashflow-callout">
+            <strong>Protection couverte</strong>
+            <span>Les obligations connues et la réserve de sécurité sont couvertes par la trésorerie actuelle.</span>
+          </div>
+        )}
       </section>
       <section className="panel capital-pending-panel">
         <PanelHead kicker="Paiement à la livraison" title="Ventes livrées à encaisser" total={money(pendingTotal)} />
