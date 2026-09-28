@@ -365,7 +365,7 @@ type MonthlyClosing = {
   manualCapitalIn: number;
   manualCapitalOut: number;
   stockValueStart: number | null;
-  stockValueEnd: number;
+  stockValueEnd: number | null;
   stockValueSource: string;
   cashEnd: number;
   cashEndSource: string;
@@ -4742,15 +4742,12 @@ function MonthlyClosingPanel({
   const previousClosing = data.monthlyClosings.find((closing) => closing.monthKey === previousKey) || null;
   const existing = data.monthlyClosings.find((closing) => closing.monthKey === selectedMonth) || null;
   const latestInventory = [...data.inventorySessions]
-    .filter((session) => session.status === "Clôturé" && session.completedAt && businessDateKey(session.completedAt) <= bounds.end)
+    .filter((session) => session.status === "Clôturé" && session.completedAt && businessDateKey(session.completedAt) >= bounds.start && businessDateKey(session.completedAt) <= bounds.end)
     .sort((left, right) => String(right.completedAt).localeCompare(String(left.completedAt)))[0] || null;
-  const currentStockValue = data.products
-    .filter((product) => !product.archivedAt)
-    .reduce((sum, product) => sum + product.purchasePrice * product.stockQuantity, 0);
-  const stockValueEnd = latestInventory ? latestInventory.valueAfter : currentStockValue;
+  const stockValueEnd = latestInventory ? latestInventory.valueAfter : null;
   const stockValueSource = latestInventory
     ? `Inventaire ${latestInventory.sessionRef} · ${businessDateKey(latestInventory.completedAt || latestInventory.startedAt)}`
-    : "Catalogue actuel · estimation au moment de l’aperçu";
+    : "Aucun inventaire clôturé pendant ce mois";
   const latestDailyClosing = [...data.dailyClosings]
     .filter((closing) => closing.closeDate <= bounds.end)
     .sort((left, right) => right.closeDate.localeCompare(left.closeDate))[0] || null;
@@ -4866,10 +4863,10 @@ function MonthlyClosingPanel({
 
       <section className="monthly-closing-secondary-grid">
         <article className="panel">
-          <PanelHead kicker="Stock" title="Valeur immobilisée" total={money(view.stockValueEnd)} />
+          <PanelHead kicker="Stock" title="Valeur immobilisée" total={view.stockValueEnd === null ? "Non disponible" : money(view.stockValueEnd)} />
           <div className="monthly-snapshot-values">
             <div><span>Début du mois</span><strong>{view.stockValueStart === null ? "Non disponible" : money(view.stockValueStart)}</strong><small>{view.stockValueStart === null ? "Première clôture ou mois précédent non clôturé." : `Repris de la clôture ${previousKey}.`}</small></div>
-            <div><span>Fin du mois</span><strong>{money(view.stockValueEnd)}</strong><small>{view.stockValueSource}</small></div>
+            <div><span>Fin du mois</span><strong>{view.stockValueEnd === null ? "Non disponible" : money(view.stockValueEnd)}</strong><small>{view.stockValueSource}</small></div>
           </div>
         </article>
         <article className="panel">
@@ -4888,7 +4885,7 @@ function MonthlyClosingPanel({
           <div className="monthly-comparison-grid">
             <div><span>CA livré</span><strong className={moneyTone(delta(view.deliveredRevenue, previousClosing.deliveredRevenue))}>{delta(view.deliveredRevenue, previousClosing.deliveredRevenue) > 0 ? "+" : ""}{money(delta(view.deliveredRevenue, previousClosing.deliveredRevenue))}</strong></div>
             <div><span>Bénéfice net</span><strong className={moneyTone(delta(view.netProfit, previousClosing.netProfit))}>{delta(view.netProfit, previousClosing.netProfit) > 0 ? "+" : ""}{money(delta(view.netProfit, previousClosing.netProfit))}</strong></div>
-            <div><span>Valeur stock</span><strong className={moneyTone(delta(view.stockValueEnd, previousClosing.stockValueEnd))}>{delta(view.stockValueEnd, previousClosing.stockValueEnd) > 0 ? "+" : ""}{money(delta(view.stockValueEnd, previousClosing.stockValueEnd))}</strong></div>
+            <div><span>Valeur stock</span>{view.stockValueEnd === null || previousClosing.stockValueEnd === null ? <strong>Non comparable</strong> : <strong className={moneyTone(delta(view.stockValueEnd, previousClosing.stockValueEnd))}>{delta(view.stockValueEnd, previousClosing.stockValueEnd) > 0 ? "+" : ""}{money(delta(view.stockValueEnd, previousClosing.stockValueEnd))}</strong>}</div>
             <div><span>Trésorerie</span><strong className={moneyTone(delta(view.cashEnd, previousClosing.cashEnd))}>{delta(view.cashEnd, previousClosing.cashEnd) > 0 ? "+" : ""}{money(delta(view.cashEnd, previousClosing.cashEnd))}</strong></div>
           </div>
         </section>
@@ -4930,7 +4927,7 @@ function MonthlyClosingPanel({
                   <td>{money(closing.operatingExpenses)}</td>
                   <td>{money(closing.inventoryLoss)}</td>
                   <td className={moneyTone(closing.netProfit)}><strong>{money(closing.netProfit)}</strong></td>
-                  <td>{money(closing.stockValueEnd)}</td>
+                  <td>{closing.stockValueEnd === null ? "Non disponible" : money(closing.stockValueEnd)}</td>
                   <td>{money(closing.cashEnd)}</td>
                   <td>{closing.closedByName}<small>{closing.note || "—"}</small></td>
                 </tr>
