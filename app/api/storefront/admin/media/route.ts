@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       .bind(ownerType, ownerId, kind).first<{ count: number }>();
     const limit = ownerType === "brand" || ownerType === "marketing" ? 1 : GALLERY_LIMIT;
     if (Number(count?.count || 0) >= limit) {
-      if (ownerType === "brand") {
+      if (ownerType === "brand" || ownerType === "marketing") {
         await database.prepare("DELETE FROM storefront_media WHERE owner_type = ? AND owner_id = ? AND kind = ?").bind(ownerType, ownerId, kind).run();
       } else {
         throw new Error(`Maximum ${GALLERY_LIMIT} photos par produit ou pack.`);
