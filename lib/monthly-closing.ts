@@ -1,4 +1,4 @@
-import { businessDateKey, deliveryRecognitionDate } from "./accounting-dates";
+import { businessDateKey, deliveryRecognitionDate, returnRecognitionDate } from "./accounting-dates";
 
 export type MonthlyClosingOrder = {
   id: number;
@@ -10,6 +10,7 @@ export type MonthlyClosingOrder = {
   fees: number;
   returnCost: number;
   paidAt: string | null;
+  refundedAt?: string | null;
   createdAt: string;
   updatedAt?: string | null;
 };
@@ -143,29 +144,40 @@ export function buildMonthlyFinancialSnapshot({
   const { start, end } = monthBounds(monthKey);
 
   const delivered = orders.filter((order) => {
-    if (order.status !== "Livrée") return false;
     const recognizedAt = deliveryRecognitionDate(order, history);
     return Boolean(recognizedAt) && inPeriod(recognizedAt, start, end);
   });
-  const collected = orders.filter((order) => order.paymentStatus === "Encaissé" && inPeriod(order.paidAt, start, end));
+  const returned = orders.filter((order) => {
+    const deliveredAt = deliveryRecognitionDate(order, history);
+    const returnedAt = returnRecognitionDate(order.id, history);
+    return Boolean(deliveredAt) && Boolean(returnedAt) && inPeriod(returnedAt, start, end);
+  });
+  const collected = orders.filter((order) => inPeriod(order.paidAt, start, end));
+  const refunded = orders.filter((order) => inPeriod(order.refundedAt, start, end));
   const periodExpenses = expenses.filter((expense) => inPeriod(expense.expenseDate, start, end));
   const periodAds = ads.filter((ad) => inPeriod(ad.performanceDate, start, end));
   const periodInventory = inventoryCounts.filter((count) => inPeriod(count.createdAt, start, end));
   const periodCapital = capital.filter((entry) => inPeriod(entry.entryDate, start, end));
   const periodCarrier = carrierSettlements.filter((settlement) => inPeriod(settlement.settlementDate, start, end));
 
-  const deliveredRevenue = roundMoney(delivered.reduce((sum, order) => sum + Number(order.saleAmount || 0), 0));
+  const deliveredRevenue = roundMoney(
+    delivered.reduce((sum, order) => sum + Number(order.saleAmount || 0), 0)
+    - returned.reduce((sum, order) => sum + Number(order.saleAmount || 0), 0),
+  );
   const productCost = roundMoney(delivered.reduce((sum, order) => sum + Number(order.productCost || 0), 0));
   const shippingCost = roundMoney(delivered.reduce((sum, order) => sum + Number(order.shippingCost || 0), 0));
   const fees = roundMoney(delivered.reduce((sum, order) => sum + Number(order.fees || 0), 0));
-  const returnCost = roundMoney(delivered.reduce((sum, order) => sum + Number(order.returnCost || 0), 0));
+  const returnCost = roundMoney(returned.reduce((sum, order) => sum + Number(order.returnCost || 0), 0));
   const adSpend = roundMoney(periodAds.reduce((sum, ad) => sum + Number(ad.spend || 0), 0));
   const operatingExpenses = roundMoney(periodExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0));
   const inventoryLoss = roundMoney(periodInventory.reduce((sum, count) => sum + Math.max(0, Number(count.lossValue || 0)), 0));
   const carrierAdjustment = roundMoney(periodCarrier.reduce((sum, settlement) => sum + Number(settlement.differenceAmount || 0), 0));
   const contributionMargin = roundMoney(deliveredRevenue - productCost - shippingCost - fees - returnCost);
   const netProfit = roundMoney(contributionMargin - adSpend - operatingExpenses - inventoryLoss + carrierAdjustment);
-  const collectedAmount = roundMoney(collected.reduce((sum, order) => sum + Number(order.saleAmount || 0), 0));
+  const collectedAmount = roundMoney(
+    collected.reduce((sum, order) => sum + Number(order.saleAmount || 0), 0)
+    - refunded.reduce((sum, order) => sum + Number(order.saleAmount || 0), 0),
+  );
   const reinvestmentAllocated = roundMoney(periodCapital
     .filter((entry) => entry.isAutomatic && entry.category === "Réinvestissement")
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0));

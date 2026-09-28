@@ -32,8 +32,12 @@ function text(value: unknown, fallback = "") {
 }
 
 function positiveInt(value: unknown, fallback = 0) {
+  const isEmpty = value === undefined
+    || value === null
+    || (typeof value === "string" && value.trim() === "");
+  if (isEmpty) return fallback;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : fallback;
+  return Number.isFinite(parsed) && Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
 }
 
 function money(value: unknown, fallback = 0) {

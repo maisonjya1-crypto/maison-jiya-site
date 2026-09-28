@@ -44,7 +44,18 @@ export async function POST(request: Request) {
   const keys = payload.keys && typeof payload.keys === "object" ? payload.keys as Record<string, unknown> : {};
   const p256dh = text(keys.p256dh, 1000);
   const auth = text(keys.auth, 1000);
-  const expiration = payload.expirationTime == null ? null : new Date(Number(payload.expirationTime)).toISOString();
+  let expiration: string | null = null;
+  if (payload.expirationTime != null) {
+    const expirationMillis = Number(payload.expirationTime);
+    if (!Number.isFinite(expirationMillis)) {
+      return Response.json({ error: "Expiration push invalide." }, { status: 400 });
+    }
+    const expirationDate = new Date(expirationMillis);
+    if (Number.isNaN(expirationDate.getTime())) {
+      return Response.json({ error: "Expiration push invalide." }, { status: 400 });
+    }
+    expiration = expirationDate.toISOString();
+  }
   if (!endpoint.startsWith("https://")) return Response.json({ error: "Endpoint push invalide." }, { status: 400 });
 
   try {

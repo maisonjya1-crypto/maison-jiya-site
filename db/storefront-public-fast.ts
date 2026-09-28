@@ -7,6 +7,7 @@ type PublicProductRow = {
   name: string;
   category: string;
   salePrice: number;
+  stockQuantity: number;
   availabilityMode: string;
   badge: string;
   description: string;
@@ -25,6 +26,8 @@ type PublicMarketingRow = {
 type OfferItemRow = {
   offerId: number;
   productId: number;
+  quantity: number;
+  stockQuantity: number;
   category: string;
   availabilityMode: string;
   archivedAt: string | null;
@@ -72,6 +75,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
         COALESCE(NULLIF(s.public_name, ''), p.name) AS name,
         p.category,
         CASE WHEN s.public_price IS NULL OR s.public_price <= 0 THEN p.sale_price ELSE s.public_price END AS salePrice,
+        p.stock_quantity AS stockQuantity,
         COALESCE(s.availability_mode, 'available') AS availabilityMode,
         COALESCE(s.badge, '') AS badge,
         COALESCE(s.description, '') AS description
@@ -92,6 +96,8 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     `),
     database.prepare(`
       SELECT i.offer_id AS offerId, i.product_id AS productId,
+             i.quantity AS quantity,
+             p.stock_quantity AS stockQuantity,
              p.category AS category,
              COALESCE(s.availability_mode, 'available') AS availabilityMode,
              p.archived_at AS archivedAt
@@ -173,7 +179,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
   const contactWhatsapp = normalizeMoroccanPhone(settings.storefront_contact_whatsapp || "") || businessWhatsapp;
 
   const publicProducts = products.flatMap((product) => {
-    const available = product.availabilityMode !== "out_of_stock";
+    const available = product.stockQuantity > 0 && product.availabilityMode !== "out_of_stock";
     const firstImage = mediaByOwner.get(`product:${product.id}`);
     const salePrice = Math.max(0, Number(product.salePrice) || 0);
     // La boutique publique n'affiche jamais une fiche incomplète : la publication
@@ -199,7 +205,10 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
   const publicOffers = offers.flatMap((offer) => {
     const components = itemsByOffer.get(offer.id) || [];
     if (!components.length || components.some((item) => excludedPublicCategories.has(item.category) || item.archivedAt)) return [];
-    const available = components.every((item) => item.availabilityMode !== "out_of_stock");
+    const available = components.every((item) =>
+      item.availabilityMode !== "out_of_stock"
+      && item.stockQuantity >= item.quantity
+    );
     const firstImage = mediaByOwner.get(`offer:${offer.id}`);
     const salePrice = Math.max(0, Number(offer.price) || 0);
     if (!firstImage || !offer.name.trim() || salePrice <= 0) return [];

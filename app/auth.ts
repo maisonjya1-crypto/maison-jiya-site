@@ -149,9 +149,10 @@ async function recordFailure(username: string) {
   return nextBlock ? new Date(nextBlock).getTime() : 0;
 }
 
-export async function verifyLogin(rawUsername: string, password: string) {
+export async function verifyLogin(rawUsername: string, password: string, attemptScope = "") {
   const username = normalizeUsername(rawUsername);
-  const currentBlock = await blockedUntil(username);
+  const attemptKey = attemptScope ? `${attemptScope}:${username}` : username;
+  const currentBlock = await blockedUntil(attemptKey);
   if (currentBlock > Date.now()) {
     const minutes = Math.max(1, Math.ceil((currentBlock - Date.now()) / 60_000));
     throw new Error(`Trop d’essais. Réessayez dans ${minutes} minute(s).`);
@@ -170,10 +171,10 @@ export async function verifyLogin(rawUsername: string, password: string) {
     await passwordHash(password, dummySalt);
   }
   if (!row || !row.isActive || !constantTimeEqual(suppliedHash, row.passwordHash)) {
-    const newBlock = await recordFailure(username);
+    const newBlock = await recordFailure(attemptKey);
     throw new Error(newBlock > Date.now() ? "Trop d’essais incorrects. Accès bloqué pendant 15 minutes." : "Nom d’utilisateur ou mot de passe incorrect.");
   }
-  await db.delete(loginAttempts).where(eq(loginAttempts.username, username));
+  await db.delete(loginAttempts).where(eq(loginAttempts.username, attemptKey));
   return { id: row.id, username: row.username, displayName: row.displayName, role: row.role as AppUser["role"], isOwner: Boolean(row.isOwner) };
 }
 

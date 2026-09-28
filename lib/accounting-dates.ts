@@ -40,8 +40,13 @@ export function latestStatusDate(orderId: number, status: string, history: Accou
 }
 
 export function deliveryRecognitionDate(order: AccountingOrder, history: AccountingStatusEvent[]) {
-  if (order.status !== "Livrée") return null;
-  return latestStatusDate(order.id, "Livrée", history) || order.updatedAt || order.createdAt;
+  const historicalDelivery = latestStatusDate(order.id, "Livrée", history);
+  if (historicalDelivery) return historicalDelivery;
+  return order.status === "Livrée" ? order.updatedAt || order.createdAt : null;
+}
+
+export function returnRecognitionDate(orderId: number, history: AccountingStatusEvent[]) {
+  return latestStatusDate(orderId, "Retour", history);
 }
 
 export function paymentRecognitionDate(order: AccountingOrder) {

@@ -29,6 +29,45 @@ function validOrigin(request: Request) {
   const origin = request.headers.get("origin");
   return !origin || origin === new URL(request.url).origin;
 }
+
+const MAX_ORDER_BODY_BYTES = 32_000;
+
+async function readOrderPayload(request: Request) {
+  const declaredLength = Number(request.headers.get("content-length") || 0);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_ORDER_BODY_BYTES) {
+    throw new Error("PAYLOAD_TOO_LARGE");
+  }
+
+  if (!request.body) throw new Error("INVALID_JSON");
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > MAX_ORDER_BODY_BYTES) {
+      try { await reader.cancel(); } catch {}
+      throw new Error("PAYLOAD_TOO_LARGE");
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+  } catch {
+    throw new Error("INVALID_JSON");
+  }
+}
 function parseItems(value: unknown): RequestedCartItem[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > 30) throw new Error("Votre panier est invalide.");
   const grouped = new Map<string, RequestedCartItem>();
@@ -103,8 +142,14 @@ function allocateSale(items: Array<{ product: ProductRow; quantity: number; weig
 export async function POST(request: Request) {
   if (!validOrigin(request)) return Response.json({ error: "Requête refusée." }, { status: 403 });
   let payload: Record<string, unknown>;
-  try { payload = await request.json() as Record<string, unknown>; }
-  catch { return Response.json({ error: "Commande invalide." }, { status: 400 }); }
+  try {
+    payload = await readOrderPayload(request);
+  } catch (error) {
+    if (error instanceof Error && error.message === "PAYLOAD_TOO_LARGE") {
+      return Response.json({ error: "Requête trop volumineuse." }, { status: 413 });
+    }
+    return Response.json({ error: "Commande invalide." }, { status: 400 });
+  }
 
   try {
     if (text(payload.website, 100)) return Response.json({ ok: true, orderRef: "" });
