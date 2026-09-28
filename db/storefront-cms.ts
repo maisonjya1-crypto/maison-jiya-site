@@ -35,6 +35,21 @@ export type StorefrontOfferItemRow = {
   quantity: number;
 };
 
+export type StorefrontMarketingSectionRow = {
+  id: number;
+  eyebrow: string;
+  title: string;
+  body: string;
+  badge: string;
+  ctaLabel: string;
+  target: string;
+  placement: string;
+  isActive: number;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string | null;
+};
+
 export type StorefrontMediaRow = {
   id: number;
   ownerType: string;
@@ -123,6 +138,22 @@ export async function ensureStorefrontCms(database: D1Database) {
       )
     `),
     database.prepare(`
+      CREATE TABLE IF NOT EXISTS storefront_marketing_sections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+        eyebrow TEXT DEFAULT '' NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT DEFAULT '' NOT NULL,
+        badge TEXT DEFAULT '' NOT NULL,
+        cta_label TEXT DEFAULT 'Voir' NOT NULL,
+        target TEXT DEFAULT 'offers' NOT NULL,
+        placement TEXT DEFAULT 'after_categories' NOT NULL,
+        is_active INTEGER DEFAULT 1 NOT NULL,
+        sort_order INTEGER DEFAULT 0 NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        updated_at TEXT
+      )
+    `),
+    database.prepare(`
       CREATE TABLE IF NOT EXISTS storefront_media (
         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
         owner_type TEXT NOT NULL,
@@ -137,6 +168,7 @@ export async function ensureStorefrontCms(database: D1Database) {
     `),
     database.prepare("CREATE INDEX IF NOT EXISTS storefront_media_owner_idx ON storefront_media (owner_type, owner_id, sort_order, id)"),
     database.prepare("CREATE INDEX IF NOT EXISTS storefront_offer_items_offer_idx ON storefront_offer_items (offer_id)"),
+    database.prepare("CREATE INDEX IF NOT EXISTS storefront_marketing_sections_active_order_idx ON storefront_marketing_sections (is_active, placement, sort_order, id)"),
   ]);
 
   await ensureStorefrontGoogleSheetsSyncTriggers(database);
