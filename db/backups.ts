@@ -448,6 +448,7 @@ export type BusinessResetSummary = {
   supplierInvoices: number;
   supplierPayments: number;
   expenses: number;
+  recurringExpenses: number;
   ads: number;
   capital: number;
   orderHistory: number;
@@ -468,6 +469,7 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
     database.prepare("SELECT COUNT(*) AS count FROM supplier_invoices"),
     database.prepare("SELECT COUNT(*) AS count FROM supplier_payments"),
     database.prepare("SELECT COUNT(*) AS count FROM expenses"),
+    database.prepare("SELECT COUNT(*) AS count FROM recurring_expenses"),
     database.prepare("SELECT COUNT(*) AS count FROM ad_performance"),
     database.prepare("SELECT COUNT(*) AS count FROM capital_ledger"),
     database.prepare("SELECT COUNT(*) AS count FROM order_status_history"),
@@ -482,11 +484,12 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
     supplierInvoices: countFromResult(counts[3]),
     supplierPayments: countFromResult(counts[4]),
     expenses: countFromResult(counts[5]),
-    ads: countFromResult(counts[6]),
-    capital: countFromResult(counts[7]),
-    orderHistory: countFromResult(counts[8]),
-    carrierEvents: countFromResult(counts[9]),
-    carrierSettlements: countFromResult(counts[10]),
+    recurringExpenses: countFromResult(counts[6]),
+    ads: countFromResult(counts[7]),
+    capital: countFromResult(counts[8]),
+    orderHistory: countFromResult(counts[9]),
+    carrierEvents: countFromResult(counts[10]),
+    carrierSettlements: countFromResult(counts[11]),
   };
 
   // Filet de sécurité : une copie restaurable est créée avant toute remise à zéro.
@@ -510,6 +513,7 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
     database.prepare("DELETE FROM supplier_invoices"),
     database.prepare("DELETE FROM purchases"),
     database.prepare("DELETE FROM expenses"),
+    database.prepare("DELETE FROM recurring_expenses"),
     database.prepare("DELETE FROM ad_performance"),
   ]);
 
