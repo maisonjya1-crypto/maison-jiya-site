@@ -5786,7 +5786,7 @@ function ReportsPage({ data }: { data: Data }) {
     const recentOutbound = data.stockMovements.some((movement) => movement.productId === product.id && ["Commande", "Vente", "Inventaire -"].includes(movement.movementType) && elapsedDays(movement.createdAt) < 45);
     return !recentOutbound;
   });
-  const treasury = calculateTreasuryAccounts({
+  const theoreticalTreasury = calculateTreasuryAccounts({
     orders: data.orders,
     purchases: data.purchases,
     supplierPayments: data.supplierPayments,
@@ -5795,6 +5795,7 @@ function ReportsPage({ data }: { data: Data }) {
     capital: data.capital,
     carrierSettlementAdjustment: data.carrierSettlements.reduce((sum, settlement) => sum + settlement.differenceAmount, 0),
   });
+  const treasury = applyTreasuryReconciliation(theoreticalTreasury, data.dailyClosings[0] || null);
   const storeCash = treasury.cash;
   const bank = treasury.bank;
   const otherAccounts = treasury.other;
