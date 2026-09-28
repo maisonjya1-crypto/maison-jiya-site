@@ -114,11 +114,15 @@ async function readRows(database: D1Database, table: string, where = "") {
   return result.results;
 }
 
-async function readOptionalRows(database: D1Database, table: string) {
+async function tableExists(database: D1Database, table: string) {
   const existing = await database.prepare(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
   ).bind(table).first<{ name: string }>();
-  if (!existing?.name) return undefined;
+  return Boolean(existing?.name);
+}
+
+async function readOptionalRows(database: D1Database, table: string) {
+  if (!await tableExists(database, table)) return undefined;
   return readRows(database, table);
 }
 
@@ -345,6 +349,7 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
   if (!row) throw new Error("Sauvegarde introuvable.");
 
   const { snapshot } = inspectSnapshot(row.snapshot_json);
+  const hasRecurringExpensesTable = await tableExists(database, TABLES.recurringExpenses);
 
   const insertionOrder: Array<keyof BusinessSnapshot["tables"]> = [
     "settings", "customers", "products", "suppliers", "purchases", "supplierInvoices", "supplierPayments", "recurringExpenses", "expenses", "ads", "capital", "orders", "stockMovements",
@@ -354,6 +359,7 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
   const inserts = insertionOrder.flatMap((tableKey) => {
     const rows = snapshot.tables[tableKey];
     // Ces tables n'existaient pas dans les premières sauvegardes v1.
+    if (tableKey === "recurringExpenses" && !hasRecurringExpensesTable) return [];
     if (rows === undefined && ["inventorySessions", "inventoryCounts", "suppliers", "supplierInvoices", "supplierPayments", "carrierEvents", "carrierSettlements", "carrierSettlementOrders", "recurringExpenses", "expenses", "dailyClosings", "monthlyClosings", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"].includes(tableKey)) return [];
     if (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
       throw new Error("Format de sauvegarde incompatible.");
@@ -390,7 +396,7 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
     database.prepare("DELETE FROM purchases"),
     ...(restoreSuppliers ? [database.prepare("DELETE FROM suppliers")] : []),
     database.prepare("DELETE FROM expenses"),
-    database.prepare("DELETE FROM recurring_expenses"),
+    ...(hasRecurringExpensesTable ? [database.prepare("DELETE FROM recurring_expenses")] : []),
     database.prepare("DELETE FROM ad_performance"),
     database.prepare("DELETE FROM capital_ledger"),
     database.prepare("DELETE FROM products"),
@@ -464,6 +470,7 @@ function countFromResult(result: D1Result<unknown> | undefined) {
 }
 
 export async function resetBusinessValuesPreservingStock(database: D1Database): Promise<BusinessResetSummary> {
+  const hasRecurringExpensesTable = await tableExists(database, TABLES.recurringExpenses);
   const counts = await database.batch([
     database.prepare("SELECT COUNT(*) AS count FROM orders"),
     database.prepare("SELECT COUNT(*) AS count FROM customers"),
@@ -471,7 +478,7 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
     database.prepare("SELECT COUNT(*) AS count FROM supplier_invoices"),
     database.prepare("SELECT COUNT(*) AS count FROM supplier_payments"),
     database.prepare("SELECT COUNT(*) AS count FROM expenses"),
-    database.prepare("SELECT COUNT(*) AS count FROM recurring_expenses"),
+    ...(hasRecurringExpensesTable ? [database.prepare("SELECT COUNT(*) AS count FROM recurring_expenses")] : []),
     database.prepare("SELECT COUNT(*) AS count FROM ad_performance"),
     database.prepare("SELECT COUNT(*) AS count FROM capital_ledger"),
     database.prepare("SELECT COUNT(*) AS count FROM order_status_history"),
@@ -479,19 +486,21 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
     database.prepare("SELECT COUNT(*) AS count FROM carrier_settlements"),
   ]);
 
+  let countIndex = 0;
+  const nextCount = () => countFromResult(counts[countIndex++]);
   const summary: BusinessResetSummary = {
-    orders: countFromResult(counts[0]),
-    customers: countFromResult(counts[1]),
-    purchases: countFromResult(counts[2]),
-    supplierInvoices: countFromResult(counts[3]),
-    supplierPayments: countFromResult(counts[4]),
-    expenses: countFromResult(counts[5]),
-    recurringExpenses: countFromResult(counts[6]),
-    ads: countFromResult(counts[7]),
-    capital: countFromResult(counts[8]),
-    orderHistory: countFromResult(counts[9]),
-    carrierEvents: countFromResult(counts[10]),
-    carrierSettlements: countFromResult(counts[11]),
+    orders: nextCount(),
+    customers: nextCount(),
+    purchases: nextCount(),
+    supplierInvoices: nextCount(),
+    supplierPayments: nextCount(),
+    expenses: nextCount(),
+    recurringExpenses: hasRecurringExpensesTable ? nextCount() : 0,
+    ads: nextCount(),
+    capital: nextCount(),
+    orderHistory: nextCount(),
+    carrierEvents: nextCount(),
+    carrierSettlements: nextCount(),
   };
 
   // Filet de sécurité : une copie restaurable est créée avant toute remise à zéro.
@@ -515,7 +524,7 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
     database.prepare("DELETE FROM supplier_invoices"),
     database.prepare("DELETE FROM purchases"),
     database.prepare("DELETE FROM expenses"),
-    database.prepare("DELETE FROM recurring_expenses"),
+    ...(hasRecurringExpensesTable ? [database.prepare("DELETE FROM recurring_expenses")] : []),
     database.prepare("DELETE FROM ad_performance"),
   ]);
 
