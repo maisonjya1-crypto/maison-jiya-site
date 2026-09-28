@@ -6049,7 +6049,7 @@ function CapitalPage({
               Charges réservées<strong>{money(metrics.unpaidOperatingExpenses)}</strong>
             </p>
             <p>
-              Réserve de sécurité<strong>{money(metrics.safetyReserve)}</strong>
+              Réserve protégée<strong>{money(metrics.safetyReserve)}</strong>
             </p>
             <p>
               Cash libre après protection<strong className={moneyTone(metrics.freeCashAfterProtection)}>{money(metrics.freeCashAfterProtection)}</strong>
