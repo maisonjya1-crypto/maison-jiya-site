@@ -12,6 +12,7 @@ import { buildPurchasePlan, type PurchasePlanSupplierGroup } from "../lib/purcha
 import { buildCashflowForecast } from "../lib/cashflow-forecast";
 import { buildMonthlyFinancialSnapshot, isCompletedBusinessMonth, monthBounds, previousMonthKey } from "../lib/monthly-closing";
 import { calculateSmartCapital } from "../lib/smart-capital";
+import { buildDashboardPilotage } from "../lib/dashboard-pilotage";
 
 type Order = {
   id: number;
@@ -1597,6 +1598,11 @@ function Page({
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
 }) {
   const allocationPolicy = allocationPolicyFromSettings(data.settings);
+  const pilotage = buildDashboardPilotage({
+    orders: data.orders,
+    expenses: data.expenses,
+    ads: data.ads,
+  });
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Inventaire") return <InventoryPage products={data.products} sessions={data.inventorySessions} counts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} />;
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} onRestore={restoreProduct} />;
@@ -1678,6 +1684,59 @@ function Page({
         <Kpi label="Dépenses Meta saisies" value={money(metrics.adSpend)} detail={`ROAS · ${metrics.roas.toFixed(2)}×`} />
         <Kpi label="Pertes & retours" value={money(metrics.losses)} detail="Coûts déclarés" danger />
       </section>
+      <section className="pilotage-grid">
+        <article className="panel pilotage-priorities-panel">
+          <PanelHead kicker="Pilotage du jour" title="À traiter maintenant" />
+          <div className="pilotage-action-list">
+            <button type="button" className="pilotage-action-row" onClick={() => setActive("Commandes")}>
+              <span><strong>Commandes en attente</strong><small>À confirmer avec les clientes</small></span>
+              <span><b>{pilotage.pendingOrders}</b><small>{money(pilotage.pendingValue)}</small></span>
+            </button>
+            <button type="button" className="pilotage-action-row" onClick={() => setActive("Commandes")}>
+              <span><strong>Confirmées à préparer</strong><small>Commandes prêtes pour la préparation</small></span>
+              <span><b>{pilotage.confirmedOrders}</b><small>{money(pilotage.confirmedValue)}</small></span>
+            </button>
+            <button type="button" className="pilotage-action-row" onClick={() => setActive("Colis")}>
+              <span><strong>Colis en transit</strong><small>Expédiés ou en livraison</small></span>
+              <span><b>{pilotage.transitOrders}</b><small>Suivre →</small></span>
+            </button>
+            <button type="button" className="pilotage-action-row" onClick={() => setActive("Factures fournisseurs")}>
+              <span><strong>Fournisseurs à payer</strong><small>Montant encore dû</small></span>
+              <span><b>{money(metrics.unpaidPurchases)}</b><small>Factures →</small></span>
+            </button>
+            <button type="button" className="pilotage-action-row" onClick={() => setActive("Dépenses")}>
+              <span><strong>Charges à payer</strong><small>Dépenses d’exploitation non réglées</small></span>
+              <span><b>{money(metrics.unpaidOperatingExpenses)}</b><small>Dépenses →</small></span>
+            </button>
+          </div>
+          <div className="pilotage-month-strip">
+            <span><small>Dépenses du mois</small><strong>{money(pilotage.monthExpenses)}</strong></span>
+            <span><small>Publicité du mois</small><strong>{money(pilotage.monthAdSpend)}</strong></span>
+            <button type="button" onClick={() => setActive("Rapports")}>Voir les rapports →</button>
+          </div>
+        </article>
+
+        <article className="panel pilotage-top-sales-panel">
+          <PanelHead kicker="Ventes livrées" title="Top produits & offres" action="Rapports →" onClick={() => setActive("Rapports")} />
+          {pilotage.topDeliveredSales.length ? (
+            <div className="pilotage-top-list">
+              {pilotage.topDeliveredSales.map((item, index) => (
+                <div className="pilotage-top-row" key={item.label}>
+                  <span className="pilotage-rank">{String(index + 1).padStart(2, "0")}</span>
+                  <div>
+                    <strong>{item.label}</strong>
+                    <small>{item.orders} commande{item.orders > 1 ? "s" : ""} livrée{item.orders > 1 ? "s" : ""}</small>
+                  </div>
+                  <b>{money(item.revenue)}</b>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="pilotage-empty">Les meilleures ventes apparaîtront ici dès qu’une commande sera livrée.</p>
+          )}
+        </article>
+      </section>
+
       <section className="content-grid">
         <article className="panel orders-panel">
           <PanelHead kicker="Opérations" title="Commandes récentes" action="Voir tout →" onClick={() => setActive("Commandes")} />
