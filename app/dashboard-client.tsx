@@ -4844,7 +4844,7 @@ function CarrierSettlementsPage({
   const eligibleOrders = useMemo(() => data.orders
     .filter((order) =>
       order.status === "Livrée"
-      && order.paymentStatus === "À encaisser"
+      && ["À encaisser", "Encaissé"].includes(order.paymentStatus)
       && order.fulfillmentType !== "Magasin physique"
       && Boolean(order.carrier?.trim())
       && order.carrier !== "Non affecté"
@@ -4875,7 +4875,8 @@ function CarrierSettlementsPage({
   const expectedAmount = selectedOrders.reduce((sum, order) => sum + Math.max(0, order.saleAmount - order.shippingCost - order.fees), 0);
   const parsedActual = Math.max(0, Number(actualAmount.replace(",", ".")) || 0);
   const difference = Math.round((parsedActual - expectedAmount + Number.EPSILON) * 100) / 100;
-  const pendingTotal = eligibleOrders.reduce((sum, order) => sum + Math.max(0, order.saleAmount - order.shippingCost - order.fees), 0);
+  const pendingOrders = eligibleOrders.filter((order) => order.paymentStatus === "À encaisser");
+  const pendingTotal = pendingOrders.reduce((sum, order) => sum + Math.max(0, order.saleAmount - order.shippingCost - order.fees), 0);
   const unresolved = data.carrierSettlements.filter((settlement) => settlement.status === "À vérifier");
   const historicalDifference = data.carrierSettlements.reduce((sum, settlement) => sum + settlement.differenceAmount, 0);
   const autoPaidOutsideSettlement = data.orders.filter((order) =>
@@ -4942,7 +4943,7 @@ function CarrierSettlementsPage({
       </section>
 
       <section className="kpi-grid">
-        <Kpi label="À recevoir des transporteurs" value={money(pendingTotal)} detail={`${eligibleOrders.length} commande(s) livrée(s) à rapprocher`} danger={pendingTotal > 0} />
+        <Kpi label="À recevoir des transporteurs" value={money(pendingTotal)} detail={`${pendingOrders.length} commande(s) pas encore encaissée(s)`} danger={pendingTotal > 0} />
         <Kpi label="Règlements rapprochés" value={String(data.carrierSettlements.length - unresolved.length)} detail={`${data.carrierSettlements.length} règlement(s) enregistrés`} />
         <Kpi label="Écarts à vérifier" value={String(unresolved.length)} detail={money(unresolved.reduce((sum, settlement) => sum + Math.abs(settlement.differenceAmount), 0))} danger={unresolved.length > 0} />
         <Kpi label="Impact cash cumulé" value={money(historicalDifference)} detail="Différence reçu réel − montant attendu" danger={historicalDifference < 0} />
@@ -4984,7 +4985,7 @@ function CarrierSettlementsPage({
                 return (
                   <label key={order.id} className={selected ? "selected" : ""}>
                     <input type="checkbox" checked={selected} onChange={() => toggleOrder(order.id)} />
-                    <span><strong>{order.orderRef}</strong><small>{order.customerName || "Cliente"} · {order.trackingNumber || "sans suivi"}</small></span>
+                    <span><strong>{order.orderRef}</strong><small>{order.customerName || "Cliente"} · {order.trackingNumber || "sans suivi"} · {order.paymentStatus === "Encaissé" ? "déjà marqué encaissé par API" : "à encaisser"}</small></span>
                     <span><small>Vente</small><strong>{money(order.saleAmount)}</strong></span>
                     <span><small>Livraison + frais</small><strong>{money(order.shippingCost + order.fees)}</strong></span>
                     <span><small>À recevoir</small><strong>{money(expected)}</strong></span>
@@ -5035,7 +5036,7 @@ function CarrierSettlementsPage({
       {autoPaidOutsideSettlement.length ? (
         <section className="panel carrier-auto-paid-panel">
           <PanelHead kicker="Automatique" title="Encaissements détectés par les API" total={String(autoPaidOutsideSettlement.length)} />
-          <p className="profitability-note">Ces commandes ont déjà été marquées encaissées automatiquement par Sendit ou ForceLog avant le rapprochement manuel. Elles ne sont pas comptées une deuxième fois dans les règlements ci-dessus.</p>
+          <p className="profitability-note">Ces commandes ont déjà été marquées encaissées par Sendit ou ForceLog. Vous pouvez maintenant les sélectionner dans le rapprochement ci-dessus pour vérifier le montant réellement reçu en banque, sans compter l’argent deux fois.</p>
           <div className="carrier-auto-paid-grid">
             {autoPaidOutsideSettlement.slice(0, 20).map((order) => <article key={order.id}><strong>{order.orderRef}</strong><small>{order.carrier} · {order.carrierInvoiceCode}</small><span>{money(Math.max(0, order.saleAmount - order.shippingCost - order.fees))}</span></article>)}
           </div>
