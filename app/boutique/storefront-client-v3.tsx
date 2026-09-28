@@ -188,7 +188,7 @@ function SafeImage({ src, alt, fallback, priority = false }: { src: string; alt:
 
 function ProductCard({ item, lang, t, add, priority = false }: { item: CatalogItem; lang: StorefrontLanguage; t: Copy; add: (item: CatalogItem) => void; priority?: boolean }) {
   const fallback = <div className="storefront-v3-image-fallback"><b>{item.category.slice(0, 1).toUpperCase()}</b><small>{categoryCopy[lang][item.category] || item.category}</small></div>;
-  return <article id={item.kind === "offer" ? `offer-${item.id}` : undefined} className={`storefront-v3-product ${!item.available ? "is-unavailable" : ""}`}>
+  return <article className={`storefront-v3-product ${!item.available ? "is-unavailable" : ""}`}>
     <div className="storefront-v3-product-media">
       {item.images[0] ? <SafeImage src={item.images[0]} alt={item.name} fallback={fallback} priority={priority} /> : fallback}
       {item.badge && <em>{item.badge}</em>}
@@ -300,6 +300,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
 
   const products = catalog?.products ?? [];
   const offers = catalog?.offers ?? [];
+  const promotion = catalog?.promotionBanner;
   const items = useMemo(() => [...offers, ...products], [offers, products]);
   const filtered = useMemo(() => {
     const clean = normalize(query.trim());
@@ -311,7 +312,9 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   }, [category, items, query]);
   const visibleItems = filtered.slice(0, visibleCount);
   const bestSellers = products.filter((item) => isBestSeller(item.badge)).slice(0, 8);
-  const weekly = (offers.length ? offers : products).slice(0, 8);
+  const promotedOffer = promotion?.offerId ? offers.find((item) => item.id === promotion.offerId) : undefined;
+  const weeklyOffers = promotedOffer ? [promotedOffer, ...offers.filter((item) => item.id !== promotedOffer.id)] : offers;
+  const weekly = (weeklyOffers.length ? weeklyOffers : products).slice(0, 8);
   const collectionCategories = (catalog?.categories || []).filter((item) => item !== "Packs & offres").slice(0, 6);
 
   const cartLines = useMemo(() => Object.entries(cart).map(([key, quantity]) => {
@@ -386,8 +389,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const waUrl = waDigits ? `https://wa.me/${waDigits}?text=${encodeURIComponent(waMessage)}` : "";
   const announcement = localized?.announcement || t.freeDelivery;
   const strip = catalog?.brandStrip?.length ? catalog.brandStrip : [brand, "MONTRES", "BIJOUX", "PORTEFEUILLES", "PACKS"];
-  const promotion = catalog?.promotionBanner;
-  const promotionTarget = promotion?.offerId ? `#offer-${promotion.offerId}` : offers.length ? "#offres" : "#catalogue";
+  const promotionTarget = offers.length ? "#offres" : "#catalogue";
 
   return <main className="storefront-v3 storefront-shell" dir={lang === "ar" ? "rtl" : "ltr"}>
     <div className="storefront-v3-marquee" aria-label={announcement}>
