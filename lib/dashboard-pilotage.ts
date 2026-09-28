@@ -32,8 +32,6 @@ export type DashboardPilotage = {
   confirmedOrders: number;
   confirmedValue: number;
   transitOrders: number;
-  deliveredThisMonth: number;
-  deliveredRevenueThisMonth: number;
   monthExpenses: number;
   monthAdSpend: number;
   topDeliveredSales: PilotageTopSale[];
@@ -64,10 +62,6 @@ export function buildDashboardPilotage({
   const pending = orders.filter((order) => order.status === "En attente");
   const confirmed = orders.filter((order) => order.status === "Confirmée");
   const transit = orders.filter((order) => order.status === "Expédiée" || order.status === "En livraison");
-  const deliveredThisMonthRows = orders.filter(
-    (order) => order.status === "Livrée" && monthKeyFromBusinessDate(order.createdAt) === currentMonth,
-  );
-
   const topSales = new Map<string, PilotageTopSale>();
   for (const order of orders) {
     if (order.status !== "Livrée") continue;
@@ -84,8 +78,6 @@ export function buildDashboardPilotage({
     confirmedOrders: confirmed.length,
     confirmedValue: confirmed.reduce((sum, order) => sum + amount(order.saleAmount), 0),
     transitOrders: transit.length,
-    deliveredThisMonth: deliveredThisMonthRows.length,
-    deliveredRevenueThisMonth: deliveredThisMonthRows.reduce((sum, order) => sum + amount(order.saleAmount), 0),
     monthExpenses: expenses
       .filter((expense) => monthKeyFromBusinessDate(expense.expenseDate) === currentMonth)
       .reduce((sum, expense) => sum + amount(expense.amount), 0),
