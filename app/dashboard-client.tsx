@@ -10,6 +10,7 @@ import { calculateTreasuryAccounts } from "../lib/treasury";
 import { buildSupplierStatement, type SupplierStatementEntry } from "../lib/supplier-statement";
 import { buildPurchasePlan, type PurchasePlanSupplierGroup } from "../lib/purchase-plan";
 import { buildCashflowForecast } from "../lib/cashflow-forecast";
+import { buildMonthlyFinancialSnapshot, isCompletedBusinessMonth, monthBounds, previousMonthKey } from "../lib/monthly-closing";
 
 type Order = {
   id: number;
@@ -342,6 +343,37 @@ type DailyClosingPreview = {
   paidExpensesAmount: number;
   adSpend: number;
 };
+type MonthlyClosing = {
+  id: number;
+  monthKey: string;
+  periodStart: string;
+  periodEnd: string;
+  deliveredOrders: number;
+  deliveredRevenue: number;
+  collectedAmount: number;
+  productCost: number;
+  shippingCost: number;
+  fees: number;
+  returnCost: number;
+  adSpend: number;
+  operatingExpenses: number;
+  inventoryLoss: number;
+  carrierAdjustment: number;
+  contributionMargin: number;
+  netProfit: number;
+  reinvestmentAllocated: number;
+  manualCapitalIn: number;
+  manualCapitalOut: number;
+  stockValueStart: number | null;
+  stockValueEnd: number;
+  stockValueSource: string;
+  cashEnd: number;
+  cashEndSource: string;
+  note: string;
+  closedByUserId: number | null;
+  closedByName: string;
+  createdAt: string;
+};
 type SmartStockRecommendation = {
   productId: number;
   productCode: string;
@@ -415,6 +447,7 @@ type Data = {
   auditLogs: AuditLog[];
   backups: DailyBackup[];
   dailyClosings: DailyClosing[];
+  monthlyClosings: MonthlyClosing[];
   dailyClosingPreview: DailyClosingPreview;
   stockRecommendations: SmartStockRecommendation[];
   googleSheetsSync: GoogleSheetsSync;
@@ -474,6 +507,7 @@ const emptyData: Data = {
   auditLogs: [],
   backups: [],
   dailyClosings: [],
+  monthlyClosings: [],
   dailyClosingPreview: {
     closeDate: "",
     expectedBank: 0,
@@ -1426,7 +1460,7 @@ function Page({
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Trésorerie") return <CashflowForecastPage data={data} metrics={metrics} />;
-  if (active === "Clôture") return <DailyClosingPage data={data} submit={submit} />;
+  if (active === "Clôture") return <DailyClosingPage data={data} currentCash={metrics.cash} submit={submit} />;
   if (active === "Rapports") return <ReportsPage data={data} />;
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
   if (active === "Mode entraînement") return <TrainingPage onExit={() => setActive("Vue d’ensemble")} />;
