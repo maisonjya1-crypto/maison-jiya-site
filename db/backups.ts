@@ -496,6 +496,8 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
     database.prepare("DELETE FROM carrier_settlement_orders"),
     database.prepare("DELETE FROM carrier_settlements"),
     database.prepare("DELETE FROM carrier_events"),
+    database.prepare("DELETE FROM daily_closings"),
+    database.prepare("DELETE FROM monthly_closings"),
     database.prepare("DELETE FROM capital_ledger"),
     database.prepare("DELETE FROM orders"),
     database.prepare("DELETE FROM customers"),
