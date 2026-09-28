@@ -5,7 +5,7 @@ import type { CatalogItem, StorefrontCatalog, StorefrontLanguage } from "./store
 
 type Cart = Record<string, number>;
 type FbqFunction = ((...args: unknown[]) => void) & { queue?: unknown[][]; loaded?: boolean; version?: string };
-type FbqWindow = Window & { fbq?: FbqFunction; _fbq?: FbqFunction };
+type FbqWindow = Window & { fbq?: FbqFunction; _fbq?: FbqFunction; __maisonJiyaPixels?: Record<string, boolean> };
 type ImageState = { src: string; attempt: number; failed: boolean };
 
 type Copy = {
@@ -134,8 +134,10 @@ function track(event: string, data?: Record<string, unknown>) {
 }
 
 function enableMetaPixel(pixelId: string) {
-  if (!pixelId || typeof window === "undefined") return;
+  if (!pixelId || typeof window === "undefined") return false;
   const target = window as FbqWindow;
+  target.__maisonJiyaPixels = target.__maisonJiyaPixels || {};
+  if (target.__maisonJiyaPixels[pixelId]) return false;
   if (!target.fbq) {
     const fbq = ((...args: unknown[]) => { fbq.queue = fbq.queue || []; fbq.queue.push(args); }) as FbqFunction;
     fbq.loaded = true;
@@ -150,6 +152,26 @@ function enableMetaPixel(pixelId: string) {
   }
   target.fbq?.("init", pixelId);
   target.fbq?.("track", "PageView");
+  target.__maisonJiyaPixels[pixelId] = true;
+  return true;
+}
+
+function trackPurchaseOnce(orderRef: string, total: number, lines: Array<{ item: CatalogItem; quantity: number }>) {
+  if (!orderRef || typeof window === "undefined" || !(window as FbqWindow).fbq) return;
+  const storageKey = `maison-jiya-meta-purchase:${orderRef}`;
+  try {
+    if (localStorage.getItem(storageKey)) return;
+  } catch { /* le tracking reste facultatif */ }
+  track("Purchase", {
+    value: total,
+    currency: "MAD",
+    content_type: "product",
+    content_ids: lines.map((line) => line.item.productCode),
+    contents: lines.map((line) => ({ id: line.item.productCode, quantity: line.quantity, item_price: line.item.salePrice })),
+    num_items: lines.reduce((sum, line) => sum + line.quantity, 0),
+    order_id: orderRef,
+  });
+  try { localStorage.setItem(storageKey, "1"); } catch { /* le tracking reste facultatif */ }
 }
 
 function SafeImage({ src, alt, fallback, priority = false }: { src: string; alt: string; fallback: ReactNode; priority?: boolean }) {
@@ -252,13 +274,18 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   useEffect(() => {
     if (initialCatalog) {
       lastRefreshAt.current = Date.now();
-      enableMetaPixel(initialCatalog.metaPixelId || "");
-      track("ViewContent", { content_name: "Maison Jiya Boutique" });
       return;
     }
     const timer = window.setTimeout(() => void refreshCatalog(true), 0);
     return () => window.clearTimeout(timer);
   }, [initialCatalog, refreshCatalog]);
+
+  useEffect(() => {
+    const pixelId = catalog?.metaPixelId || "";
+    if (pixelId && enableMetaPixel(pixelId)) {
+      track("ViewContent", { content_name: "Maison Jiya Boutique", content_type: "product_group" });
+    }
+  }, [catalog?.metaPixelId]);
 
   useEffect(() => {
     const refreshIfNeeded = () => {
@@ -273,6 +300,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
 
   const products = catalog?.products ?? [];
   const offers = catalog?.offers ?? [];
+  const promotion = catalog?.promotionBanner;
   const items = useMemo(() => [...offers, ...products], [offers, products]);
   const filtered = useMemo(() => {
     const clean = normalize(query.trim());
@@ -284,7 +312,9 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   }, [category, items, query]);
   const visibleItems = filtered.slice(0, visibleCount);
   const bestSellers = products.filter((item) => isBestSeller(item.badge)).slice(0, 8);
-  const weekly = (offers.length ? offers : products).slice(0, 8);
+  const promotedOffer = promotion?.offerId ? offers.find((item) => item.id === promotion.offerId) : undefined;
+  const weeklyOffers = promotedOffer ? [promotedOffer, ...offers.filter((item) => item.id !== promotedOffer.id)] : offers;
+  const weekly = (weeklyOffers.length ? weeklyOffers : products).slice(0, 8);
   const collectionCategories = (catalog?.categories || []).filter((item) => item !== "Packs & offres").slice(0, 6);
 
   const cartLines = useMemo(() => Object.entries(cart).map(([key, quantity]) => {
@@ -340,10 +370,12 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       const body = await response.json() as { error?: string; orderRef?: string; total?: number };
       if (!response.ok) throw new Error(body.error || t.orderFailed);
       const orderRef = body.orderRef || "";
-      setConfirmation({ orderRef, total: Number(body.total ?? total) });
+      const orderTotal = Number(body.total ?? total);
+      trackPurchaseOnce(orderRef, orderTotal, cartLines);
+      setConfirmation({ orderRef, total: orderTotal });
       setCart({});
       setCheckoutOpen(false);
-      track("Lead", { value: Number(body.total ?? total), currency: "MAD", content_name: "Commande COD" });
+      track("Lead", { value: orderTotal, currency: "MAD", content_name: "Commande COD", order_id: orderRef });
     } catch {
       setSubmitError(t.orderFailed);
     } finally {
@@ -357,6 +389,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const waUrl = waDigits ? `https://wa.me/${waDigits}?text=${encodeURIComponent(waMessage)}` : "";
   const announcement = localized?.announcement || t.freeDelivery;
   const strip = catalog?.brandStrip?.length ? catalog.brandStrip : [brand, "MONTRES", "BIJOUX", "PORTEFEUILLES", "PACKS"];
+  const promotionTarget = offers.length ? "#offres" : "#catalogue";
 
   return <main className="storefront-v3 storefront-shell" dir={lang === "ar" ? "rtl" : "ltr"}>
     <div className="storefront-v3-marquee" aria-label={announcement}>
@@ -376,6 +409,12 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         <button className="storefront-v3-cart-button" type="button" onClick={() => setCartOpen(true)} aria-label={t.cart}>♡ <span>{t.cart}</span><b>{itemCount}</b></button>
       </div>
     </header>
+
+    {promotion?.enabled && (promotion.title || promotion.text) && <aside className="storefront-v3-promotion-bar" aria-label={promotion.title || promotion.badge}>
+      <span>{promotion.badge || "OFFRE"}</span>
+      <div><strong>{promotion.title}</strong>{promotion.text && <small>{promotion.text}</small>}</div>
+      <a href={promotionTarget}>{promotion.ctaLabel || t.offers} →</a>
+    </aside>}
 
     <section className={`storefront-v3-hero ${catalog?.heroImageUrl ? "has-image" : ""}`}>
       {catalog?.heroImageUrl && <div className="storefront-v3-hero-media"><SafeImage src={catalog.heroImageUrl} alt={`${brand} collection`} priority fallback={<div className="storefront-v3-hero-fallback">MJ</div>} /></div>}

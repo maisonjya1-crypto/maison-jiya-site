@@ -23,6 +23,15 @@ export type StorefrontLocaleCopy = {
   shippingNote: string;
 };
 
+export type StorefrontPromotionBanner = {
+  enabled: boolean;
+  badge: string;
+  title: string;
+  text: string;
+  ctaLabel: string;
+  offerId: number | null;
+};
+
 export type StorefrontCatalog = {
   brand: string;
   announcement: string;
@@ -30,6 +39,7 @@ export type StorefrontCatalog = {
   heroText: string;
   shippingNote: string;
   metaPixelId: string;
+  promotionBanner?: StorefrontPromotionBanner;
   logoUrl: string;
   heroImageUrl: string;
   whatsapp: string;

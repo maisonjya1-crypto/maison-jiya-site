@@ -57,7 +57,9 @@ async function snapshot(database: D1Database) {
     WHERE key IN (
       'storefront_brand_name', 'storefront_announcement', 'storefront_hero_title',
       'storefront_hero_text', 'storefront_shipping_note', 'storefront_meta_pixel_id',
-      'storefront_contact_whatsapp', 'whatsapp_numbers'
+      'storefront_contact_whatsapp', 'whatsapp_numbers',
+      'storefront_promo_enabled', 'storefront_promo_badge', 'storefront_promo_title',
+      'storefront_promo_text', 'storefront_promo_cta_label', 'storefront_promo_offer_id'
     )
   `).all<{ key: string; value: string }>()).results;
   const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
@@ -111,6 +113,12 @@ async function snapshot(database: D1Database) {
       heroText: settings.storefront_hero_text || "Choisissez vos articles, validez votre commande en ligne et payez à la livraison. Notre équipe vous contacte ensuite pour confirmer.",
       shippingNote: settings.storefront_shipping_note || "Les éventuels frais de livraison sont confirmés par notre équipe.",
       metaPixelId: settings.storefront_meta_pixel_id || "",
+      promoEnabled: settings.storefront_promo_enabled === "1",
+      promoBadge: settings.storefront_promo_badge || "",
+      promoTitle: settings.storefront_promo_title || "",
+      promoText: settings.storefront_promo_text || "",
+      promoCtaLabel: settings.storefront_promo_cta_label || "Voir l’offre",
+      promoOfferId: Math.max(0, Number(settings.storefront_promo_offer_id) || 0),
       contactWhatsapp: configuredContact || businessWhatsapp,
       defaultBusinessWhatsapp: businessWhatsapp,
       contactUsesDefault: !configuredContact,
@@ -166,6 +174,11 @@ export async function POST(request: Request) {
       const contactWhatsapp = contactInput ? normalizeMoroccanPhone(contactInput) : null;
       if (contactInput && !contactWhatsapp) throw new Error("Le numéro WhatsApp doit être un numéro marocain valide.");
       const useDefaultWhatsapp = boolean(payload.useDefaultWhatsapp, false);
+      const promoOfferId = Math.max(0, integer(payload.promoOfferId));
+      if (promoOfferId > 0) {
+        const offerExists = await database.prepare("SELECT id FROM storefront_offers WHERE id = ? LIMIT 1").bind(promoOfferId).first<{ id: number }>();
+        if (!offerExists) throw new Error("L’offre liée au bandeau n’existe plus.");
+      }
       const rows: Array<[string, string]> = [
         ["storefront_brand_name", text(payload.brandName, 80) || "Maison Jiya"],
         ["storefront_announcement", text(payload.announcement, 160)],
@@ -173,6 +186,12 @@ export async function POST(request: Request) {
         ["storefront_hero_text", text(payload.heroText, 420)],
         ["storefront_shipping_note", text(payload.shippingNote, 220)],
         ["storefront_meta_pixel_id", text(payload.metaPixelId, 40).replace(/[^0-9]/g, "")],
+        ["storefront_promo_enabled", boolean(payload.promoEnabled, false) ? "1" : "0"],
+        ["storefront_promo_badge", text(payload.promoBadge, 50)],
+        ["storefront_promo_title", text(payload.promoTitle, 140)],
+        ["storefront_promo_text", text(payload.promoText, 260)],
+        ["storefront_promo_cta_label", text(payload.promoCtaLabel, 50) || "Voir l’offre"],
+        ["storefront_promo_offer_id", promoOfferId > 0 ? String(promoOfferId) : ""],
         ["storefront_contact_whatsapp", useDefaultWhatsapp ? "" : (contactWhatsapp || "")],
       ];
       await database.batch(rows.map(([key, value]) => database.prepare(`
