@@ -110,18 +110,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       SELECT m.id, m.owner_type AS ownerType, m.owner_id AS ownerId, m.kind
       FROM storefront_media m
       WHERE m.owner_type = 'brand'
-         OR (
-           m.kind = 'gallery'
-           AND m.id = (
-             SELECT m2.id
-             FROM storefront_media m2
-             WHERE m2.owner_type = m.owner_type
-               AND m2.owner_id = m.owner_id
-               AND m2.kind = m.kind
-             ORDER BY m2.sort_order, m2.id
-             LIMIT 1
-           )
-         )
+         OR m.kind = 'gallery'
       ORDER BY m.owner_type, m.owner_id, m.sort_order, m.id
     `),
     database.prepare(`
@@ -155,7 +144,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
   const settingsRows = rows<SettingRow>(result[5]);
   const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
 
-  const mediaByOwner = new Map<string, string>();
+  const mediaByOwner = new Map<string, string[]>();
   let logoUrl = "/maison-jiya-logo.jpeg";
   let heroImageUrl = "";
   for (const item of media) {
@@ -165,7 +154,10 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       if (item.kind === "hero") heroImageUrl = url;
       continue;
     }
-    mediaByOwner.set(`${item.ownerType}:${item.ownerId}`, url);
+    const key = `${item.ownerType}:${item.ownerId}`;
+    const list = mediaByOwner.get(key);
+    if (list) list.push(url);
+    else mediaByOwner.set(key, [url]);
   }
 
   const itemsByOffer = new Map<number, OfferItemRow[]>();
@@ -180,11 +172,11 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
 
   const publicProducts = products.flatMap((product) => {
     const available = product.stockQuantity > 0 && product.availabilityMode !== "out_of_stock";
-    const firstImage = mediaByOwner.get(`product:${product.id}`);
+    const images = (mediaByOwner.get(`product:${product.id}`) || []).slice(0, 6);
     const salePrice = Math.max(0, Number(product.salePrice) || 0);
     // La boutique publique n'affiche jamais une fiche incomplète : la publication
     // reste manuelle et une vraie photo + un nom + un prix sont requis.
-    if (!firstImage || !product.name.trim() || salePrice <= 0) return [];
+    if (!images.length || !product.name.trim() || salePrice <= 0) return [];
     return [{
       id: product.id,
       kind: "product" as const,
@@ -198,7 +190,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       availability: available ? "Disponible" : "Rupture de stock",
       available,
       lowStock: false,
-      images: [firstImage],
+      images,
     }];
   });
 
@@ -209,9 +201,9 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       item.availabilityMode !== "out_of_stock"
       && item.stockQuantity >= item.quantity
     );
-    const firstImage = mediaByOwner.get(`offer:${offer.id}`);
+    const images = (mediaByOwner.get(`offer:${offer.id}`) || []).slice(0, 6);
     const salePrice = Math.max(0, Number(offer.price) || 0);
-    if (!firstImage || !offer.name.trim() || salePrice <= 0) return [];
+    if (!images.length || !offer.name.trim() || salePrice <= 0) return [];
     return [{
       id: offer.id,
       kind: "offer" as const,
@@ -225,7 +217,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       availability: available ? "Disponible" : "Rupture de stock",
       available,
       lowStock: false,
-      images: firstImage ? [firstImage] : [],
+      images,
     }];
   });
 
@@ -264,7 +256,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       ctaLabel: section.ctaLabel?.trim() || "Voir",
       target: target as "offers" | "catalogue" | "Montres" | "Bijoux" | "Portefeuilles",
       placement: placement as "after_categories" | "before_catalogue" | "before_contact",
-      imageUrl: mediaByOwner.get(`marketing:${section.id}`) || "",
+      imageUrl: mediaByOwner.get(`marketing:${section.id}`)?.[0] || "",
     }];
   });
 
