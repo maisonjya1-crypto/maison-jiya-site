@@ -779,3 +779,176 @@
     grid-column:2;
   }
 }
+
+
+/* V1.1 — centre d'alertes intelligent */
+.app-shell .smart-alerts-panel{
+  margin-top:14px;
+  display:grid;
+  gap:14px;
+}
+.app-shell .smart-alerts-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:18px;
+}
+.app-shell .smart-alerts-head h2{
+  margin:4px 0 5px;
+  font:650 19px/1.2 Georgia,serif;
+}
+.app-shell .smart-alerts-head p{
+  margin:0;
+  max-width:720px;
+  color:var(--muted);
+  font-size:9px;
+  line-height:1.5;
+}
+.app-shell .smart-alerts-count{
+  flex:0 0 auto;
+  padding:7px 10px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:var(--surface-soft);
+  color:var(--muted);
+  font-size:8px;
+  font-weight:800;
+}
+.app-shell .smart-alerts-count.critical{
+  border-color:color-mix(in srgb,#b94f52 35%,var(--line));
+  background:color-mix(in srgb,#b94f52 8%,var(--paper));
+  color:#9c3d42;
+}
+.app-shell .smart-alerts-count.active{
+  border-color:color-mix(in srgb,#b58936 35%,var(--line));
+  background:color-mix(in srgb,#b58936 8%,var(--paper));
+  color:#8a6926;
+}
+.app-shell .smart-alerts-count.clear{
+  border-color:color-mix(in srgb,#3f8b69 35%,var(--line));
+  background:color-mix(in srgb,#3f8b69 8%,var(--paper));
+  color:#3b775d;
+}
+.app-shell .smart-alerts-list{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:9px;
+}
+.app-shell .smart-alert-row{
+  min-width:0;
+  display:grid;
+  grid-template-columns:34px minmax(0,1fr) auto;
+  align-items:center;
+  gap:11px;
+  padding:13px 14px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:var(--surface-soft);
+  color:var(--ink);
+  text-align:left;
+  cursor:pointer;
+}
+.app-shell .smart-alert-row:hover{
+  transform:translateY(-1px);
+  box-shadow:var(--pro-shadow-soft);
+}
+.app-shell .smart-alert-row.critical{
+  border-color:color-mix(in srgb,#b94f52 30%,var(--line));
+  background:color-mix(in srgb,#b94f52 5%,var(--paper));
+}
+.app-shell .smart-alert-row.warning{
+  border-color:color-mix(in srgb,#b58936 30%,var(--line));
+  background:color-mix(in srgb,#b58936 5%,var(--paper));
+}
+.app-shell .smart-alert-row.positive{
+  border-color:color-mix(in srgb,#3f8b69 30%,var(--line));
+  background:color-mix(in srgb,#3f8b69 5%,var(--paper));
+}
+.app-shell .smart-alert-icon{
+  width:32px;
+  height:32px;
+  display:grid;
+  place-items:center;
+  border-radius:10px;
+  background:var(--paper);
+  border:1px solid var(--line);
+  font-size:11px;
+  font-weight:900;
+}
+.app-shell .smart-alert-row.critical .smart-alert-icon{color:#a24145}
+.app-shell .smart-alert-row.warning .smart-alert-icon{color:#8f6a20}
+.app-shell .smart-alert-row.positive .smart-alert-icon{color:#397259}
+.app-shell .smart-alert-copy{
+  min-width:0;
+  display:grid;
+  gap:4px;
+}
+.app-shell .smart-alert-copy strong{
+  font-size:10px;
+  line-height:1.35;
+}
+.app-shell .smart-alert-copy small{
+  color:var(--muted);
+  font-size:8px;
+  line-height:1.45;
+}
+.app-shell .smart-alert-target{
+  color:var(--forest);
+  font-size:8px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.app-shell .smart-alerts-clear{
+  display:flex;
+  align-items:center;
+  gap:11px;
+  padding:15px;
+  border:1px solid color-mix(in srgb,#3f8b69 24%,var(--line));
+  border-radius:12px;
+  background:color-mix(in srgb,#3f8b69 5%,var(--paper));
+}
+.app-shell .smart-alerts-clear>span{
+  width:32px;
+  height:32px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  background:#3f8b69;
+  color:#fff;
+  font-weight:900;
+}
+.app-shell .smart-alerts-clear>div{
+  display:grid;
+  gap:3px;
+}
+.app-shell .smart-alerts-clear strong{
+  font-size:10px;
+}
+.app-shell .smart-alerts-clear small{
+  color:var(--muted);
+  font-size:8px;
+}
+.app-shell .smart-alerts-rules{
+  padding-top:2px;
+}
+.app-shell .smart-alerts-rules small{
+  color:var(--muted);
+  font-size:7px;
+  line-height:1.5;
+}
+
+@media(max-width:900px){
+  .app-shell .smart-alerts-list{grid-template-columns:1fr}
+}
+@media(max-width:620px){
+  .app-shell .smart-alerts-head{
+    flex-direction:column;
+    gap:10px;
+  }
+  .app-shell .smart-alert-row{
+    grid-template-columns:32px minmax(0,1fr);
+  }
+  .app-shell .smart-alert-target{
+    grid-column:2;
+  }
+}
