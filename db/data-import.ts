@@ -204,7 +204,7 @@ const TABLE_SPECS: Record<string, TableSpec> = {
       manual_capital_in: 0,
       manual_capital_out: 0,
       stock_value_start: null,
-      stock_value_end: 0,
+      stock_value_end: null,
       stock_value_source: "",
       cash_end: 0,
       cash_end_source: "",
