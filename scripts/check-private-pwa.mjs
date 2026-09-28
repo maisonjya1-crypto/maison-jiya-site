@@ -56,12 +56,15 @@ const worker = await readText("public/private-sw.js");
 assert.match(worker, /addEventListener\(["']push["']/);
 assert.match(worker, /addEventListener\(["']fetch["']/);
 assert.doesNotMatch(worker, /caches\.open|cache\.put|caches\.match/);
+assert.match(worker, /requestUrl\.pathname === "\/boutique"/);
+assert.match(worker, /event\.request\.mode === "navigate"/);
+assert.match(worker, /cache:\s*"no-store"/);
 
 const pwaClient = await readText("app/private-pwa.tsx");
 assert.match(pwaClient, /navigator\.standalone|standalone/);
 assert.match(pwaClient, /MacIntel/);
 assert.match(pwaClient, /Installer sur iPhone/);
-assert.match(pwaClient, /private-sw\.js\?v=3/);
+assert.match(pwaClient, /private-sw\.js\?v=4/);
 assert.match(pwaClient, /MaisonJiyaAndroid\\\//);
 assert.match(pwaClient, /MaisonJiyaNative/);
 assert.match(pwaClient, /requestNotificationPermission/);
