@@ -3062,7 +3062,7 @@ function OrderActions({ order, onEdit, onPrint, onDelete }: { order: Order; onEd
             Supprimer
           </button>
         </div>,
-        document.body,
+        document.querySelector(".app-shell") || document.body,
       )
     : null;
 
