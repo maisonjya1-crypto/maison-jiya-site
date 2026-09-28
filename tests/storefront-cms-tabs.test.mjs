@@ -7,9 +7,10 @@ const readText = (path) => readFile(new URL(path, root), "utf8");
 
 test("les onglets du CMS boutique restent de vrais boutons indépendants", async () => {
   const source = await readText("app/storefront-cms-v2-enhancement.tsx");
-  assert.match(source, /function switchTab\(next: "identity" \| "products" \| "offers"\)/);
+  assert.match(source, /function switchTab\(next: "identity" \| "products" \| "offers" \| "marketing"\)/);
   assert.match(source, /type="button" className=\{tab === "products"/);
   assert.match(source, /type="button" className=\{tab === "offers"/);
+  assert.match(source, /type="button" className=\{tab === "marketing"/);
   assert.match(source, /aria-pressed=\{tab === "products"\}/);
   assert.match(source, /pageRef\.current\?\.scrollTo/);
 });
