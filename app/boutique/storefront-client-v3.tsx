@@ -157,7 +157,7 @@ function enableMetaPixel(pixelId: string) {
 }
 
 function trackPurchaseOnce(orderRef: string, total: number, lines: Array<{ item: CatalogItem; quantity: number }>) {
-  if (!orderRef || typeof window === "undefined") return;
+  if (!orderRef || typeof window === "undefined" || !(window as FbqWindow).fbq) return;
   const storageKey = `maison-jiya-meta-purchase:${orderRef}`;
   try {
     if (localStorage.getItem(storageKey)) return;
