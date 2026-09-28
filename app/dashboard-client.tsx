@@ -5500,14 +5500,50 @@ function CarrierSettlementsPage({
 function CashflowForecastPage({
   data,
   metrics,
+  submit,
 }: {
   data: Data;
   metrics: {
     cash: number;
+    theoreticalCash: number;
+    reconciliationVariance: number;
+    reconciliationDate: string;
     reinvestable: number;
     safetyReserve: number;
   };
+  submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
 }) {
+  const [showReconciliation, setShowReconciliation] = useState(false);
+  const [savingReconciliation, setSavingReconciliation] = useState(false);
+  const latestReconciliation = data.dailyClosings[0] || null;
+  const todayClosing = data.dailyClosings.find((closing) => closing.closeDate === data.dailyClosingPreview.closeDate) || null;
+  const theoreticalAccounts = useMemo(() => calculateTreasuryAccounts({
+    orders: data.orders,
+    purchases: data.purchases,
+    supplierPayments: data.supplierPayments,
+    expenses: data.expenses,
+    ads: data.ads,
+    capital: data.capital,
+    carrierSettlementAdjustment: data.carrierSettlements.reduce((sum, settlement) => sum + settlement.differenceAmount, 0),
+  }), [data.orders, data.purchases, data.supplierPayments, data.expenses, data.ads, data.capital, data.carrierSettlements]);
+  const reconciledAccounts = useMemo(
+    () => applyTreasuryReconciliation(theoreticalAccounts, latestReconciliation),
+    [theoreticalAccounts, latestReconciliation],
+  );
+
+  async function saveReconciliation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (savingReconciliation || !data.access.canEdit) return;
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+    setSavingReconciliation(true);
+    try {
+      await submit("saveDailyClosing", Object.fromEntries(new FormData(form).entries()) as Record<string, FormDataEntryValue>);
+      setShowReconciliation(false);
+    } finally {
+      setSavingReconciliation(false);
+    }
+  }
   const purchasePlan = useMemo(
     () => buildPurchasePlan(data.stockRecommendations, metrics.reinvestable),
     [data.stockRecommendations, metrics.reinvestable],
@@ -5552,10 +5588,68 @@ function CashflowForecastPage({
       </section>
 
       <section className="kpi-grid cashflow-main-kpis">
-        <Kpi label="Trésorerie actuelle" value={money(forecast.openingCash)} detail="Point de départ de la prévision" danger={forecast.openingCash < forecast.safetyReserve} />
+        <Kpi label={metrics.reconciliationDate ? "Trésorerie réelle estimée" : "Trésorerie théorique"} value={money(forecast.openingCash)} detail={metrics.reconciliationDate ? `Dernier contrôle : ${dateLabel(metrics.reconciliationDate)}` : "Aucun rapprochement réel enregistré"} danger={forecast.openingCash < forecast.safetyReserve} />
         <Kpi label="Sorties datées · 60 j" value={money(forecast.scheduledOutflows60)} detail="Factures fournisseurs + dépenses non payées" danger={forecast.scheduledOutflows60 > forecast.openingCash} />
         <Kpi label="Engagements sans date" value={money(forecast.undatedSupplierCommitments)} detail="Anciens achats fournisseurs non facturés" danger={forecast.undatedSupplierCommitments > 0} />
         <Kpi label="À encaisser sans date" value={money(totalUndatedReceivables)} detail={`Livré ${money(forecast.deliveredReceivables)} · transit ${money(forecast.transitReceivables)}`} />
+      </section>
+
+      <section className="panel treasury-reconciliation-panel">
+        <div className="section-toolbar">
+          <div>
+            <span className="card-kicker">Rapprochement caisse / banque</span>
+            <h2>Comparer le logiciel avec l’argent réellement présent</h2>
+            <p>{latestReconciliation ? `Dernier contrôle le ${dateLabel(latestReconciliation.closeDate)} · correction conservée ${money(latestReconciliation.totalVariance)}.` : "Aucun contrôle réel enregistré : la trésorerie reste entièrement théorique."}</p>
+          </div>
+          <button className="primary-button" type="button" disabled={!data.access.canEdit} onClick={() => setShowReconciliation((value) => !value)}>
+            {showReconciliation ? "Fermer" : "Vérifier ma trésorerie"}
+          </button>
+        </div>
+        <div className="financial-account-grid treasury-real-grid">
+          <article>
+            <span>Banque / carte estimée</span>
+            <strong className={moneyTone(reconciledAccounts.bank)}>{money(reconciledAccounts.bank)}</strong>
+            <small>Théorique {money(theoreticalAccounts.bank)}{latestReconciliation ? ` · correction ${money(latestReconciliation.bankVariance)}` : ""}</small>
+          </article>
+          <article>
+            <span>Caisse / espèces estimée</span>
+            <strong className={moneyTone(reconciledAccounts.cash)}>{money(reconciledAccounts.cash)}</strong>
+            <small>Théorique {money(theoreticalAccounts.cash)}{latestReconciliation ? ` · correction ${money(latestReconciliation.cashVariance)}` : ""}</small>
+          </article>
+          <article>
+            <span>Autres comptes estimés</span>
+            <strong className={moneyTone(reconciledAccounts.other)}>{money(reconciledAccounts.other)}</strong>
+            <small>Théorique {money(theoreticalAccounts.other)}{latestReconciliation ? ` · correction ${money(latestReconciliation.otherVariance)}` : ""}</small>
+          </article>
+        </div>
+        {showReconciliation ? (
+          <form className="account-settings-form treasury-check-form" onSubmit={(event) => void saveReconciliation(event)}>
+            <label>
+              <span>Banque / carte réellement disponible (MAD)</span>
+              <input name="actualBank" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={todayClosing ? String(todayClosing.actualBank) : ""} placeholder={String(data.dailyClosingPreview.expectedBank)} required />
+              <small>Le logiciel attend {money(data.dailyClosingPreview.expectedBank)}</small>
+            </label>
+            <label>
+              <span>Caisse / espèces réellement disponible (MAD)</span>
+              <input name="actualCash" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={todayClosing ? String(todayClosing.actualCash) : ""} placeholder={String(data.dailyClosingPreview.expectedCash)} required />
+              <small>Le logiciel attend {money(data.dailyClosingPreview.expectedCash)}</small>
+            </label>
+            <label>
+              <span>Autres comptes réellement disponibles (MAD)</span>
+              <input name="actualOther" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={todayClosing ? String(todayClosing.actualOther) : ""} placeholder={String(data.dailyClosingPreview.expectedOther)} required />
+              <small>Le logiciel attend {money(data.dailyClosingPreview.expectedOther)}</small>
+            </label>
+            <label>
+              <span>Explication éventuelle</span>
+              <input name="note" maxLength={500} defaultValue={todayClosing?.note || ""} placeholder="Ex. dépense oubliée, dépôt bancaire en attente…" />
+              <small>L’écart est conservé dans l’historique pour expliquer le solde.</small>
+            </label>
+            <div className="account-form-footer">
+              <p>Théorique total : <strong>{money(data.dailyClosingPreview.expectedTotal)}</strong></p>
+              <button className="primary-button" type="submit" disabled={savingReconciliation || !data.access.canEdit}>{savingReconciliation ? "Vérification…" : todayClosing ? "Mettre à jour le contrôle" : "Enregistrer le contrôle réel"}</button>
+            </div>
+          </form>
+        ) : null}
       </section>
 
       <section className="cashflow-horizon-grid">
