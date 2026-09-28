@@ -9,6 +9,15 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
+
+  // Quand la boutique est ouverte depuis l'app installée, forcer un vrai
+  // chargement réseau du document pour éviter qu'un ancien HTML/CSS reste
+  // affiché dans le contexte PWA iOS.
+  if (requestUrl.pathname === "/boutique" && event.request.mode === "navigate") {
+    event.respondWith(fetch(event.request, { cache: "no-store" }));
+    return;
+  }
+
   event.respondWith(fetch(event.request));
 });
 
