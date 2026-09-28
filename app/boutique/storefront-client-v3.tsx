@@ -243,7 +243,6 @@ function ProductGalleryModal({ item, lang, t, add, close }: { item: CatalogItem;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
       if (imageCount > 1 && event.key === "ArrowLeft") move(-1);
       if (imageCount > 1 && event.key === "ArrowRight") move(1);
     };
@@ -361,6 +360,38 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     if (!preferencesLoaded) return;
     try { localStorage.setItem("maison-jiya-cart-v3", JSON.stringify(cart)); } catch { /* facultatif */ }
   }, [cart, preferencesLoaded]);
+
+  useEffect(() => {
+    const overlayOpen = Boolean(selectedItem || cartOpen || checkoutOpen || confirmation);
+    if (!overlayOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (checkoutOpen && submitting) return;
+      if (confirmation) {
+        setConfirmation(null);
+        return;
+      }
+      if (checkoutOpen) {
+        setCheckoutOpen(false);
+        return;
+      }
+      if (cartOpen) {
+        setCartOpen(false);
+        return;
+      }
+      if (selectedItem) setSelectedItem(null);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [cartOpen, checkoutOpen, confirmation, selectedItem, submitting]);
 
   useEffect(() => {
     if (initialCatalog) {
@@ -532,8 +563,8 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         <span><strong>{brand}</strong><small>{t.officialStore}</small></span>
       </a>
       <div className="storefront-v3-header-actions">
-        <div className="storefront-v3-language" aria-label="Language / اللغة"><button className={lang === "fr" ? "active" : ""} onClick={() => setLang("fr")}>FR</button><button className={lang === "ar" ? "active" : ""} onClick={() => setLang("ar")}>ع</button><button className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>EN</button></div>
-        <button className="storefront-v3-cart-button" type="button" onClick={() => setCartOpen(true)} aria-label={t.cart}>♡ <span>{t.cart}</span><b>{itemCount}</b></button>
+        <div className="storefront-v3-language" role="group" aria-label="Language / اللغة"><button type="button" aria-pressed={lang === "fr"} aria-label="Français" className={lang === "fr" ? "active" : ""} onClick={() => setLang("fr")}>FR</button><button type="button" aria-pressed={lang === "ar"} aria-label="العربية" className={lang === "ar" ? "active" : ""} onClick={() => setLang("ar")}>ع</button><button type="button" aria-pressed={lang === "en"} aria-label="English" className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>EN</button></div>
+        <button className="storefront-v3-cart-button" type="button" onClick={() => setCartOpen(true)} aria-label={`${t.cart} · ${itemCount} ${t.products}`}>♡ <span>{t.cart}</span><b aria-live="polite">{itemCount}</b></button>
       </div>
     </header>
 
@@ -609,7 +640,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     {cartOpen && <div className="storefront-v3-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setCartOpen(false); }}>
       <aside className="storefront-v3-drawer" role="dialog" aria-modal="true" aria-label={t.yourCart}>
         <header><div><small>{brand}</small><h2>{t.yourCart}</h2></div><button type="button" onClick={() => setCartOpen(false)} aria-label={t.close}>×</button></header>
-        <div className="storefront-v3-cart-lines">{cartLines.length ? cartLines.map((line) => <article key={line.key}><div><strong>{line.item.name}</strong><small>{money(line.item.salePrice, lang)}</small></div><div className="storefront-v3-qty"><button type="button" onClick={() => updateQuantity(line.key, line.quantity - 1)}>−</button><span>{line.quantity}</span><button type="button" onClick={() => updateQuantity(line.key, line.quantity + 1)}>+</button></div><button className="storefront-v3-remove" type="button" onClick={() => updateQuantity(line.key, 0)}>{t.remove}</button></article>) : <p className="storefront-v3-empty">{t.emptyCart}</p>}</div>
+        <div className="storefront-v3-cart-lines">{cartLines.length ? cartLines.map((line) => <article key={line.key}><div><strong>{line.item.name}</strong><small>{money(line.item.salePrice, lang)}</small></div><div className="storefront-v3-qty"><button type="button" aria-label={`${t.quantity} − · ${line.item.name}`} onClick={() => updateQuantity(line.key, line.quantity - 1)}>−</button><span aria-live="polite">{line.quantity}</span><button type="button" aria-label={`${t.quantity} + · ${line.item.name}`} onClick={() => updateQuantity(line.key, line.quantity + 1)}>+</button></div><button className="storefront-v3-remove" type="button" onClick={() => updateQuantity(line.key, 0)}>{t.remove}</button></article>) : <p className="storefront-v3-empty">{t.emptyCart}</p>}</div>
         <footer><div><span>{t.total}</span><strong>{money(total, lang)}</strong></div><small>{localized?.shippingNote || catalog?.shippingNote}</small><button type="button" disabled={!cartLines.length} onClick={beginCheckout}>{t.checkout}</button><button className="ghost" type="button" onClick={() => setCartOpen(false)}>{t.continueShopping}</button></footer>
       </aside>
     </div>}
@@ -631,6 +662,6 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       </section>
     </div>}
 
-    {confirmation && <div className="storefront-v3-overlay"><section className="storefront-v3-success" role="dialog" aria-modal="true"><span>✓</span><h2>{t.orderSuccess}</h2><p>{t.orderSuccessText}</p><div><small>{t.orderRef}</small><strong>{confirmation.orderRef}</strong><small>{t.total}</small><strong>{money(confirmation.total, lang)}</strong></div>{waUrl && <a href={waUrl} target="_blank" rel="noreferrer">{t.whatsapp}</a>}<button type="button" onClick={() => setConfirmation(null)}>{t.close}</button></section></div>}
+    {confirmation && <div className="storefront-v3-overlay"><section className="storefront-v3-success" role="dialog" aria-modal="true" aria-label={t.orderSuccess}><span>✓</span><h2>{t.orderSuccess}</h2><p>{t.orderSuccessText}</p><div><small>{t.orderRef}</small><strong>{confirmation.orderRef}</strong><small>{t.total}</small><strong>{money(confirmation.total, lang)}</strong></div>{waUrl && <a href={waUrl} target="_blank" rel="noreferrer">{t.whatsapp}</a>}<button type="button" onClick={() => setConfirmation(null)}>{t.close}</button></section></div>}
   </main>;
 }
