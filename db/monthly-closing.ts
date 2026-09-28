@@ -47,7 +47,7 @@ type DailyClosingValueRow = {
 
 type PreviousMonthlyClosingRow = {
   monthKey: string;
-  stockValueEnd: number;
+  stockValueEnd: number | null;
 };
 
 export type MonthlyClosingSaveInput = {
@@ -173,10 +173,10 @@ export async function buildMonthlyClosingPreview(database: D1Database, monthKey:
       FROM inventory_sessions
       WHERE status = 'Clôturé'
         AND completed_at IS NOT NULL
-        AND substr(completed_at, 1, 10) <= ?
+        AND substr(completed_at, 1, 10) BETWEEN ? AND ?
       ORDER BY datetime(completed_at) DESC, id DESC
       LIMIT 1
-    `).bind(bounds.end).first<InventorySessionValueRow>(),
+    `).bind(bounds.start, bounds.end).first<InventorySessionValueRow>(),
     database.prepare(`
       SELECT close_date AS closeDate, actual_total AS actualTotal
       FROM daily_closings
@@ -192,14 +192,10 @@ export async function buildMonthlyClosingPreview(database: D1Database, monthKey:
     `).bind(previousMonthKey(monthKey)).first<PreviousMonthlyClosingRow>(),
   ]);
 
-  const currentStockValue = roundMoney(rows.products.reduce(
-    (sum, product) => sum + Number(product.purchasePrice || 0) * Number(product.stockQuantity || 0),
-    0,
-  ));
-  const stockValueEnd = latestInventory ? Number(latestInventory.valueAfter || 0) : currentStockValue;
+  const stockValueEnd = latestInventory ? Number(latestInventory.valueAfter || 0) : null;
   const stockValueSource = latestInventory
     ? `Inventaire ${latestInventory.sessionRef} · ${String(latestInventory.completedAt || "").slice(0, 10)}`
-    : "Catalogue au moment de la clôture";
+    : "Aucun inventaire clôturé pendant ce mois";
 
   const currentTreasury = calculateTreasuryAccounts({
     orders: rows.orders,
@@ -224,7 +220,7 @@ export async function buildMonthlyClosingPreview(database: D1Database, monthKey:
     inventoryCounts: rows.inventoryCounts,
     capital: rows.capital,
     carrierSettlements: rows.carrierSettlements,
-    stockValueStart: previousMonthlyClosing ? Number(previousMonthlyClosing.stockValueEnd || 0) : null,
+    stockValueStart: previousMonthlyClosing?.stockValueEnd === null || previousMonthlyClosing?.stockValueEnd === undefined ? null : Number(previousMonthlyClosing.stockValueEnd),
     stockValueEnd,
     stockValueSource,
     cashEnd,
