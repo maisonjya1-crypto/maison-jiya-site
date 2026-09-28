@@ -54,8 +54,11 @@ test("le Meta Pixel suit le tunnel et Purchase une seule fois après création s
   assert.match(client, /currency: "MAD"/);
   assert.match(client, /order_id: orderRef/);
 
-  const responseCheck = client.indexOf("if (!response.ok) throw");
-  const purchaseCheck = client.indexOf("trackPurchaseOnce(orderRef");
+  const submitStart = client.indexOf("async function submitOrder");
+  const submitEnd = client.indexOf("const brand =", submitStart);
+  const submitOrder = client.slice(submitStart, submitEnd);
+  const responseCheck = submitOrder.indexOf("if (!response.ok) throw");
+  const purchaseCheck = submitOrder.indexOf("trackPurchaseOnce(orderRef");
   assert.ok(responseCheck >= 0 && purchaseCheck > responseCheck, "Purchase doit être envoyé seulement après une réponse serveur réussie.");
 });
 
