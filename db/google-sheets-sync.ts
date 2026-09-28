@@ -38,6 +38,7 @@ const CORE_SYNC_TABLES = [
   "supplier_invoices",
   "supplier_payments",
   "expenses",
+  "recurring_expenses",
   "ad_performance",
   "capital_ledger",
   "monthly_closings",
