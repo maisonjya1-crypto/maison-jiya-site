@@ -4758,6 +4758,63 @@ function RecurringExpenseModal({
   );
 }
 
+type AdSummary = {
+  key: string;
+  record: Ad;
+  platform: string;
+  campaign: string;
+  externalId: string;
+  spend: number;
+  revenue: number;
+  orderCount: number;
+  nativeSpendCents: number;
+  nativeCurrency: string;
+  source: string;
+  firstDate: string;
+  lastDate: string;
+  rowCount: number;
+};
+
+function summarizeAds(ads: Ad[]) {
+  const grouped = new Map<string, AdSummary>();
+  for (const ad of ads) {
+    const isMeta = ad.source === "Meta API";
+    const key = isMeta ? `meta:${ad.externalId || ad.campaign}:${ad.platform}` : `manual:${ad.id}`;
+    const current = grouped.get(key);
+    if (current) {
+      current.spend += ad.spend;
+      current.revenue += ad.revenue;
+      current.orderCount += ad.orderCount;
+      current.nativeSpendCents += ad.nativeSpendCents;
+      current.firstDate = ad.performanceDate < current.firstDate ? ad.performanceDate : current.firstDate;
+      current.lastDate = ad.performanceDate > current.lastDate ? ad.performanceDate : current.lastDate;
+      current.rowCount += 1;
+      continue;
+    }
+    grouped.set(key, {
+      key,
+      record: ad,
+      platform: ad.platform,
+      campaign: ad.campaign,
+      externalId: ad.externalId,
+      spend: ad.spend,
+      revenue: ad.revenue,
+      orderCount: ad.orderCount,
+      nativeSpendCents: ad.nativeSpendCents,
+      nativeCurrency: ad.nativeCurrency,
+      source: ad.source,
+      firstDate: ad.performanceDate,
+      lastDate: ad.performanceDate,
+      rowCount: 1,
+    });
+  }
+  return [...grouped.values()].sort((left, right) => right.lastDate.localeCompare(left.lastDate) || right.spend - left.spend);
+}
+
+function nativeMoney(cents: number, currency: string) {
+  return `${(cents / 100).toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+}
+
 function AdsPage({ ads, settings, access, submit, onAdd, onEdit, onDelete }: { ads: Ad[]; settings: Record<string, string>; access: Data["access"]; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
   const spend = ads.reduce((sum, ad) => sum + ad.spend, 0),
     revenue = ads.reduce((sum, ad) => sum + ad.revenue, 0),
