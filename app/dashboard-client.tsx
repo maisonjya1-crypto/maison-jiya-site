@@ -11,6 +11,7 @@ import { buildSupplierStatement, type SupplierStatementEntry } from "../lib/supp
 import { buildPurchasePlan, type PurchasePlanSupplierGroup } from "../lib/purchase-plan";
 import { buildCashflowForecast } from "../lib/cashflow-forecast";
 import { buildMonthlyFinancialSnapshot, isCompletedBusinessMonth, monthBounds, previousMonthKey } from "../lib/monthly-closing";
+import { calculateSmartCapital } from "../lib/smart-capital";
 
 type Order = {
   id: number;
@@ -1028,11 +1029,23 @@ export default function DashboardClient() {
     });
     const latestReconciliation = data.dailyClosings[0] || null;
     const reconciledTreasury = applyTreasuryReconciliation(theoreticalTreasury, latestReconciliation);
-    const protectedAvailableCash = reconciledTreasury.total
-      - finance.unpaidPurchases
-      - finance.unpaidOperatingExpenses
-      - safetyReserve;
-    const reconciledReinvestable = Math.max(0, Math.min(finance.reinvestAllocation, protectedAvailableCash));
+    const automaticAllocations = data.capital.filter((entry) => entry.isAutomatic);
+    const theoreticalSalary = automaticAllocations
+      .filter((entry) => entry.category === "Salaire personnel")
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    const theoreticalEmergency = automaticAllocations
+      .filter((entry) => entry.category === "Fonds d’urgence")
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    const smartCapital = calculateSmartCapital({
+      cash: reconciledTreasury.total,
+      netProfit: finance.profit,
+      unpaidPurchases: finance.unpaidPurchases,
+      unpaidOperatingExpenses: finance.unpaidOperatingExpenses,
+      safetyReserve,
+      theoreticalReinvestment: finance.reinvestAllocation,
+      theoreticalSalary,
+      theoreticalEmergency,
+    });
     return {
       revenue: finance.collected,
       shippingFees: finance.shippingCollected,
@@ -1049,7 +1062,18 @@ export default function DashboardClient() {
       capitalNet: finance.manualCapitalNet,
       margin: finance.margin,
       reinvest: finance.reinvestAllocation,
-      reinvestable: reconciledReinvestable,
+      reinvestable: smartCapital.reinvestableNow,
+      theoreticalSalary,
+      theoreticalEmergency,
+      salaryWithdrawable: smartCapital.withdrawableSalary,
+      emergencyAvailable: smartCapital.emergencyAvailable,
+      cashBackedProfit: smartCapital.cashBackedProfit,
+      protectedTotal: smartCapital.protectedTotal,
+      protectionShortfall: smartCapital.protectionShortfall,
+      freeCashAfterProtection: smartCapital.freeCashAfterProtection,
+      fundedEnvelopePool: smartCapital.fundedEnvelopePool,
+      allocationFundingRate: smartCapital.allocationFundingRate,
+      unallocatedFreeCash: smartCapital.unallocatedFreeCash,
       unpaidPurchases: finance.unpaidPurchases,
       operatingExpenses: finance.operatingExpenses,
       paidOperatingExpenses: finance.paidOperatingExpenses,
@@ -1472,6 +1496,17 @@ function Page({
     margin: number;
     reinvest: number;
     reinvestable: number;
+    theoreticalSalary: number;
+    theoreticalEmergency: number;
+    salaryWithdrawable: number;
+    emergencyAvailable: number;
+    cashBackedProfit: number;
+    protectedTotal: number;
+    protectionShortfall: number;
+    freeCashAfterProtection: number;
+    fundedEnvelopePool: number;
+    allocationFundingRate: number;
+    unallocatedFreeCash: number;
     unpaidPurchases: number;
     operatingExpenses: number;
     paidOperatingExpenses: number;
