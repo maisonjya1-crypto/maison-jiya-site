@@ -114,6 +114,8 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
         'account_name', 'whatsapp_numbers', 'storefront_brand_name', 'storefront_announcement',
         'storefront_hero_title', 'storefront_hero_text', 'storefront_shipping_note',
         'storefront_meta_pixel_id', 'storefront_contact_whatsapp', 'storefront_brand_strip',
+        'storefront_promo_enabled', 'storefront_promo_badge', 'storefront_promo_title',
+        'storefront_promo_text', 'storefront_promo_cta_label', 'storefront_promo_offer_id',
         'storefront_announcement_ar', 'storefront_announcement_en',
         'storefront_hero_title_ar', 'storefront_hero_title_en',
         'storefront_hero_text_ar', 'storefront_hero_text_en',
@@ -152,24 +154,28 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
   const businessWhatsapp = defaultWhatsApp(settings.whatsapp_numbers);
   const contactWhatsapp = normalizeMoroccanPhone(settings.storefront_contact_whatsapp || "") || businessWhatsapp;
 
-  const publicProducts = products.map((product) => {
+  const publicProducts = products.flatMap((product) => {
     const available = product.availabilityMode !== "out_of_stock";
     const firstImage = mediaByOwner.get(`product:${product.id}`);
-    return {
+    const salePrice = Math.max(0, Number(product.salePrice) || 0);
+    // La boutique publique n'affiche jamais une fiche incomplète : la publication
+    // reste manuelle et une vraie photo + un nom + un prix sont requis.
+    if (!firstImage || !product.name.trim() || salePrice <= 0) return [];
+    return [{
       id: product.id,
       kind: "product" as const,
       productCode: product.productCode,
       name: product.name,
       category: publicCategory(product.category),
-      salePrice: Math.max(0, Number(product.salePrice) || 0),
+      salePrice,
       comparePrice: 0,
       badge: product.badge,
       description: product.description,
       availability: available ? "Disponible" : "Rupture de stock",
       available,
       lowStock: false,
-      images: firstImage ? [firstImage] : [],
-    };
+      images: [firstImage],
+    }];
   });
 
   const publicOffers = offers.flatMap((offer) => {
@@ -177,13 +183,15 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     if (!components.length || components.some((item) => excludedPublicCategories.has(item.category) || item.archivedAt)) return [];
     const available = components.every((item) => item.availabilityMode !== "out_of_stock");
     const firstImage = mediaByOwner.get(`offer:${offer.id}`);
+    const salePrice = Math.max(0, Number(offer.price) || 0);
+    if (!firstImage || !offer.name.trim() || salePrice <= 0) return [];
     return [{
       id: offer.id,
       kind: "offer" as const,
       productCode: `PACK-${offer.id}`,
       name: offer.name,
       category: "Packs & offres",
-      salePrice: Math.max(0, Number(offer.price) || 0),
+      salePrice,
       comparePrice: Math.max(0, Number(offer.comparePrice) || 0),
       badge: offer.badge,
       description: offer.description,
@@ -204,6 +212,16 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
   const heroTitle = settings.storefront_hero_title?.trim() || "Les pièces que vous aimez, simplement livrées chez vous.";
   const heroText = settings.storefront_hero_text?.trim() || "Choisissez vos articles, validez votre commande en ligne et payez à la livraison. Notre équipe vous contacte ensuite pour confirmer.";
   const shippingNote = settings.storefront_shipping_note?.trim() || "Livraison gratuite partout au Maroc. Notre équipe confirme chaque commande avant préparation.";
+  const configuredPromoOfferId = Math.max(0, Number(settings.storefront_promo_offer_id) || 0);
+  const promoOfferId = publicOffers.some((offer) => offer.id === configuredPromoOfferId) ? configuredPromoOfferId : null;
+  const promotionBanner = {
+    enabled: settings.storefront_promo_enabled === "1",
+    badge: settings.storefront_promo_badge?.trim() || "OFFRE",
+    title: settings.storefront_promo_title?.trim() || "",
+    text: settings.storefront_promo_text?.trim() || "",
+    ctaLabel: settings.storefront_promo_cta_label?.trim() || "Voir l’offre",
+    offerId: promoOfferId,
+  };
 
   return {
     brand,
@@ -212,6 +230,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     heroText,
     shippingNote,
     metaPixelId: settings.storefront_meta_pixel_id?.trim() || "",
+    promotionBanner,
     logoUrl,
     heroImageUrl,
     whatsapp: contactWhatsapp,
