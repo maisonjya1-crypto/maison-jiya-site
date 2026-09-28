@@ -163,3 +163,55 @@
 }
 
 @media(prefers-reduced-motion:reduce){.storefront-v3-marquee-track,.storefront-v3-brand-strip-track{animation:none}.storefront-v3-product-media img{transition:none}}
+
+/* Merchandising piloté depuis le site privé */
+.storefront-v3-promotion-bar {
+  width: min(1180px, calc(100% - 32px));
+  margin: 18px auto 0;
+  padding: 14px 18px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid rgba(79, 49, 84, .16);
+  border-radius: 18px;
+  background: linear-gradient(135deg, #2f2332, #5e465f);
+  color: #fff;
+  box-shadow: 0 14px 34px rgba(47, 35, 50, .14);
+}
+.storefront-v3-promotion-bar > span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.14);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  white-space: nowrap;
+}
+.storefront-v3-promotion-bar > div { min-width: 0; display: grid; gap: 2px; }
+.storefront-v3-promotion-bar strong { font-size: clamp(14px, 1.6vw, 19px); line-height: 1.2; }
+.storefront-v3-promotion-bar small { color: rgba(255,255,255,.78); font-size: 12px; line-height: 1.4; }
+.storefront-v3-promotion-bar a {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 13px;
+  border-radius: 11px;
+  background: #fff;
+  color: #2f2332;
+  font-size: 11px;
+  font-weight: 850;
+  text-decoration: none;
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .storefront-v3-promotion-bar {
+    width: calc(100% - 20px);
+    grid-template-columns: auto minmax(0, 1fr);
+    margin-top: 10px;
+    padding: 12px;
+    gap: 10px;
+  }
+  .storefront-v3-promotion-bar a { grid-column: 1 / -1; width: 100%; }
+}
