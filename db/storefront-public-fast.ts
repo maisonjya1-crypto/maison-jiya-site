@@ -197,7 +197,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       description: product.description,
       availability: available ? "Disponible" : "Rupture de stock",
       available,
-      lowStock: available && product.stockQuantity <= 3,
+      lowStock: false,
       images: [firstImage],
     }];
   });
