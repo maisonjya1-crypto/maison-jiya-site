@@ -7,7 +7,6 @@ type PublicProductRow = {
   name: string;
   category: string;
   salePrice: number;
-  stockQuantity: number;
   availabilityMode: string;
   badge: string;
   description: string;
@@ -26,8 +25,8 @@ type OfferItemRow = {
   offerId: number;
   productId: number;
   quantity: number;
-  stockQuantity: number;
   category: string;
+  availabilityMode: string;
   archivedAt: string | null;
 };
 
@@ -71,7 +70,6 @@ export async function loadStorefrontCatalog(database: D1Database): Promise<Store
         COALESCE(NULLIF(s.public_name, ''), p.name) AS name,
         p.category,
         CASE WHEN s.public_price IS NULL OR s.public_price <= 0 THEN p.sale_price ELSE s.public_price END AS salePrice,
-        p.stock_quantity AS stockQuantity,
         COALESCE(s.availability_mode, 'auto') AS availabilityMode,
         COALESCE(s.badge, '') AS badge,
         COALESCE(s.description, '') AS description
@@ -92,10 +90,12 @@ export async function loadStorefrontCatalog(database: D1Database): Promise<Store
     `),
     database.prepare(`
       SELECT i.offer_id AS offerId, i.product_id AS productId, i.quantity,
-             p.stock_quantity AS stockQuantity, p.category AS category,
+             p.category AS category,
+             COALESCE(s.availability_mode, 'available') AS availabilityMode,
              p.archived_at AS archivedAt
       FROM storefront_offer_items i
       JOIN products p ON p.id = i.product_id
+      LEFT JOIN storefront_product_settings s ON s.product_id = p.id
       ORDER BY i.offer_id, i.product_id
     `),
     database.prepare(`
@@ -147,8 +147,7 @@ export async function loadStorefrontCatalog(database: D1Database): Promise<Store
   const contactWhatsapp = normalizeMoroccanPhone(settings.storefront_contact_whatsapp || "") || businessWhatsapp;
 
   const publicProducts = products.map((product) => {
-    const forcedOut = product.availabilityMode === "out_of_stock";
-    const available = product.stockQuantity > 0 && !forcedOut;
+    const available = product.availabilityMode !== "out_of_stock";
     return {
       id: product.id,
       kind: "product" as const,
@@ -159,9 +158,9 @@ export async function loadStorefrontCatalog(database: D1Database): Promise<Store
       comparePrice: 0,
       badge: product.badge,
       description: product.description,
-      availability: available ? "En stock" : "Rupture de stock",
+      availability: available ? "Disponible à la commande" : "Indisponible",
       available,
-      lowStock: available && product.stockQuantity <= 3,
+      lowStock: false,
       images: mediaByOwner.get(`product:${product.id}`) || [],
     };
   });
@@ -169,7 +168,7 @@ export async function loadStorefrontCatalog(database: D1Database): Promise<Store
   const publicOffers = offers.flatMap((offer) => {
     const components = itemsByOffer.get(offer.id) || [];
     if (!components.length || components.some((item) => excludedPublicCategories.has(item.category) || item.archivedAt)) return [];
-    const available = components.every((item) => item.stockQuantity >= item.quantity);
+    const available = components.every((item) => item.availabilityMode !== "out_of_stock");
     return [{
       id: offer.id,
       kind: "offer" as const,
@@ -180,7 +179,7 @@ export async function loadStorefrontCatalog(database: D1Database): Promise<Store
       comparePrice: Math.max(0, Number(offer.comparePrice) || 0),
       badge: offer.badge,
       description: offer.description,
-      availability: available ? "En stock" : "Rupture de stock",
+      availability: available ? "Disponible à la commande" : "Indisponible",
       available,
       lowStock: false,
       images: mediaByOwner.get(`offer:${offer.id}`) || [],
