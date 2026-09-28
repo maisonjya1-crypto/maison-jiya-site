@@ -13,6 +13,10 @@ import {
   type MonthlyClosingOrder,
 } from "../lib/monthly-closing";
 
+type SourceOrder = MonthlyClosingOrder & { fulfillmentType: string };
+type SourceExpense = MonthlyClosingExpense & { paymentStatus: string; account: string | null };
+type SourceCapital = MonthlyClosingCapital & { account: string | null };
+
 type TreasuryPurchaseRow = {
   totalCost: number;
   paymentStatus: string;
@@ -75,6 +79,7 @@ async function monthlySourceRows(database: D1Database) {
         id,
         status,
         payment_status AS paymentStatus,
+        fulfillment_type AS fulfillmentType,
         sale_amount AS saleAmount,
         product_cost AS productCost,
         shipping_cost AS shippingCost,
@@ -85,15 +90,15 @@ async function monthlySourceRows(database: D1Database) {
         updated_at AS updatedAt
       FROM orders
       WHERE deleted_at IS NULL
-    `).all<MonthlyClosingOrder>(),
+    `).all<SourceOrder>(),
     database.prepare(`
       SELECT order_id AS orderId, to_status AS toStatus, changed_at AS changedAt
       FROM order_status_history
     `).all<MonthlyClosingHistory>(),
     database.prepare(`
-      SELECT amount, expense_date AS expenseDate
+      SELECT amount, expense_date AS expenseDate, payment_status AS paymentStatus, account
       FROM expenses
-    `).all<MonthlyClosingExpense>(),
+    `).all<SourceExpense>(),
     database.prepare(`
       SELECT spend, performance_date AS performanceDate
       FROM ad_performance
@@ -103,9 +108,9 @@ async function monthlySourceRows(database: D1Database) {
       FROM inventory_counts
     `).all<MonthlyClosingInventoryCount>(),
     database.prepare(`
-      SELECT direction, category, amount, is_automatic AS isAutomatic, entry_date AS entryDate
+      SELECT direction, category, amount, is_automatic AS isAutomatic, entry_date AS entryDate, account
       FROM capital_ledger
-    `).all<MonthlyClosingCapital>(),
+    `).all<SourceCapital>(),
     database.prepare(`
       SELECT difference_amount AS differenceAmount, settlement_date AS settlementDate
       FROM carrier_settlements
@@ -197,28 +202,12 @@ export async function buildMonthlyClosingPreview(database: D1Database, monthKey:
     : "Catalogue au moment de la clôture";
 
   const currentTreasury = calculateTreasuryAccounts({
-    orders: rows.orders.map((order) => ({
-      paymentStatus: order.paymentStatus,
-      fulfillmentType: "Livraison",
-      saleAmount: order.saleAmount,
-      shippingCost: order.shippingCost,
-      fees: order.fees,
-      returnCost: order.returnCost,
-    })),
+    orders: rows.orders,
     purchases: rows.purchases,
     supplierPayments: rows.supplierPayments,
-    expenses: rows.expenses.map((expense) => ({
-      amount: expense.amount,
-      paymentStatus: "Payé",
-      account: "Banque",
-    })),
+    expenses: rows.expenses,
     ads: rows.ads,
-    capital: rows.capital.map((entry) => ({
-      direction: entry.direction,
-      amount: entry.amount,
-      account: "Banque",
-      isAutomatic: entry.isAutomatic,
-    })),
+    capital: rows.capital,
     carrierSettlementAdjustment: rows.carrierSettlements.reduce((sum, settlement) => sum + Number(settlement.differenceAmount || 0), 0),
   });
   const cashEnd = latestDailyClosing ? Number(latestDailyClosing.actualTotal || 0) : currentTreasury.total;
