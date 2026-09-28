@@ -4728,7 +4728,7 @@ function MonthlyClosingPanel({
   const currentMonth = todayKey.slice(0, 7);
   const [selectedMonth, setSelectedMonth] = useState(() => previousMonthKey(currentMonth));
   const [saving, setSaving] = useState(false);
-  const monthOptions = useMemo(() => {
+  const monthOptions = (() => {
     const values = new Set<string>(data.monthlyClosings.map((closing) => closing.monthKey));
     const cursor = new Date(`${currentMonth}-01T12:00:00Z`);
     for (let index = 0; index < 24; index += 1) {
@@ -4736,7 +4736,7 @@ function MonthlyClosingPanel({
       cursor.setUTCMonth(cursor.getUTCMonth() - 1);
     }
     return [...values].sort((left, right) => right.localeCompare(left));
-  }, [currentMonth, data.monthlyClosings]);
+  })();
   const bounds = monthBounds(selectedMonth);
   const previousKey = previousMonthKey(selectedMonth);
   const previousClosing = data.monthlyClosings.find((closing) => closing.monthKey === previousKey) || null;
