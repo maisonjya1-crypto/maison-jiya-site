@@ -54,10 +54,6 @@ export type MonthlyClosingSaveInput = {
   userName: string;
 };
 
-function roundMoney(value: number) {
-  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
-}
-
 async function monthlySourceRows(database: D1Database) {
   const [
     orders,
