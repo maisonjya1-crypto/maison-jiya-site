@@ -288,6 +288,10 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
         <span>Boutique publique</span>
         <h1>Piloter uniquement ce que voient les clients</h1>
         <p>Produits publics, photos, prix, packs, offres et contact restent séparés de tes coûts et de ta gestion interne.</p>
+        {!loading && <div className={`storefront-cms-access-status ${data.canEdit ? "can-edit" : "read-only"}`}>
+          <strong>{data.canEdit ? "Mode édition" : "Lecture seule"}</strong>
+          <span>{data.canEdit ? "Tu peux modifier les prix, l’affichage, les textes, les offres et ajouter/supprimer les photos." : "Ton compte peut consulter la boutique, mais pas modifier les prix, offres ou photos."}</span>
+        </div>}
       </div>
       <div>
         <a href="/boutique" target="_blank" rel="noreferrer">Voir la boutique ↗</a>
