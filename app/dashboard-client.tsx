@@ -5910,7 +5910,6 @@ function CapitalPage({
 }) {
   const currentYear = new Date().getFullYear();
   const allocationPolicy = allocationPolicyFromSettings(data.settings);
-  const automaticAllocations = data.capital.filter((entry) => entry.isAutomatic);
   const personalSalary = metrics.theoreticalSalary;
   const emergencyFund = metrics.theoreticalEmergency;
   const distributableCapital = metrics.reinvest + personalSalary + emergencyFund;
