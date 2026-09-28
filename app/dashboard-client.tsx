@@ -14,6 +14,7 @@ import { buildMonthlyFinancialSnapshot, isCompletedBusinessMonth, monthBounds, p
 import { calculateSmartCapital } from "../lib/smart-capital";
 import { buildDashboardPilotage } from "../lib/dashboard-pilotage";
 import { buildDashboardAlerts } from "../lib/dashboard-alerts";
+import { buildDashboardDecisions } from "../lib/dashboard-decisions";
 
 type Order = {
   id: number;
@@ -1610,6 +1611,10 @@ function Page({
     expenses: data.expenses,
     orderStatusHistory: data.orderStatusHistory,
   });
+  const dailyDecisions = buildDashboardDecisions({
+    alerts: smartAlerts,
+    pilotage,
+  });
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Inventaire") return <InventoryPage products={data.products} sessions={data.inventorySessions} counts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} />;
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} onRestore={restoreProduct} />;
@@ -1691,6 +1696,44 @@ function Page({
         <Kpi label="Dépenses Meta saisies" value={money(metrics.adSpend)} detail={`ROAS · ${metrics.roas.toFixed(2)}×`} />
         <Kpi label="Pertes & retours" value={money(metrics.losses)} detail="Coûts déclarés" danger />
       </section>
+      <section className="decision-center panel" aria-label="Décisions du jour">
+        <div className="decision-center-head">
+          <div>
+            <span className="card-kicker">Priorités opérationnelles</span>
+            <h2>Décisions du jour</h2>
+            <p>Une liste courte d’actions concrètes à examiner aujourd’hui. Rien n’est exécuté automatiquement.</p>
+          </div>
+          <span className="decision-center-count">{dailyDecisions.length} action{dailyDecisions.length > 1 ? "s" : ""}</span>
+        </div>
+        {dailyDecisions.length ? (
+          <div className="decision-center-list">
+            {dailyDecisions.map((decision, index) => (
+              <article className={`decision-card ${decision.priority === "P1" ? "urgent" : decision.priority === "OPPORTUNITÉ" ? "opportunity" : ""}`} key={decision.id}>
+                <div className="decision-card-top">
+                  <span className="decision-index">{String(index + 1).padStart(2, "0")}</span>
+                  <span className={`decision-priority ${decision.priority.toLowerCase().replace("é", "e")}`}>{decision.priority}</span>
+                </div>
+                <h3>{decision.title}</h3>
+                <p>{decision.reason}</p>
+                <div className="decision-card-foot">
+                  {decision.amount !== undefined ? <strong>{money(decision.amount)}</strong> : <span />}
+                  <button type="button" onClick={() => setActive(decision.target)}>{decision.actionLabel} →</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="decision-center-empty">
+            <span>✓</span>
+            <div>
+              <strong>Aucune action prioritaire détectée</strong>
+              <small>Le tableau de bord n’identifie pas de décision urgente à partir des données disponibles.</small>
+            </div>
+          </div>
+        )}
+        <small className="decision-center-note">Ces décisions sont des raccourcis opérationnels fondés sur les règles Maison Jiya. Vérifiez toujours le détail du module avant d’enregistrer une action.</small>
+      </section>
+
       <section className="smart-alerts-panel panel" aria-label="Centre d’alertes">
         <div className="smart-alerts-head">
           <div>

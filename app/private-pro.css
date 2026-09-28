@@ -952,3 +952,170 @@
     grid-column:2;
   }
 }
+
+
+/* V1.1 — centre de décisions du jour */
+.app-shell .decision-center{
+  margin-top:14px;
+  display:grid;
+  gap:14px;
+}
+.app-shell .decision-center-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:18px;
+}
+.app-shell .decision-center-head h2{
+  margin:4px 0 5px;
+  font:650 20px/1.2 Georgia,serif;
+}
+.app-shell .decision-center-head p{
+  margin:0;
+  max-width:760px;
+  color:var(--muted);
+  font-size:9px;
+  line-height:1.5;
+}
+.app-shell .decision-center-count{
+  flex:0 0 auto;
+  padding:7px 10px;
+  border:1px solid color-mix(in srgb,var(--forest) 28%,var(--line));
+  border-radius:999px;
+  background:color-mix(in srgb,var(--forest) 6%,var(--paper));
+  color:var(--forest);
+  font-size:8px;
+  font-weight:800;
+}
+.app-shell .decision-center-list{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+}
+.app-shell .decision-card{
+  min-width:0;
+  display:grid;
+  align-content:start;
+  gap:9px;
+  padding:15px;
+  border:1px solid var(--line);
+  border-radius:13px;
+  background:var(--surface-soft);
+}
+.app-shell .decision-card.urgent{
+  border-color:color-mix(in srgb,#b94f52 32%,var(--line));
+  background:linear-gradient(180deg,color-mix(in srgb,#b94f52 5%,var(--paper)),var(--surface-soft));
+}
+.app-shell .decision-card.opportunity{
+  border-color:color-mix(in srgb,#3f8b69 30%,var(--line));
+  background:linear-gradient(180deg,color-mix(in srgb,#3f8b69 5%,var(--paper)),var(--surface-soft));
+}
+.app-shell .decision-card-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.app-shell .decision-index{
+  color:var(--muted);
+  font:800 8px/1 ui-monospace,SFMono-Regular,Consolas,monospace;
+}
+.app-shell .decision-priority{
+  padding:4px 7px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:var(--paper);
+  color:var(--muted);
+  font-size:7px;
+  font-weight:900;
+  letter-spacing:.05em;
+}
+.app-shell .decision-priority.p1{
+  border-color:color-mix(in srgb,#b94f52 34%,var(--line));
+  color:#9c3d42;
+}
+.app-shell .decision-priority.p2{
+  border-color:color-mix(in srgb,#b58936 34%,var(--line));
+  color:#8a6926;
+}
+.app-shell .decision-priority.opportunite{
+  border-color:color-mix(in srgb,#3f8b69 34%,var(--line));
+  color:#397259;
+}
+.app-shell .decision-card h3{
+  margin:0;
+  font:650 15px/1.3 Georgia,serif;
+}
+.app-shell .decision-card p{
+  margin:0;
+  color:var(--muted);
+  font-size:8px;
+  line-height:1.55;
+}
+.app-shell .decision-card-foot{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:auto;
+  padding-top:4px;
+}
+.app-shell .decision-card-foot strong{
+  font-size:10px;
+}
+.app-shell .decision-card-foot button{
+  min-height:32px;
+  padding:7px 9px;
+  border:1px solid var(--line);
+  border-radius:9px;
+  background:var(--paper);
+  color:var(--forest);
+  font-size:8px;
+  font-weight:800;
+  cursor:pointer;
+}
+.app-shell .decision-card-foot button:hover{
+  border-color:color-mix(in srgb,var(--forest) 35%,var(--line));
+  background:color-mix(in srgb,var(--forest) 5%,var(--paper));
+}
+.app-shell .decision-center-empty{
+  display:flex;
+  align-items:center;
+  gap:11px;
+  padding:15px;
+  border:1px solid color-mix(in srgb,#3f8b69 24%,var(--line));
+  border-radius:12px;
+  background:color-mix(in srgb,#3f8b69 5%,var(--paper));
+}
+.app-shell .decision-center-empty>span{
+  width:32px;
+  height:32px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  background:#3f8b69;
+  color:#fff;
+  font-weight:900;
+}
+.app-shell .decision-center-empty>div{
+  display:grid;
+  gap:3px;
+}
+.app-shell .decision-center-empty strong{font-size:10px}
+.app-shell .decision-center-empty small{color:var(--muted);font-size:8px}
+.app-shell .decision-center-note{
+  color:var(--muted);
+  font-size:7px;
+  line-height:1.5;
+}
+
+@media(max-width:1150px){
+  .app-shell .decision-center-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:720px){
+  .app-shell .decision-center-head{
+    flex-direction:column;
+    gap:9px;
+  }
+  .app-shell .decision-center-list{grid-template-columns:1fr}
+}
