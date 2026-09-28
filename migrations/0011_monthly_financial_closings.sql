@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS monthly_closings (
   manual_capital_in REAL DEFAULT 0 NOT NULL,
   manual_capital_out REAL DEFAULT 0 NOT NULL,
   stock_value_start REAL,
-  stock_value_end REAL DEFAULT 0 NOT NULL,
+  stock_value_end REAL,
   stock_value_source TEXT DEFAULT '' NOT NULL,
   cash_end REAL DEFAULT 0 NOT NULL,
   cash_end_source TEXT DEFAULT '' NOT NULL,
