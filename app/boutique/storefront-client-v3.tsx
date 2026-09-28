@@ -133,6 +133,18 @@ function sanitizeStoredCart(value: unknown): Cart {
   }
   return clean;
 }
+
+function pruneCartForCatalog(cart: Cart, catalog: StorefrontCatalog | null): Cart {
+  if (!catalog) return cart;
+  const validItems = new Map([...catalog.offers, ...catalog.products].map((item) => [itemKey(item), item]));
+  const next: Cart = {};
+  for (const [key, quantity] of Object.entries(cart)) {
+    const item = validItems.get(key);
+    if (!item || !item.available) continue;
+    next[key] = quantity;
+  }
+  return next;
+}
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("fr");
 const isBestSeller = (badge: string) => normalize(badge || "").replace(/[^a-z0-9]/g, "").includes("bestseller");
 
@@ -311,6 +323,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       const response = await fetch(`/api/storefront/catalog?refresh=${Date.now()}`, { cache: "no-store", headers: { "cache-control": "no-cache" } });
       const body = await response.json() as StorefrontCatalog & { error?: string };
       if (!response.ok) throw new Error(body.error || "Catalogue indisponible.");
+      setCart((current) => pruneCartForCatalog(current, body));
       setCatalog(body);
       setError("");
       lastRefreshAt.current = Date.now();
@@ -328,7 +341,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         const savedLang = localStorage.getItem("maison-jiya-language-v3");
         if (savedLang === "fr" || savedLang === "ar" || savedLang === "en") setLang(savedLang);
         const savedCart = localStorage.getItem("maison-jiya-cart-v3");
-        if (savedCart) setCart(sanitizeStoredCart(JSON.parse(savedCart)));
+        if (savedCart) setCart(pruneCartForCatalog(sanitizeStoredCart(JSON.parse(savedCart)), initialCatalog));
       } catch { /* stockage facultatif */ }
       setPreferencesLoaded(true);
       const params = new URLSearchParams(window.location.search);
@@ -394,25 +407,6 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const weeklyOffers = promotedOffer ? [promotedOffer, ...offers.filter((item) => item.id !== promotedOffer.id)] : offers;
   const weekly = (weeklyOffers.length ? weeklyOffers : products).slice(0, 8);
   const collectionCategories = (catalog?.categories || []).filter((item) => item !== "Packs & offres").slice(0, 6);
-
-  useEffect(() => {
-    if (!preferencesLoaded || !catalog) return;
-    const validItems = new Map(items.map((item) => [itemKey(item), item]));
-    setCart((current) => {
-      const next: Cart = {};
-      let changed = false;
-      for (const [key, quantity] of Object.entries(current)) {
-        const item = validItems.get(key);
-        if (!item || !item.available) {
-          changed = true;
-          continue;
-        }
-        next[key] = quantity;
-      }
-      if (!changed && Object.keys(next).length === Object.keys(current).length) return current;
-      return next;
-    });
-  }, [catalog, items, preferencesLoaded]);
 
   const cartLines = useMemo(() => Object.entries(cart).map(([key, quantity]) => {
     const item = items.find((candidate) => itemKey(candidate) === key);
