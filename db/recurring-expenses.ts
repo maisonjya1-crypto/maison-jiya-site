@@ -78,7 +78,7 @@ export async function ensureRecurringExpenseOccurrences(database: D1Database, to
     WHERE is_active = 1
   `).all<RecurringExpenseSchedule>()).results;
 
-  const statements: ReturnType<D1Database["prepare"]>[] = [];
+  const statements = [] as ReturnType<typeof database.prepare>[];
   for (const schedule of schedules) {
     for (const occurrence of recurringOccurrenceDates(schedule, today, horizonDays)) {
       statements.push(database.prepare(`
