@@ -716,6 +716,72 @@ function createBackupToken() {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+function googleSheetsBearerScript() {
+  return `const DATASETS = {
+  Commandes: "orders",
+  Produits: "products",
+  Colis: "shipments",
+  Clients: "customers",
+  Achats: "purchases",
+  Publicités: "ads",
+  Capital: "capital",
+  "Mouvements stock": "stock-movements",
+  Agences: "carriers",
+  Partenaires: "members",
+  Paramètres: "settings"
+};
+
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu("Maison Jiya")
+    .addItem("Synchroniser maintenant", "synchroniserMaisonJiya")
+    .addItem("Installer la sauvegarde automatique", "installerSynchronisation")
+    .addToUi();
+}
+
+function synchroniserMaisonJiya() {
+  const ss = SpreadsheetApp.getActive();
+  const cfg = ss.getSheetByName("Configuration");
+  const site = String(cfg.getRange("B5").getDisplayValue()).replace(/\\\/$/, "");
+  const key = String(cfg.getRange("B6").getDisplayValue()).trim();
+  if (!site || !key || key.indexOf("COLLEZ_ICI") === 0) throw new Error("Ajoutez d’abord la clé privée dans Configuration!B6.");
+
+  const stamp = Utilities.formatDate(new Date(), "Africa/Casablanca", "yyyy-MM-dd HH:mm:ss");
+  try {
+    Object.entries(DATASETS).forEach(([sheetName, dataset]) => {
+      const url = site + "/api/backup/google-sheets?dataset=" + encodeURIComponent(dataset);
+      const response = UrlFetchApp.fetch(url, {
+        method: "get",
+        headers: { Authorization: "Bearer " + key },
+        muteHttpExceptions: true
+      });
+      if (response.getResponseCode() !== 200) throw new Error("Échec " + sheetName + " (" + response.getResponseCode() + ")");
+
+      const rows = Utilities.parseCsv(response.getContentText("UTF-8"));
+      const sheet = ss.getSheetByName(sheetName);
+      sheet.clearContents();
+      if (rows.length && rows[0].length) sheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
+      sheet.setFrozenRows(1);
+      if (sheet.getFilter()) sheet.getFilter().remove();
+      if (rows.length > 1) sheet.getRange(1, 1, rows.length, rows[0].length).createFilter();
+      sheet.getRange(1, 1, 1, Math.max(1, rows[0].length)).setBackground("#725682").setFontColor("#FFFFFF").setFontWeight("bold");
+    });
+
+    cfg.getRange("B8").setValue(stamp);
+    cfg.getRange("B9").setValue("Synchronisation réussie");
+    ss.getSheetByName("Accueil").getRange("B5:B6").setValues([["Active"], [stamp]]);
+  } catch (error) {
+    cfg.getRange("B9").setValue("Erreur : " + error.message);
+    throw error;
+  }
+}
+
+function installerSynchronisation() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === "synchroniserMaisonJiya").forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger("synchroniserMaisonJiya").timeBased().everyHours(1).create();
+  synchroniserMaisonJiya();
+}`;
+}
+
 function parseCarrierNames(settings: Record<string, string>) {
   const candidates: string[] = [];
   try {
@@ -1550,7 +1616,7 @@ function Page({
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
   if (active === "Mode entraînement") return <TrainingPage onExit={() => setActive("Vue d’ensemble")} />;
   if (active === "Corbeille") return <TrashPage orders={data.trash} canRestore={data.access.isOwner} submit={submit} />;
-  if (active === "Paramètres") return <SettingsPage settings={data.settings} currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} backupHealthStatus={data.settings.backup_health_status || ""} backupHealthCheckedAt={data.settings.backup_health_checked_at || ""} backupHealthCreatedAt={data.settings.backup_health_backup_created_at || ""} backupHealthRecordCount={Number(data.settings.backup_health_record_count || 0)} backupHealthLastError={data.settings.backup_health_last_error || ""} googleSheetsSync={data.googleSheetsSync} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditApiVerified={data.settings.sendit_api_verified === "true"} senditApiCheckedAt={data.settings.sendit_api_checked_at || ""} senditApiLastError={data.settings.sendit_api_last_error || ""} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} senditWebhookVerifiedAt={data.settings.sendit_webhook_verified_at || ""} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} forceLogApiVerified={data.settings.forcelog_api_verified === "true"} forceLogApiCheckedAt={data.settings.forcelog_api_checked_at || ""} forceLogApiLastError={data.settings.forcelog_api_last_error || ""} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} products={data.products} submit={submit} />;
+  if (active === "Paramètres") return <SettingsPage settings={data.settings} currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupBearerOnly={data.settings.backup_bearer_only === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} backupHealthStatus={data.settings.backup_health_status || ""} backupHealthCheckedAt={data.settings.backup_health_checked_at || ""} backupHealthCreatedAt={data.settings.backup_health_backup_created_at || ""} backupHealthRecordCount={Number(data.settings.backup_health_record_count || 0)} backupHealthLastError={data.settings.backup_health_last_error || ""} googleSheetsSync={data.googleSheetsSync} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditApiVerified={data.settings.sendit_api_verified === "true"} senditApiCheckedAt={data.settings.sendit_api_checked_at || ""} senditApiLastError={data.settings.sendit_api_last_error || ""} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} senditWebhookVerifiedAt={data.settings.sendit_webhook_verified_at || ""} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} forceLogApiVerified={data.settings.forcelog_api_verified === "true"} forceLogApiCheckedAt={data.settings.forcelog_api_checked_at || ""} forceLogApiLastError={data.settings.forcelog_api_last_error || ""} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} products={data.products} submit={submit} />;
   const deliveryOrderCount = data.orders.filter((order) => order.fulfillmentType !== "Magasin physique").length;
   const total = Math.max(1, deliveryOrderCount);
   return (
@@ -1641,13 +1707,14 @@ function Page({
   );
 }
 
-function SettingsPage({ settings, currentTheme, accountName, accountEmail, carriers, backupConfigured, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, backupHealthStatus, backupHealthCheckedAt, backupHealthCreatedAt, backupHealthRecordCount, backupHealthLastError, googleSheetsSync, senditApiConfigured, senditApiVerified, senditApiCheckedAt, senditApiLastError, senditWebhookConfigured, senditWebhookVerifiedAt, forceLogApiConfigured, forceLogApiVerified, forceLogApiCheckedAt, forceLogApiLastError, carrierLastSyncAt, access, members, auditLogs, backups, products, submit }: {
+function SettingsPage({ settings, currentTheme, accountName, accountEmail, carriers, backupConfigured, backupBearerOnly, backupSheetUrl, backupWebhookUrl, backupWebhookConfigured, backupHealthStatus, backupHealthCheckedAt, backupHealthCreatedAt, backupHealthRecordCount, backupHealthLastError, googleSheetsSync, senditApiConfigured, senditApiVerified, senditApiCheckedAt, senditApiLastError, senditWebhookConfigured, senditWebhookVerifiedAt, forceLogApiConfigured, forceLogApiVerified, forceLogApiCheckedAt, forceLogApiLastError, carrierLastSyncAt, access, members, auditLogs, backups, products, submit }: {
   settings: Record<string, string>;
   currentTheme: ThemeKey;
   accountName: string;
   accountEmail: string;
   carriers: string[];
   backupConfigured: boolean;
+  backupBearerOnly: boolean;
   backupSheetUrl: string;
   backupWebhookUrl: string;
   backupWebhookConfigured: boolean;
@@ -1693,6 +1760,8 @@ function SettingsPage({ settings, currentTheme, accountName, accountEmail, carri
   const [retryingSheets, setRetryingSheets] = useState(false);
   const [backupToken, setBackupToken] = useState("");
   const [copyState, setCopyState] = useState("");
+  const [scriptCopyState, setScriptCopyState] = useState("");
+  const [savingBackupAuthMode, setSavingBackupAuthMode] = useState(false);
   const selectedTheme = themeOptions.find((theme) => theme.key === currentTheme) || themeOptions[0];
   const allocationPolicy = allocationPolicyFromSettings(settings);
   const syncState = googleSheetsSync.state;
@@ -1760,6 +1829,26 @@ function SettingsPage({ settings, currentTheme, accountName, accountEmail, carri
       setCopyState("Clé copiée");
     } catch {
       setCopyState("Sélectionnez puis copiez la clé");
+    }
+  }
+
+  async function copySecureSheetsScript() {
+    try {
+      await navigator.clipboard.writeText(googleSheetsBearerScript());
+      setScriptCopyState("Code sécurisé copié");
+    } catch {
+      setScriptCopyState("Copie impossible : sélectionnez le code manuellement");
+    }
+  }
+
+  async function enableBackupBearerOnly() {
+    if (!access.isOwner || savingBackupAuthMode || backupBearerOnly) return;
+    if (!window.confirm("Activez ce mode uniquement après avoir remplacé le code Apps Script et vérifié une synchronisation réussie.\n\nAprès activation, toute clé placée dans l’URL sera refusée.")) return;
+    setSavingBackupAuthMode(true);
+    try {
+      await submit("updateBackupAuthMode", { enabled: "true" });
+    } finally {
+      setSavingBackupAuthMode(false);
     }
   }
 
@@ -2079,11 +2168,20 @@ function SettingsPage({ settings, currentTheme, accountName, accountEmail, carri
           <div className="backup-steps-card">
             <span className="card-kicker">2 · Classeur préparé</span>
             <h3>Sauvegarde Maison Jiya</h3>
+            <span className={`backup-status ${backupBearerOnly ? "active" : ""}`}>{backupBearerOnly ? "Bearer sécurisé actif" : "Migration sécurité à terminer"}</span>
             <ol>
-              <li><span>1</span><p><strong>Ouvrez le classeur</strong><small>Tous les onglets et le code de synchronisation sont déjà préparés.</small></p></li>
-              <li><span>2</span><p><strong>Collez la clé dans Configuration!B6</strong><small>Gardez cette clé privée et ne la partagez pas avec vos partenaires.</small></p></li>
-              <li><span>3</span><p><strong>Suivez l’onglet Installation</strong><small>Autorisez Google une seule fois. Le déclencheur périodique restera actif comme sauvegarde de secours.</small></p></li>
+              <li><span>1</span><p><strong>Copiez le nouveau code sécurisé</strong><small>La clé restera dans Configuration!B6 mais ne sera plus ajoutée dans l’adresse URL.</small></p></li>
+              <li><span>2</span><p><strong>Dans Google Sheets → Extensions → Apps Script</strong><small>Remplacez l’ancien code, enregistrez puis exécutez synchroniserMaisonJiya une fois.</small></p></li>
+              <li><span>3</span><p><strong>Vérifiez “Synchronisation réussie”</strong><small>Ensuite activez le mode strict ci-dessous pour bloquer définitivement l’ancien ?key=.</small></p></li>
             </ol>
+            <textarea className="backup-script-preview" readOnly value={googleSheetsBearerScript()} aria-label="Code Apps Script sécurisé" />
+            <div className="backup-actions">
+              <button className="secondary-button" type="button" onClick={() => void copySecureSheetsScript()}>{scriptCopyState || "Copier le code sécurisé"}</button>
+              {!backupBearerOnly && <button className="primary-button" type="button" onClick={() => void enableBackupBearerOnly()} disabled={savingBackupAuthMode || !access.isOwner || !backupConfigured}>
+                {savingBackupAuthMode ? "Activation…" : "Activer le mode strict"}
+              </button>}
+            </div>
+            {backupBearerOnly && <small>Les sauvegardes Google Sheets n’acceptent plus les clés placées dans l’URL.</small>}
             <a className="primary-button backup-sheet-link" href={backupSheetUrl} target="_blank" rel="noreferrer">Ouvrir le Google Sheet ↗</a>
           </div>
 
