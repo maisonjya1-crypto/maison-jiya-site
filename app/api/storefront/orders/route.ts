@@ -22,6 +22,32 @@ type CapturedItem = { productId: number; productCode: string; name: string; quan
 
 const excludedPublicCategories = new Set(["Électronique", "Electronique", "Boîtes", "Boites"]);
 
+const publicValidationMessages = new Set([
+  "Votre panier est invalide.",
+  "Un article du panier est invalide.",
+  "Quantité trop élevée pour un article.",
+  "Indiquez votre nom complet.",
+  "Indiquez un numéro marocain valide.",
+  "Indiquez votre ville.",
+  "Indiquez votre adresse de livraison.",
+  "Une offre du panier n’est plus disponible.",
+  "Une offre du panier est incomplète.",
+  "Votre panier est vide.",
+  "Un article du panier n’est plus disponible.",
+  "Un article du panier n’est pas disponible sur la boutique publique.",
+  "Le montant de la commande est invalide.",
+  "Impossible d’enregistrer vos coordonnées.",
+]);
+
+function safePublicOrderError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.startsWith("Trop de tentatives.")) return { message, status: 429 };
+  if (publicValidationMessages.has(message) || message.endsWith(" n’est plus disponible.")) {
+    return { message, status: 400 };
+  }
+  return { message: "Impossible d’enregistrer la commande.", status: 500 };
+}
+
 function text(value: unknown, max = 200) {
   return typeof value === "string" ? value.trim().replace(/\s+/g, " ").slice(0, max) : "";
 }
@@ -298,8 +324,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Maison Jiya public order failed", error);
-    const message = error instanceof Error ? error.message : "Impossible d’enregistrer la commande.";
-    const status = message.startsWith("Trop de tentatives") ? 429 : 400;
-    return Response.json({ error: message }, { status, headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" } });
+    const safe = safePublicOrderError(error);
+    return Response.json({ error: safe.message }, { status: safe.status, headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" } });
   }
 }
