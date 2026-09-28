@@ -13,12 +13,17 @@ export default function PrivateUiV3Enhancement() {
 
       document.querySelectorAll('select[name="availabilityMode"]').forEach((node) => {
         const select = node as unknown as HTMLSelectElement;
+        // Important : ce bloc est observé par MutationObserver. Ne jamais réécrire
+        // les options à chaque mutation, sinon l'écriture déclenche elle-même
+        // une nouvelle mutation et peut figer Chrome.
+        if (select.dataset.mjAvailabilityLabelsReady === "true") return;
+        select.dataset.mjAvailabilityLabelsReady = "true";
         const automatic = select.querySelector('option[value="auto"]') as HTMLOptionElement | null;
         const available = select.querySelector('option[value="available"]') as HTMLOptionElement | null;
         const unavailable = select.querySelector('option[value="out_of_stock"]') as HTMLOptionElement | null;
-        if (automatic) automatic.textContent = "Disponible sur le site (indépendant du stock)";
-        if (available) available.textContent = "Disponible sur le site (manuel)";
-        if (unavailable) unavailable.textContent = "Afficher « Rupture » manuellement";
+        if (automatic && automatic.textContent !== "Disponible sur le site (indépendant du stock)") automatic.textContent = "Disponible sur le site (indépendant du stock)";
+        if (available && available.textContent !== "Disponible sur le site (manuel)") available.textContent = "Disponible sur le site (manuel)";
+        if (unavailable && unavailable.textContent !== "Afficher « Rupture » manuellement") unavailable.textContent = "Afficher « Rupture » manuellement";
       });
 
       document.querySelectorAll(".storefront-cms-public-category-note").forEach((node) => {
