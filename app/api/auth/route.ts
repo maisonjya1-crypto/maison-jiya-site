@@ -11,6 +11,14 @@ function hasValidOrigin(request: Request) {
   return !origin || origin === new URL(request.url).origin;
 }
 
+async function loginAttemptScope(request: Request) {
+  const ip = request.headers.get("cf-connecting-ip")
+    || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || "unknown";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`login:${ip}`));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 32);
+}
+
 export async function GET(request: Request) {
   try {
     const [configured, user] = await Promise.all([usersExist(), getAuthenticatedUser(request)]);
@@ -45,7 +53,7 @@ export async function POST(request: Request) {
     }
 
     if (payload.action === "login") {
-      const user = await verifyLogin(payload.username || "", payload.password || "");
+      const user = await verifyLogin(payload.username || "", payload.password || "", await loginAttemptScope(request));
       const session = await createSession(user.id);
       return Response.json({ configured: true, user }, { headers: { "set-cookie": sessionCookie(session.token) } });
     }
