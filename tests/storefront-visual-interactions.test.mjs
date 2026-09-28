@@ -48,7 +48,7 @@ test("le responsive protège panier checkout galerie et largeur mobile", () => {
   assert.match(css, /@media\(max-width:390px\)/);
   assert.match(css, /storefront-v3-grid\.promo,.storefront-v3-grid\.catalogue,.storefront-v3-grid\.packs\{grid-template-columns:1fr\}/);
   assert.match(css, /@media\(max-width:760px\)/);
-  assert.match(css, /storefront-v3-product-dialog\{width:100%;max-height:100dvh/);
+  assert.match(css, /storefront-v3-product-dialog\{width:100%;max-width:none;max-height:100dvh/);
   assert.match(css, /storefront-v3-product-thumbnails\{[^}]*overflow-x:auto/);
 });
 

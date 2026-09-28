@@ -38,6 +38,9 @@ test("la galerie conserve l'ajout panier et reste responsive", () => {
   assert.match(styles, /storefront-v3-gallery-arrow/);
   assert.match(styles, /storefront-v3-product-thumbnails/);
   assert.match(styles, /@media\(max-width:760px\)/);
+  assert.doesNotMatch(styles, /storefront-v3-product-gallery-main\{aspect-ratio:1\/1\.08\}/);
+  assert.match(styles, /storefront-v3-product-gallery-main\{[^}]*aspect-ratio:auto/);
+  assert.match(styles, /storefront-v3-product-gallery-main>img\{[^}]*width:100%[^}]*height:auto/);
 });
 
 
