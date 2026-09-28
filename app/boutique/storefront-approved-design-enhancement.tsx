@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import type { CatalogItem, StorefrontCatalog } from "./storefront-types";
+import type { CatalogItem, StorefrontCatalog, StorefrontMarketingSection } from "./storefront-types";
 
 type Language = "fr" | "ar" | "en";
 type SelectBridge = { options: ArrayLike<{ value: string }>; value: string; dispatchEvent: (event: Event) => boolean };
@@ -188,6 +188,20 @@ export default function StorefrontApprovedDesignEnhancement() {
     goToCatalogue();
   }
 
+  function openMarketingTarget(section: StorefrontMarketingSection) {
+    if (section.target === "offers") {
+      document.querySelector("#offres")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (section.target === "catalogue") {
+      goToCatalogue();
+      return;
+    }
+    goToCategory(section.target, "catalogue");
+  }
+
+  const exactCategoryPromos = (catalog?.marketingSections || []).filter((section) => section.placement === "after_categories");
+
   const t = ui[lang];
 
   return <>
@@ -250,6 +264,20 @@ export default function StorefrontApprovedDesignEnhancement() {
           </span>
         </button>)}</div>
       </section>
+
+      {exactCategoryPromos.length > 0 && <section className="storefront-v3-marketing-zone storefront-reference-marketing-zone" data-placement="after_categories">
+        <div className={`storefront-v3-marketing-grid ${exactCategoryPromos.length === 1 ? "single" : ""}`}>
+          {exactCategoryPromos.map((section) => <article className={`storefront-v3-marketing-card ${section.imageUrl ? "has-image" : ""}`} key={section.id}>
+            {section.imageUrl && <div className="storefront-v3-marketing-media"><StoreImage src={section.imageUrl} alt={section.title} lazy /></div>}
+            <div className="storefront-v3-marketing-copy">
+              <div>{section.badge && <span className="storefront-v3-marketing-badge">{section.badge}</span>}{section.eyebrow && <small>{section.eyebrow}</small>}</div>
+              <h2>{section.title}</h2>
+              {section.body && <p>{section.body}</p>}
+              <button type="button" onClick={() => openMarketingTarget(section)}>{section.ctaLabel || t.discover} →</button>
+            </div>
+          </article>)}
+        </div>
+      </section>}
     </>, afterBrandHost)}
   </>;
 }
