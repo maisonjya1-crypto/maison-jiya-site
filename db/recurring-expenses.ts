@@ -107,7 +107,7 @@ export async function removeFutureRecurringOccurrences(database: D1Database, rec
   await database.prepare(`
     DELETE FROM expenses
     WHERE recurring_expense_id = ?
-      AND expense_date >= ?
+      AND expense_date > ?
       AND payment_status <> 'Payé'
   `).bind(recurringExpenseId, today).run();
 }
