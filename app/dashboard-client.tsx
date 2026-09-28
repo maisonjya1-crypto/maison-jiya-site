@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import AiPage from "./ai-page";
 import TrainingPage from "./training-page";
-import { calculateBusinessFinance, orderContributionBeforeGlobalAds } from "../lib/finance";
+import { calculateBusinessFinance, calculateOperatingProfit, orderContributionBeforeGlobalAds } from "../lib/finance";
 import { businessDateKey, deliveryRecognitionDate, returnRecognitionDate } from "../lib/accounting-dates";
 import { allocationPolicyFromSettings } from "../lib/allocation-policy";
 import { applyTreasuryReconciliation, calculateTreasuryAccounts } from "../lib/treasury";
@@ -5798,8 +5798,19 @@ function ReportsPage({ data }: { data: Data }) {
     return key >= startKey && key <= endKey;
   });
   const periodCard = (label: string, startKey: string, endKey: string) => {
-    const periodOrders = deliveredBetween(startKey, endKey);
-    const periodReturns = returnedBetween(startKey, endKey);
+    const deliveredOrders = deliveredBetween(startKey, endKey);
+    const returnedOrders = returnedBetween(startKey, endKey);
+    const periodOrders = [
+      ...deliveredOrders.map((order) => ({ ...order, status: "Livrée", returnCost: 0 })),
+      ...returnedOrders.map((order) => ({
+        ...order,
+        status: "Livrée",
+        saleAmount: -order.saleAmount,
+        productCost: 0,
+        shippingCost: 0,
+        fees: 0,
+      })),
+    ];
     const periodAds = data.ads.filter((ad) => {
       const key = businessDateKey(ad.performanceDate);
       return key >= startKey && key <= endKey;
@@ -5808,22 +5819,14 @@ function ReportsPage({ data }: { data: Data }) {
       const key = businessDateKey(expense.expenseDate);
       return key >= startKey && key <= endKey;
     });
-    const revenue = periodOrders.reduce((sum, order) => sum + order.saleAmount, 0)
-      - periodReturns.reduce((sum, order) => sum + order.saleAmount, 0);
-    const deliveredCosts = periodOrders.reduce(
-      (sum, order) => sum + order.productCost + order.shippingCost + order.fees,
-      0,
-    );
-    const losses = periodReturns.reduce((sum, order) => sum + order.returnCost, 0);
-    const adSpend = periodAds.reduce((sum, ad) => sum + ad.spend, 0);
-    const operatingExpenses = periodExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const finance = calculateOperatingProfit(periodOrders, periodAds, periodExpenses);
     return {
       label,
-      count: periodOrders.length,
-      revenue,
-      profit: revenue - deliveredCosts - losses - adSpend - operatingExpenses,
-      adSpend,
-      operatingExpenses,
+      count: deliveredOrders.length,
+      revenue: finance.deliveredRevenue,
+      profit: finance.profit,
+      adSpend: finance.adSpend,
+      operatingExpenses: finance.operatingExpenses,
     };
   };
   const periods = [
