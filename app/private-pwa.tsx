@@ -172,7 +172,7 @@ export default function PrivatePwa() {
     displayMode.addEventListener?.("change", displayChanged);
 
     if ("serviceWorker" in navigator && !isNativeAndroidApp()) {
-      void navigator.serviceWorker.register("/private-sw.js?v=3", {
+      void navigator.serviceWorker.register("/private-sw.js?v=4", {
         scope: "/",
         updateViaCache: "none",
       }).then(async (registration) => {

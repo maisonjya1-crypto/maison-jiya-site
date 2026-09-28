@@ -311,7 +311,7 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
         </div>}
       </div>
       <div>
-        <a href="/boutique" target="_blank" rel="noreferrer">Voir la boutique ↗</a>
+        <a href="/boutique?source=gestion&pwa=v4" target="_blank" rel="noreferrer">Voir la boutique ↗</a>
         <button type="button" onClick={close}>Fermer ×</button>
       </div>
     </header>

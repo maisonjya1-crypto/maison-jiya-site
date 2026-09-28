@@ -30,6 +30,12 @@ test("les offres existantes chargent leur éditeur uniquement à l'ouverture", a
   assert.match(source, /storefront-cms-offer-card[^]*open=\{open\}[^]*onToggle/);
 });
 
+test("le lien boutique depuis le logiciel force une navigation fraîche dans la PWA", async () => {
+  const source = await readText("app/storefront-cms-v2-enhancement.tsx");
+  assert.match(source, /href="\/boutique\?source=gestion&pwa=v4"/);
+  assert.match(source, /target="_blank"/);
+});
+
 test("les onglets restent au-dessus du contenu du CMS", async () => {
   const css = await readText("app/storefront-cms-v2.css");
   assert.match(css, /storefront-cms-v2 \.storefront-cms-tabs/);
