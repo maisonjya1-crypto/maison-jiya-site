@@ -52,6 +52,11 @@ type ClosingCapital = {
   isAutomatic: boolean;
 };
 
+type ClosingCarrierSettlement = {
+  differenceAmount: number;
+  settlementDate: string;
+};
+
 export type DailyClosingPreview = {
   closeDate: string;
   expectedBank: number;
@@ -95,7 +100,7 @@ function orderCashAmount(order: Pick<ClosingOrder, "saleAmount" | "shippingCost"
 }
 
 async function closingSourceRows(database: D1Database) {
-  const [orders, purchases, supplierInvoices, supplierPayments, expenses, ads, capital] = await Promise.all([
+  const [orders, purchases, supplierInvoices, supplierPayments, expenses, ads, capital, carrierSettlements] = await Promise.all([
     database.prepare(`
       SELECT
         id,
@@ -151,6 +156,10 @@ async function closingSourceRows(database: D1Database) {
       SELECT direction, amount, account, is_automatic AS isAutomatic
       FROM capital_ledger
     `).all<ClosingCapital>(),
+    database.prepare(`
+      SELECT difference_amount AS differenceAmount, settlement_date AS settlementDate
+      FROM carrier_settlements
+    `).all<ClosingCarrierSettlement>(),
   ]);
 
   return {
@@ -161,6 +170,7 @@ async function closingSourceRows(database: D1Database) {
     expenses: expenses.results,
     ads: ads.results,
     capital: capital.results,
+    carrierSettlements: carrierSettlements.results,
   };
 }
 
@@ -175,6 +185,7 @@ export async function buildDailyClosingPreview(database: D1Database, closeDate =
     expenses: rows.expenses,
     ads: rows.ads,
     capital: rows.capital,
+    carrierSettlementAdjustment: rows.carrierSettlements.reduce((sum, settlement) => sum + Number(settlement.differenceAmount || 0), 0),
   });
 
   const carrierOrders = rows.orders.filter((order) => order.status === "Livrée" && order.paymentStatus === "À encaisser");
@@ -188,6 +199,9 @@ export async function buildDailyClosingPreview(database: D1Database, closeDate =
   const paidSupplierPayments = rows.supplierPayments.filter((payment) => sameBusinessDate(payment.paidAt, closeDate));
   const paidExpenses = rows.expenses.filter((expense) => expense.paymentStatus === "Payé" && sameBusinessDate(expense.paidAt, closeDate));
   const dayAds = rows.ads.filter((ad) => businessDateKey(ad.performanceDate) === closeDate);
+  const dayCarrierSettlementAdjustment = roundMoney(rows.carrierSettlements
+    .filter((settlement) => businessDateKey(settlement.settlementDate) === closeDate)
+    .reduce((sum, settlement) => sum + Number(settlement.differenceAmount || 0), 0));
 
   return {
     closeDate,
@@ -203,7 +217,7 @@ export async function buildDailyClosingPreview(database: D1Database, closeDate =
     ),
     unpaidExpenses: roundMoney(rows.expenses.filter((expense) => expense.paymentStatus !== "Payé").reduce((sum, expense) => sum + Number(expense.amount || 0), 0)),
     collectedOrders: collected.length,
-    collectedAmount: roundMoney(collected.reduce((sum, order) => sum + orderCashAmount(order), 0)),
+    collectedAmount: roundMoney(collected.reduce((sum, order) => sum + orderCashAmount(order), 0) + dayCarrierSettlementAdjustment),
     refundedOrders: refunded.length,
     refundedAmount: roundMoney(refunded.reduce((sum, order) => sum + orderCashAmount(order), 0)),
     paidPurchasesCount: paidLegacyPurchases.length + paidSupplierPayments.length,

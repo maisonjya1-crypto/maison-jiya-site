@@ -24,6 +24,8 @@ const EXPORT_QUERIES: Record<string, string> = {
   clotures_journalieres: "SELECT * FROM daily_closings ORDER BY close_date DESC, id DESC",
   historique_commandes: "SELECT * FROM order_status_history ORDER BY id",
   evenements_transporteurs: "SELECT * FROM carrier_events ORDER BY id",
+  reglements_transporteurs: "SELECT * FROM carrier_settlements ORDER BY settlement_date DESC, id DESC",
+  reglement_commandes_transporteurs: "SELECT * FROM carrier_settlement_orders ORDER BY id",
   journal_actions: "SELECT * FROM audit_logs ORDER BY id",
   membres: "SELECT id, username, display_name, role, is_active, created_at, updated_at FROM users ORDER BY id",
   parametres: "SELECT key, value, updated_at FROM settings WHERE key NOT LIKE 'security_%' AND key <> 'backup_webhook_url' ORDER BY key",

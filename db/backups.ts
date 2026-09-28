@@ -31,6 +31,8 @@ type BusinessSnapshot = {
     settings: SnapshotRow[];
     orderStatusHistory: SnapshotRow[];
     carrierEvents?: SnapshotRow[];
+    carrierSettlements?: SnapshotRow[];
+    carrierSettlementOrders?: SnapshotRow[];
     storefrontProducts?: SnapshotRow[];
     storefrontOffers?: SnapshotRow[];
     storefrontOfferItems?: SnapshotRow[];
@@ -56,6 +58,8 @@ const TABLES = {
   settings: "settings",
   orderStatusHistory: "order_status_history",
   carrierEvents: "carrier_events",
+  carrierSettlements: "carrier_settlements",
+  carrierSettlementOrders: "carrier_settlement_orders",
   storefrontProducts: "storefront_product_settings",
   storefrontOffers: "storefront_offers",
   storefrontOfferItems: "storefront_offer_items",
@@ -80,6 +84,8 @@ const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   settings: ["key", "value", "updated_at"],
   orderStatusHistory: ["id", "order_id", "from_status", "to_status", "changed_by_user_id", "changed_by_name", "changed_at"],
   carrierEvents: ["id", "provider", "event_type", "external_code", "external_status", "payload_hash", "message", "proof_image", "occurred_at", "order_id", "processed", "error_message", "received_at"],
+  carrierSettlements: ["id", "carrier", "reference", "settlement_date", "expected_amount", "actual_amount", "difference_amount", "order_count", "status", "note", "created_by_user_id", "created_by_name", "created_at"],
+  carrierSettlementOrders: ["id", "settlement_id", "order_id", "expected_amount", "created_at"],
   storefrontProducts: ["product_id", "public_name", "public_price", "is_visible", "availability_mode", "badge", "description", "sort_order", "updated_at"],
   storefrontOffers: ["id", "name", "description", "price", "compare_price", "badge", "is_active", "sort_order", "created_at", "updated_at"],
   storefrontOfferItems: ["offer_id", "product_id", "quantity"],
@@ -109,7 +115,7 @@ async function readOptionalRows(database: D1Database, table: string) {
 }
 
 async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
-  const [customers, orders, products, stockMovements, inventorySessions, inventoryCounts, suppliers, purchases, supplierInvoices, supplierPayments, expenses, ads, capital, dailyClosings, settings, orderStatusHistory, carrierEvents, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia] = await Promise.all([
+  const [customers, orders, products, stockMovements, inventorySessions, inventoryCounts, suppliers, purchases, supplierInvoices, supplierPayments, expenses, ads, capital, dailyClosings, settings, orderStatusHistory, carrierEvents, carrierSettlements, carrierSettlementOrders, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia] = await Promise.all([
     readRows(database, TABLES.customers),
     readRows(database, TABLES.orders),
     readRows(database, TABLES.products),
@@ -127,6 +133,8 @@ async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
     readRows(database, TABLES.settings, " WHERE key NOT LIKE 'security_%' AND key <> 'backup_webhook_url'"),
     readRows(database, TABLES.orderStatusHistory),
     readRows(database, TABLES.carrierEvents),
+    readOptionalRows(database, TABLES.carrierSettlements),
+    readOptionalRows(database, TABLES.carrierSettlementOrders),
     readOptionalRows(database, TABLES.storefrontProducts),
     readOptionalRows(database, TABLES.storefrontOffers),
     readOptionalRows(database, TABLES.storefrontOfferItems),
@@ -137,7 +145,7 @@ async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
     createdAt: new Date().toISOString(),
     tables: {
       customers, orders, products, stockMovements, inventorySessions, inventoryCounts, suppliers, purchases, supplierInvoices, supplierPayments, expenses, ads, capital, dailyClosings, settings,
-      orderStatusHistory, carrierEvents, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia,
+      orderStatusHistory, carrierEvents, carrierSettlements, carrierSettlementOrders, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia,
     },
   };
 }
@@ -166,7 +174,7 @@ function inspectSnapshot(raw: string, expectedRecordCount?: number) {
       throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
     }
   }
-  for (const tableKey of ["inventorySessions", "inventoryCounts", "suppliers", "expenses", "dailyClosings", "carrierEvents", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"] as const) {
+  for (const tableKey of ["inventorySessions", "inventoryCounts", "suppliers", "expenses", "dailyClosings", "carrierEvents", "carrierSettlements", "carrierSettlementOrders", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"] as const) {
     const rows = snapshot.tables[tableKey];
     if (rows !== undefined && (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item)))) {
       throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
@@ -310,10 +318,12 @@ function insertStatement(database: D1Database, tableKey: keyof BusinessSnapshot[
     if (column === "external_id") return row[column] ?? "";
     if (column === "native_spend_cents" || column === "native_revenue_cents") return row[column] ?? 0;
     if (column === "native_currency") return row[column] ?? "MAD";
-    if (["return_reason", "return_note", "campaign", "address", "carrier_dispatch_state", "carrier_invoice_code", "message", "proof_image", "error_message"].includes(column)) return row[column] ?? "";
+    if (["return_reason", "return_note", "campaign", "address", "carrier_dispatch_state", "carrier_invoice_code", "message", "proof_image", "error_message", "reference", "status", "note", "created_by_name"].includes(column)) return row[column] ?? "";
     if (column === "account") return row[column] ?? "Banque";
     if (column === "is_automatic") return row[column] ?? 0;
     if (column === "processed") return row[column] ?? 0;
+    if (["expected_amount", "actual_amount", "difference_amount", "order_count"].includes(column)) return row[column] ?? 0;
+    if (column === "created_by_user_id") return row[column] ?? null;
     return row[column] ?? null;
   });
   const placeholders = columns.map(() => "?").join(", ");
@@ -328,13 +338,13 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
 
   const insertionOrder: Array<keyof BusinessSnapshot["tables"]> = [
     "settings", "customers", "products", "suppliers", "purchases", "supplierInvoices", "supplierPayments", "expenses", "ads", "capital", "orders", "stockMovements",
-    "inventorySessions", "inventoryCounts", "dailyClosings", "orderStatusHistory", "carrierEvents", "storefrontProducts", "storefrontOffers",
+    "inventorySessions", "inventoryCounts", "dailyClosings", "orderStatusHistory", "carrierEvents", "carrierSettlements", "carrierSettlementOrders", "storefrontProducts", "storefrontOffers",
     "storefrontOfferItems", "storefrontMedia",
   ];
   const inserts = insertionOrder.flatMap((tableKey) => {
     const rows = snapshot.tables[tableKey];
     // Ces tables n'existaient pas dans les premières sauvegardes v1.
-    if (rows === undefined && ["inventorySessions", "inventoryCounts", "suppliers", "supplierInvoices", "supplierPayments", "carrierEvents", "expenses", "dailyClosings", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"].includes(tableKey)) return [];
+    if (rows === undefined && ["inventorySessions", "inventoryCounts", "suppliers", "supplierInvoices", "supplierPayments", "carrierEvents", "carrierSettlements", "carrierSettlementOrders", "expenses", "dailyClosings", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"].includes(tableKey)) return [];
     if (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
       throw new Error("Format de sauvegarde incompatible.");
     }
@@ -359,6 +369,8 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
     database.prepare("DELETE FROM inventory_sessions"),
     database.prepare("DELETE FROM daily_closings"),
     database.prepare("DELETE FROM order_status_history"),
+    database.prepare("DELETE FROM carrier_settlement_orders"),
+    database.prepare("DELETE FROM carrier_settlements"),
     database.prepare("DELETE FROM carrier_events"),
     database.prepare("DELETE FROM orders"),
     database.prepare("DELETE FROM customers"),
@@ -399,7 +411,12 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
 export async function purgeExpiredTrash(database: D1Database) {
   const cutoff = new Date();
   cutoff.setUTCDate(cutoff.getUTCDate() - 90);
-  const expired = (await database.prepare("SELECT id FROM orders WHERE deleted_at IS NOT NULL AND deleted_at < ?").bind(cutoff.toISOString()).all<{ id: number }>()).results;
+  const expired = (await database.prepare(`
+    SELECT id FROM orders
+    WHERE deleted_at IS NOT NULL
+      AND deleted_at < ?
+      AND NOT EXISTS (SELECT 1 FROM carrier_settlement_orders WHERE carrier_settlement_orders.order_id = orders.id)
+  `).bind(cutoff.toISOString()).all<{ id: number }>()).results;
   if (expired.length) {
     const ids = expired.map((order) => order.id);
     const placeholders = ids.map(() => "?").join(", ");
@@ -425,6 +442,7 @@ export type BusinessResetSummary = {
   capital: number;
   orderHistory: number;
   carrierEvents: number;
+  carrierSettlements: number;
 };
 
 function countFromResult(result: D1Result<unknown> | undefined) {
@@ -444,6 +462,7 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
     database.prepare("SELECT COUNT(*) AS count FROM capital_ledger"),
     database.prepare("SELECT COUNT(*) AS count FROM order_status_history"),
     database.prepare("SELECT COUNT(*) AS count FROM carrier_events"),
+    database.prepare("SELECT COUNT(*) AS count FROM carrier_settlements"),
   ]);
 
   const summary: BusinessResetSummary = {
@@ -457,6 +476,7 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
     capital: countFromResult(counts[7]),
     orderHistory: countFromResult(counts[8]),
     carrierEvents: countFromResult(counts[9]),
+    carrierSettlements: countFromResult(counts[10]),
   };
 
   // Filet de sécurité : une copie restaurable est créée avant toute remise à zéro.
@@ -468,6 +488,8 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
     database.prepare("UPDATE stock_movements SET order_id = NULL WHERE order_id IS NOT NULL"),
     database.prepare("UPDATE stock_movements SET purchase_id = NULL WHERE purchase_id IS NOT NULL"),
     database.prepare("DELETE FROM order_status_history"),
+    database.prepare("DELETE FROM carrier_settlement_orders"),
+    database.prepare("DELETE FROM carrier_settlements"),
     database.prepare("DELETE FROM carrier_events"),
     database.prepare("DELETE FROM capital_ledger"),
     database.prepare("DELETE FROM orders"),

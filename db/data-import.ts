@@ -225,6 +225,28 @@ const TABLE_SPECS: Record<string, TableSpec> = {
     ],
     defaults: { message: "", proof_image: "", occurred_at: null, order_id: null, processed: 0, error_message: "" },
   },
+  reglements_transporteurs: {
+    table: "carrier_settlements",
+    columns: [
+      "id", "carrier", "reference", "settlement_date", "expected_amount", "actual_amount",
+      "difference_amount", "order_count", "status", "note", "created_by_user_id", "created_by_name", "created_at",
+    ],
+    defaults: {
+      expected_amount: 0,
+      actual_amount: 0,
+      difference_amount: 0,
+      order_count: 0,
+      status: "Rapproché",
+      note: "",
+      created_by_user_id: null,
+      created_by_name: "Import Maison Jiya",
+    },
+  },
+  reglement_commandes_transporteurs: {
+    table: "carrier_settlement_orders",
+    columns: ["id", "settlement_id", "order_id", "expected_amount", "created_at"],
+    defaults: { expected_amount: 0 },
+  },
   publicites: {
     table: "ad_performance",
     columns: [
@@ -276,14 +298,14 @@ const REQUIRED_TABLES = [
 ] as const;
 
 const OPTIONAL_TABLES = [
-  "fournisseurs", "factures_fournisseurs", "paiements_fournisseurs", "sessions_inventaire", "inventaires", "depenses", "clotures_journalieres", "historique_commandes", "evenements_transporteurs", "journal_actions",
+  "fournisseurs", "factures_fournisseurs", "paiements_fournisseurs", "sessions_inventaire", "inventaires", "depenses", "clotures_journalieres", "historique_commandes", "evenements_transporteurs", "reglements_transporteurs", "reglement_commandes_transporteurs", "journal_actions",
   "boutique_produits", "boutique_offres", "boutique_composition_offres", "boutique_medias",
 ] as const;
 
 const INFORMATIONAL_TABLES = ["membres", "journal_sync_google_sheets"] as const;
 
 const USER_REFERENCE_COLUMNS = new Set([
-  "deleted_by_user_id", "archived_by_user_id", "counted_by_user_id", "started_by_user_id", "changed_by_user_id", "closed_by_user_id", "user_id",
+  "deleted_by_user_id", "archived_by_user_id", "counted_by_user_id", "started_by_user_id", "changed_by_user_id", "closed_by_user_id", "created_by_user_id", "user_id",
 ]);
 
 function isPlainRow(value: unknown): value is ImportRow {
@@ -358,6 +380,7 @@ function validateReferences(tables: Record<string, ImportRow[]>) {
   const orderIds = new Set(rowsFor(tables, "commandes").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
   const offerIds = new Set(rowsFor(tables, "boutique_offres").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
   const inventorySessionIds = new Set(rowsFor(tables, "sessions_inventaire").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
+  const carrierSettlementIds = new Set(rowsFor(tables, "reglements_transporteurs").map((row) => numberId(row.id)).filter((id): id is number => id !== null));
 
   for (const row of rowsFor(tables, "commandes")) {
     assertForeignKey(row.customer_id, customerIds, "client de commande", false);
@@ -404,6 +427,10 @@ function validateReferences(tables: Record<string, ImportRow[]>) {
   }
   for (const row of rowsFor(tables, "historique_commandes")) assertForeignKey(row.order_id, orderIds, "commande d’historique", false);
   for (const row of rowsFor(tables, "evenements_transporteurs")) assertForeignKey(row.order_id, orderIds, "commande d’événement transporteur", true);
+  for (const row of rowsFor(tables, "reglement_commandes_transporteurs")) {
+    assertForeignKey(row.settlement_id, carrierSettlementIds, "règlement transporteur", false);
+    assertForeignKey(row.order_id, orderIds, "commande du règlement transporteur", false);
+  }
   for (const row of rowsFor(tables, "tresorerie_capital")) assertForeignKey(row.order_id, orderIds, "commande de mouvement de capital", true);
   for (const row of rowsFor(tables, "boutique_produits")) assertForeignKey(row.product_id, productIds, "produit boutique", false);
   for (const row of rowsFor(tables, "boutique_composition_offres")) {
@@ -471,6 +498,13 @@ function parsePortableExport(raw: string) {
     if (invoiceNumbers.has(key)) throw new Error(`L’export contient un doublon de numéro de facture fournisseur : ${row.invoice_number ?? ""}.`);
     invoiceNumbers.add(key);
   }
+  const carrierSettlementRefs = new Set<string>();
+  for (const row of rowsFor(tables, "reglements_transporteurs")) {
+    const key = `${String(row.carrier || "").trim().toLocaleLowerCase("fr")}::${String(row.reference || "").trim().toLocaleLowerCase("fr")}`;
+    if (carrierSettlementRefs.has(key)) throw new Error(`L’export contient un doublon de référence de règlement transporteur : ${row.reference ?? ""}.`);
+    carrierSettlementRefs.add(key);
+  }
+
   const purchaseOrderLines = new Set<string>();
   for (const row of rowsFor(tables, "achats")) {
     const purchaseRef = String(row.purchase_ref || "").trim();
@@ -494,6 +528,9 @@ function parsePortableExport(raw: string) {
   assertUnique(tables, "historique_commandes", "id", "historique de commande");
   assertUnique(tables, "evenements_transporteurs", "id", "événement transporteur");
   assertUnique(tables, "evenements_transporteurs", "payload_hash", "empreinte transporteur");
+  assertUnique(tables, "reglements_transporteurs", "id", "règlement transporteur");
+  assertUnique(tables, "reglement_commandes_transporteurs", "id", "ligne de règlement transporteur");
+  assertUnique(tables, "reglement_commandes_transporteurs", "order_id", "commande déjà rapprochée");
   assertUnique(tables, "journal_actions", "id", "journal d’action");
   assertUnique(tables, "boutique_offres", "id", "offre boutique");
   assertUnique(tables, "boutique_medias", "id", "média boutique");
@@ -596,6 +633,8 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
     database.prepare("DELETE FROM inventory_sessions"),
     database.prepare("DELETE FROM daily_closings"),
     database.prepare("DELETE FROM order_status_history"),
+    database.prepare("DELETE FROM carrier_settlement_orders"),
+    database.prepare("DELETE FROM carrier_settlements"),
     database.prepare("DELETE FROM carrier_events"),
     database.prepare("DELETE FROM capital_ledger"),
     database.prepare("DELETE FROM orders"),
@@ -642,6 +681,8 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
     "inventaires",
     "historique_commandes",
     "evenements_transporteurs",
+    "reglements_transporteurs",
+    "reglement_commandes_transporteurs",
     "publicites",
     "journal_actions",
     "parametres",

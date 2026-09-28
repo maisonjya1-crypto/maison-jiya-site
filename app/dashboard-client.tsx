@@ -122,6 +122,32 @@ type SupplierPayment = {
   note: string;
   createdAt: string;
 };
+type CarrierSettlement = {
+  id: number;
+  carrier: string;
+  reference: string;
+  settlementDate: string;
+  expectedAmount: number;
+  actualAmount: number;
+  differenceAmount: number;
+  orderCount: number;
+  status: "Rapproché" | "À vérifier";
+  note: string;
+  createdByUserId: number | null;
+  createdByName: string;
+  createdAt: string;
+};
+type CarrierSettlementOrder = {
+  id: number;
+  settlementId: number;
+  orderId: number;
+  expectedAmount: number;
+  orderRef: string | null;
+  carrier: string | null;
+  trackingNumber: string | null;
+  customerName: string | null;
+  createdAt: string;
+};
 type Expense = {
   id: number;
   category: string;
@@ -375,6 +401,8 @@ type Data = {
   purchases: Purchase[];
   supplierInvoices: SupplierInvoice[];
   supplierPayments: SupplierPayment[];
+  carrierSettlements: CarrierSettlement[];
+  carrierSettlementOrders: CarrierSettlementOrder[];
   expenses: Expense[];
   ads: Ad[];
   capital: Capital[];
@@ -432,6 +460,8 @@ const emptyData: Data = {
   purchases: [],
   supplierInvoices: [],
   supplierPayments: [],
+  carrierSettlements: [],
+  carrierSettlementOrders: [],
   expenses: [],
   ads: [],
   capital: [],
@@ -489,9 +519,9 @@ const dateTimeLabel = (value: string) =>
     minute: "2-digit",
   }).format(new Date(value));
 
-const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Inventaire", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs", "Dépenses", "Publicités", "Capital", "Trésorerie", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
+const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Inventaire", "Réapprovisionnement", "Colis", "Règlements transporteurs", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs", "Dépenses", "Publicités", "Capital", "Trésorerie", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
 const navigationGroups = [
-  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Inventaire", "Réapprovisionnement", "Colis", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs"] },
+  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Inventaire", "Réapprovisionnement", "Colis", "Règlements transporteurs", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs"] },
   { label: "Pilotage", items: ["Dépenses", "Publicités", "Capital", "Trésorerie", "Clôture", "Rapports", "Assistant IA"] },
   { label: "Système", items: ["Mode entraînement", "Corbeille", "Paramètres"] },
 ];
@@ -502,6 +532,7 @@ const sectionDescriptions: Record<string, string> = {
   Inventaire: "Comptez le stock réel, expliquez les écarts et valorisez les pertes.",
   Réapprovisionnement: "Anticipez les ruptures et préparez les quantités à commander par fournisseur.",
   Colis: "Contrôlez les expéditions et le suivi des transporteurs.",
+  "Règlements transporteurs": "Rapprochez les virements réellement reçus avec les commandes livrées.",
   Clients: "Centralisez les coordonnées et l’historique de vos clientes.",
   Fournisseurs: "Centralisez contacts, délais, conditions et historique de vos fournisseurs.",
   Achats: "Gérez les fournisseurs, réceptions et coûts d’approvisionnement.",
@@ -551,6 +582,7 @@ const retrySafeMutationActions = new Set([
   "startInventorySession",
   "countInventorySessionProduct",
   "finalizeInventorySession",
+  "addCarrierSettlement",
   "archiveProduct",
   "restoreProduct",
 ]);
@@ -921,6 +953,7 @@ export default function DashboardClient() {
       orders: data.orders,
       purchases: data.purchases,
       supplierInvoices: data.supplierInvoices,
+      carrierSettlements: data.carrierSettlements,
       expenses: data.expenses,
       ads: data.ads,
       capital: data.capital,
@@ -1384,6 +1417,7 @@ function Page({
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} onRestore={restoreProduct} />;
   if (active === "Réapprovisionnement") return <ReorderingPage data={data} metrics={metrics} submit={submit} onEditProduct={editEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
+  if (active === "Règlements transporteurs") return <CarrierSettlementsPage data={data} submit={submit} />;
   if (active === "Clients") return <CustomersPage customers={data.customers} orders={data.orders} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Fournisseurs") return <SuppliersPage suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} supplierPayments={data.supplierPayments} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("supplier")} onEdit={editEntity} />;
   if (active === "Achats") return <PurchasesPage purchases={data.purchases} supplierInvoices={data.supplierInvoices} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
@@ -4799,6 +4833,212 @@ function DailyClosingPage({
   );
 }
 
+function CarrierSettlementsPage({
+  data,
+  submit,
+}: {
+  data: Data;
+  submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
+}) {
+  const linkedOrderIds = useMemo(() => new Set(data.carrierSettlementOrders.map((row) => row.orderId)), [data.carrierSettlementOrders]);
+  const eligibleOrders = useMemo(() => data.orders
+    .filter((order) =>
+      order.status === "Livrée"
+      && ["À encaisser", "Encaissé"].includes(order.paymentStatus)
+      && order.fulfillmentType !== "Magasin physique"
+      && Boolean(order.carrier?.trim())
+      && order.carrier !== "Non affecté"
+      && !linkedOrderIds.has(order.id),
+    )
+    .sort((left, right) => new Date(right.updatedAt || right.createdAt).getTime() - new Date(left.updatedAt || left.createdAt).getTime()),
+  [data.orders, linkedOrderIds]);
+  const carriers = useMemo(
+    () => Array.from(new Set(eligibleOrders.map((order) => order.carrier))).sort((a, b) => a.localeCompare(b, "fr")),
+    [eligibleOrders],
+  );
+  const [carrier, setCarrier] = useState("");
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [actualAmount, setActualAmount] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  const effectiveCarrier = carriers.includes(carrier) ? carrier : carriers[0] || "";
+  const carrierOrders = eligibleOrders.filter((order) => order.carrier === effectiveCarrier);
+  const selectedOrders = carrierOrders.filter((order) => selectedIds.includes(order.id));
+  const expectedAmount = selectedOrders.reduce((sum, order) => sum + Math.max(0, order.saleAmount - order.shippingCost - order.fees), 0);
+  const parsedActual = Math.max(0, Number(actualAmount.replace(",", ".")) || 0);
+  const difference = Math.round((parsedActual - expectedAmount + Number.EPSILON) * 100) / 100;
+  const pendingOrders = eligibleOrders.filter((order) => order.paymentStatus === "À encaisser");
+  const pendingTotal = pendingOrders.reduce((sum, order) => sum + Math.max(0, order.saleAmount - order.shippingCost - order.fees), 0);
+  const unresolved = data.carrierSettlements.filter((settlement) => settlement.status === "À vérifier");
+  const historicalDifference = data.carrierSettlements.reduce((sum, settlement) => sum + settlement.differenceAmount, 0);
+  const autoPaidOutsideSettlement = data.orders.filter((order) =>
+    order.fulfillmentType !== "Magasin physique"
+    && order.paymentStatus === "Encaissé"
+    && Boolean(order.carrierInvoiceCode)
+    && !linkedOrderIds.has(order.id),
+  );
+
+  function toggleOrder(id: number) {
+    setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  function chooseCarrier(value: string) {
+    setCarrier(value);
+    setSelectedIds([]);
+    setActualAmount("");
+    setFormError("");
+  }
+
+  async function saveSettlement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (saving || !data.access.canEdit) return;
+    if (!effectiveCarrier || !selectedIds.length) {
+      setFormError("Sélectionnez un transporteur et au moins une commande.");
+      return;
+    }
+    if (parsedActual <= 0) {
+      setFormError("Indiquez le montant réellement reçu sur votre compte.");
+      return;
+    }
+    setSaving(true);
+    setFormError("");
+    try {
+      const values = Object.fromEntries(new FormData(form));
+      await submit("addCarrierSettlement", {
+        ...values,
+        carrier: effectiveCarrier,
+        actualAmount: String(parsedActual),
+        orderIdsJson: JSON.stringify(selectedIds),
+      });
+      setSelectedIds([]);
+      setActualAmount("");
+      form.reset();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Rapprochement impossible.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="reports-page carrier-settlement-page">
+      <section className="report-automation-banner carrier-settlement-banner">
+        <div>
+          <span>⇄</span>
+          <div>
+            <strong>Rapprochement des virements transporteurs</strong>
+            <p>Comparez ce que Sendit / ForceLog devait vous verser avec le montant réellement arrivé sur votre compte. Un écart reste visible jusqu’à vérification.</p>
+          </div>
+        </div>
+        <small>Aucun virement n’est inventé automatiquement</small>
+      </section>
+
+      <section className="kpi-grid">
+        <Kpi label="À recevoir des transporteurs" value={money(pendingTotal)} detail={`${pendingOrders.length} commande(s) pas encore encaissée(s)`} danger={pendingTotal > 0} />
+        <Kpi label="Règlements rapprochés" value={String(data.carrierSettlements.length - unresolved.length)} detail={`${data.carrierSettlements.length} règlement(s) enregistrés`} />
+        <Kpi label="Écarts à vérifier" value={String(unresolved.length)} detail={money(unresolved.reduce((sum, settlement) => sum + Math.abs(settlement.differenceAmount), 0))} danger={unresolved.length > 0} />
+        <Kpi label="Impact cash cumulé" value={money(historicalDifference)} detail="Différence reçu réel − montant attendu" danger={historicalDifference < 0} />
+      </section>
+
+      <section className="panel carrier-reconcile-panel">
+        <PanelHead kicker="Nouveau rapprochement" title="Associer un virement aux commandes livrées" total={effectiveCarrier || "Aucun transporteur"} />
+        {carriers.length ? (
+          <form onSubmit={saveSettlement}>
+            <div className="carrier-settlement-form-head">
+              <label className="field">
+                <span>Transporteur *</span>
+                <select value={effectiveCarrier} onChange={(event) => chooseCarrier(event.target.value)}>
+                  {carriers.map((name) => <option key={name}>{name}</option>)}
+                </select>
+              </label>
+              <Field label="Référence du virement / facture *" name="reference" placeholder="Ex. VIR-2026-0928 ou facture Sendit" required maxLength={120} />
+              <Field label="Date reçue *" name="settlementDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required />
+              <label className="field">
+                <span>Montant réellement reçu (MAD) *</span>
+                <input name="actualAmount" type="number" inputMode="decimal" min="0.01" step="0.01" value={actualAmount} onChange={(event) => setActualAmount(event.target.value)} required />
+              </label>
+            </div>
+
+            <div className="carrier-select-toolbar">
+              <div>
+                <strong>{selectedIds.length} commande(s) sélectionnée(s)</strong>
+                <small>Attendu : {money(expectedAmount)}</small>
+              </div>
+              <button type="button" className="secondary-button" onClick={() => setSelectedIds(selectedIds.length === carrierOrders.length ? [] : carrierOrders.map((order) => order.id))}>
+                {selectedIds.length === carrierOrders.length && carrierOrders.length ? "Tout désélectionner" : "Tout sélectionner"}
+              </button>
+            </div>
+
+            <div className="carrier-settlement-order-list">
+              {carrierOrders.map((order) => {
+                const expected = Math.max(0, order.saleAmount - order.shippingCost - order.fees);
+                const selected = selectedIds.includes(order.id);
+                return (
+                  <label key={order.id} className={selected ? "selected" : ""}>
+                    <input type="checkbox" checked={selected} onChange={() => toggleOrder(order.id)} />
+                    <span><strong>{order.orderRef}</strong><small>{order.customerName || "Cliente"} · {order.trackingNumber || "sans suivi"} · {order.paymentStatus === "Encaissé" ? "déjà marqué encaissé par API" : "à encaisser"}</small></span>
+                    <span><small>Vente</small><strong>{money(order.saleAmount)}</strong></span>
+                    <span><small>Livraison + frais</small><strong>{money(order.shippingCost + order.fees)}</strong></span>
+                    <span><small>À recevoir</small><strong>{money(expected)}</strong></span>
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="carrier-settlement-result">
+              <div><span>Montant attendu</span><strong>{money(expectedAmount)}</strong></div>
+              <div><span>Montant reçu</span><strong>{money(parsedActual)}</strong></div>
+              <div className={difference === 0 ? "ok" : "warning"}><span>Écart</span><strong>{difference > 0 ? "+" : ""}{money(difference)}</strong><small>{difference === 0 ? "Rapproché" : "À vérifier avant de considérer les frais exacts"}</small></div>
+            </div>
+            <Field label="Note" name="note" placeholder="Ex. retenue agence à vérifier, ajustement exceptionnel…" maxLength={500} />
+            {formError ? <p className="form-error" role="alert">{formError}</p> : null}
+            <div className="modal-actions">
+              <button className="primary-button" disabled={!data.access.canEdit || saving || !selectedIds.length || parsedActual <= 0}>
+                {saving ? "Enregistrement…" : "Confirmer le virement reçu"}
+              </button>
+            </div>
+          </form>
+        ) : <EmptyState title="Aucun virement à rapprocher" text="Aucune commande livrée n’est actuellement en attente d’encaissement transporteur." />}
+      </section>
+
+      <section className="panel">
+        <PanelHead kicker="Historique" title="Règlements transporteurs" total={String(data.carrierSettlements.length)} />
+        {data.carrierSettlements.length ? (
+          <div className="table-scroll"><table>
+            <thead><tr><th>Date</th><th>Transporteur</th><th>Référence</th><th>Commandes</th><th>Attendu</th><th>Reçu</th><th>Écart</th><th>Statut</th><th>Enregistré par</th></tr></thead>
+            <tbody>{data.carrierSettlements.map((settlement) => {
+              const lines = data.carrierSettlementOrders.filter((line) => line.settlementId === settlement.id);
+              return <tr key={settlement.id}>
+                <td>{dateLabel(settlement.settlementDate)}</td>
+                <td><strong>{settlement.carrier}</strong></td>
+                <td><strong>{settlement.reference}</strong>{settlement.note ? <small>{settlement.note}</small> : null}</td>
+                <td>{settlement.orderCount}<small>{lines.slice(0, 3).map((line) => line.orderRef).filter(Boolean).join(" · ")}{lines.length > 3 ? ` · +${lines.length - 3}` : ""}</small></td>
+                <td>{money(settlement.expectedAmount)}</td>
+                <td>{money(settlement.actualAmount)}</td>
+                <td className={moneyTone(settlement.differenceAmount)}>{settlement.differenceAmount > 0 ? "+" : ""}{money(settlement.differenceAmount)}</td>
+                <td><Status value={settlement.status} /></td>
+                <td>{settlement.createdByName}<small>{dateTimeLabel(settlement.createdAt)}</small></td>
+              </tr>;
+            })}</tbody>
+          </table></div>
+        ) : <EmptyState title="Aucun règlement enregistré" text="Le premier rapprochement apparaîtra ici." />}
+      </section>
+
+      {autoPaidOutsideSettlement.length ? (
+        <section className="panel carrier-auto-paid-panel">
+          <PanelHead kicker="Automatique" title="Encaissements détectés par les API" total={String(autoPaidOutsideSettlement.length)} />
+          <p className="profitability-note">Ces commandes ont déjà été marquées encaissées par Sendit ou ForceLog. Vous pouvez maintenant les sélectionner dans le rapprochement ci-dessus pour vérifier le montant réellement reçu en banque, sans compter l’argent deux fois.</p>
+          <div className="carrier-auto-paid-grid">
+            {autoPaidOutsideSettlement.slice(0, 20).map((order) => <article key={order.id}><strong>{order.orderRef}</strong><small>{order.carrier} · {order.carrierInvoiceCode}</small><span>{money(Math.max(0, order.saleAmount - order.shippingCost - order.fees))}</span></article>)}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 function CashflowForecastPage({
   data,
   metrics,
@@ -5001,6 +5241,7 @@ function ReportsPage({ data }: { data: Data }) {
     expenses: data.expenses,
     ads: data.ads,
     capital: data.capital,
+    carrierSettlementAdjustment: data.carrierSettlements.reduce((sum, settlement) => sum + settlement.differenceAmount, 0),
   });
   const storeCash = treasury.cash;
   const bank = treasury.bank;
@@ -5475,7 +5716,7 @@ function MonthlyCapitalChart({
   );
 }
 function Status({ value }: { value: string }) {
-  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration", "OK", "Actif", "Reçu"].includes(value) ? "success" : ["Retour", "Annulée", "Annulé", "Inactif", "Refusée", "Retournée", "Remboursé", "Non encaissé", "Rupture", "Critique", "En retard"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande", "Commandé"].includes(value) ? "info" : "warning";
+  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration", "OK", "Actif", "Reçu", "Rapproché"].includes(value) ? "success" : ["Retour", "Annulée", "Annulé", "Inactif", "Refusée", "Retournée", "Remboursé", "Non encaissé", "Rupture", "Critique", "En retard"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande", "Commandé"].includes(value) ? "info" : "warning";
   return <span className={`status ${tone}`}>{value}</span>;
 }
 
