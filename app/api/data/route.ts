@@ -928,6 +928,8 @@ export async function POST(request: Request) {
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
       const [existingOrder] = await db.select().from(orders).where(and(eq(orders.id, id), isNull(orders.deletedAt))).limit(1);
       if (!existingOrder) return Response.json({ error: "Commande introuvable." }, { status: 404 });
+      const [settledOrder] = await db.select({ id: carrierSettlementOrders.id }).from(carrierSettlementOrders).where(eq(carrierSettlementOrders.orderId, id)).limit(1);
+      if (settledOrder) return Response.json({ error: "Cette commande appartient déjà à un virement transporteur rapproché. Son historique financier est verrouillé." }, { status: 409 });
       const nextFulfillmentType = fulfillmentType(payload.fulfillmentType, existingOrder.fulfillmentType || "Livraison");
       const isStoreSale = nextFulfillmentType === "Magasin physique";
       const switchingToStore = isStoreSale && existingOrder.fulfillmentType !== "Magasin physique";
@@ -1174,6 +1176,8 @@ export async function POST(request: Request) {
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
       const [existingOrder] = await db.select({ id: orders.id, orderRef: orders.orderRef }).from(orders).where(and(eq(orders.id, id), isNull(orders.deletedAt))).limit(1);
       if (!existingOrder) return Response.json({ error: "Commande introuvable." }, { status: 404 });
+      const [settledOrder] = await db.select({ id: carrierSettlementOrders.id }).from(carrierSettlementOrders).where(eq(carrierSettlementOrders.orderId, id)).limit(1);
+      if (settledOrder) return Response.json({ error: "Cette commande est rattachée à un règlement transporteur et ne peut plus être mise à la corbeille." }, { status: 409 });
       const trashResult = await moveOrderToTrash(await getRawDb(), id, user.id);
       auditEntityLabel = existingOrder.orderRef;
       integrationMessage = trashResult.stockRestored
@@ -1195,6 +1199,8 @@ export async function POST(request: Request) {
       if (!id) return Response.json({ error: "Commande invalide." }, { status: 400 });
       const [existingOrder] = await db.select({ id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId }).from(orders).where(and(eq(orders.id, id), isNotNull(orders.deletedAt))).limit(1);
       if (!existingOrder) return Response.json({ error: "Cette commande n’est pas dans la corbeille." }, { status: 404 });
+      const [settledOrder] = await db.select({ id: carrierSettlementOrders.id }).from(carrierSettlementOrders).where(eq(carrierSettlementOrders.orderId, id)).limit(1);
+      if (settledOrder) return Response.json({ error: "Cette commande appartient à un règlement transporteur conservé dans l’historique et ne peut pas être supprimée définitivement." }, { status: 409 });
       const database = await getRawDb();
       await releaseTrashedOrderStock(database, id);
       await createDailyBackup(database, `Avant suppression ${existingOrder.orderRef}`, true);
