@@ -8,8 +8,9 @@ const readText = (path) => readFile(new URL(path, root), "utf8");
 test("la boutique publique reste manuelle et ne rend plus de cartes sans vraie photo", async () => {
   const publicCatalog = await readText("db/storefront-public-fast.ts");
   assert.match(publicCatalog, /WHERE s\.is_visible = 1/);
-  assert.match(publicCatalog, /if \(!firstImage \|\| !product\.name\.trim\(\) \|\| salePrice <= 0\) return \[\];/);
-  assert.match(publicCatalog, /if \(!firstImage \|\| !offer\.name\.trim\(\) \|\| salePrice <= 0\) return \[\];/);
+  assert.match(publicCatalog, /if \(!images\.length \|\| !product\.name\.trim\(\) \|\| salePrice <= 0\) return \[\];/);
+  assert.match(publicCatalog, /if \(!images\.length \|\| !offer\.name\.trim\(\) \|\| salePrice <= 0\) return \[\];/);
+  assert.match(publicCatalog, /\.slice\(0, 6\)/);
 
   const cms = await readText("app/storefront-cms-v2-enhancement.tsx");
   assert.match(cms, /Afficher ce produit sur le site public/);

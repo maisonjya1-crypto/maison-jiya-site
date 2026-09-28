@@ -186,22 +186,87 @@ function SafeImage({ src, alt, fallback, priority = false }: { src: string; alt:
   }} />;
 }
 
-function ProductCard({ item, lang, t, add, priority = false }: { item: CatalogItem; lang: StorefrontLanguage; t: Copy; add: (item: CatalogItem) => void; priority?: boolean }) {
+function ProductCard({ item, lang, t, add, open, priority = false }: { item: CatalogItem; lang: StorefrontLanguage; t: Copy; add: (item: CatalogItem) => void; open: (item: CatalogItem) => void; priority?: boolean }) {
   const fallback = <div className="storefront-v3-image-fallback"><b>{item.category.slice(0, 1).toUpperCase()}</b><small>{categoryCopy[lang][item.category] || item.category}</small></div>;
   return <article className={`storefront-v3-product ${!item.available ? "is-unavailable" : ""}`}>
-    <div className="storefront-v3-product-media">
+    <button className="storefront-v3-product-media storefront-v3-product-open" type="button" onClick={() => open(item)} aria-label={`${t.viewProduct} : ${item.name}`}>
       {item.images[0] ? <SafeImage src={item.images[0]} alt={item.name} fallback={fallback} priority={priority} /> : fallback}
       {item.badge && <em>{item.badge}</em>}
+      {item.images.length > 1 && <span className="storefront-v3-photo-count">{item.images.length} photos</span>}
       {!item.available && <i>{t.unavailable}</i>}
-    </div>
+    </button>
     <div className="storefront-v3-product-info">
       <small>{item.productCode} · {categoryCopy[lang][item.category] || item.category}</small>
-      <h3>{item.name}</h3>
+      <h3><button className="storefront-v3-product-title-button" type="button" onClick={() => open(item)}>{item.name}</button></h3>
       {item.description && <p>{item.description}</p>}
       <div className="storefront-v3-price"><strong>{money(item.salePrice, lang)}</strong>{item.comparePrice > item.salePrice && <del>{money(item.comparePrice, lang)}</del>}</div>
-      <button type="button" disabled={!item.available} onClick={() => add(item)}>{item.available ? t.addToCart : t.unavailable}</button>
+      <button className="storefront-v3-view-product" type="button" onClick={() => open(item)}>{t.viewProduct}{item.images.length > 1 ? ` · ${item.images.length} photos` : ""}</button>
+      <button className="storefront-v3-add-product" type="button" disabled={!item.available} onClick={() => add(item)}>{item.available ? t.addToCart : t.unavailable}</button>
     </div>
   </article>;
+}
+
+function ProductGalleryModal({ item, lang, t, add, close }: { item: CatalogItem; lang: StorefrontLanguage; t: Copy; add: (item: CatalogItem) => void; close: () => void }) {
+  const [activeImage, setActiveImage] = useState(0);
+  const touchStart = useRef<number | null>(null);
+  const images = item.images.length ? item.images : [""];
+  const imageCount = images.length;
+  const fallback = <div className="storefront-v3-image-fallback"><b>{item.category.slice(0, 1).toUpperCase()}</b><small>{categoryCopy[lang][item.category] || item.category}</small></div>;
+
+  const move = useCallback((delta: number) => {
+    setActiveImage((current) => (current + delta + imageCount) % imageCount);
+  }, [imageCount]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+      if (imageCount > 1 && event.key === "ArrowLeft") move(-1);
+      if (imageCount > 1 && event.key === "ArrowRight") move(1);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [close, imageCount, move]);
+
+  return <div className="storefront-v3-overlay product-gallery" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+    <section className="storefront-v3-product-dialog" role="dialog" aria-modal="true" aria-label={item.name}>
+      <button className="storefront-v3-product-dialog-close" type="button" onClick={close} aria-label={t.close}>×</button>
+      <div className="storefront-v3-product-gallery">
+        <div
+          className="storefront-v3-product-gallery-main"
+          onTouchStart={(event) => { touchStart.current = event.changedTouches[0]?.clientX ?? null; }}
+          onTouchEnd={(event) => {
+            const start = touchStart.current;
+            touchStart.current = null;
+            if (start === null || imageCount <= 1) return;
+            const end = event.changedTouches[0]?.clientX ?? start;
+            const distance = end - start;
+            if (Math.abs(distance) < 40) return;
+            move(distance < 0 ? 1 : -1);
+          }}
+        >
+          {images[activeImage] ? <SafeImage src={images[activeImage]} alt={`${item.name} · ${activeImage + 1}`} fallback={fallback} priority /> : fallback}
+          {imageCount > 1 && <>
+            <button className="storefront-v3-gallery-arrow previous" type="button" onClick={() => move(-1)} aria-label="Photo précédente">‹</button>
+            <button className="storefront-v3-gallery-arrow next" type="button" onClick={() => move(1)} aria-label="Photo suivante">›</button>
+            <span className="storefront-v3-gallery-counter">{activeImage + 1} / {imageCount}</span>
+          </>}
+        </div>
+        {imageCount > 1 && <div className="storefront-v3-product-thumbnails" aria-label="Galerie photos">
+          {images.map((image, index) => <button className={index === activeImage ? "active" : ""} type="button" key={image || index} onClick={() => setActiveImage(index)} aria-label={`Afficher la photo ${index + 1}`}>
+            {image ? <SafeImage src={image} alt={`${item.name} miniature ${index + 1}`} fallback={<span>{index + 1}</span>} /> : <span>{index + 1}</span>}
+          </button>)}
+        </div>}
+      </div>
+      <div className="storefront-v3-product-dialog-info">
+        <small>{item.productCode} · {categoryCopy[lang][item.category] || item.category}</small>
+        <h2>{item.name}</h2>
+        {item.description && <p>{item.description}</p>}
+        <div className="storefront-v3-product-dialog-price"><strong>{money(item.salePrice, lang)}</strong>{item.comparePrice > item.salePrice && <del>{money(item.comparePrice, lang)}</del>}</div>
+        <span className={`storefront-v3-product-availability ${item.available ? "available" : "unavailable"}`}>{item.availability}</span>
+        <button className="storefront-v3-product-dialog-add" type="button" disabled={!item.available} onClick={() => add(item)}>{item.available ? t.addToCart : t.unavailable}</button>
+      </div>
+    </section>
+  </div>;
 }
 
 export default function StorefrontClientV3({ initialCatalog }: { initialCatalog: StorefrontCatalog | null }) {
@@ -219,6 +284,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [confirmation, setConfirmation] = useState<{ orderRef: string; total: number } | null>(null);
+  const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
   const [utm, setUtm] = useState({ source: "", medium: "", campaign: "" });
   const refreshInFlight = useRef(false);
   const lastRefreshAt = useRef(0);
@@ -328,8 +394,14 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     if (!item.available) return;
     const key = itemKey(item);
     setCart((current) => ({ ...current, [key]: Math.min(20, (current[key] || 0) + 1) }));
+    setSelectedItem(null);
     setCartOpen(true);
     track("AddToCart", { content_ids: [item.productCode], content_name: item.name, content_type: item.kind, value: item.salePrice, currency: "MAD" });
+  }
+
+  function openItem(item: CatalogItem) {
+    setSelectedItem(item);
+    track("ViewContent", { content_ids: [item.productCode], content_name: item.name, content_type: item.kind, value: item.salePrice, currency: "MAD" });
   }
 
   function updateQuantity(key: string, quantity: number) {
@@ -461,12 +533,12 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
 
     {weekly.length > 0 && <section className="storefront-v3-section" id="offres">
       <header className="storefront-v3-section-head"><div><small>{t.weeklyPromoKicker}</small><h2>{t.weeklyPromo}</h2></div></header>
-      <div className="storefront-v3-grid promo">{weekly.map((item, index) => <ProductCard key={`weekly-${item.kind}-${item.id}`} item={item} lang={lang} t={t} add={add} priority={index < 2} />)}</div>
+      <div className="storefront-v3-grid promo">{weekly.map((item, index) => <ProductCard key={`weekly-${item.kind}-${item.id}`} item={item} lang={lang} t={t} add={add} open={openItem} priority={index < 2} />)}</div>
     </section>}
 
     {bestSellers.length > 0 && <section className="storefront-v3-section storefront-v3-best">
       <header className="storefront-v3-section-head"><div><small>{t.bestSellersKicker}</small><h2>{t.bestSellers}</h2><p>{t.bestSellerText}</p></div></header>
-      <div className="storefront-v3-horizontal">{bestSellers.map((item) => <ProductCard key={`best-${item.id}`} item={item} lang={lang} t={t} add={add} />)}</div>
+      <div className="storefront-v3-horizontal">{bestSellers.map((item) => <ProductCard key={`best-${item.id}`} item={item} lang={lang} t={t} add={add} open={openItem} />)}</div>
     </section>}
 
     {collectionCategories.length > 0 && <section className="storefront-v3-section storefront-v3-collections">
@@ -482,7 +554,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
 
     {offers.length > 0 && <section className="storefront-v3-section storefront-v3-packs">
       <header className="storefront-v3-section-head"><div><small>{t.packsKicker}</small><h2>{t.packs}</h2></div></header>
-      <div className="storefront-v3-grid packs">{offers.slice(0, 6).map((item) => <ProductCard key={`pack-${item.id}`} item={item} lang={lang} t={t} add={add} />)}</div>
+      <div className="storefront-v3-grid packs">{offers.slice(0, 6).map((item) => <ProductCard key={`pack-${item.id}`} item={item} lang={lang} t={t} add={add} open={openItem} />)}</div>
     </section>}
 
     {renderMarketingSections("before_catalogue")}
@@ -495,7 +567,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       </div>
       {loading && <div className="storefront-v3-state">{t.loading}</div>}
       {error && <div className="storefront-v3-state error">{error}</div>}
-      {!loading && !error && <div className="storefront-v3-grid catalogue">{visibleItems.map((item, index) => <ProductCard key={`${item.kind}-${item.id}`} item={item} lang={lang} t={t} add={add} priority={index < 2} />)}</div>}
+      {!loading && !error && <div className="storefront-v3-grid catalogue">{visibleItems.map((item, index) => <ProductCard key={`${item.kind}-${item.id}`} item={item} lang={lang} t={t} add={add} open={openItem} priority={index < 2} />)}</div>}
       {visibleCount < filtered.length && <button className="storefront-v3-more" type="button" onClick={() => setVisibleCount((value) => value + INITIAL_VISIBLE)}>{t.loadMore}</button>}
     </section>
 
@@ -506,6 +578,8 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     <section className="storefront-v3-contact" id="contact"><div><small>{brand}</small><h2>{t.helpTitle}</h2><p>{t.helpText}</p></div>{waUrl && <a href={waUrl} target="_blank" rel="noreferrer">{t.whatsapp} →</a>}</section>
     <footer className="storefront-v3-footer"><div><strong>{brand}</strong><small>{localized?.shippingNote || catalog?.shippingNote}</small></div><span>© {new Date().getFullYear()} {brand}</span></footer>
     {waUrl && <a className="storefront-v3-wa" href={waUrl} target="_blank" rel="noreferrer" aria-label={t.whatsapp}>WA</a>}
+
+    {selectedItem && <ProductGalleryModal key={itemKey(selectedItem)} item={selectedItem} lang={lang} t={t} add={add} close={() => setSelectedItem(null)} />}
 
     {cartOpen && <div className="storefront-v3-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setCartOpen(false); }}>
       <aside className="storefront-v3-drawer" role="dialog" aria-modal="true" aria-label={t.yourCart}>
