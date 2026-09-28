@@ -246,6 +246,45 @@ export const dailyClosings = sqliteTable(
   (table) => [index("daily_closings_date_idx").on(table.closeDate)],
 );
 
+export const monthlyClosings = sqliteTable(
+  "monthly_closings",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    monthKey: text("month_key").notNull().unique(),
+    periodStart: text("period_start").notNull(),
+    periodEnd: text("period_end").notNull(),
+    deliveredOrders: integer("delivered_orders").notNull().default(0),
+    deliveredRevenue: integer("delivered_revenue").notNull().default(0),
+    collectedAmount: integer("collected_amount").notNull().default(0),
+    productCost: integer("product_cost").notNull().default(0),
+    shippingCost: integer("shipping_cost").notNull().default(0),
+    fees: integer("fees").notNull().default(0),
+    returnCost: integer("return_cost").notNull().default(0),
+    adSpend: integer("ad_spend").notNull().default(0),
+    operatingExpenses: integer("operating_expenses").notNull().default(0),
+    inventoryLoss: integer("inventory_loss").notNull().default(0),
+    carrierAdjustment: integer("carrier_adjustment").notNull().default(0),
+    contributionMargin: integer("contribution_margin").notNull().default(0),
+    netProfit: integer("net_profit").notNull().default(0),
+    reinvestmentAllocated: integer("reinvestment_allocated").notNull().default(0),
+    manualCapitalIn: integer("manual_capital_in").notNull().default(0),
+    manualCapitalOut: integer("manual_capital_out").notNull().default(0),
+    stockValueStart: integer("stock_value_start"),
+    stockValueEnd: integer("stock_value_end").notNull().default(0),
+    stockValueSource: text("stock_value_source").notNull().default(""),
+    cashEnd: integer("cash_end").notNull().default(0),
+    cashEndSource: text("cash_end_source").notNull().default(""),
+    note: text("note").notNull().default(""),
+    closedByUserId: integer("closed_by_user_id"),
+    closedByName: text("closed_by_name").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("monthly_closings_month_idx").on(table.monthKey),
+    index("monthly_closings_created_at_idx").on(table.createdAt),
+  ],
+);
+
 export const suppliers = sqliteTable(
   "suppliers",
   {
