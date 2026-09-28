@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
 
 type Media = {
@@ -187,6 +187,8 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
   const [tab, setTab] = useState<"identity" | "products" | "offers">("identity");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Toutes");
+  const [productLimit, setProductLimit] = useState(16);
+  const pageRef = useRef<HTMLElement | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -269,8 +271,18 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
       return normalize(`${product.productCode} ${product.internalName} ${product.publicName} ${publicCategory(product.category)}`).includes(clean);
     });
   }, [category, data.products, query]);
+  const visibleProducts = filteredProducts.slice(0, productLimit);
 
-  return <section className="storefront-cms-page storefront-cms-v2">
+  function switchTab(next: "identity" | "products" | "offers") {
+    if (next === tab) return;
+    setTab(next);
+    setNotice("");
+    setError("");
+    if (next === "products") setProductLimit(16);
+    window.requestAnimationFrame(() => pageRef.current?.scrollTo({ top: 0, behavior: "auto" }));
+  }
+
+  return <section ref={pageRef} className="storefront-cms-page storefront-cms-v2">
     <header className="storefront-cms-topbar">
       <div>
         <span>Boutique publique</span>
@@ -283,10 +295,10 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
       </div>
     </header>
 
-    <nav className="storefront-cms-tabs">
-      <button className={tab === "identity" ? "active" : ""} onClick={() => setTab("identity")}>Identité & contact</button>
-      <button className={tab === "products" ? "active" : ""} onClick={() => setTab("products")}>Catalogue public <b>{data.products.length}</b></button>
-      <button className={tab === "offers" ? "active" : ""} onClick={() => setTab("offers")}>Packs & offres <b>{data.offers.length}</b></button>
+    <nav className="storefront-cms-tabs" aria-label="Sections de la boutique publique">
+      <button type="button" className={tab === "identity" ? "active" : ""} aria-pressed={tab === "identity"} onClick={() => switchTab("identity")}>Identité & contact</button>
+      <button type="button" className={tab === "products" ? "active" : ""} aria-pressed={tab === "products"} onClick={() => switchTab("products")}>Catalogue public <b>{data.products.length}</b></button>
+      <button type="button" className={tab === "offers" ? "active" : ""} aria-pressed={tab === "offers"} onClick={() => switchTab("offers")}>Packs & offres <b>{data.offers.length}</b></button>
     </nav>
 
     {notice && <div className="storefront-cms-notice success">✓ {notice}</div>}
@@ -296,14 +308,15 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
       {tab === "identity" && <IdentityPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />}
       {tab === "products" && <div className="storefront-cms-products">
         <div className="storefront-cms-filterbar">
-          <label><span>Rechercher</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nom, référence…" /></label>
-          <label><span>Catégorie</span><select value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item}>{item}</option>)}</select></label>
+          <label><span>Rechercher</span><input value={query} onChange={(event) => { setQuery(event.target.value); setProductLimit(16); }} placeholder="Nom, référence…" /></label>
+          <label><span>Catégorie</span><select value={category} onChange={(event) => { setCategory(event.target.value); setProductLimit(16); }}>{categories.map((item) => <option key={item}>{item}</option>)}</select></label>
           <div><strong>{filteredProducts.length}</strong><small>produit(s)</small></div>
         </div>
         <div className="storefront-cms-public-category-note">Électronique et Boîtes sont volontairement exclues de la boutique publique. Wallets est affiché aux clients sous le nom « Portefeuilles ».</div>
         <div className="storefront-cms-product-list">
-          {filteredProducts.map((product) => <ProductEditor key={`${product.productId}-${product.publicName}-${product.publicPrice}-${product.media.length}`} product={product} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />)}
+          {visibleProducts.map((product) => <ProductEditor key={`${product.productId}-${product.publicName}-${product.publicPrice}-${product.media.length}`} product={product} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />)}
         </div>
+        {visibleProducts.length < filteredProducts.length && <div className="storefront-cms-load-more-wrap"><button type="button" className="secondary-button" onClick={() => setProductLimit((value) => value + 16)}>Afficher 16 produits de plus ({filteredProducts.length - visibleProducts.length} restant(s))</button></div>}
       </div>}
       {tab === "offers" && <OffersPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />}
     </>}
@@ -466,6 +479,7 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
   removeMedia: (id: number) => Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canEdit || saving) return;
@@ -489,7 +503,7 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
   }
 
   const effectiveOut = product.stockQuantity <= 0 || product.availabilityMode === "out_of_stock";
-  return <details className="storefront-cms-product">
+  return <details className="storefront-cms-product" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary>
       <div className="storefront-cms-product-main">
         {product.media[0] ? <>
@@ -502,7 +516,7 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
       <b>⌄</b>
     </summary>
 
-    <form onSubmit={(event) => void submit(event)}>
+    {open && <form onSubmit={(event) => void submit(event)}>
       <div className="storefront-cms-product-editgrid">
         <label><span>Nom sur le site public</span><input name="publicName" defaultValue={product.publicName} disabled={!canEdit} /></label>
         <label><span>Prix public (MAD)</span><input name="publicPrice" type="number" min="0" step="1" defaultValue={product.publicPrice} disabled={!canEdit} /></label>
@@ -514,7 +528,7 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
       <label><span>Description publique</span><textarea name="description" rows={3} defaultValue={product.description} placeholder="Courte description visible par les clients…" disabled={!canEdit} /></label>
       <GalleryEditor ownerType="product" ownerId={product.productId} media={product.media} canEdit={canEdit} uploadMany={uploadMany} removeMedia={removeMedia} title="Photos du produit" />
       <div className="storefront-cms-save-row"><small>Prix interne : {money(product.internalPrice)} · stock interne : {product.stockQuantity}</small><button className="primary-button" type="submit" disabled={!canEdit || saving}>{saving ? "Enregistrement…" : "Enregistrer ce produit public"}</button></div>
-    </form>
+    </form>}
   </details>;
 }
 
@@ -551,6 +565,7 @@ function OfferEditor({ offer, products, canEdit, save, uploadMany, removeMedia, 
 }) {
   const [items, setItems] = useState<OfferItem[]>(offer.items);
   const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(isNew);
   const [productQuery, setProductQuery] = useState("");
   const [productCategory, setProductCategory] = useState("Toutes");
 
@@ -609,14 +624,14 @@ function OfferEditor({ offer, products, canEdit, save, uploadMany, removeMedia, 
     await save({ action: "deleteOffer", offerId: offer.id });
   }
 
-  return <details className={`storefront-cms-offer-card ${isNew ? "new" : ""}`} open={isNew}>
+  return <details className={`storefront-cms-offer-card ${isNew ? "new" : ""}`} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary>
       <div><span>{isNew ? "＋ Nouvelle offre" : offer.badge || "Pack"}</span><strong>{isNew ? "Créer un pack, une remise ou une offre" : offer.name}</strong><small>{isNew ? "Recherche les produits, compose le pack puis ajoute ses photos." : `${offer.items.length} composant(s) · ${money(offer.price)}`}</small></div>
       {!isNew && <span className={offer.isActive ? "storefront-cms-offer-active" : "storefront-cms-offer-off"}>{offer.isActive ? "En ligne" : "Masquée"}</span>}
       <b>⌄</b>
     </summary>
 
-    <form onSubmit={(event) => void submit(event)}>
+    {open && <form onSubmit={(event) => void submit(event)}>
       <div className="storefront-cms-product-editgrid">
         <label><span>Nom de l’offre</span><input name="name" defaultValue={offer.name} required disabled={!canEdit} placeholder="Ex. Pack Duo, -20 %, 1+1=3…" /></label>
         <label><span>Prix offre (MAD)</span><input name="price" type="number" min="1" step="1" defaultValue={offer.price || ""} required disabled={!canEdit} /></label>
@@ -662,6 +677,6 @@ function OfferEditor({ offer, products, canEdit, save, uploadMany, removeMedia, 
         {!isNew && canEdit ? <button className="danger-text-button" type="button" onClick={() => void removeOffer()}>Supprimer l’offre</button> : <small>{items.length} composant(s)</small>}
         <button className="primary-button" type="submit" disabled={!canEdit || saving}>{saving ? "Enregistrement…" : isNew ? "Créer l’offre" : "Enregistrer l’offre"}</button>
       </div>
-    </form>
+    </form>}
   </details>;
 }
