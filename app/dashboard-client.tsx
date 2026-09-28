@@ -4748,13 +4748,11 @@ function MonthlyClosingPanel({
   const stockValueSource = latestInventory
     ? `Inventaire ${latestInventory.sessionRef} · ${businessDateKey(latestInventory.completedAt || latestInventory.startedAt)}`
     : "Aucun inventaire clôturé pendant ce mois";
-  const latestDailyClosing = [...data.dailyClosings]
-    .filter((closing) => closing.closeDate <= bounds.end)
-    .sort((left, right) => right.closeDate.localeCompare(left.closeDate))[0] || null;
+  const latestDailyClosing = data.dailyClosings.find((closing) => closing.closeDate === bounds.end) || null;
   const cashEnd = latestDailyClosing ? latestDailyClosing.actualTotal : currentCash;
   const cashEndSource = latestDailyClosing
     ? `Clôture quotidienne ${latestDailyClosing.closeDate}`
-    : "Trésorerie actuelle · aucune clôture quotidienne antérieure disponible";
+    : "Aperçu : trésorerie actuelle · le serveur reconstruira le solde historique à la clôture";
   const preview = useMemo(() => buildMonthlyFinancialSnapshot({
     monthKey: selectedMonth,
     orders: data.orders,
