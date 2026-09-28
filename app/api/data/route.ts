@@ -1103,34 +1103,36 @@ export async function POST(request: Request) {
       const receivedAt = `${settlementDate}T12:00:00.000Z`;
       const now = new Date().toISOString();
 
-      const inserted = await database.prepare(`
-        INSERT INTO carrier_settlements (
-          carrier, reference, settlement_date, expected_amount, actual_amount,
-          difference_amount, order_count, status, note, created_by_user_id, created_by_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(
-        carrier,
-        reference,
-        settlementDate,
-        expectedAmount,
-        actualAmount,
-        differenceAmount,
-        expectedByOrder.length,
-        settlementStatus,
-        note,
-        user.id,
-        user.displayName,
-      ).run();
-      const settlementId = Number(inserted.meta?.last_row_id || 0);
-      if (!settlementId) return Response.json({ error: "Impossible d’enregistrer le règlement transporteur." }, { status: 500 });
-
-      const statements = [];
+      const statements = [
+        database.prepare(`
+          INSERT INTO carrier_settlements (
+            carrier, reference, settlement_date, expected_amount, actual_amount,
+            difference_amount, order_count, status, note, created_by_user_id, created_by_name
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          carrier,
+          reference,
+          settlementDate,
+          expectedAmount,
+          actualAmount,
+          differenceAmount,
+          expectedByOrder.length,
+          settlementStatus,
+          note,
+          user.id,
+          user.displayName,
+        ),
+      ];
       for (const order of expectedByOrder) {
         statements.push(
           database.prepare(`
             INSERT INTO carrier_settlement_orders (settlement_id, order_id, expected_amount)
-            VALUES (?, ?, ?)
-          `).bind(settlementId, order.id, order.expectedAmount),
+            VALUES (
+              (SELECT id FROM carrier_settlements WHERE lower(carrier) = lower(?) AND lower(reference) = lower(?) LIMIT 1),
+              ?,
+              ?
+            )
+          `).bind(carrier, reference, order.id, order.expectedAmount),
           database.prepare(`
             UPDATE orders
             SET payment_status = 'Encaissé',
@@ -1142,6 +1144,11 @@ export async function POST(request: Request) {
         );
       }
       await database.batch(statements);
+      const persistedSettlement = await database.prepare(
+        "SELECT id FROM carrier_settlements WHERE lower(carrier) = lower(?) AND lower(reference) = lower(?) LIMIT 1",
+      ).bind(carrier, reference).first<{ id: number }>();
+      if (!persistedSettlement?.id) throw new Error("Le règlement transporteur n’a pas été enregistré.");
+      const settlementId = Number(persistedSettlement.id);
       await reconcileOrderAllocations();
 
       auditEntityId = String(settlementId);
