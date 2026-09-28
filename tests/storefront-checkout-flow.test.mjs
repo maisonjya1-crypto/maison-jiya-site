@@ -152,8 +152,10 @@ test("le panier client nettoie le stockage local, les articles retirés et les q
   assert.match(client, /function sanitizeStoredCart/);
   assert.match(client, /Number\.isInteger\(quantity\)/);
   assert.match(client, /Math\.min\(20, quantity\)/);
-  assert.match(client, /if \(!item \|\| !item\.available\)/);
-  assert.match(client, /setCart\(sanitizeStoredCart\(JSON\.parse\(savedCart\)\)\)/);
+  assert.match(client, /function pruneCartForCatalog/);
+  assert.match(client, /if \(!item \|\| !item\.available\) continue/);
+  assert.match(client, /setCart\(pruneCartForCatalog\(sanitizeStoredCart\(JSON\.parse\(savedCart\)\), initialCatalog\)\)/);
+  assert.match(client, /setCart\(\(current\) => pruneCartForCatalog\(current, body\)\)/);
   assert.match(client, /maxLength=\{120\}/);
   assert.match(client, /maxLength=\{40\}/);
   assert.match(client, /maxLength=\{100\}/);
