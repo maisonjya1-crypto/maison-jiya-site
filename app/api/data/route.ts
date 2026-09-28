@@ -431,7 +431,6 @@ function hasValidOrigin(request: Request) {
 
 async function snapshot(access: AccessInfo) {
   await seedIfNeeded();
-  await reconcileOrderAllocations();
   const rawDatabase = await getRawDb();
   await ensureRecurringExpenseOccurrences(rawDatabase);
   await createDailyBackup(rawDatabase);
@@ -2747,6 +2746,21 @@ export async function POST(request: Request) {
       await writeAudit(user, textValue(payload.action), auditEntityId, auditEntityLabel);
     } catch (auditError) {
       console.error("Maison Jiya audit write failed after committed mutation", errorDetails(auditError));
+    }
+
+    const allocationSensitiveActions = new Set([
+      "importOrders",
+      "addOrder",
+      "updateOrder",
+      "deleteOrder",
+      "restoreOrder",
+      "deleteOrderPermanently",
+      "resetBusinessValues",
+      "importPortableExport",
+      "restoreBackup",
+    ]);
+    if (allocationSensitiveActions.has(textValue(payload.action))) {
+      await reconcileOrderAllocations();
     }
 
     const responseData = await snapshot(access);
