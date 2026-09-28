@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import AiPage from "./ai-page";
 import TrainingPage from "./training-page";
 import { calculateBusinessFinance, calculateOperatingProfit, orderContributionBeforeGlobalAds } from "../lib/finance";
-import { businessDateKey, deliveryRecognitionDate } from "../lib/accounting-dates";
+import { businessDateKey, deliveryRecognitionDate, returnRecognitionDate } from "../lib/accounting-dates";
 import { allocationPolicyFromSettings } from "../lib/allocation-policy";
 import { applyTreasuryReconciliation, calculateTreasuryAccounts } from "../lib/treasury";
 import { buildSupplierStatement, type SupplierStatementEntry } from "../lib/supplier-statement";
@@ -647,7 +647,12 @@ const productCategoryOptions = ["Montres", "Bijoux", "Wallets", "Électronique",
 const capitalMonthLabels = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 const capitalMonthShort = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
 const capitalChartColors = ["var(--forest)", "var(--terracotta)", "var(--gold)", "#557ea4", "#8b6f9f", "#c47c8d", "#b68658", "#77869b"];
-const exactOrderProfit = (order: Order) => orderContributionBeforeGlobalAds(order);
+const exactOrderProfit = (order: Order) => {
+  if (order.status === "Retour" || order.paymentStatus === "Remboursé") {
+    return -(order.productCost + order.shippingCost + order.fees + order.returnCost);
+  }
+  return orderContributionBeforeGlobalAds(order);
+};
 const whatsappUrl = (phone: string | null, orderRef: string) => {
   const digits = (phone || "").replace(/\D/g, "").replace(/^0/, "212");
   return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(`Bonjour, nous vous contactons concernant votre commande Maison Jiya ${orderRef}.`)}` : "";
@@ -5778,7 +5783,7 @@ function ReportsPage({ data }: { data: Data }) {
   const weekStartKey = businessDateKey(new Date(now.getTime() - 6 * 86_400_000));
   const monthKey = today.slice(0, 7);
   const monthStartKey = `${monthKey}-01`;
-  const completed = data.orders.filter((order) => order.status === "Livrée");
+  const completed = data.orders.filter((order) => Boolean(deliveryRecognitionDate(order, data.orderStatusHistory)));
   const collected = data.orders.filter((order) => order.paymentStatus === "Encaissé");
   const deliveredBetween = (startKey: string, endKey: string) => completed.filter((order) => {
     const recognizedAt = deliveryRecognitionDate(order, data.orderStatusHistory);
@@ -5786,8 +5791,15 @@ function ReportsPage({ data }: { data: Data }) {
     const key = businessDateKey(recognizedAt);
     return key >= startKey && key <= endKey;
   });
+  const returnedBetween = (startKey: string, endKey: string) => completed.filter((order) => {
+    const recognizedAt = returnRecognitionDate(order.id, data.orderStatusHistory);
+    if (!recognizedAt) return false;
+    const key = businessDateKey(recognizedAt);
+    return key >= startKey && key <= endKey;
+  });
   const periodCard = (label: string, startKey: string, endKey: string) => {
     const periodOrders = deliveredBetween(startKey, endKey);
+    const periodReturns = returnedBetween(startKey, endKey);
     const periodAds = data.ads.filter((ad) => {
       const key = businessDateKey(ad.performanceDate);
       return key >= startKey && key <= endKey;
@@ -5796,14 +5808,22 @@ function ReportsPage({ data }: { data: Data }) {
       const key = businessDateKey(expense.expenseDate);
       return key >= startKey && key <= endKey;
     });
-    const finance = calculateOperatingProfit(periodOrders, periodAds, periodExpenses);
+    const revenue = periodOrders.reduce((sum, order) => sum + order.saleAmount, 0)
+      - periodReturns.reduce((sum, order) => sum + order.saleAmount, 0);
+    const deliveredCosts = periodOrders.reduce(
+      (sum, order) => sum + order.productCost + order.shippingCost + order.fees,
+      0,
+    );
+    const losses = periodReturns.reduce((sum, order) => sum + order.returnCost, 0);
+    const adSpend = periodAds.reduce((sum, ad) => sum + ad.spend, 0);
+    const operatingExpenses = periodExpenses.reduce((sum, expense) => sum + expense.amount, 0);
     return {
       label,
       count: periodOrders.length,
-      revenue: finance.deliveredRevenue,
-      profit: finance.profit,
-      adSpend: finance.adSpend,
-      operatingExpenses: finance.operatingExpenses,
+      revenue,
+      profit: revenue - deliveredCosts - losses - adSpend - operatingExpenses,
+      adSpend,
+      operatingExpenses,
     };
   };
   const periods = [
