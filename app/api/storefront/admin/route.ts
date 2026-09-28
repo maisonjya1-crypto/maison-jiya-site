@@ -1,7 +1,7 @@
 import { getAuthenticatedUser } from "../../../auth";
 import { getRawDb } from "../../../../db";
 import { normalizeMoroccanPhone } from "../../../../db/phone";
-import { ensureStorefrontCms, getStorefrontMedia, type StorefrontOfferItemRow, type StorefrontOfferRow, type StorefrontProductSettingRow } from "../../../../db/storefront-cms";
+import { ensureStorefrontCms, getStorefrontMedia, type StorefrontMarketingSectionRow, type StorefrontOfferItemRow, type StorefrontOfferRow, type StorefrontProductSettingRow } from "../../../../db/storefront-cms";
 
 type WhatsAppNumber = { label?: string; phone?: string; isDefault?: boolean };
 
@@ -102,6 +102,14 @@ async function snapshot(database: D1Database) {
     ORDER BY offer_id, product_id
   `).all<StorefrontOfferItemRow>()).results;
 
+  const marketingSections = (await database.prepare(`
+    SELECT id, eyebrow, title, body, badge, cta_label AS ctaLabel,
+           target, placement, is_active AS isActive, sort_order AS sortOrder,
+           created_at AS createdAt, updated_at AS updatedAt
+    FROM storefront_marketing_sections
+    ORDER BY placement, sort_order, id DESC
+  `).all<StorefrontMarketingSectionRow>()).results;
+
   const media = await getStorefrontMedia(database);
   const allowedProductIds = new Set(products.map((product) => product.productId));
 
@@ -133,6 +141,11 @@ async function snapshot(database: D1Database) {
       isActive: Boolean(offer.isActive),
       items: offerItems.filter((item) => item.offerId === offer.id && allowedProductIds.has(item.productId)),
       media: media.filter((item) => item.ownerType === "offer" && item.ownerId === offer.id),
+    })),
+    marketingSections: marketingSections.map((section) => ({
+      ...section,
+      isActive: Boolean(section.isActive),
+      media: media.filter((item) => item.ownerType === "marketing" && item.ownerId === section.id),
     })),
     brandMedia: media.filter((item) => item.ownerType === "brand" && item.ownerId === 0),
   };
@@ -281,6 +294,61 @@ export async function POST(request: Request) {
         database.prepare("DELETE FROM storefront_offer_items WHERE offer_id = ?").bind(offerId),
         database.prepare("DELETE FROM storefront_media WHERE owner_type = 'offer' AND owner_id = ?").bind(offerId),
         database.prepare("DELETE FROM storefront_offers WHERE id = ?").bind(offerId),
+      ]);
+    } else if (action === "saveMarketingSection") {
+      const sectionId = integer(payload.sectionId);
+      const title = text(payload.title, 160);
+      if (!title) throw new Error("Le titre du bloc marketing est obligatoire.");
+      const target = text(payload.target, 40);
+      const allowedTargets = new Set(["offers", "catalogue", "Montres", "Bijoux", "Portefeuilles"]);
+      const placement = text(payload.placement, 40);
+      const allowedPlacements = new Set(["after_categories", "before_catalogue", "before_contact"]);
+      const normalizedTarget = allowedTargets.has(target) ? target : "offers";
+      const normalizedPlacement = allowedPlacements.has(placement) ? placement : "after_categories";
+
+      if (sectionId > 0) {
+        const exists = await database.prepare("SELECT id FROM storefront_marketing_sections WHERE id = ? LIMIT 1").bind(sectionId).first<{ id: number }>();
+        if (!exists) throw new Error("Ce bloc marketing n’existe plus.");
+        await database.prepare(`
+          UPDATE storefront_marketing_sections
+          SET eyebrow = ?, title = ?, body = ?, badge = ?, cta_label = ?, target = ?,
+              placement = ?, is_active = ?, sort_order = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(
+          text(payload.eyebrow, 80),
+          title,
+          text(payload.body, 500),
+          text(payload.badge, 50),
+          text(payload.ctaLabel, 60) || "Voir",
+          normalizedTarget,
+          normalizedPlacement,
+          boolean(payload.isActive, true) ? 1 : 0,
+          integer(payload.sortOrder),
+          sectionId,
+        ).run();
+      } else {
+        await database.prepare(`
+          INSERT INTO storefront_marketing_sections (
+            eyebrow, title, body, badge, cta_label, target, placement, is_active, sort_order, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).bind(
+          text(payload.eyebrow, 80),
+          title,
+          text(payload.body, 500),
+          text(payload.badge, 50),
+          text(payload.ctaLabel, 60) || "Voir",
+          normalizedTarget,
+          normalizedPlacement,
+          boolean(payload.isActive, true) ? 1 : 0,
+          integer(payload.sortOrder),
+        ).run();
+      }
+    } else if (action === "deleteMarketingSection") {
+      const sectionId = integer(payload.sectionId);
+      if (sectionId <= 0) throw new Error("Bloc marketing invalide.");
+      await database.batch([
+        database.prepare("DELETE FROM storefront_media WHERE owner_type = 'marketing' AND owner_id = ?").bind(sectionId),
+        database.prepare("DELETE FROM storefront_marketing_sections WHERE id = ?").bind(sectionId),
       ]);
     } else {
       return Response.json({ error: "Action inconnue." }, { status: 400 });

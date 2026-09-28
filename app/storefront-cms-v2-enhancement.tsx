@@ -44,6 +44,21 @@ type CmsOffer = {
   media: Media[];
 };
 
+type CmsMarketingSection = {
+  id: number;
+  eyebrow: string;
+  title: string;
+  body: string;
+  badge: string;
+  ctaLabel: string;
+  target: "offers" | "catalogue" | "Montres" | "Bijoux" | "Portefeuilles";
+  placement: "after_categories" | "before_catalogue" | "before_contact";
+  isActive: boolean;
+  sortOrder: number;
+  media: Media[];
+};
+
+
 type CmsSettings = {
   brandName: string;
   announcement: string;
@@ -66,12 +81,13 @@ type CmsData = {
   settings: CmsSettings;
   products: CmsProduct[];
   offers: CmsOffer[];
+  marketingSections: CmsMarketingSection[];
   brandMedia: Media[];
   canEdit: boolean;
 };
 
 type PortalTarget = Element | DocumentFragment;
-type UploadOwner = "brand" | "product" | "offer";
+type UploadOwner = "brand" | "product" | "offer" | "marketing";
 type UploadKind = "logo" | "hero" | "gallery";
 type UploadMany = (ownerType: UploadOwner, ownerId: number, kind: UploadKind, files: FileList | null, maxFiles?: number) => Promise<void>;
 
@@ -96,6 +112,7 @@ const emptyData: CmsData = {
   },
   products: [],
   offers: [],
+  marketingSections: [],
   brandMedia: [],
   canEdit: false,
 };
@@ -184,7 +201,7 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [tab, setTab] = useState<"identity" | "products" | "offers">("identity");
+  const [tab, setTab] = useState<"identity" | "products" | "offers" | "marketing">("identity");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Toutes");
   const [productLimit, setProductLimit] = useState(16);
@@ -273,7 +290,7 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
   }, [category, data.products, query]);
   const visibleProducts = filteredProducts.slice(0, productLimit);
 
-  function switchTab(next: "identity" | "products" | "offers") {
+  function switchTab(next: "identity" | "products" | "offers" | "marketing") {
     if (next === tab) return;
     setTab(next);
     setNotice("");
@@ -303,6 +320,7 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
       <button type="button" className={tab === "identity" ? "active" : ""} aria-pressed={tab === "identity"} onClick={() => switchTab("identity")}>Identité & contact</button>
       <button type="button" className={tab === "products" ? "active" : ""} aria-pressed={tab === "products"} onClick={() => switchTab("products")}>Catalogue public <b>{data.products.length}</b></button>
       <button type="button" className={tab === "offers" ? "active" : ""} aria-pressed={tab === "offers"} onClick={() => switchTab("offers")}>Packs & offres <b>{data.offers.length}</b></button>
+      <button type="button" className={tab === "marketing" ? "active" : ""} aria-pressed={tab === "marketing"} onClick={() => switchTab("marketing")}>Blocs promo <b>{data.marketingSections.length}</b></button>
     </nav>
 
     {notice && <div className="storefront-cms-notice success">✓ {notice}</div>}
@@ -323,6 +341,7 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
         {visibleProducts.length < filteredProducts.length && <div className="storefront-cms-load-more-wrap"><button type="button" className="secondary-button" onClick={() => setProductLimit((value) => value + 16)}>Afficher 16 produits de plus ({filteredProducts.length - visibleProducts.length} restant(s))</button></div>}
       </div>}
       {tab === "offers" && <OffersPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />}
+      {tab === "marketing" && <MarketingPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />}
     </>}
   </section>;
 }
@@ -532,6 +551,131 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
       <label><span>Description publique</span><textarea name="description" rows={3} defaultValue={product.description} placeholder="Courte description visible par les clients…" disabled={!canEdit} /></label>
       <GalleryEditor ownerType="product" ownerId={product.productId} media={product.media} canEdit={canEdit} uploadMany={uploadMany} removeMedia={removeMedia} title="Photos du produit" />
       <div className="storefront-cms-save-row"><small>Prix interne : {money(product.internalPrice)} · stock interne : {product.stockQuantity}</small><button className="primary-button" type="submit" disabled={!canEdit || saving}>{saving ? "Enregistrement…" : "Enregistrer ce produit public"}</button></div>
+    </form>}
+  </details>;
+}
+
+function MarketingPanel({ data, save, uploadMany, removeMedia }: {
+  data: CmsData;
+  save: (payload: Record<string, unknown>) => Promise<void>;
+  uploadMany: UploadMany;
+  removeMedia: (id: number) => Promise<void>;
+}) {
+  const blank: CmsMarketingSection = {
+    id: 0,
+    eyebrow: "OFFRE DU MOMENT",
+    title: "",
+    body: "",
+    badge: "PROMO",
+    ctaLabel: "Voir l’offre",
+    target: "offers",
+    placement: "after_categories",
+    isActive: true,
+    sortOrder: 0,
+    media: [],
+  };
+  return <div className="storefront-cms-marketing">
+    <div className="storefront-cms-offer-intro">
+      <div>
+        <span>Blocs promo / marketing</span>
+        <h2>Crée autant de mises en avant que tu veux</h2>
+        <p>Remise, offre flash, livraison offerte, 1+1=3, pack spécial… Chaque bloc a son image, son texte, son bouton, sa position et son ordre.</p>
+      </div>
+      <strong>{data.marketingSections.filter((section) => section.isActive).length} actif(s)</strong>
+    </div>
+    <MarketingEditor section={blank} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} isNew />
+    <div className="storefront-cms-marketing-list">
+      {data.marketingSections.map((section) => <MarketingEditor key={`${section.id}-${section.title}-${section.media.length}`} section={section} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />)}
+      {!data.marketingSections.length && <div className="storefront-cms-no-media">Aucun bloc marketing créé pour le moment.</div>}
+    </div>
+  </div>;
+}
+
+function MarketingEditor({ section, canEdit, save, uploadMany, removeMedia, isNew = false }: {
+  section: CmsMarketingSection;
+  canEdit: boolean;
+  save: (payload: Record<string, unknown>) => Promise<void>;
+  uploadMany: UploadMany;
+  removeMedia: (id: number) => Promise<void>;
+  isNew?: boolean;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(isNew);
+  const image = section.media[0];
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canEdit || saving) return;
+    const form = new FormData(event.currentTarget);
+    setSaving(true);
+    try {
+      await save({
+        action: "saveMarketingSection",
+        sectionId: section.id,
+        eyebrow: form.get("eyebrow"),
+        title: form.get("title"),
+        body: form.get("body"),
+        badge: form.get("badge"),
+        ctaLabel: form.get("ctaLabel"),
+        target: form.get("target"),
+        placement: form.get("placement"),
+        sortOrder: form.get("sortOrder"),
+        isActive: form.get("isActive") === "on",
+      });
+      if (isNew) event.currentTarget.reset();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeSection() {
+    if (!section.id || !window.confirm(`Supprimer le bloc « ${section.title} » ?`)) return;
+    await save({ action: "deleteMarketingSection", sectionId: section.id });
+  }
+
+  return <details className={`storefront-cms-offer-card storefront-cms-marketing-card ${isNew ? "new" : ""}`} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary>
+      <div>
+        <span>{isNew ? "＋ Nouveau bloc" : section.badge || "Promo"}</span>
+        <strong>{isNew ? "Créer un bloc promo / remise" : section.title}</strong>
+        <small>{isNew ? "Image + texte + bouton + emplacement." : `${section.eyebrow || "Marketing"} · ordre ${section.sortOrder}`}</small>
+      </div>
+      {!isNew && <span className={section.isActive ? "storefront-cms-offer-active" : "storefront-cms-offer-off"}>{section.isActive ? "En ligne" : "Masqué"}</span>}
+      <b>⌄</b>
+    </summary>
+
+    {open && <form onSubmit={(event) => void submit(event)}>
+      <div className="storefront-cms-product-editgrid">
+        <label><span>Petit titre</span><input name="eyebrow" defaultValue={section.eyebrow} placeholder="OFFRE DU MOMENT" disabled={!canEdit} /></label>
+        <label><span>Titre principal</span><input name="title" defaultValue={section.title} placeholder="Ex. -20 % sur les bijoux" required disabled={!canEdit} /></label>
+        <label><span>Badge</span><input name="badge" defaultValue={section.badge} placeholder="-20 %, FLASH, CADEAU…" disabled={!canEdit} /></label>
+        <label><span>Texte du bouton</span><input name="ctaLabel" defaultValue={section.ctaLabel} placeholder="Profiter de l’offre" disabled={!canEdit} /></label>
+        <label><span>Le bouton mène vers</span><select name="target" defaultValue={section.target} disabled={!canEdit}><option value="offers">Packs & offres</option><option value="catalogue">Tout le catalogue</option><option value="Montres">Montres</option><option value="Bijoux">Bijoux</option><option value="Portefeuilles">Portefeuilles</option></select></label>
+        <label><span>Emplacement sur le site</span><select name="placement" defaultValue={section.placement} disabled={!canEdit}><option value="after_categories">Après les catégories</option><option value="before_catalogue">Avant le catalogue</option><option value="before_contact">Avant le bloc contact</option></select></label>
+        <label><span>Ordre</span><input name="sortOrder" type="number" defaultValue={section.sortOrder} disabled={!canEdit} /></label>
+        <label className="storefront-cms-visible"><input name="isActive" type="checkbox" defaultChecked={section.isActive} disabled={!canEdit} /><span>Afficher ce bloc sur la boutique</span></label>
+      </div>
+      <label><span>Texte du bloc</span><textarea name="body" rows={3} defaultValue={section.body} placeholder="Ex. Cette semaine, profitez de notre sélection à prix réduit." disabled={!canEdit} /></label>
+
+      {!isNew ? <div className="storefront-cms-marketing-image">
+        <div>
+          {image ? <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={mediaUrl(image.id)} alt="" loading="lazy" decoding="async" />
+          </> : <span>Image promotionnelle</span>}
+        </div>
+        <section>
+          <strong>Visuel du bloc</strong>
+          <small>Une seule image. Un nouveau fichier remplace automatiquement l’ancien.</small>
+          {canEdit && <label className="storefront-cms-upload">＋ {image ? "Remplacer l’image" : "Ajouter une image"}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void uploadMany("marketing", section.id, "gallery", event.target.files, 1)} /></label>}
+          {canEdit && image && <button className="danger-text-button" type="button" onClick={() => void removeMedia(image.id)}>Supprimer l’image</button>}
+        </section>
+      </div> : <div className="storefront-cms-public-category-note">Crée d’abord le bloc. Ensuite tu pourras lui ajouter son image.</div>}
+
+      <div className="storefront-cms-save-row">
+        {!isNew && canEdit ? <button className="danger-text-button" type="button" onClick={() => void removeSection()}>Supprimer le bloc</button> : <small>Le bloc reste indépendant du stock et des prix internes.</small>}
+        <button className="primary-button" type="submit" disabled={!canEdit || saving}>{saving ? "Enregistrement…" : isNew ? "Créer le bloc" : "Enregistrer le bloc"}</button>
+      </div>
     </form>}
   </details>;
 }

@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     const kind = String(form.get("kind") || "gallery");
     const file = form.get("file");
     if (!(file instanceof File)) throw new Error("Choisissez une image.");
-    if (!["product", "offer", "brand"].includes(ownerType)) throw new Error("Destination d’image invalide.");
+    if (!["product", "offer", "brand", "marketing"].includes(ownerType)) throw new Error("Destination d’image invalide.");
     if (!["gallery", "logo", "hero"].includes(kind)) throw new Error("Type d’image invalide.");
     if (!file.type.match(/^image\/(jpeg|png|webp)$/)) throw new Error("Utilisez une image JPG, PNG ou WebP.");
     if (file.size <= 0 || file.size > 1_250_000) throw new Error("L’image doit faire moins de 1,25 Mo après compression.");
@@ -50,16 +50,19 @@ export async function POST(request: Request) {
     } else if (ownerType === "offer") {
       const offer = await database.prepare("SELECT id FROM storefront_offers WHERE id = ? LIMIT 1").bind(ownerId).first<{ id: number }>();
       if (!offer) throw new Error("Pack introuvable.");
+    } else if (ownerType === "marketing") {
+      const section = await database.prepare("SELECT id FROM storefront_marketing_sections WHERE id = ? LIMIT 1").bind(ownerId).first<{ id: number }>();
+      if (!section) throw new Error("Bloc marketing introuvable.");
     }
 
     if (ownerType === "brand" && !["logo", "hero"].includes(kind)) throw new Error("Type d’image de marque invalide.");
-    if (ownerType !== "brand" && kind !== "gallery") throw new Error("Utilisez la galerie pour les produits et packs.");
+    if (ownerType !== "brand" && kind !== "gallery") throw new Error("Utilisez la galerie pour les produits, packs et blocs marketing.");
 
     const count = await database.prepare("SELECT COUNT(*) AS count FROM storefront_media WHERE owner_type = ? AND owner_id = ? AND kind = ?")
       .bind(ownerType, ownerId, kind).first<{ count: number }>();
-    const limit = ownerType === "brand" ? 1 : GALLERY_LIMIT;
+    const limit = ownerType === "brand" || ownerType === "marketing" ? 1 : GALLERY_LIMIT;
     if (Number(count?.count || 0) >= limit) {
-      if (ownerType === "brand") {
+      if (ownerType === "brand" || ownerType === "marketing") {
         await database.prepare("DELETE FROM storefront_media WHERE owner_type = ? AND owner_id = ? AND kind = ?").bind(ownerType, ownerId, kind).run();
       } else {
         throw new Error(`Maximum ${GALLERY_LIMIT} photos par produit ou pack.`);

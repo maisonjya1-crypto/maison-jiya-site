@@ -35,6 +35,21 @@ export type StorefrontOfferItemRow = {
   quantity: number;
 };
 
+export type StorefrontMarketingSectionRow = {
+  id: number;
+  eyebrow: string;
+  title: string;
+  body: string;
+  badge: string;
+  ctaLabel: string;
+  target: string;
+  placement: string;
+  isActive: number;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string | null;
+};
+
 export type StorefrontMediaRow = {
   id: number;
   ownerType: string;

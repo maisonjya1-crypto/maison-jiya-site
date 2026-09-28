@@ -32,6 +32,19 @@ export type StorefrontPromotionBanner = {
   offerId: number | null;
 };
 
+export type StorefrontMarketingSection = {
+  id: number;
+  eyebrow: string;
+  title: string;
+  body: string;
+  badge: string;
+  ctaLabel: string;
+  target: "offers" | "catalogue" | "Montres" | "Bijoux" | "Portefeuilles";
+  placement: "after_categories" | "before_catalogue" | "before_contact";
+  imageUrl: string;
+};
+
+
 export type StorefrontCatalog = {
   brand: string;
   announcement: string;
@@ -40,6 +53,7 @@ export type StorefrontCatalog = {
   shippingNote: string;
   metaPixelId: string;
   promotionBanner?: StorefrontPromotionBanner;
+  marketingSections?: StorefrontMarketingSection[];
   logoUrl: string;
   heroImageUrl: string;
   whatsapp: string;

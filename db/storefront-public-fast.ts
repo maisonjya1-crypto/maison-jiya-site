@@ -12,6 +12,16 @@ type PublicProductRow = {
   description: string;
 };
 type PublicOfferRow = { id: number; name: string; description: string; price: number; comparePrice: number; badge: string };
+type PublicMarketingRow = {
+  id: number;
+  eyebrow: string;
+  title: string;
+  body: string;
+  badge: string;
+  ctaLabel: string;
+  target: string;
+  placement: string;
+};
 type OfferItemRow = {
   offerId: number;
   productId: number;
@@ -109,6 +119,13 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       ORDER BY m.owner_type, m.owner_id, m.sort_order, m.id
     `),
     database.prepare(`
+      SELECT id, eyebrow, title, body, badge, cta_label AS ctaLabel, target, placement
+      FROM storefront_marketing_sections
+      WHERE is_active = 1
+      ORDER BY placement, sort_order, id DESC
+      LIMIT 30
+    `),
+    database.prepare(`
       SELECT key, value FROM settings
       WHERE key IN (
         'account_name', 'whatsapp_numbers', 'storefront_brand_name', 'storefront_announcement',
@@ -128,7 +145,8 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
   const offers = rows<PublicOfferRow>(result[1]);
   const offerItems = rows<OfferItemRow>(result[2]);
   const media = rows<MediaRow>(result[3]);
-  const settingsRows = rows<SettingRow>(result[4]);
+  const marketingRows = rows<PublicMarketingRow>(result[4]);
+  const settingsRows = rows<SettingRow>(result[5]);
   const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
 
   const mediaByOwner = new Map<string, string>();
@@ -223,6 +241,24 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     offerId: promoOfferId,
   };
 
+  const marketingSections = marketingRows.flatMap((section) => {
+    const target = ["offers", "catalogue", "Montres", "Bijoux", "Portefeuilles"].includes(section.target) ? section.target : "offers";
+    const placement = ["after_categories", "before_catalogue", "before_contact"].includes(section.placement) ? section.placement : "after_categories";
+    const title = section.title?.trim() || "";
+    if (!title) return [];
+    return [{
+      id: section.id,
+      eyebrow: section.eyebrow?.trim() || "",
+      title,
+      body: section.body?.trim() || "",
+      badge: section.badge?.trim() || "",
+      ctaLabel: section.ctaLabel?.trim() || "Voir",
+      target: target as "offers" | "catalogue" | "Montres" | "Bijoux" | "Portefeuilles",
+      placement: placement as "after_categories" | "before_catalogue" | "before_contact",
+      imageUrl: mediaByOwner.get(`marketing:${section.id}`) || "",
+    }];
+  });
+
   return {
     brand,
     announcement,
@@ -231,6 +267,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     shippingNote,
     metaPixelId: settings.storefront_meta_pixel_id?.trim() || "",
     promotionBanner,
+    marketingSections,
     logoUrl,
     heroImageUrl,
     whatsapp: contactWhatsapp,
