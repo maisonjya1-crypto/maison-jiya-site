@@ -121,6 +121,12 @@ async function tableExists(database: D1Database, table: string) {
   return Boolean(existing?.name);
 }
 
+async function tableColumns(database: D1Database, table: string) {
+  if (!await tableExists(database, table)) return new Set<string>();
+  const rows = (await database.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>()).results;
+  return new Set(rows.map((row) => row.name));
+}
+
 async function readOptionalRows(database: D1Database, table: string) {
   if (!await tableExists(database, table)) return undefined;
   return readRows(database, table);
@@ -287,8 +293,8 @@ export async function createDailyBackup(database: D1Database, reason = "Automati
   return existing?.id || null;
 }
 
-function insertStatement(database: D1Database, tableKey: keyof BusinessSnapshot["tables"], row: SnapshotRow) {
-  const columns = RESTORE_COLUMNS[tableKey];
+function insertStatement(database: D1Database, tableKey: keyof BusinessSnapshot["tables"], row: SnapshotRow, columnsOverride?: string[]) {
+  const columns = columnsOverride || RESTORE_COLUMNS[tableKey];
   const table = TABLES[tableKey];
   const values = columns.map((column) => {
     if (column === "stock_deducted") return row[column] ?? 0;
@@ -350,6 +356,11 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
 
   const { snapshot } = inspectSnapshot(row.snapshot_json);
   const hasRecurringExpensesTable = await tableExists(database, TABLES.recurringExpenses);
+  const expenseColumnNames = await tableColumns(database, TABLES.expenses);
+  const supportsRecurringExpenseLinks = expenseColumnNames.has("recurring_expense_id") && expenseColumnNames.has("recurring_period");
+  if (!hasRecurringExpensesTable && (snapshot.tables.recurringExpenses?.length || 0) > 0) {
+    throw new Error("Cette sauvegarde contient des charges récurrentes mais la base cible doit d’abord être mise à jour.");
+  }
 
   const insertionOrder: Array<keyof BusinessSnapshot["tables"]> = [
     "settings", "customers", "products", "suppliers", "purchases", "supplierInvoices", "supplierPayments", "recurringExpenses", "expenses", "ads", "capital", "orders", "stockMovements",
@@ -364,9 +375,12 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
     if (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
       throw new Error("Format de sauvegarde incompatible.");
     }
+    const columnsOverride = tableKey === "expenses" && !supportsRecurringExpenseLinks
+      ? RESTORE_COLUMNS.expenses.filter((column) => !["recurring_expense_id", "recurring_period"].includes(column))
+      : undefined;
     return rows
       .filter((item) => tableKey !== "settings" || (typeof item.key === "string" && !item.key.startsWith("security_") && item.key !== "backup_webhook_url"))
-      .map((item) => insertStatement(database, tableKey, item));
+      .map((item) => insertStatement(database, tableKey, item, columnsOverride));
   });
 
   const restoreStorefront = snapshot.tables.storefrontProducts !== undefined;
