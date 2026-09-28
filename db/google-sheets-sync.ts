@@ -38,7 +38,6 @@ const CORE_SYNC_TABLES = [
   "supplier_invoices",
   "supplier_payments",
   "expenses",
-  "recurring_expenses",
   "ad_performance",
   "capital_ledger",
   "monthly_closings",
@@ -54,6 +53,8 @@ const STOREFRONT_SYNC_TABLES = [
   "storefront_offer_items",
   "storefront_media",
 ] as const;
+
+const OPTIONAL_SYNC_TABLES = ["recurring_expenses"] as const;
 
 let schemaReady: Promise<void> | null = null;
 let storefrontTriggersReady: Promise<void> | null = null;
@@ -139,8 +140,17 @@ async function initializeGoogleSheetsSyncSchema(database: D1Database) {
     ON CONFLICT(id) DO NOTHING
   `).run();
 
+  const optionalSyncTables: string[] = [];
+  for (const table of OPTIONAL_SYNC_TABLES) {
+    const existing = await database.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+    ).bind(table).first<{ name: string }>();
+    if (existing?.name) optionalSyncTables.push(table);
+  }
+
   await database.batch([
     ...CORE_SYNC_TABLES.flatMap((table) => tableTriggerStatements(database, table)),
+    ...optionalSyncTables.flatMap((table) => tableTriggerStatements(database, table)),
     ...tableTriggerStatements(
       database,
       "settings",
