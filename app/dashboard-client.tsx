@@ -13,6 +13,7 @@ import { buildCashflowForecast } from "../lib/cashflow-forecast";
 import { buildMonthlyFinancialSnapshot, isCompletedBusinessMonth, monthBounds, previousMonthKey } from "../lib/monthly-closing";
 import { calculateSmartCapital } from "../lib/smart-capital";
 import { buildDashboardPilotage } from "../lib/dashboard-pilotage";
+import { buildDashboardAlerts } from "../lib/dashboard-alerts";
 
 type Order = {
   id: number;
@@ -1603,6 +1604,12 @@ function Page({
     expenses: data.expenses,
     ads: data.ads,
   });
+  const smartAlerts = buildDashboardAlerts({
+    orders: data.orders,
+    supplierInvoices: data.supplierInvoices,
+    expenses: data.expenses,
+    orderStatusHistory: data.orderStatusHistory,
+  });
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
   if (active === "Inventaire") return <InventoryPage products={data.products} sessions={data.inventorySessions} counts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} />;
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} onRestore={restoreProduct} />;
@@ -1684,6 +1691,51 @@ function Page({
         <Kpi label="Dépenses Meta saisies" value={money(metrics.adSpend)} detail={`ROAS · ${metrics.roas.toFixed(2)}×`} />
         <Kpi label="Pertes & retours" value={money(metrics.losses)} detail="Coûts déclarés" danger />
       </section>
+      <section className="smart-alerts-panel panel" aria-label="Centre d’alertes">
+        <div className="smart-alerts-head">
+          <div>
+            <span className="card-kicker">Surveillance automatique</span>
+            <h2>Centre d’alertes</h2>
+            <p>Signale uniquement les situations qui méritent votre attention selon des règles métier explicites.</p>
+          </div>
+          <span className={`smart-alerts-count ${smartAlerts.some((alert) => alert.level === "critical") ? "critical" : smartAlerts.length ? "active" : "clear"}`}>
+            {smartAlerts.length ? `${smartAlerts.length} alerte${smartAlerts.length > 1 ? "s" : ""}` : "Rien à signaler"}
+          </span>
+        </div>
+        {smartAlerts.length ? (
+          <div className="smart-alerts-list">
+            {smartAlerts.map((alert) => (
+              <button
+                type="button"
+                key={alert.id}
+                className={`smart-alert-row ${alert.level}`}
+                onClick={() => setActive(alert.target)}
+              >
+                <span className="smart-alert-icon" aria-hidden="true">
+                  {alert.level === "critical" ? "!" : alert.level === "warning" ? "△" : alert.level === "positive" ? "↗" : "i"}
+                </span>
+                <span className="smart-alert-copy">
+                  <strong>{alert.title}</strong>
+                  <small>{alert.detail}</small>
+                </span>
+                <span className="smart-alert-target">{alert.target} →</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="smart-alerts-clear">
+            <span>✓</span>
+            <div>
+              <strong>Aucune alerte prioritaire</strong>
+              <small>Les commandes, échéances fournisseurs et dépenses récentes ne déclenchent aucune règle d’alerte.</small>
+            </div>
+          </div>
+        )}
+        <div className="smart-alerts-rules">
+          <small>Règles : commande en attente &gt; 24 h · facture échue ou due sous 7 j · dépense manuelle récente ≥ 2,5× la médiane (minimum 300 MAD, avec au moins 5 références) · accélération ≥ 3 livraisons sur 14 j et ≥ 2× la période précédente.</small>
+        </div>
+      </section>
+
       <section className="pilotage-grid">
         <article className="panel pilotage-priorities-panel">
           <PanelHead kicker="Pilotage du jour" title="À traiter maintenant" />
