@@ -37,8 +37,12 @@ function textValue(value: unknown, fallback = "") {
 }
 
 function numberValue(value: unknown, fallback = 0) {
+  const isEmpty = value === undefined
+    || value === null
+    || (typeof value === "string" && value.trim() === "");
+  if (isEmpty) return fallback;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : fallback;
+  return Number.isFinite(parsed) && Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
 }
 
 function moneyValue(value: unknown, fallback = 0) {
@@ -1585,12 +1589,18 @@ export async function POST(request: Request) {
       auditEntityLabel = `${purchase.purchaseRef || supplierProfile.name} · ${item}`;
     } else if (payload.action === "receivePurchase") {
       const id = numberValue(payload.id);
+      const receiveQuantityProvided = payload.receiveQuantity !== undefined
+        && payload.receiveQuantity !== null
+        && textValue(payload.receiveQuantity) !== "";
       const receiveQuantity = numberValue(payload.receiveQuantity);
       if (!id) return Response.json({ error: "Achat invalide." }, { status: 400 });
+      if (receiveQuantityProvided && receiveQuantity < 1) {
+        return Response.json({ error: "La quantité reçue doit être un nombre entier positif." }, { status: 400 });
+      }
       const duplicateReception = await protectMutation("receivePurchase");
       if (duplicateReception) return duplicateReception;
 
-      const result = await receivePurchaseLine(await getRawDb(), id, receiveQuantity || undefined);
+      const result = await receivePurchaseLine(await getRawDb(), id, receiveQuantityProvided ? receiveQuantity : undefined);
       auditEntityId = String(id);
       auditEntityLabel = `${result.supplier} · ${result.item}`;
       integrationMessage = result.stockUpdated
