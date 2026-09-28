@@ -37,6 +37,8 @@ test("API et interface permettent créer modifier suspendre et réactiver", asyn
   assert.match(route, /Cette dépense vient d’une charge récurrente/);
   assert.match(ui, /Charges récurrentes/);
   assert.match(ui, /60 jours à l’avance/);
+  assert.match(ui, /recognizedExpenses/);
+  assert.match(ui, /À payer maintenant/);
 });
 
 test("les charges récurrentes suivent sauvegarde export import et Google Sheets", async () => {
