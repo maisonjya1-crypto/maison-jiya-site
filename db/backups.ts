@@ -28,6 +28,7 @@ type BusinessSnapshot = {
     ads: SnapshotRow[];
     capital: SnapshotRow[];
     dailyClosings?: SnapshotRow[];
+    monthlyClosings?: SnapshotRow[];
     settings: SnapshotRow[];
     orderStatusHistory: SnapshotRow[];
     carrierEvents?: SnapshotRow[];
@@ -55,6 +56,7 @@ const TABLES = {
   ads: "ad_performance",
   capital: "capital_ledger",
   dailyClosings: "daily_closings",
+  monthlyClosings: "monthly_closings",
   settings: "settings",
   orderStatusHistory: "order_status_history",
   carrierEvents: "carrier_events",
@@ -81,6 +83,7 @@ const RESTORE_COLUMNS: Record<keyof BusinessSnapshot["tables"], string[]> = {
   ads: ["id", "platform", "campaign", "external_id", "spend", "revenue", "order_count", "native_spend_cents", "native_revenue_cents", "native_currency", "source", "performance_date", "created_at"],
   capital: ["id", "direction", "category", "label", "amount", "account", "order_id", "is_automatic", "auto_key", "entry_date", "created_at"],
   dailyClosings: ["id", "close_date", "expected_bank", "actual_bank", "bank_variance", "expected_cash", "actual_cash", "cash_variance", "expected_other", "actual_other", "other_variance", "expected_total", "actual_total", "total_variance", "carrier_money", "receivables", "unpaid_purchases", "unpaid_expenses", "collected_orders", "collected_amount", "refunded_orders", "refunded_amount", "paid_purchases_count", "paid_purchases_amount", "paid_expenses_count", "paid_expenses_amount", "ad_spend", "note", "closed_by_user_id", "closed_by_name", "created_at", "updated_at"],
+  monthlyClosings: ["id", "month_key", "period_start", "period_end", "delivered_orders", "delivered_revenue", "collected_amount", "product_cost", "shipping_cost", "fees", "return_cost", "ad_spend", "operating_expenses", "inventory_loss", "carrier_adjustment", "contribution_margin", "net_profit", "reinvestment_allocated", "manual_capital_in", "manual_capital_out", "stock_value_start", "stock_value_end", "stock_value_source", "cash_end", "cash_end_source", "note", "closed_by_user_id", "closed_by_name", "created_at"],
   settings: ["key", "value", "updated_at"],
   orderStatusHistory: ["id", "order_id", "from_status", "to_status", "changed_by_user_id", "changed_by_name", "changed_at"],
   carrierEvents: ["id", "provider", "event_type", "external_code", "external_status", "payload_hash", "message", "proof_image", "occurred_at", "order_id", "processed", "error_message", "received_at"],
@@ -115,7 +118,7 @@ async function readOptionalRows(database: D1Database, table: string) {
 }
 
 async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
-  const [customers, orders, products, stockMovements, inventorySessions, inventoryCounts, suppliers, purchases, supplierInvoices, supplierPayments, expenses, ads, capital, dailyClosings, settings, orderStatusHistory, carrierEvents, carrierSettlements, carrierSettlementOrders, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia] = await Promise.all([
+  const [customers, orders, products, stockMovements, inventorySessions, inventoryCounts, suppliers, purchases, supplierInvoices, supplierPayments, expenses, ads, capital, dailyClosings, monthlyClosings, settings, orderStatusHistory, carrierEvents, carrierSettlements, carrierSettlementOrders, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia] = await Promise.all([
     readRows(database, TABLES.customers),
     readRows(database, TABLES.orders),
     readRows(database, TABLES.products),
@@ -130,6 +133,7 @@ async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
     readRows(database, TABLES.ads),
     readRows(database, TABLES.capital),
     readOptionalRows(database, TABLES.dailyClosings),
+    readOptionalRows(database, TABLES.monthlyClosings),
     readRows(database, TABLES.settings, " WHERE key NOT LIKE 'security_%' AND key <> 'backup_webhook_url'"),
     readRows(database, TABLES.orderStatusHistory),
     readRows(database, TABLES.carrierEvents),
@@ -144,7 +148,7 @@ async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
     version: 1,
     createdAt: new Date().toISOString(),
     tables: {
-      customers, orders, products, stockMovements, inventorySessions, inventoryCounts, suppliers, purchases, supplierInvoices, supplierPayments, expenses, ads, capital, dailyClosings, settings,
+      customers, orders, products, stockMovements, inventorySessions, inventoryCounts, suppliers, purchases, supplierInvoices, supplierPayments, expenses, ads, capital, dailyClosings, monthlyClosings, settings,
       orderStatusHistory, carrierEvents, carrierSettlements, carrierSettlementOrders, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia,
     },
   };
@@ -174,7 +178,7 @@ function inspectSnapshot(raw: string, expectedRecordCount?: number) {
       throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
     }
   }
-  for (const tableKey of ["inventorySessions", "inventoryCounts", "suppliers", "expenses", "dailyClosings", "carrierEvents", "carrierSettlements", "carrierSettlementOrders", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"] as const) {
+  for (const tableKey of ["inventorySessions", "inventoryCounts", "suppliers", "expenses", "dailyClosings", "monthlyClosings", "carrierEvents", "carrierSettlements", "carrierSettlementOrders", "storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"] as const) {
     const rows = snapshot.tables[tableKey];
     if (rows !== undefined && (!Array.isArray(rows) || rows.some((item) => !item || typeof item !== "object" || Array.isArray(item)))) {
       throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
@@ -368,6 +372,7 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
     database.prepare("DELETE FROM inventory_counts"),
     database.prepare("DELETE FROM inventory_sessions"),
     database.prepare("DELETE FROM daily_closings"),
+    database.prepare("DELETE FROM monthly_closings"),
     database.prepare("DELETE FROM order_status_history"),
     database.prepare("DELETE FROM carrier_settlement_orders"),
     database.prepare("DELETE FROM carrier_settlements"),
@@ -491,6 +496,8 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
     database.prepare("DELETE FROM carrier_settlement_orders"),
     database.prepare("DELETE FROM carrier_settlements"),
     database.prepare("DELETE FROM carrier_events"),
+    database.prepare("DELETE FROM daily_closings"),
+    database.prepare("DELETE FROM monthly_closings"),
     database.prepare("DELETE FROM capital_ledger"),
     database.prepare("DELETE FROM orders"),
     database.prepare("DELETE FROM customers"),

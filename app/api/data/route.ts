@@ -10,12 +10,13 @@ import { getGoogleSheetsSyncSnapshot, markGoogleSheetsSyncPending, processGoogle
 import { ensureStorefrontCms } from "../../../db/storefront-cms";
 import { receivePurchaseLine, receivePurchaseOrderImmediately } from "../../../db/inventory-cost";
 import { buildDailyClosingPreview, saveDailyClosing } from "../../../db/daily-closing";
+import { saveMonthlyClosing } from "../../../db/monthly-closing";
 import { buildSmartStockRecommendations } from "../../../db/smart-stock";
 import { supplierInvoiceIsOverdue, supplierInvoicePaymentStatus, syncPurchaseOrderPaymentState } from "../../../db/supplier-invoices";
 import { buildPurchaseReference, normalizedProcurementStatus, normalizeSupplierName, resolveSupplierProfile } from "../../../db/suppliers";
 import { normalizeOrderPaymentState, type OrderPaymentStatus } from "../../../lib/order-payment-lifecycle";
 import { moveOrderToTrash, releaseTrashedOrderStock, restoreOrderFromTrash } from "../../../db/order-trash";
-import { adPerformance, auditLogs, capitalLedger, carrierEvents, carrierSettlementOrders, carrierSettlements, customers, dailyBackups, dailyClosings, expenses, inventoryCounts, inventorySessions, orders, orderStatusHistory, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../db/schema";
+import { adPerformance, auditLogs, capitalLedger, carrierEvents, carrierSettlementOrders, carrierSettlements, customers, dailyBackups, dailyClosings, monthlyClosings, expenses, inventoryCounts, inventorySessions, orders, orderStatusHistory, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
 type ActionPayload = Record<string, unknown> & { action?: string };
@@ -328,6 +329,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   updateSetting: { action: "Modification", entityType: "Paramètre" },
   updateAllocationPolicy: { action: "Modification", entityType: "Répartition du capital" },
   saveDailyClosing: { action: "Clôture", entityType: "Journée" },
+  saveMonthlyClosing: { action: "Clôture", entityType: "Mois" },
 };
 
 async function writeAudit(user: AppUser, actionName: string, entityId: string | null, entityLabel: string) {
@@ -429,7 +431,7 @@ async function snapshot(access: AccessInfo) {
   await createDailyBackup(rawDatabase);
   const db = await getDb();
   const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, campaign: orders.campaign, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, refundedAt: orders.refundedAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
-  const [orderRows, trashRows, customerRows, supplierRows, purchaseRows, invoiceRows, supplierPaymentRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, inventorySessionRows, carrierSettlementRows, carrierSettlementOrderRows, settingRows, memberRows, historyRows, auditRows, backupRows, closingRows] = await Promise.all([
+  const [orderRows, trashRows, customerRows, supplierRows, purchaseRows, invoiceRows, supplierPaymentRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, inventorySessionRows, carrierSettlementRows, carrierSettlementOrderRows, settingRows, memberRows, historyRows, auditRows, backupRows, closingRows, monthlyClosingRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
       ? db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNotNull(orders.deletedAt)).orderBy(desc(orders.deletedAt))
@@ -526,6 +528,7 @@ async function snapshot(access: AccessInfo) {
       ? db.select({ id: dailyBackups.id, backupDate: dailyBackups.backupDate, reason: dailyBackups.reason, recordCount: dailyBackups.recordCount, createdAt: dailyBackups.createdAt }).from(dailyBackups).orderBy(desc(dailyBackups.createdAt)).limit(90)
       : Promise.resolve([]),
     db.select().from(dailyClosings).orderBy(desc(dailyClosings.closeDate)).limit(365),
+    db.select().from(monthlyClosings).orderBy(desc(monthlyClosings.monthKey)).limit(120),
   ]);
   const paidByInvoice = new Map<number, number>();
   for (const payment of supplierPaymentRows) {
@@ -583,6 +586,7 @@ async function snapshot(access: AccessInfo) {
     auditLogs: auditRows,
     backups: backupRows,
     dailyClosings: closingRows,
+    monthlyClosings: monthlyClosingRows,
     dailyClosingPreview,
     stockRecommendations,
     googleSheetsSync,
@@ -694,6 +698,20 @@ export async function POST(request: Request) {
       integrationMessage = Math.abs(result.totalVariance) <= 0.01
         ? `Clôture du ${result.closeDate} enregistrée : trésorerie conforme.`
         : `Clôture du ${result.closeDate} enregistrée avec un écart de ${result.totalVariance.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.`;
+    } else if (payload.action === "saveMonthlyClosing") {
+      const monthKey = textValue(payload.monthKey);
+      if (!/^\d{4}-\d{2}$/.test(monthKey)) return Response.json({ error: "Mois de clôture invalide." }, { status: 400 });
+      const duplicateMonthlyClosing = await protectMutation("saveMonthlyClosing");
+      if (duplicateMonthlyClosing) return duplicateMonthlyClosing;
+      const result = await saveMonthlyClosing(await getRawDb(), {
+        monthKey,
+        note: textValue(payload.note).slice(0, 500),
+        userId: user.id,
+        userName: user.displayName,
+      });
+      auditEntityId = result.monthKey;
+      auditEntityLabel = `${result.monthKey} · bénéfice net ${result.netProfit.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD`;
+      integrationMessage = `Clôture mensuelle ${result.monthKey} enregistrée définitivement.`;
     } else if (payload.action === "createMember") {
       if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut créer un partenaire." }, { status: 403 });
       const username = normalizeUsername(textValue(payload.username));

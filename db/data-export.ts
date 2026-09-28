@@ -22,6 +22,7 @@ const EXPORT_QUERIES: Record<string, string> = {
   publicites: "SELECT * FROM ad_performance ORDER BY id",
   tresorerie_capital: "SELECT * FROM capital_ledger ORDER BY id",
   clotures_journalieres: "SELECT * FROM daily_closings ORDER BY close_date DESC, id DESC",
+  clotures_mensuelles: "SELECT * FROM monthly_closings ORDER BY month_key DESC, id DESC",
   historique_commandes: "SELECT * FROM order_status_history ORDER BY id",
   evenements_transporteurs: "SELECT * FROM carrier_events ORDER BY id",
   reglements_transporteurs: "SELECT * FROM carrier_settlements ORDER BY settlement_date DESC, id DESC",

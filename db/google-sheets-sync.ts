@@ -40,6 +40,7 @@ const CORE_SYNC_TABLES = [
   "expenses",
   "ad_performance",
   "capital_ledger",
+  "monthly_closings",
   "order_status_history",
   "carrier_events",
   "carrier_settlements",

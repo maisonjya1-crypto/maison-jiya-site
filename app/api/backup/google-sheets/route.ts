@@ -1,6 +1,6 @@
 import { desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { adPerformance, capitalLedger, carrierSettlementOrders, carrierSettlements, customers, expenses, inventoryCounts, inventorySessions, orders, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../../db/schema";
+import { adPerformance, capitalLedger, carrierSettlementOrders, carrierSettlements, customers, expenses, inventoryCounts, inventorySessions, monthlyClosings, orders, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../../db/schema";
 import { orderContributionBeforeGlobalAds } from "../../../../lib/finance";
 
 const datasetNames = new Set([
@@ -18,6 +18,7 @@ const datasetNames = new Set([
   "stock-movements",
   "inventory-sessions",
   "inventory-counts",
+  "monthly-closings",
   "carrier-settlements",
   "carrier-settlement-orders",
   "carriers",
@@ -284,6 +285,14 @@ export async function GET(request: Request) {
       return csvResponse(
         ["ID", "Direction", "Catégorie", "Libellé", "Montant (MAD)", "Compte / enveloppe", "Commande liée", "Automatique", "Date opération", "Créé le"],
         rows.map((row) => [row.id, row.direction, row.category, row.label, row.amount, row.account, row.orderId, row.isAutomatic, row.entryDate, row.createdAt]),
+      );
+    }
+
+    if (dataset === "monthly-closings") {
+      const rows = await db.select().from(monthlyClosings).orderBy(desc(monthlyClosings.monthKey), desc(monthlyClosings.createdAt));
+      return csvResponse(
+        ["ID", "Mois", "Début période", "Fin période", "Commandes livrées", "CA livré (MAD)", "CA encaissé brut (MAD)", "Coût produits vendus (MAD)", "Livraison (MAD)", "Frais commandes (MAD)", "Retours / pertes commandes (MAD)", "Meta Ads (MAD)", "Charges exploitation (MAD)", "Pertes inventaire (MAD)", "Ajustement transporteurs (MAD)", "Marge commandes (MAD)", "Bénéfice net (MAD)", "Réinvestissement affecté (MAD)", "Apports manuels (MAD)", "Retraits manuels (MAD)", "Valeur stock début (MAD)", "Valeur stock fin (MAD)", "Source valeur stock", "Trésorerie fin (MAD)", "Source trésorerie", "Note", "Clôturé par", "Créé le"],
+        rows.map((row) => [row.id, row.monthKey, row.periodStart, row.periodEnd, row.deliveredOrders, row.deliveredRevenue, row.collectedAmount, row.productCost, row.shippingCost, row.fees, row.returnCost, row.adSpend, row.operatingExpenses, row.inventoryLoss, row.carrierAdjustment, row.contributionMargin, row.netProfit, row.reinvestmentAllocated, row.manualCapitalIn, row.manualCapitalOut, row.stockValueStart, row.stockValueEnd, row.stockValueSource, row.cashEnd, row.cashEndSource, row.note, row.closedByName, row.createdAt]),
       );
     }
 

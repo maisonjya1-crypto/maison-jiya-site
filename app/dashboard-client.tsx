@@ -10,6 +10,7 @@ import { calculateTreasuryAccounts } from "../lib/treasury";
 import { buildSupplierStatement, type SupplierStatementEntry } from "../lib/supplier-statement";
 import { buildPurchasePlan, type PurchasePlanSupplierGroup } from "../lib/purchase-plan";
 import { buildCashflowForecast } from "../lib/cashflow-forecast";
+import { buildMonthlyFinancialSnapshot, isCompletedBusinessMonth, monthBounds, previousMonthKey } from "../lib/monthly-closing";
 
 type Order = {
   id: number;
@@ -342,6 +343,37 @@ type DailyClosingPreview = {
   paidExpensesAmount: number;
   adSpend: number;
 };
+type MonthlyClosing = {
+  id: number;
+  monthKey: string;
+  periodStart: string;
+  periodEnd: string;
+  deliveredOrders: number;
+  deliveredRevenue: number;
+  collectedAmount: number;
+  productCost: number;
+  shippingCost: number;
+  fees: number;
+  returnCost: number;
+  adSpend: number;
+  operatingExpenses: number;
+  inventoryLoss: number;
+  carrierAdjustment: number;
+  contributionMargin: number;
+  netProfit: number;
+  reinvestmentAllocated: number;
+  manualCapitalIn: number;
+  manualCapitalOut: number;
+  stockValueStart: number | null;
+  stockValueEnd: number | null;
+  stockValueSource: string;
+  cashEnd: number;
+  cashEndSource: string;
+  note: string;
+  closedByUserId: number | null;
+  closedByName: string;
+  createdAt: string;
+};
 type SmartStockRecommendation = {
   productId: number;
   productCode: string;
@@ -415,6 +447,7 @@ type Data = {
   auditLogs: AuditLog[];
   backups: DailyBackup[];
   dailyClosings: DailyClosing[];
+  monthlyClosings: MonthlyClosing[];
   dailyClosingPreview: DailyClosingPreview;
   stockRecommendations: SmartStockRecommendation[];
   googleSheetsSync: GoogleSheetsSync;
@@ -474,6 +507,7 @@ const emptyData: Data = {
   auditLogs: [],
   backups: [],
   dailyClosings: [],
+  monthlyClosings: [],
   dailyClosingPreview: {
     closeDate: "",
     expectedBank: 0,
@@ -1426,7 +1460,7 @@ function Page({
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Trésorerie") return <CashflowForecastPage data={data} metrics={metrics} />;
-  if (active === "Clôture") return <DailyClosingPage data={data} submit={submit} />;
+  if (active === "Clôture") return <DailyClosingPage data={data} currentCash={metrics.cash} submit={submit} />;
   if (active === "Rapports") return <ReportsPage data={data} />;
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
   if (active === "Mode entraînement") return <TrainingPage onExit={() => setActive("Vue d’ensemble")} />;
@@ -4681,11 +4715,236 @@ function groupOrderAnalysis(orders: Order[], label: (order: Order) => string): A
 function AnalysisTable({ title, rows }: { title: string; rows: AnalysisRow[] }) {
   return <section className="panel report-table"><PanelHead kicker="Analyse automatique" title={title} total={`${rows.length} ligne${rows.length === 1 ? "" : "s"}`} /><div className="table-scroll"><table><thead><tr><th>Élément</th><th>Commandes</th><th>CA</th><th>Marge commandes</th><th>Taux</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={row.label}><td><strong>{row.label}</strong></td><td>{row.orders}</td><td>{money(row.revenue)}</td><td className={moneyTone(row.profit)}>{money(row.profit)}</td><td>{row.revenue ? `${((row.profit / row.revenue) * 100).toFixed(1)}%` : "0%"}</td></tr>) : <tr><td colSpan={5}>Aucune donnée pour le moment.</td></tr>}</tbody></table></div></section>;
 }
-function DailyClosingPage({
+function MonthlyClosingPanel({
   data,
+  currentCash,
   submit,
 }: {
   data: Data;
+  currentCash: number;
+  submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
+}) {
+  const todayKey = businessDateKey(new Date());
+  const currentMonth = todayKey.slice(0, 7);
+  const [selectedMonth, setSelectedMonth] = useState(() => previousMonthKey(currentMonth));
+  const [saving, setSaving] = useState(false);
+  const monthOptions = (() => {
+    const values = new Set<string>(data.monthlyClosings.map((closing) => closing.monthKey));
+    const cursor = new Date(`${currentMonth}-01T12:00:00Z`);
+    for (let index = 0; index < 24; index += 1) {
+      values.add(cursor.toISOString().slice(0, 7));
+      cursor.setUTCMonth(cursor.getUTCMonth() - 1);
+    }
+    return [...values].sort((left, right) => right.localeCompare(left));
+  })();
+  const bounds = monthBounds(selectedMonth);
+  const previousKey = previousMonthKey(selectedMonth);
+  const previousClosing = data.monthlyClosings.find((closing) => closing.monthKey === previousKey) || null;
+  const existing = data.monthlyClosings.find((closing) => closing.monthKey === selectedMonth) || null;
+  const latestInventory = [...data.inventorySessions]
+    .filter((session) => session.status === "Clôturé" && session.completedAt && businessDateKey(session.completedAt) >= bounds.start && businessDateKey(session.completedAt) <= bounds.end)
+    .sort((left, right) => String(right.completedAt).localeCompare(String(left.completedAt)))[0] || null;
+  const stockValueEnd = latestInventory ? latestInventory.valueAfter : null;
+  const stockValueSource = latestInventory
+    ? `Inventaire ${latestInventory.sessionRef} · ${businessDateKey(latestInventory.completedAt || latestInventory.startedAt)}`
+    : "Aucun inventaire clôturé pendant ce mois";
+  const latestDailyClosing = data.dailyClosings.find((closing) => closing.closeDate === bounds.end) || null;
+  const cashEnd = latestDailyClosing ? latestDailyClosing.actualTotal : currentCash;
+  const cashEndSource = latestDailyClosing
+    ? `Clôture quotidienne ${latestDailyClosing.closeDate}`
+    : "Aperçu : trésorerie actuelle · le serveur reconstruira le solde historique à la clôture";
+  const preview = useMemo(() => buildMonthlyFinancialSnapshot({
+    monthKey: selectedMonth,
+    orders: data.orders,
+    history: data.orderStatusHistory,
+    expenses: data.expenses,
+    ads: data.ads,
+    inventoryCounts: data.inventoryCounts,
+    capital: data.capital,
+    carrierSettlements: data.carrierSettlements,
+    stockValueStart: previousClosing?.stockValueEnd ?? null,
+    stockValueEnd,
+    stockValueSource,
+    cashEnd,
+    cashEndSource,
+  }), [
+    selectedMonth,
+    data.orders,
+    data.orderStatusHistory,
+    data.expenses,
+    data.ads,
+    data.inventoryCounts,
+    data.capital,
+    data.carrierSettlements,
+    previousClosing,
+    stockValueEnd,
+    stockValueSource,
+    cashEnd,
+    cashEndSource,
+  ]);
+  const view = existing || preview;
+  const complete = isCompletedBusinessMonth(selectedMonth, todayKey);
+  const monthLabel = (key: string) => new Intl.DateTimeFormat("fr-MA", { month: "long", year: "numeric", timeZone: "UTC" })
+    .format(new Date(`${key}-01T12:00:00Z`));
+  const nextMonthStart = (() => {
+    const date = new Date(`${selectedMonth}-01T12:00:00Z`);
+    date.setUTCMonth(date.getUTCMonth() + 1);
+    return date.toISOString().slice(0, 10);
+  })();
+  const delta = (value: number, previous: number) => Math.round((value - previous + Number.EPSILON) * 100) / 100;
+
+  async function closeMonth(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving || !data.access.canEdit || existing || !complete) return;
+    const form = event.currentTarget;
+    const note = String(new FormData(form).get("monthlyNote") || "").trim();
+    const confirmed = window.confirm(
+      `Clôturer définitivement ${monthLabel(selectedMonth)} ?\n\nCette photo financière ne sera plus recalculée même si des données anciennes sont modifiées ensuite.`,
+    );
+    if (!confirmed) return;
+    setSaving(true);
+    try {
+      await submit("saveMonthlyClosing", {
+        monthKey: selectedMonth,
+        note,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <section className="monthly-closing-divider">
+        <div>
+          <span className="card-kicker">Clôture mensuelle</span>
+          <h2>Compte de résultat officiel</h2>
+          <p>Une fois clôturé, le mois garde sa photo financière. Les modifications futures des commandes, dépenses ou stocks ne changent pas cette archive.</p>
+        </div>
+        <label>
+          <span>Mois analysé</span>
+          <select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>
+            {monthOptions.map((key) => <option value={key} key={key}>{monthLabel(key)}</option>)}
+          </select>
+        </label>
+      </section>
+
+      <section className="kpi-grid monthly-closing-kpis">
+        <Kpi label="CA livré" value={money(view.deliveredRevenue)} detail={`${view.deliveredOrders} commande(s) livrée(s)`} />
+        <Kpi label="CA encaissé brut" value={money(view.collectedAmount)} detail="Encaissements datés dans le mois" />
+        <Kpi label="Marge commandes" value={money(view.contributionMargin)} detail="Après produit, livraison, frais et retours" danger={view.contributionMargin < 0} />
+        <Kpi label="Bénéfice net" value={money(view.netProfit)} detail="Après Meta, charges, inventaire et écarts transporteurs" danger={view.netProfit < 0} />
+      </section>
+
+      <section className="panel monthly-pnl-panel">
+        <div className="monthly-pnl-head">
+          <div>
+            <span className="card-kicker">{existing ? "Photo officielle" : "Aperçu dynamique"}</span>
+            <h2>{monthLabel(selectedMonth)}</h2>
+            <p>{existing ? `Clôturé le ${dateTimeLabel(existing.createdAt)} par ${existing.closedByName}.` : "Les chiffres seront recalculés côté serveur au moment de la clôture définitive."}</p>
+          </div>
+          <Status value={existing ? "Clôturé" : complete ? "À clôturer" : "En cours"} />
+        </div>
+        <div className="monthly-pnl-grid">
+          <div><span>Chiffre d’affaires livré</span><strong>{money(view.deliveredRevenue)}</strong></div>
+          <div><span>Coût des produits vendus</span><strong className="money-negative">-{money(view.productCost)}</strong></div>
+          <div><span>Livraison</span><strong className="money-negative">-{money(view.shippingCost)}</strong></div>
+          <div><span>Frais commandes</span><strong className="money-negative">-{money(view.fees)}</strong></div>
+          <div><span>Retours / pertes commandes</span><strong className="money-negative">-{money(view.returnCost)}</strong></div>
+          <div><span>Meta Ads</span><strong className="money-negative">-{money(view.adSpend)}</strong></div>
+          <div><span>Charges d’exploitation</span><strong className="money-negative">-{money(view.operatingExpenses)}</strong></div>
+          <div><span>Pertes inventaire</span><strong className="money-negative">-{money(view.inventoryLoss)}</strong></div>
+          <div><span>Écarts transporteurs</span><strong className={moneyTone(view.carrierAdjustment)}>{view.carrierAdjustment > 0 ? "+" : ""}{money(view.carrierAdjustment)}</strong></div>
+          <div className="monthly-pnl-total"><span>Bénéfice net du mois</span><strong className={moneyTone(view.netProfit)}>{money(view.netProfit)}</strong></div>
+        </div>
+      </section>
+
+      <section className="monthly-closing-secondary-grid">
+        <article className="panel">
+          <PanelHead kicker="Stock" title="Valeur immobilisée" total={view.stockValueEnd === null ? "Non disponible" : money(view.stockValueEnd)} />
+          <div className="monthly-snapshot-values">
+            <div><span>Début du mois</span><strong>{view.stockValueStart === null ? "Non disponible" : money(view.stockValueStart)}</strong><small>{view.stockValueStart === null ? "Première clôture ou mois précédent non clôturé." : `Repris de la clôture ${previousKey}.`}</small></div>
+            <div><span>Fin du mois</span><strong>{view.stockValueEnd === null ? "Non disponible" : money(view.stockValueEnd)}</strong><small>{view.stockValueSource}</small></div>
+          </div>
+        </article>
+        <article className="panel">
+          <PanelHead kicker="Capital & cash" title="Situation de fin de mois" total={money(view.cashEnd)} />
+          <div className="monthly-snapshot-values">
+            <div><span>Réinvestissement affecté</span><strong>{money(view.reinvestmentAllocated)}</strong><small>Affectations automatiques du mois.</small></div>
+            <div><span>Apports / retraits manuels</span><strong>{money(view.manualCapitalIn - view.manualCapitalOut)}</strong><small>Entrées {money(view.manualCapitalIn)} · sorties {money(view.manualCapitalOut)}</small></div>
+            <div><span>Trésorerie de référence</span><strong>{money(view.cashEnd)}</strong><small>{view.cashEndSource}</small></div>
+          </div>
+        </article>
+      </section>
+
+      {previousClosing ? (
+        <section className="panel monthly-comparison-panel">
+          <PanelHead kicker="Comparaison" title={`${monthLabel(selectedMonth)} vs ${monthLabel(previousKey)}`} total="Mois précédent" />
+          <div className="monthly-comparison-grid">
+            <div><span>CA livré</span><strong className={moneyTone(delta(view.deliveredRevenue, previousClosing.deliveredRevenue))}>{delta(view.deliveredRevenue, previousClosing.deliveredRevenue) > 0 ? "+" : ""}{money(delta(view.deliveredRevenue, previousClosing.deliveredRevenue))}</strong></div>
+            <div><span>Bénéfice net</span><strong className={moneyTone(delta(view.netProfit, previousClosing.netProfit))}>{delta(view.netProfit, previousClosing.netProfit) > 0 ? "+" : ""}{money(delta(view.netProfit, previousClosing.netProfit))}</strong></div>
+            <div><span>Valeur stock</span>{view.stockValueEnd === null || previousClosing.stockValueEnd === null ? <strong>Non comparable</strong> : <strong className={moneyTone(delta(view.stockValueEnd, previousClosing.stockValueEnd))}>{delta(view.stockValueEnd, previousClosing.stockValueEnd) > 0 ? "+" : ""}{money(delta(view.stockValueEnd, previousClosing.stockValueEnd))}</strong>}</div>
+            <div><span>Trésorerie</span><strong className={moneyTone(delta(view.cashEnd, previousClosing.cashEnd))}>{delta(view.cashEnd, previousClosing.cashEnd) > 0 ? "+" : ""}{money(delta(view.cashEnd, previousClosing.cashEnd))}</strong></div>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="settings-panel monthly-close-action">
+        <div className="settings-panel-head">
+          <div>
+            <span className="card-kicker">Verrouillage du mois</span>
+            <h2>{existing ? "Ce mois est clôturé définitivement" : complete ? "Créer la photo officielle du mois" : "Mois encore en cours"}</h2>
+          </div>
+          <p>{existing ? "Les chiffres ci-dessus viennent de la photo enregistrée et ne sont plus recalculés." : complete ? "Le serveur recalcule une dernière fois toutes les données avant de figer le résultat." : `Clôture disponible à partir du ${dateLabel(nextMonthStart)}.`}</p>
+        </div>
+        {!existing ? (
+          <form className="monthly-close-form" onSubmit={(event) => void closeMonth(event)}>
+            <label className="field">
+              <span>Note de clôture</span>
+              <input name="monthlyNote" maxLength={500} placeholder="Ex. mois validé après vérification fournisseurs et stock…" />
+            </label>
+            <button className="primary-button" disabled={!data.access.canEdit || !complete || saving}>
+              {saving ? "Clôture…" : "Clôturer définitivement le mois"}
+            </button>
+          </form>
+        ) : <div className="monthly-locked-note">✓ Photo financière verrouillée · {existing.note || "aucune note"}</div>}
+      </section>
+
+      <section className="panel">
+        <PanelHead kicker="Historique officiel" title="Clôtures mensuelles" total={String(data.monthlyClosings.length)} />
+        {data.monthlyClosings.length ? (
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Mois</th><th>CA livré</th><th>Marge commandes</th><th>Meta</th><th>Charges</th><th>Pertes inventaire</th><th>Bénéfice net</th><th>Stock fin</th><th>Cash fin</th><th>Clôturé par</th></tr></thead>
+              <tbody>{data.monthlyClosings.map((closing) => (
+                <tr key={closing.id}>
+                  <td><strong>{monthLabel(closing.monthKey)}</strong><small>{dateTimeLabel(closing.createdAt)}</small></td>
+                  <td>{money(closing.deliveredRevenue)}<small>{closing.deliveredOrders} livrée(s)</small></td>
+                  <td className={moneyTone(closing.contributionMargin)}>{money(closing.contributionMargin)}</td>
+                  <td>{money(closing.adSpend)}</td>
+                  <td>{money(closing.operatingExpenses)}</td>
+                  <td>{money(closing.inventoryLoss)}</td>
+                  <td className={moneyTone(closing.netProfit)}><strong>{money(closing.netProfit)}</strong></td>
+                  <td>{closing.stockValueEnd === null ? "Non disponible" : money(closing.stockValueEnd)}</td>
+                  <td>{money(closing.cashEnd)}</td>
+                  <td>{closing.closedByName}<small>{closing.note || "—"}</small></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        ) : <div className="pending-empty">Aucun mois clôturé définitivement pour le moment.</div>}
+      </section>
+    </>
+  );
+}
+
+function DailyClosingPage({
+  data,
+  currentCash,
+  submit,
+}: {
+  data: Data;
+  currentCash: number;
   submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>;
 }) {
   const preview = data.dailyClosingPreview;
@@ -4829,6 +5088,8 @@ function DailyClosingPage({
           </div>
         ) : <div className="pending-empty">Aucune clôture enregistrée. La première apparaîtra ici.</div>}
       </section>
+
+      <MonthlyClosingPanel data={data} currentCash={currentCash} submit={submit} />
     </div>
   );
 }
