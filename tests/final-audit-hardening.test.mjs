@@ -33,12 +33,25 @@ test("le bénéfice global conserve les coûts d'une commande retournée", () =>
   assert.equal(result.profit, -175);
 });
 
-test("la boutique rapide se base sur le stock D1 pour produits et packs", async () => {
+test("la boutique publique ne bloque plus les commandes quand le stock interne est à zéro", async () => {
   const fast = await read("db/storefront-public-fast.ts");
-  assert.match(fast, /p\.stock_quantity AS stockQuantity/);
-  assert.match(fast, /product\.stockQuantity > 0/);
-  assert.match(fast, /i\.quantity AS quantity/);
-  assert.match(fast, /item\.stockQuantity >= item\.quantity/);
+  const fallback = await read("db/storefront-public.ts");
+  const orderRoute = await read("app/api/storefront/orders/route.ts");
+
+  assert.doesNotMatch(fast, /product\.stockQuantity > 0/);
+  assert.doesNotMatch(fast, /item\.stockQuantity >= item\.quantity/);
+  assert.match(fast, /product\.availabilityMode !== "out_of_stock"/);
+  assert.match(fast, /components\.every\(\(item\) => item\.availabilityMode !== "out_of_stock"\)/);
+  assert.match(fast, /Disponible à la commande/);
+
+  assert.doesNotMatch(fallback, /product\.stockQuantity > 0/);
+  assert.doesNotMatch(fallback, /item\.stockQuantity >= item\.quantity/);
+  assert.match(fallback, /product\.availabilityMode !== "out_of_stock"/);
+  assert.match(fallback, /components\.every\(\(item\) => item\.availabilityMode !== "out_of_stock"\)/);
+
+  assert.match(orderRoute, /une commande publique reste "En attente"/);
+  assert.match(orderRoute, /n'est jamais refusée[\s\S]*stock actuel est inférieur/);
+  assert.match(orderRoute, /stock_deducted[\s\S]*0/);
 });
 
 test("les quantités métier ne sont plus arrondies silencieusement", async () => {
