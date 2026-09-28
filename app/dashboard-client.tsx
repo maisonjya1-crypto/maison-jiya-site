@@ -6,7 +6,7 @@ import TrainingPage from "./training-page";
 import { calculateBusinessFinance, calculateOperatingProfit, orderContributionBeforeGlobalAds } from "../lib/finance";
 import { businessDateKey, deliveryRecognitionDate } from "../lib/accounting-dates";
 import { allocationPolicyFromSettings } from "../lib/allocation-policy";
-import { calculateTreasuryAccounts } from "../lib/treasury";
+import { applyTreasuryReconciliation, calculateTreasuryAccounts } from "../lib/treasury";
 import { buildSupplierStatement, type SupplierStatementEntry } from "../lib/supplier-statement";
 import { buildPurchasePlan, type PurchasePlanSupplierGroup } from "../lib/purchase-plan";
 import { buildCashflowForecast } from "../lib/cashflow-forecast";
@@ -1017,6 +1017,22 @@ export default function DashboardClient() {
       safetyReserve,
     });
     const adRevenue = data.ads.reduce((sum, ad) => sum + ad.revenue, 0);
+    const theoreticalTreasury = calculateTreasuryAccounts({
+      orders: data.orders,
+      purchases: data.purchases,
+      supplierPayments: data.supplierPayments,
+      expenses: recognizedExpenses,
+      ads: data.ads,
+      capital: data.capital,
+      carrierSettlementAdjustment: data.carrierSettlements.reduce((sum, settlement) => sum + settlement.differenceAmount, 0),
+    });
+    const latestReconciliation = data.dailyClosings[0] || null;
+    const reconciledTreasury = applyTreasuryReconciliation(theoreticalTreasury, latestReconciliation);
+    const protectedAvailableCash = reconciledTreasury.total
+      - finance.unpaidPurchases
+      - finance.unpaidOperatingExpenses
+      - safetyReserve;
+    const reconciledReinvestable = Math.max(0, Math.min(finance.reinvestAllocation, protectedAvailableCash));
     return {
       revenue: finance.collected,
       shippingFees: finance.shippingCollected,
@@ -1026,11 +1042,14 @@ export default function DashboardClient() {
       losses: finance.losses,
       adSpend: finance.adSpend,
       roas: finance.adSpend ? adRevenue / finance.adSpend : 0,
-      cash: finance.cash,
+      cash: reconciledTreasury.total,
+      theoreticalCash: theoreticalTreasury.total,
+      reconciliationVariance: latestReconciliation?.totalVariance || 0,
+      reconciliationDate: latestReconciliation?.closeDate || "",
       capitalNet: finance.manualCapitalNet,
       margin: finance.margin,
       reinvest: finance.reinvestAllocation,
-      reinvestable: finance.reinvestable,
+      reinvestable: reconciledReinvestable,
       unpaidPurchases: finance.unpaidPurchases,
       operatingExpenses: finance.operatingExpenses,
       paidOperatingExpenses: finance.paidOperatingExpenses,
@@ -1446,6 +1465,9 @@ function Page({
     adSpend: number;
     roas: number;
     cash: number;
+    theoreticalCash: number;
+    reconciliationVariance: number;
+    reconciliationDate: string;
     capitalNet: number;
     margin: number;
     reinvest: number;
@@ -1482,7 +1504,7 @@ function Page({
   if (active === "Dépenses") return <ExpensesPage expenses={data.expenses} recurringExpenses={data.recurringExpenses} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("expense")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
-  if (active === "Trésorerie") return <CashflowForecastPage data={data} metrics={metrics} />;
+  if (active === "Trésorerie") return <CashflowForecastPage data={data} metrics={metrics} submit={submit} />;
   if (active === "Clôture") return <DailyClosingPage data={data} currentCash={metrics.cash} submit={submit} />;
   if (active === "Rapports") return <ReportsPage data={data} />;
   if (active === "Assistant IA") return <AiPage canEdit={data.access.canEdit} submit={submit} onOrderCreated={() => setActive("Commandes")} />;
@@ -1497,7 +1519,7 @@ function Page({
         <article className="hero-card">
           <div className="hero-heading">
             <div>
-              <p>Trésorerie estimée</p>
+              <p>{metrics.reconciliationDate ? "Trésorerie réelle estimée" : "Trésorerie théorique"}</p>
               <h2>{money(metrics.cash)}</h2>
             </div>
             <span className="trend positive">À piloter</span>
@@ -1509,7 +1531,7 @@ function Page({
           </div>
           <div className="hero-foot">
             <span>
-              Capital net <strong>{money(metrics.capitalNet)}</strong>
+              {metrics.reconciliationDate ? "Dernier contrôle" : "Capital net"} <strong>{metrics.reconciliationDate ? dateLabel(metrics.reconciliationDate) : money(metrics.capitalNet)}</strong>
             </span>
             <span>
               Virements nets <strong>{money(metrics.netCollected)}</strong>
