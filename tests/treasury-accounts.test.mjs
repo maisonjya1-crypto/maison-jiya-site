@@ -46,6 +46,24 @@ test("les comptes sont normalisés sans inventer de nouvelle catégorie physique
   assert.equal(treasury.normalizeTreasuryAccount("Réinvestissement"), "Banque");
 });
 
+test("le dernier rapprochement réel corrige les soldes sans réécrire les opérations", () => {
+  const treasury = loadSource("lib/treasury.ts");
+  const adjusted = treasury.applyTreasuryReconciliation(
+    { bank: 1000, cash: 300, other: 20, total: 1320 },
+    { bankVariance: -50, cashVariance: 25, otherVariance: 0 },
+  );
+  assert.deepEqual(adjusted, {
+    bank: 950,
+    cash: 325,
+    other: 20,
+    total: 1295,
+  });
+  assert.deepEqual(
+    treasury.applyTreasuryReconciliation({ bank: 1000, cash: 300, other: 20, total: 1320 }, null),
+    { bank: 1000, cash: 300, other: 20, total: 1320 },
+  );
+});
+
 test("la migration ajoute le compte fournisseur et les dates de paiement sans toucher au baseline", async () => {
   const { readFile } = await import("node:fs/promises");
   const migration = await readFile(new URL("../migrations/0001_treasury_payment_tracking.sql", import.meta.url), "utf8");
@@ -69,6 +87,19 @@ test("l’API enregistre compte et date quand un achat ou une dépense passe à 
   assert.match(route, /expenses\.paidAt/);
   assert.match(route, /account, paymentStatus: nextPaymentStatus, paidAt/);
   assert.match(route, /amount <= 0/);
+});
+
+test("la trésorerie réelle réutilise le dernier rapprochement sans créer une deuxième comptabilité", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const dashboard = await readFile(new URL("../app/dashboard-client.tsx", import.meta.url), "utf8");
+
+  assert.match(dashboard, /applyTreasuryReconciliation/);
+  assert.match(dashboard, /reconciliationVariance/);
+  assert.match(dashboard, /Vérifier ma trésorerie/);
+  assert.match(dashboard, /saveDailyClosing/);
+  assert.match(dashboard, /Banque \/ carte estimée/);
+  assert.match(dashboard, /Caisse \/ espèces estimée/);
+  assert.match(dashboard, /Trésorerie réelle estimée/);
 });
 
 test("les rapports utilisent un moteur unique de trésorerie au lieu de soustraire toutes les charges de la banque", async () => {
