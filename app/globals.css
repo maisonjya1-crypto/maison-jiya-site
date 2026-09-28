@@ -1040,3 +1040,88 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,select:focus-vis
   .carrier-settlement-order-list>label{grid-template-columns:auto 1fr}
   .carrier-settlement-order-list>label>span:nth-of-type(n){grid-column:2}
 }
+
+
+/* Correctif menu actions commandes : le menu flotte hors du tableau scrollable. */
+.order-actions-trigger{
+  width:34px;
+  height:34px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:1px solid var(--line);
+  border-radius:10px;
+  color:var(--ink);
+  background:var(--paper);
+  cursor:pointer;
+  font-size:20px;
+  font-weight:700;
+  line-height:1;
+  transition:.15s ease;
+}
+.order-actions-trigger:hover,
+.order-actions-trigger[aria-expanded="true"]{
+  border-color:var(--accent-border);
+  color:var(--forest);
+  background:var(--accent-soft);
+}
+.order-action-menu-floating{
+  position:fixed!important;
+  z-index:1000!important;
+  right:auto!important;
+  bottom:auto!important;
+  width:min(220px,calc(100vw - 24px))!important;
+  max-height:min(320px,calc(100vh - 24px));
+  overflow:auto;
+}
+.order-action-menu :is(button,a){
+  width:100%;
+  min-height:38px;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  padding:9px 10px;
+  border:0;
+  border-radius:8px;
+  color:var(--ink);
+  background:transparent;
+  cursor:pointer;
+  text-align:left;
+  text-decoration:none;
+  font-size:9px;
+  font-weight:700;
+  box-sizing:border-box;
+}
+.order-action-menu :is(button,a):hover{
+  background:var(--accent-soft);
+}
+.order-action-menu :is(button,a)>span{
+  width:18px;
+  flex:0 0 18px;
+  color:var(--forest);
+  font-size:14px;
+  text-align:center;
+}
+.order-action-menu button.danger{
+  color:#a3473b;
+}
+.order-action-menu button.danger:hover{
+  background:#fff0ed;
+}
+.order-action-menu button.danger>span{
+  color:#a3473b;
+}
+@media(max-width:720px){
+  .order-action-menu-floating{
+    top:auto!important;
+    right:14px!important;
+    bottom:18px!important;
+    left:14px!important;
+    width:auto!important;
+    max-height:min(70vh,340px);
+  }
+  .order-action-menu-floating :is(button,a){
+    min-height:48px;
+    font-size:11px;
+  }
+}

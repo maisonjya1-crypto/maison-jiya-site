@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import AiPage from "./ai-page";
 import TrainingPage from "./training-page";
 import { calculateBusinessFinance, calculateOperatingProfit, orderContributionBeforeGlobalAds } from "../lib/finance";
@@ -2974,36 +2975,113 @@ function PanelHead({ kicker, title, action, onClick, total }: { kicker: string; 
   );
 }
 function OrderActions({ order, onEdit, onPrint, onDelete }: { order: Order; onEdit: (o: Order) => void; onPrint: (o: Order) => void; onDelete: (o: Order) => void }) {
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const menuWidth = Math.min(220, window.innerWidth - 24);
+    const measuredHeight = menuRef.current?.offsetHeight || 190;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openAbove = spaceBelow < measuredHeight + 18 && rect.top > measuredHeight + 18;
+    const top = openAbove
+      ? Math.max(12, rect.top - measuredHeight - 7)
+      : Math.min(window.innerHeight - measuredHeight - 12, rect.bottom + 7);
+    const left = Math.min(
+      window.innerWidth - menuWidth - 12,
+      Math.max(12, rect.right - menuWidth),
+    );
+    setPosition({ top, left });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    updatePosition();
+    const frame = window.requestAnimationFrame(updatePosition);
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && (triggerRef.current?.contains(target) || menuRef.current?.contains(target))) return;
+      setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, updatePosition]);
+
+  const close = () => setOpen(false);
+  const menu = open && typeof document !== "undefined"
+    ? createPortal(
+        <div
+          ref={menuRef}
+          className="order-action-menu order-action-menu-floating"
+          role="menu"
+          aria-label={`Actions pour la commande ${order.orderRef}`}
+          style={{ top: position.top, left: position.left }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {whatsappUrl(order.phone, order.orderRef) && (
+            <a
+              role="menuitem"
+              href={whatsappUrl(order.phone, order.orderRef)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={close}
+            >
+              <span aria-hidden="true">◉</span>
+              Contacter sur WhatsApp
+            </a>
+          )}
+          <button type="button" role="menuitem" onClick={() => { close(); onEdit(order); }}>
+            <span aria-hidden="true">✎</span>
+            Modifier la commande
+          </button>
+          <button type="button" role="menuitem" onClick={() => { close(); onPrint(order); }}>
+            <span aria-hidden="true">▣</span>
+            Imprimer le bordereau
+          </button>
+          <button type="button" role="menuitem" className="danger" onClick={() => { close(); onDelete(order); }}>
+            <span aria-hidden="true">⌫</span>
+            Supprimer
+          </button>
+        </div>,
+        document.querySelector(".app-shell") || document.body,
+      )
+    : null;
+
   return (
-    <details className="order-actions" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-      <summary aria-label={`Actions pour la commande ${order.orderRef}`} title="Actions">
+    <span className="order-actions" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="order-actions-trigger"
+        aria-label={`Actions pour la commande ${order.orderRef}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Actions"
+        onClick={() => setOpen((value) => !value)}
+      >
         ⋯
-      </summary>
-      <div className="order-action-menu" role="menu">
-        {whatsappUrl(order.phone, order.orderRef) && <a role="menuitem" href={whatsappUrl(order.phone, order.orderRef)} target="_blank" rel="noopener noreferrer" onClick={(event) => event.currentTarget.closest("details")?.removeAttribute("open")}><span aria-hidden="true">◉</span>Contacter sur WhatsApp</a>}
-        <button type="button" role="menuitem" onClick={(event) => {
-          event.currentTarget.closest("details")?.removeAttribute("open");
-          onEdit(order);
-        }}>
-          <span aria-hidden="true">✎</span>
-          Modifier la commande
-        </button>
-        <button type="button" role="menuitem" onClick={(event) => {
-          event.currentTarget.closest("details")?.removeAttribute("open");
-          onPrint(order);
-        }}>
-          <span aria-hidden="true">▣</span>
-          Imprimer le bordereau
-        </button>
-        <button type="button" role="menuitem" className="danger" onClick={(event) => {
-          event.currentTarget.closest("details")?.removeAttribute("open");
-          onDelete(order);
-        }}>
-          <span aria-hidden="true">⌫</span>
-          Supprimer
-        </button>
-      </div>
-    </details>
+      </button>
+      {menu}
+    </span>
   );
 }
 function RecordActions({ label, onEdit, onDelete }: { label: string; onEdit: () => void; onDelete: () => void }) {
