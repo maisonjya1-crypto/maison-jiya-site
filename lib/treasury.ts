@@ -45,6 +45,12 @@ export type TreasuryAccounts = {
   total: number;
 };
 
+export type TreasuryReconciliation = {
+  bankVariance: number;
+  cashVariance: number;
+  otherVariance: number;
+};
+
 const amount = (value: number | null | undefined) => Number(value || 0);
 
 export function normalizeTreasuryAccount(value: unknown): TreasuryAccount {
@@ -65,6 +71,22 @@ function bucketForAccount(account: string | null | undefined): keyof Omit<Treasu
 
 function add(accounts: Omit<TreasuryAccounts, "total">, bucket: keyof Omit<TreasuryAccounts, "total">, value: number) {
   accounts[bucket] += value;
+}
+
+export function applyTreasuryReconciliation(
+  accounts: TreasuryAccounts,
+  reconciliation?: TreasuryReconciliation | null,
+): TreasuryAccounts {
+  if (!reconciliation) return accounts;
+  const bank = Math.round((accounts.bank + amount(reconciliation.bankVariance)) * 100) / 100;
+  const cash = Math.round((accounts.cash + amount(reconciliation.cashVariance)) * 100) / 100;
+  const other = Math.round((accounts.other + amount(reconciliation.otherVariance)) * 100) / 100;
+  return {
+    bank,
+    cash,
+    other,
+    total: Math.round((bank + cash + other) * 100) / 100,
+  };
 }
 
 export function calculateTreasuryAccounts({
