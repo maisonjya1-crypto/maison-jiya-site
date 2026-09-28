@@ -76,8 +76,9 @@ export function calculateOperatingProfit(
   expenses: FinanceExpense[],
 ) {
   const delivered = orders.filter((order) => order.status === "Livrée");
+  const returned = orders.filter((order) => order.status === "Retour");
   const deliveredRevenue = delivered.reduce((sum, order) => sum + amount(order.saleAmount), 0);
-  const deliveredOrderCosts = delivered.reduce(
+  const deliveredOrderCosts = [...delivered, ...returned].reduce(
     (sum, order) => sum + amount(order.productCost) + amount(order.shippingCost) + amount(order.fees),
     0,
   );
