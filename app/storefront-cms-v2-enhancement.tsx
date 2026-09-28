@@ -533,7 +533,7 @@ function OffersPanel({ data, save, uploadMany, removeMedia }: {
   }, [data.offers, offerQuery]);
 
   return <div className="storefront-cms-offers">
-    <div className="storefront-cms-offer-intro"><div><span>Packs & promotions</span><h2>Crée tes offres avec les vrais produits</h2><p>Recherche ou filtre les produits avant de les ajouter au pack. Électronique et Boîtes n’apparaissent pas ici.</p></div><strong>{data.offers.filter((offer) => offer.isActive).length} offre(s) active(s)</strong></div>
+    <div className="storefront-cms-offer-intro"><div><span>Packs & promotions</span><h2>Crée tes offres avec les vrais produits</h2><p>Pack, remise, -20 %, 1+1=3… choisis les produits et fixe toi-même le vrai prix de l’offre. Électronique et Boîtes n’apparaissent pas ici.</p></div><strong>{data.offers.filter((offer) => offer.isActive).length} offre(s) active(s)</strong></div>
     <OfferEditor key="new-offer" offer={blank} products={data.products} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} isNew />
     <div className="storefront-cms-offer-list-tools"><label><span>Rechercher une offre existante</span><input value={offerQuery} onChange={(event) => setOfferQuery(event.target.value)} placeholder="Nom du pack, badge…" /></label><strong>{visibleOffers.length} résultat(s)</strong></div>
     <div className="storefront-cms-offer-list">{visibleOffers.map((offer) => <OfferEditor key={`${offer.id}-${offer.name}-${offer.items.length}-${offer.media.length}`} offer={offer} products={data.products} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />)}</div>
@@ -611,14 +611,14 @@ function OfferEditor({ offer, products, canEdit, save, uploadMany, removeMedia, 
 
   return <details className={`storefront-cms-offer-card ${isNew ? "new" : ""}`} open={isNew}>
     <summary>
-      <div><span>{isNew ? "＋ Nouvelle offre" : offer.badge || "Pack"}</span><strong>{isNew ? "Créer un pack ou une offre" : offer.name}</strong><small>{isNew ? "Recherche les produits, compose le pack puis ajoute ses photos." : `${offer.items.length} composant(s) · ${money(offer.price)}`}</small></div>
+      <div><span>{isNew ? "＋ Nouvelle offre" : offer.badge || "Pack"}</span><strong>{isNew ? "Créer un pack, une remise ou une offre" : offer.name}</strong><small>{isNew ? "Recherche les produits, compose le pack puis ajoute ses photos." : `${offer.items.length} composant(s) · ${money(offer.price)}`}</small></div>
       {!isNew && <span className={offer.isActive ? "storefront-cms-offer-active" : "storefront-cms-offer-off"}>{offer.isActive ? "En ligne" : "Masquée"}</span>}
       <b>⌄</b>
     </summary>
 
     <form onSubmit={(event) => void submit(event)}>
       <div className="storefront-cms-product-editgrid">
-        <label><span>Nom de l’offre</span><input name="name" defaultValue={offer.name} required disabled={!canEdit} placeholder="Ex. Pack Duo Élégance" /></label>
+        <label><span>Nom de l’offre</span><input name="name" defaultValue={offer.name} required disabled={!canEdit} placeholder="Ex. Pack Duo, -20 %, 1+1=3…" /></label>
         <label><span>Prix offre (MAD)</span><input name="price" type="number" min="1" step="1" defaultValue={offer.price || ""} required disabled={!canEdit} /></label>
         <label><span>Ancien prix barré</span><input name="comparePrice" type="number" min="0" step="1" defaultValue={offer.comparePrice || ""} disabled={!canEdit} /></label>
         <label><span>Badge</span><input name="badge" defaultValue={offer.badge} placeholder="-20%, Offre rentrée…" disabled={!canEdit} /></label>
@@ -628,7 +628,7 @@ function OfferEditor({ offer, products, canEdit, save, uploadMany, removeMedia, 
       <label><span>Description de l’offre</span><textarea name="description" rows={3} defaultValue={offer.description} disabled={!canEdit} placeholder="Explique ce que contient le pack…" /></label>
 
       <div className="storefront-cms-components storefront-cms-picker">
-        <div className="storefront-cms-gallery-head"><div><strong>Choisir les produits du pack</strong><small>Utilise la recherche et le filtre pour ne plus parcourir toute la base.</small></div><span>{items.length} produit(s) choisi(s)</span></div>
+        <div className="storefront-cms-gallery-head"><div><strong>Choisir les produits concernés</strong><small>Pour 1+1=3, mets par exemple quantité 3 puis fixe le prix final que tu veux faire payer.</small></div><span>{items.length} produit(s) choisi(s)</span></div>
         <div className="storefront-cms-picker-tools">
           <label><span>Rechercher un produit</span><input value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Référence, montre, bracelet…" /></label>
           <label><span>Catégorie</span><select value={productCategory} onChange={(event) => setProductCategory(event.target.value)}>{categories.map((item) => <option key={item}>{item}</option>)}</select></label>
