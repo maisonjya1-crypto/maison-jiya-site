@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import AiPage from "./ai-page";
 import TrainingPage from "./training-page";
-import { calculateBusinessFinance, calculateOperatingProfit, orderContributionBeforeGlobalAds } from "../lib/finance";
+import { calculateBusinessFinance, orderContributionBeforeGlobalAds } from "../lib/finance";
 import { businessDateKey, deliveryRecognitionDate, returnRecognitionDate } from "../lib/accounting-dates";
 import { allocationPolicyFromSettings } from "../lib/allocation-policy";
 import { applyTreasuryReconciliation, calculateTreasuryAccounts } from "../lib/treasury";
