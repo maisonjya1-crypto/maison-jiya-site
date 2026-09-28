@@ -1,3 +1,5 @@
+import { ensureRecurringExpenseOccurrences } from "./recurring-expenses";
+
 type SnapshotValue = string | number | null;
 type SnapshotRow = Record<string, SnapshotValue>;
 
@@ -521,6 +523,7 @@ export async function resetBusinessValuesPreservingStock(database: D1Database): 
 }
 
 export async function runDailyMaintenance(database: D1Database) {
+  await ensureRecurringExpenseOccurrences(database);
   await createDailyBackup(database);
   await verifyLatestBackup(database);
   await purgeExpiredTrash(database);
