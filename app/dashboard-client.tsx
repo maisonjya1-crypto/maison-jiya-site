@@ -1004,12 +1004,14 @@ export default function DashboardClient() {
 
   const metrics = useMemo(() => {
     const safetyReserve = Math.max(0, Number(data.settings.safety_reserve) || 0);
+    const todayKey = businessDateKey(new Date());
+    const recognizedExpenses = data.expenses.filter((expense) => businessDateKey(expense.expenseDate) <= todayKey);
     const finance = calculateBusinessFinance({
       orders: data.orders,
       purchases: data.purchases,
       supplierInvoices: data.supplierInvoices,
       carrierSettlements: data.carrierSettlements,
-      expenses: data.expenses,
+      expenses: recognizedExpenses,
       ads: data.ads,
       capital: data.capital,
       safetyReserve,
@@ -4550,14 +4552,18 @@ function ExpensesPage({
   onDelete: (selection: EditableEntity) => void;
 }) {
   const [recurringModal, setRecurringModal] = useState<RecurringExpense | "new" | null>(null);
-  const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const paid = expenses.filter((expense) => expense.paymentStatus === "Payé").reduce((sum, expense) => sum + expense.amount, 0);
-  const due = expenses.filter((expense) => expense.paymentStatus !== "Payé").reduce((sum, expense) => sum + expense.amount, 0);
+  const todayKey = businessDateKey(new Date());
+  const recognizedExpenses = expenses.filter((expense) => businessDateKey(expense.expenseDate) <= todayKey);
+  const upcomingExpenses = expenses.filter((expense) => businessDateKey(expense.expenseDate) > todayKey);
+  const total = recognizedExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const paid = recognizedExpenses.filter((expense) => expense.paymentStatus === "Payé").reduce((sum, expense) => sum + expense.amount, 0);
+  const due = recognizedExpenses.filter((expense) => expense.paymentStatus !== "Payé").reduce((sum, expense) => sum + expense.amount, 0);
+  const upcoming = upcomingExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const activeRecurring = recurringExpenses.filter((expense) => Boolean(expense.isActive));
   const recurringMonthly = activeRecurring.reduce((sum, expense) => sum + expense.amount, 0);
-  const categories = Array.from(new Set(expenses.map((expense) => expense.category).filter(Boolean)))
+  const categories = Array.from(new Set(recognizedExpenses.map((expense) => expense.category).filter(Boolean)))
     .map((category) => {
-      const rows = expenses.filter((expense) => expense.category === category);
+      const rows = recognizedExpenses.filter((expense) => expense.category === category);
       return { category, amount: rows.reduce((sum, expense) => sum + expense.amount, 0), count: rows.length };
     })
     .sort((left, right) => right.amount - left.amount);
@@ -4572,7 +4578,7 @@ function ExpensesPage({
       <section className="kpi-grid three">
         <Kpi label="Charges enregistrées" value={money(total)} detail={expenses.length + " dépense(s) comptabilisée(s)"} />
         <Kpi label="Déjà payées" value={money(paid)} detail="Déduit de la trésorerie estimée" />
-        <Kpi label="À payer" value={money(due)} detail="Charge reconnue, sortie de trésorerie encore à venir" danger={due > 0} />
+        <Kpi label="À payer maintenant" value={money(due)} detail={upcoming > 0 ? money(upcoming) + " déjà planifiés pour plus tard" : "Aucune autre échéance future planifiée"} danger={due > 0} />
       </section>
 
       <section className="panel page-panel">
@@ -5621,7 +5627,7 @@ function ReportsPage({ data }: { data: Data }) {
   const otherAccounts = treasury.other;
   const carrierMoney = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus === "À encaisser").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees, 0);
   const receivables = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && order.paymentStatus !== "Encaissé").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees, 0);
-  const unpaidExpenses = data.expenses.filter((expense) => expense.paymentStatus !== "Payé");
+  const unpaidExpenses = data.expenses.filter((expense) => expense.paymentStatus !== "Payé" && businessDateKey(expense.expenseDate) <= today);
   const automaticAllocations = data.capital.filter((entry) => entry.isAutomatic);
   const positiveProfit = automaticAllocations.reduce((sum, entry) => sum + entry.amount, 0);
   const allocationAmount = (category: string) => automaticAllocations.filter((entry) => entry.category === category).reduce((sum, entry) => sum + entry.amount, 0);
