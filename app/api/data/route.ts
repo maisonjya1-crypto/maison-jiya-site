@@ -11,12 +11,13 @@ import { ensureStorefrontCms } from "../../../db/storefront-cms";
 import { receivePurchaseLine, receivePurchaseOrderImmediately } from "../../../db/inventory-cost";
 import { buildDailyClosingPreview, saveDailyClosing } from "../../../db/daily-closing";
 import { saveMonthlyClosing } from "../../../db/monthly-closing";
+import { ensureRecurringExpenseOccurrences, removeFutureRecurringOccurrences } from "../../../db/recurring-expenses";
 import { buildSmartStockRecommendations } from "../../../db/smart-stock";
 import { supplierInvoiceIsOverdue, supplierInvoicePaymentStatus, syncPurchaseOrderPaymentState } from "../../../db/supplier-invoices";
 import { buildPurchaseReference, normalizedProcurementStatus, normalizeSupplierName, resolveSupplierProfile } from "../../../db/suppliers";
 import { normalizeOrderPaymentState, type OrderPaymentStatus } from "../../../lib/order-payment-lifecycle";
 import { moveOrderToTrash, releaseTrashedOrderStock, restoreOrderFromTrash } from "../../../db/order-trash";
-import { adPerformance, auditLogs, capitalLedger, carrierEvents, carrierSettlementOrders, carrierSettlements, customers, dailyBackups, dailyClosings, monthlyClosings, expenses, inventoryCounts, inventorySessions, orders, orderStatusHistory, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../db/schema";
+import { adPerformance, auditLogs, capitalLedger, carrierEvents, carrierSettlementOrders, carrierSettlements, customers, dailyBackups, dailyClosings, monthlyClosings, expenses, recurringExpenses, inventoryCounts, inventorySessions, orders, orderStatusHistory, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
 
 type ActionPayload = Record<string, unknown> & { action?: string };
@@ -428,10 +429,11 @@ async function snapshot(access: AccessInfo) {
   await seedIfNeeded();
   await reconcileOrderAllocations();
   const rawDatabase = await getRawDb();
+  await ensureRecurringExpenseOccurrences(rawDatabase);
   await createDailyBackup(rawDatabase);
   const db = await getDb();
   const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, campaign: orders.campaign, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, refundedAt: orders.refundedAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
-  const [orderRows, trashRows, customerRows, supplierRows, purchaseRows, invoiceRows, supplierPaymentRows, expenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, inventorySessionRows, carrierSettlementRows, carrierSettlementOrderRows, settingRows, memberRows, historyRows, auditRows, backupRows, closingRows, monthlyClosingRows] = await Promise.all([
+  const [orderRows, trashRows, customerRows, supplierRows, purchaseRows, invoiceRows, supplierPaymentRows, expenseRows, recurringExpenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, inventorySessionRows, carrierSettlementRows, carrierSettlementOrderRows, settingRows, memberRows, historyRows, auditRows, backupRows, closingRows, monthlyClosingRows] = await Promise.all([
     db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     access.isOwner
       ? db.select(orderSelection).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNotNull(orders.deletedAt)).orderBy(desc(orders.deletedAt))
@@ -477,6 +479,7 @@ async function snapshot(access: AccessInfo) {
     }).from(supplierInvoices).leftJoin(suppliers, eq(supplierInvoices.supplierId, suppliers.id)).orderBy(desc(supplierInvoices.invoiceDate), desc(supplierInvoices.createdAt)),
     db.select().from(supplierPayments).orderBy(desc(supplierPayments.paidAt), desc(supplierPayments.createdAt)),
     db.select().from(expenses).orderBy(desc(expenses.expenseDate), desc(expenses.createdAt)),
+    db.select().from(recurringExpenses).orderBy(desc(recurringExpenses.isActive), recurringExpenses.dayOfMonth, recurringExpenses.label),
     db.select().from(adPerformance).orderBy(desc(adPerformance.performanceDate)),
     db.select().from(capitalLedger).orderBy(desc(capitalLedger.entryDate)),
     db.select().from(products).orderBy(desc(products.createdAt)),
@@ -573,6 +576,7 @@ async function snapshot(access: AccessInfo) {
     supplierInvoices: enrichedInvoiceRows,
     supplierPayments: supplierPaymentRows,
     expenses: expenseRows,
+    recurringExpenses: recurringExpenseRows,
     ads: adRows,
     capital: capitalRows,
     products: productRows,
@@ -1756,6 +1760,55 @@ export async function POST(request: Request) {
       await database.prepare("DELETE FROM supplier_invoices WHERE id = ?").bind(id).run();
       await database.prepare("UPDATE purchases SET payment_status = 'À payer', paid_at = NULL WHERE purchase_ref = ?").bind(invoice.purchaseRef).run();
       auditEntityLabel = `${invoice.invoiceNumber} · ${invoice.purchaseRef}`;
+    } else if (payload.action === "addRecurringExpense") {
+      const category = textValue(payload.category).slice(0, 80);
+      const label = textValue(payload.label).slice(0, 160);
+      const amount = moneyValue(payload.amount);
+      const account = treasuryAccount(payload.account);
+      const dayOfMonth = numberValue(payload.dayOfMonth);
+      const startDate = textValue(payload.startDate, new Date().toISOString().slice(0, 10));
+      const endDate = textValue(payload.endDate) || null;
+      const note = textValue(payload.note).slice(0, 300);
+      if (!category || !label || amount <= 0 || dayOfMonth < 1 || dayOfMonth > 31 || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) || (endDate && endDate < startDate)) {
+        return Response.json({ error: "Charge récurrente invalide." }, { status: 400 });
+      }
+      const duplicateRecurring = await protectMutation("addRecurringExpense");
+      if (duplicateRecurring) return duplicateRecurring;
+      await db.insert(recurringExpenses).values({ category, label, amount, account, dayOfMonth, startDate, endDate, note, isActive: 1 });
+      await ensureRecurringExpenseOccurrences(await getRawDb());
+      auditEntityLabel = `${category} · ${label}`;
+    } else if (payload.action === "updateRecurringExpense") {
+      const id = numberValue(payload.id);
+      const category = textValue(payload.category).slice(0, 80);
+      const label = textValue(payload.label).slice(0, 160);
+      const amount = moneyValue(payload.amount);
+      const account = treasuryAccount(payload.account);
+      const dayOfMonth = numberValue(payload.dayOfMonth);
+      const startDate = textValue(payload.startDate);
+      const endDate = textValue(payload.endDate) || null;
+      const note = textValue(payload.note).slice(0, 300);
+      if (!id || !category || !label || amount <= 0 || dayOfMonth < 1 || dayOfMonth > 31 || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) || (endDate && endDate < startDate)) {
+        return Response.json({ error: "Charge récurrente invalide." }, { status: 400 });
+      }
+      const [existing] = await db.select({ id: recurringExpenses.id }).from(recurringExpenses).where(eq(recurringExpenses.id, id)).limit(1);
+      if (!existing) return Response.json({ error: "Charge récurrente introuvable." }, { status: 404 });
+      const rawDatabase = await getRawDb();
+      await removeFutureRecurringOccurrences(rawDatabase, id);
+      await db.update(recurringExpenses).set({ category, label, amount, account, dayOfMonth, startDate, endDate, note, updatedAt: new Date().toISOString() }).where(eq(recurringExpenses.id, id));
+      await ensureRecurringExpenseOccurrences(rawDatabase);
+      auditEntityLabel = `${category} · ${label}`;
+    } else if (payload.action === "toggleRecurringExpense") {
+      const id = numberValue(payload.id);
+      const isActive = textValue(payload.isActive) === "true" || Number(payload.isActive) === 1;
+      if (!id) return Response.json({ error: "Charge récurrente invalide." }, { status: 400 });
+      const [existing] = await db.select({ id: recurringExpenses.id, label: recurringExpenses.label }).from(recurringExpenses).where(eq(recurringExpenses.id, id)).limit(1);
+      if (!existing) return Response.json({ error: "Charge récurrente introuvable." }, { status: 404 });
+      const rawDatabase = await getRawDb();
+      if (!isActive) await removeFutureRecurringOccurrences(rawDatabase, id);
+      await db.update(recurringExpenses).set({ isActive: isActive ? 1 : 0, updatedAt: new Date().toISOString() }).where(eq(recurringExpenses.id, id));
+      if (isActive) await ensureRecurringExpenseOccurrences(rawDatabase);
+      auditEntityLabel = existing.label;
+      integrationMessage = isActive ? "Charge récurrente réactivée." : "Charge récurrente suspendue. Les échéances futures non payées ont été retirées.";
     } else if (payload.action === "addExpense") {
       const category = textValue(payload.category).slice(0, 80);
       const label = textValue(payload.label).slice(0, 160);
@@ -1794,8 +1847,9 @@ export async function POST(request: Request) {
     } else if (payload.action === "deleteExpense") {
       const id = numberValue(payload.id);
       if (!id) return Response.json({ error: "Dépense invalide." }, { status: 400 });
-      const [expense] = await db.select({ id: expenses.id, category: expenses.category, label: expenses.label }).from(expenses).where(eq(expenses.id, id)).limit(1);
+      const [expense] = await db.select({ id: expenses.id, category: expenses.category, label: expenses.label, recurringExpenseId: expenses.recurringExpenseId }).from(expenses).where(eq(expenses.id, id)).limit(1);
       if (!expense) return Response.json({ error: "Dépense introuvable." }, { status: 404 });
+      if (expense.recurringExpenseId) return Response.json({ error: "Cette dépense vient d’une charge récurrente. Modifiez ou suspendez la charge récurrente plutôt que de supprimer son échéance." }, { status: 409 });
       await db.delete(expenses).where(eq(expenses.id, id));
       auditEntityLabel = `${expense.category} · ${expense.label}`;
     } else if (payload.action === "addAd") {

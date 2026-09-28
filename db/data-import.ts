@@ -104,14 +104,28 @@ const TABLE_SPECS: Record<string, TableSpec> = {
     columns: ["id", "invoice_id", "amount", "account", "paid_at", "reference", "note", "created_at"],
     defaults: { account: "Banque", reference: "", note: "" },
   },
+  charges_recurrentes: {
+    table: "recurring_expenses",
+    columns: ["id", "category", "label", "amount", "account", "day_of_month", "start_date", "end_date", "note", "is_active", "created_at", "updated_at"],
+    defaults: {
+      account: "Banque",
+      day_of_month: 1,
+      end_date: null,
+      note: "",
+      is_active: 1,
+      updated_at: null,
+    },
+  },
   depenses: {
     table: "expenses",
-    columns: ["id", "category", "label", "amount", "account", "payment_status", "paid_at", "expense_date", "note", "created_at"],
+    columns: ["id", "category", "label", "amount", "account", "payment_status", "paid_at", "expense_date", "note", "recurring_expense_id", "recurring_period", "created_at"],
     defaults: {
       account: "Banque",
       payment_status: "Payé",
       paid_at: (row) => String(row.payment_status || "Payé") === "Payé" ? scalar(row.expense_date ?? row.created_at, null) : null,
       note: "",
+      recurring_expense_id: null,
+      recurring_period: null,
     },
   },
   commandes: {
@@ -338,7 +352,7 @@ const REQUIRED_TABLES = [
 ] as const;
 
 const OPTIONAL_TABLES = [
-  "fournisseurs", "factures_fournisseurs", "paiements_fournisseurs", "sessions_inventaire", "inventaires", "depenses", "clotures_journalieres", "clotures_mensuelles", "historique_commandes", "evenements_transporteurs", "reglements_transporteurs", "reglement_commandes_transporteurs", "journal_actions",
+  "fournisseurs", "factures_fournisseurs", "paiements_fournisseurs", "sessions_inventaire", "inventaires", "charges_recurrentes", "depenses", "clotures_journalieres", "clotures_mensuelles", "historique_commandes", "evenements_transporteurs", "reglements_transporteurs", "reglement_commandes_transporteurs", "journal_actions",
   "boutique_produits", "boutique_offres", "boutique_composition_offres", "boutique_medias",
 ] as const;
 
@@ -561,6 +575,7 @@ function parsePortableExport(raw: string) {
   assertUnique(tables, "inventaires", "id", "inventaire");
   assertUnique(tables, "inventaires", "count_ref", "référence d’inventaire");
   assertUnique(tables, "publicites", "id", "ligne publicitaire");
+  assertUnique(tables, "charges_recurrentes", "id", "charge récurrente");
   assertUnique(tables, "tresorerie_capital", "id", "mouvement de capital");
   assertUnique(tables, "tresorerie_capital", "auto_key", "clé automatique de capital", true);
   assertUnique(tables, "clotures_journalieres", "id", "clôture journalière");
@@ -634,11 +649,12 @@ function valueFor(row: ImportRow, column: string, spec: TableSpec, allowedUserId
   return value;
 }
 
-function insertStatement(database: D1Database, exportKey: string, row: ImportRow, allowedUserIds: Set<number>) {
+function insertStatement(database: D1Database, exportKey: string, row: ImportRow, allowedUserIds: Set<number>, columnsOverride?: string[]) {
   const spec = TABLE_SPECS[exportKey];
-  const values = spec.columns.map((column) => valueFor(row, column, spec, allowedUserIds));
-  const placeholders = spec.columns.map(() => "?").join(", ");
-  return database.prepare(`INSERT INTO ${spec.table} (${spec.columns.join(", ")}) VALUES (${placeholders})`).bind(...values);
+  const columns = columnsOverride || spec.columns;
+  const values = columns.map((column) => valueFor(row, column, spec, allowedUserIds));
+  const placeholders = columns.map(() => "?").join(", ");
+  return database.prepare(`INSERT INTO ${spec.table} (${columns.join(", ")}) VALUES (${placeholders})`).bind(...values);
 }
 
 function settingsRows(tables: Record<string, ImportRow[]>) {
@@ -655,6 +671,17 @@ export function previewPortableDataImport(raw: string): PortableImportSummary {
 export async function restorePortableDataImport(database: D1Database, raw: string): Promise<PortableImportSummary> {
   const { data, summary } = parsePortableExport(raw);
   await ensureStorefrontCms(database);
+
+  const recurringTable = await database.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recurring_expenses' LIMIT 1",
+  ).first<{ name: string }>();
+  const hasRecurringExpensesTable = Boolean(recurringTable?.name);
+  const expenseColumns = (await database.prepare("PRAGMA table_info(expenses)").all<{ name: string }>()).results;
+  const expenseColumnNames = new Set(expenseColumns.map((row) => row.name));
+  const supportsRecurringExpenseLinks = expenseColumnNames.has("recurring_expense_id") && expenseColumnNames.has("recurring_period");
+  if (!hasRecurringExpensesTable && rowsFor(data.tables, "charges_recurrentes").length > 0) {
+    throw new Error("Cet export contient des charges récurrentes mais la base cible doit d’abord être mise à jour.");
+  }
 
   // Filet de sécurité persistant : cette copie est créée avant toute suppression.
   await createDailyBackup(database, "Avant import d’un export portable", true);
@@ -687,6 +714,7 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
     database.prepare("DELETE FROM purchases"),
     database.prepare("DELETE FROM suppliers"),
     database.prepare("DELETE FROM expenses"),
+    ...(hasRecurringExpensesTable ? [database.prepare("DELETE FROM recurring_expenses")] : []),
     database.prepare("DELETE FROM ad_performance"),
     database.prepare("DELETE FROM products"),
     database.prepare("DELETE FROM audit_logs"),
@@ -715,6 +743,7 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
     "achats",
     "factures_fournisseurs",
     "paiements_fournisseurs",
+    "charges_recurrentes",
     "depenses",
     "commandes",
     "tresorerie_capital",
@@ -737,8 +766,12 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
   ] as const;
 
   for (const exportKey of orderedKeys) {
+    if (exportKey === "charges_recurrentes" && !hasRecurringExpensesTable) continue;
     const rows = exportKey === "parametres" ? settingsRows(data.tables) : rowsFor(data.tables, exportKey);
-    for (const row of rows) statements.push(insertStatement(database, exportKey, row, allowedUserIds));
+    const columnsOverride = exportKey === "depenses" && !supportsRecurringExpenseLinks
+      ? TABLE_SPECS.depenses.columns.filter((column) => !["recurring_expense_id", "recurring_period"].includes(column))
+      : undefined;
+    for (const row of rows) statements.push(insertStatement(database, exportKey, row, allowedUserIds, columnsOverride));
   }
 
   await database.batch(statements);

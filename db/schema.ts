@@ -380,6 +380,28 @@ export const supplierPayments = sqliteTable(
   ],
 );
 
+export const recurringExpenses = sqliteTable(
+  "recurring_expenses",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    category: text("category").notNull(),
+    label: text("label").notNull(),
+    amount: integer("amount").notNull(),
+    account: text("account").notNull().default("Banque"),
+    dayOfMonth: integer("day_of_month").notNull(),
+    startDate: text("start_date").notNull(),
+    endDate: text("end_date"),
+    note: text("note").notNull().default(""),
+    isActive: integer("is_active").notNull().default(1),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at"),
+  },
+  (table) => [
+    index("recurring_expenses_active_idx").on(table.isActive, table.startDate),
+    index("recurring_expenses_label_idx").on(table.label),
+  ],
+);
+
 export const expenses = sqliteTable(
   "expenses",
   {
@@ -392,11 +414,15 @@ export const expenses = sqliteTable(
     paidAt: text("paid_at"),
     expenseDate: text("expense_date").notNull(),
     note: text("note").notNull().default(""),
+    recurringExpenseId: integer("recurring_expense_id"),
+    recurringPeriod: text("recurring_period"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
     index("expenses_expense_date_idx").on(table.expenseDate),
     index("expenses_payment_status_idx").on(table.paymentStatus),
+    index("expenses_recurring_expense_id_idx").on(table.recurringExpenseId),
+    uniqueIndex("expenses_recurring_occurrence_unique").on(table.recurringExpenseId, table.recurringPeriod),
   ],
 );
 

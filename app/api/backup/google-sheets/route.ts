@@ -1,6 +1,6 @@
 import { desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { adPerformance, capitalLedger, carrierSettlementOrders, carrierSettlements, customers, expenses, inventoryCounts, inventorySessions, monthlyClosings, orders, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../../db/schema";
+import { adPerformance, capitalLedger, carrierSettlementOrders, carrierSettlements, customers, expenses, recurringExpenses, inventoryCounts, inventorySessions, monthlyClosings, orders, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../../db/schema";
 import { orderContributionBeforeGlobalAds } from "../../../../lib/finance";
 
 const datasetNames = new Set([
@@ -13,6 +13,7 @@ const datasetNames = new Set([
   "supplier-invoices",
   "supplier-payments",
   "expenses",
+  "recurring-expenses",
   "ads",
   "capital",
   "stock-movements",
@@ -267,8 +268,16 @@ export async function GET(request: Request) {
     if (dataset === "expenses") {
       const rows = await db.select().from(expenses).orderBy(desc(expenses.expenseDate), desc(expenses.createdAt));
       return csvResponse(
-        ["ID", "Catégorie", "Libellé", "Montant (MAD)", "Compte", "Paiement", "Payé le", "Date de dépense", "Note", "Créé le"],
-        rows.map((row) => [row.id, row.category, row.label, row.amount, row.account, row.paymentStatus, row.paidAt, row.expenseDate, row.note, row.createdAt]),
+        ["ID", "Catégorie", "Libellé", "Montant (MAD)", "Compte", "Paiement", "Payé le", "Date de dépense", "Note", "ID charge récurrente", "Période récurrente", "Créé le"],
+        rows.map((row) => [row.id, row.category, row.label, row.amount, row.account, row.paymentStatus, row.paidAt, row.expenseDate, row.note, row.recurringExpenseId, row.recurringPeriod, row.createdAt]),
+      );
+    }
+
+    if (dataset === "recurring-expenses") {
+      const rows = await db.select().from(recurringExpenses).orderBy(desc(recurringExpenses.isActive), recurringExpenses.dayOfMonth, recurringExpenses.label);
+      return csvResponse(
+        ["ID", "Catégorie", "Libellé", "Montant mensuel (MAD)", "Compte", "Jour échéance", "Début", "Fin", "Note", "Active", "Créée le", "Modifiée le"],
+        rows.map((row) => [row.id, row.category, row.label, row.amount, row.account, row.dayOfMonth, row.startDate, row.endDate, row.note, row.isActive ? "Oui" : "Non", row.createdAt, row.updatedAt]),
       );
     }
 

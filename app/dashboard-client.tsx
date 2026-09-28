@@ -159,7 +159,23 @@ type Expense = {
   paidAt: string | null;
   expenseDate: string;
   note: string;
+  recurringExpenseId: number | null;
+  recurringPeriod: string | null;
   createdAt: string;
+};
+type RecurringExpense = {
+  id: number;
+  category: string;
+  label: string;
+  amount: number;
+  account: string;
+  dayOfMonth: number;
+  startDate: string;
+  endDate: string | null;
+  note: string;
+  isActive: number;
+  createdAt: string;
+  updatedAt: string | null;
 };
 type Ad = {
   id: number;
@@ -436,6 +452,7 @@ type Data = {
   carrierSettlements: CarrierSettlement[];
   carrierSettlementOrders: CarrierSettlementOrder[];
   expenses: Expense[];
+  recurringExpenses: RecurringExpense[];
   ads: Ad[];
   capital: Capital[];
   products: Product[];
@@ -496,6 +513,7 @@ const emptyData: Data = {
   carrierSettlements: [],
   carrierSettlementOrders: [],
   expenses: [],
+  recurringExpenses: [],
   ads: [],
   capital: [],
   products: [],
@@ -855,6 +873,9 @@ export default function DashboardClient() {
       addExpense: "Dépense enregistrée",
       updateExpense: "Dépense mise à jour",
       deleteExpense: "Dépense supprimée",
+      addRecurringExpense: "Charge récurrente programmée",
+      updateRecurringExpense: "Charge récurrente mise à jour",
+      toggleRecurringExpense: "Statut de la charge récurrente mis à jour",
       receivePurchase: "Réception fournisseur enregistrée",
       updateAd: "Publicité mise à jour",
       deleteAd: "Publicité supprimée",
@@ -983,12 +1004,14 @@ export default function DashboardClient() {
 
   const metrics = useMemo(() => {
     const safetyReserve = Math.max(0, Number(data.settings.safety_reserve) || 0);
+    const todayKey = businessDateKey(new Date());
+    const recognizedExpenses = data.expenses.filter((expense) => businessDateKey(expense.expenseDate) <= todayKey);
     const finance = calculateBusinessFinance({
       orders: data.orders,
       purchases: data.purchases,
       supplierInvoices: data.supplierInvoices,
       carrierSettlements: data.carrierSettlements,
-      expenses: data.expenses,
+      expenses: recognizedExpenses,
       ads: data.ads,
       capital: data.capital,
       safetyReserve,
@@ -1456,7 +1479,7 @@ function Page({
   if (active === "Fournisseurs") return <SuppliersPage suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} supplierPayments={data.supplierPayments} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("supplier")} onEdit={editEntity} />;
   if (active === "Achats") return <PurchasesPage purchases={data.purchases} supplierInvoices={data.supplierInvoices} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("purchase")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Factures fournisseurs") return <SupplierInvoicesPage invoices={data.supplierInvoices} payments={data.supplierPayments} canEdit={data.access.canEdit} onAdd={() => open("supplierInvoice")} submit={submit} />;
-  if (active === "Dépenses") return <ExpensesPage expenses={data.expenses} onAdd={() => open("expense")} onEdit={editEntity} onDelete={removeEntity} />;
+  if (active === "Dépenses") return <ExpensesPage expenses={data.expenses} recurringExpenses={data.recurringExpenses} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("expense")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Publicités") return <AdsPage ads={data.ads} settings={data.settings} access={data.access} submit={submit} onAdd={() => open("ad")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Capital") return <CapitalPage data={data} metrics={metrics} onAdd={() => open("capital")} onEdit={editEntity} onDelete={removeEntity} />;
   if (active === "Trésorerie") return <CashflowForecastPage data={data} metrics={metrics} />;
@@ -4511,24 +4534,94 @@ function SupplierInvoicesPage({ invoices, payments, canEdit, onAdd, submit }: { 
   );
 }
 
-function ExpensesPage({ expenses, onAdd, onEdit, onDelete }: { expenses: Expense[]; onAdd: () => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void }) {
-  const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const paid = expenses.filter((expense) => expense.paymentStatus === "Payé").reduce((sum, expense) => sum + expense.amount, 0);
-  const due = expenses.filter((expense) => expense.paymentStatus !== "Payé").reduce((sum, expense) => sum + expense.amount, 0);
-  const categories = Array.from(new Set(expenses.map((expense) => expense.category).filter(Boolean)))
+function ExpensesPage({
+  expenses,
+  recurringExpenses,
+  canEdit,
+  submit,
+  onAdd,
+  onEdit,
+  onDelete,
+}: {
+  expenses: Expense[];
+  recurringExpenses: RecurringExpense[];
+  canEdit: boolean;
+  submit: (action: string, values: Record<string, FormDataEntryValue>) => Promise<void>;
+  onAdd: () => void;
+  onEdit: (selection: EditableEntity) => void;
+  onDelete: (selection: EditableEntity) => void;
+}) {
+  const [recurringModal, setRecurringModal] = useState<RecurringExpense | "new" | null>(null);
+  const todayKey = businessDateKey(new Date());
+  const recognizedExpenses = expenses.filter((expense) => businessDateKey(expense.expenseDate) <= todayKey);
+  const upcomingExpenses = expenses.filter((expense) => businessDateKey(expense.expenseDate) > todayKey);
+  const total = recognizedExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const paid = recognizedExpenses.filter((expense) => expense.paymentStatus === "Payé").reduce((sum, expense) => sum + expense.amount, 0);
+  const due = recognizedExpenses.filter((expense) => expense.paymentStatus !== "Payé").reduce((sum, expense) => sum + expense.amount, 0);
+  const upcoming = upcomingExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const activeRecurring = recurringExpenses.filter((expense) => Boolean(expense.isActive));
+  const recurringMonthly = activeRecurring.reduce((sum, expense) => sum + expense.amount, 0);
+  const categories = Array.from(new Set(recognizedExpenses.map((expense) => expense.category).filter(Boolean)))
     .map((category) => {
-      const rows = expenses.filter((expense) => expense.category === category);
+      const rows = recognizedExpenses.filter((expense) => expense.category === category);
       return { category, amount: rows.reduce((sum, expense) => sum + expense.amount, 0), count: rows.length };
     })
     .sort((left, right) => right.amount - left.amount);
+
+  async function toggleRecurring(expense: RecurringExpense) {
+    if (!canEdit) return;
+    await submit("toggleRecurringExpense", { id: String(expense.id), isActive: expense.isActive ? "false" : "true" });
+  }
 
   return (
     <>
       <section className="kpi-grid three">
         <Kpi label="Charges enregistrées" value={money(total)} detail={expenses.length + " dépense(s) comptabilisée(s)"} />
         <Kpi label="Déjà payées" value={money(paid)} detail="Déduit de la trésorerie estimée" />
-        <Kpi label="À payer" value={money(due)} detail="Charge reconnue, sortie de trésorerie encore à venir" danger={due > 0} />
+        <Kpi label="À payer maintenant" value={money(due)} detail={upcoming > 0 ? money(upcoming) + " déjà planifiés pour plus tard" : "Aucune autre échéance future planifiée"} danger={due > 0} />
       </section>
+
+      <section className="panel page-panel">
+        <div className="section-toolbar">
+          <div>
+            <span className="card-kicker">Automatisation</span>
+            <h2>Charges récurrentes</h2>
+            <p>Loyer, téléphone, logiciels… Maison Jiya prépare automatiquement les échéances jusqu’à 60 jours à l’avance, sans les compter comme payées.</p>
+          </div>
+          <button className="primary-button" type="button" disabled={!canEdit} onClick={() => setRecurringModal("new")}>＋ Programmer une charge</button>
+        </div>
+        <div className="kpi-grid three">
+          <Kpi label="Mensuel programmé" value={money(recurringMonthly)} detail={activeRecurring.length + " charge(s) active(s)"} />
+          <Kpi label="Actives" value={String(activeRecurring.length)} detail="Échéances générées automatiquement" />
+          <Kpi label="Suspendues" value={String(recurringExpenses.length - activeRecurring.length)} detail="Aucune nouvelle échéance créée" />
+        </div>
+        {recurringExpenses.length ? (
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Charge</th><th>Montant</th><th>Échéance</th><th>Compte</th><th>Période</th><th>Statut</th><th>Actions</th></tr></thead>
+              <tbody>
+                {recurringExpenses.map((expense) => (
+                  <tr key={expense.id}>
+                    <td><strong>{expense.label}</strong><small className="table-subline">{expense.category}</small></td>
+                    <td><strong>{money(expense.amount)}</strong></td>
+                    <td>Le {expense.dayOfMonth} de chaque mois</td>
+                    <td>{expense.account}</td>
+                    <td>{dateLabel(expense.startDate)}{expense.endDate ? " → " + dateLabel(expense.endDate) : " → sans fin"}</td>
+                    <td><Status value={expense.isActive ? "Actif" : "Suspendu"} /></td>
+                    <td className="order-actions-cell">
+                      <div className="inline-actions">
+                        <button type="button" className="secondary-button" disabled={!canEdit} onClick={() => setRecurringModal(expense)}>Modifier</button>
+                        <button type="button" className={expense.isActive ? "danger-button" : "secondary-button"} disabled={!canEdit} onClick={() => void toggleRecurring(expense)}>{expense.isActive ? "Suspendre" : "Réactiver"}</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <EmptyState title="Aucune charge récurrente" text="Programmez les dépenses qui reviennent chaque mois pour ne plus les oublier." />}
+      </section>
+
       <section className="panel expense-explainer">
         <div>
           <span className="card-kicker">Charges d’exploitation</span>
@@ -4537,6 +4630,7 @@ function ExpensesPage({ expenses, onAdd, onEdit, onDelete }: { expenses: Expense
         </div>
         <strong>{money(total)}</strong>
       </section>
+
       {categories.length > 0 && (
         <section className="panel report-table">
           <PanelHead kicker="Répartition" title="Dépenses par catégorie" total={String(categories.length)} />
@@ -4551,6 +4645,7 @@ function ExpensesPage({ expenses, onAdd, onEdit, onDelete }: { expenses: Expense
           </div>
         </section>
       )}
+
       <section className="panel page-panel">
         <div className="section-toolbar">
           <div><h2>Registre des dépenses</h2><p>Chaque charge réduit le résultat. Seules les dépenses marquées « Payé » réduisent immédiatement la trésorerie estimée.</p></div>
@@ -4565,13 +4660,24 @@ function ExpensesPage({ expenses, onAdd, onEdit, onDelete }: { expenses: Expense
                   <tr key={expense.id}>
                     <td>{dateLabel(expense.expenseDate)}</td>
                     <td><span className="category-chip">{expense.category}</span></td>
-                    <td><strong>{expense.label}</strong></td>
+                    <td>
+                      <strong>{expense.label}</strong>
+                      {expense.recurringExpenseId ? <small className="table-subline">Récurrente · {expense.recurringPeriod || "échéance"}</small> : null}
+                    </td>
                     <td>{expense.account}</td>
                     <td className="money-negative"><strong>{money(expense.amount)}</strong></td>
                     <td><Status value={expense.paymentStatus} /></td>
                     <td>{expense.paymentStatus === "Payé" && expense.paidAt ? dateLabel(expense.paidAt) : "—"}</td>
                     <td>{expense.note || "—"}</td>
-                    <td className="order-actions-cell"><RecordActions label={"la dépense " + expense.label} onEdit={() => onEdit({ kind: "expense", record: expense })} onDelete={() => onDelete({ kind: "expense", record: expense })} /></td>
+                    <td className="order-actions-cell">
+                      <RecordActions
+                        label={"la dépense " + expense.label}
+                        onEdit={() => onEdit({ kind: "expense", record: expense })}
+                        onDelete={() => expense.recurringExpenseId
+                          ? window.alert("Cette échéance vient d’une charge récurrente. Suspendez ou modifiez la programmation pour agir sur les prochaines échéances.")
+                          : onDelete({ kind: "expense", record: expense })}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -4579,7 +4685,76 @@ function ExpensesPage({ expenses, onAdd, onEdit, onDelete }: { expenses: Expense
           </div>
         ) : <EmptyState title="Aucune dépense enregistrée" text="Ajoutez vos charges réelles pour que bénéfice et trésorerie reflètent mieux l’activité Maison Jiya." />}
       </section>
+
+      {recurringModal ? (
+        <RecurringExpenseModal
+          expense={recurringModal === "new" ? null : recurringModal}
+          close={() => setRecurringModal(null)}
+          submit={submit}
+        />
+      ) : null}
     </>
+  );
+}
+
+function RecurringExpenseModal({
+  expense,
+  close,
+  submit,
+}: {
+  expense: RecurringExpense | null;
+  close: () => void;
+  submit: (action: string, values: Record<string, FormDataEntryValue>) => Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  const today = new Date().toISOString().slice(0, 10);
+  async function handle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setFormError("");
+    try {
+      const values = Object.fromEntries(new FormData(event.currentTarget));
+      await submit(expense ? "updateRecurringExpense" : "addRecurringExpense", {
+        ...(expense ? { id: String(expense.id) } : {}),
+        ...values,
+      });
+      close();
+    } catch (caught) {
+      setFormError(caught instanceof Error ? caught.message : "Enregistrement impossible.");
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+      <section className="modal compact" role="dialog" aria-modal="true">
+        <div className="modal-head">
+          <div>
+            <span className="card-kicker">Automatisation des charges</span>
+            <h2>{expense ? "Modifier la charge récurrente" : "Programmer une charge récurrente"}</h2>
+            <p>Une échéance « À payer » sera préparée automatiquement chaque mois.</p>
+          </div>
+          <button type="button" onClick={close} aria-label="Fermer">×</button>
+        </div>
+        <form onSubmit={handle}>
+          <div className="form-grid">
+            <Select label="Catégorie *" name="category" defaultValue={expense?.category || "Loyer"} options={["Loyer", "Emballage", "Transport", "Téléphone / Internet", "Frais bancaires", "Outils / logiciels", "Prestataire", "Matériel", "Autre"]} />
+            <Field label="Libellé *" name="label" defaultValue={expense?.label || ""} placeholder="Ex. Loyer showroom" required />
+            <Field label="Montant mensuel (MAD) *" name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" defaultValue={expense ? String(expense.amount) : ""} required />
+            <Select label="Compte prévu" name="account" defaultValue={expense?.account || "Banque"} options={["Banque", "Caisse", "Espèces", "Carte", "Autre"]} />
+            <Field label="Jour d’échéance (1–31) *" name="dayOfMonth" type="number" inputMode="numeric" min="1" max="31" defaultValue={String(expense?.dayOfMonth || Number(today.slice(8, 10)))} required />
+            <Field label="Début *" name="startDate" type="date" defaultValue={expense?.startDate?.slice(0, 10) || today} required />
+            <Field label="Fin (facultatif)" name="endDate" type="date" defaultValue={expense?.endDate?.slice(0, 10) || ""} />
+            <Field label="Note" name="note" defaultValue={expense?.note || ""} placeholder="Contrat, référence, détail…" maxLength={300} />
+          </div>
+          {formError ? <p className="form-error" role="alert">{formError}</p> : null}
+          <div className="modal-actions">
+            <button type="button" className="cancel-button" onClick={close}>Annuler</button>
+            <button className="primary-button" disabled={saving}>{saving ? "Enregistrement…" : expense ? "Enregistrer" : "Programmer"}</button>
+          </div>
+        </form>
+      </section>
+    </div>
   );
 }
 
@@ -5509,7 +5684,7 @@ function ReportsPage({ data }: { data: Data }) {
   const otherAccounts = treasury.other;
   const carrierMoney = data.orders.filter((order) => order.status === "Livrée" && order.paymentStatus === "À encaisser").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees, 0);
   const receivables = data.orders.filter((order) => ["Confirmée", "Expédiée", "En livraison"].includes(order.status) && order.paymentStatus !== "Encaissé").reduce((sum, order) => sum + order.saleAmount - order.shippingCost - order.fees, 0);
-  const unpaidExpenses = data.expenses.filter((expense) => expense.paymentStatus !== "Payé");
+  const unpaidExpenses = data.expenses.filter((expense) => expense.paymentStatus !== "Payé" && businessDateKey(expense.expenseDate) <= today);
   const automaticAllocations = data.capital.filter((entry) => entry.isAutomatic);
   const positiveProfit = automaticAllocations.reduce((sum, entry) => sum + entry.amount, 0);
   const allocationAmount = (category: string) => automaticAllocations.filter((entry) => entry.category === category).reduce((sum, entry) => sum + entry.amount, 0);
