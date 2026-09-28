@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { CatalogItem, StorefrontCatalog, StorefrontLanguage } from "./storefront-types";
+import type { CatalogItem, StorefrontCatalog, StorefrontLanguage, StorefrontMarketingSection } from "./storefront-types";
 
 type Cart = Record<string, number>;
 type FbqFunction = ((...args: unknown[]) => void) & { queue?: unknown[][]; loaded?: boolean; version?: string };
@@ -390,6 +390,36 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const announcement = localized?.announcement || t.freeDelivery;
   const strip = catalog?.brandStrip?.length ? catalog.brandStrip : [brand, "MONTRES", "BIJOUX", "PORTEFEUILLES", "PACKS"];
   const promotionTarget = offers.length ? "#offres" : "#catalogue";
+  const marketingSections = catalog?.marketingSections ?? [];
+
+  function openMarketingTarget(section: StorefrontMarketingSection) {
+    if (["Montres", "Bijoux", "Portefeuilles"].includes(section.target)) {
+      setCategory(section.target);
+      setVisibleCount(INITIAL_VISIBLE);
+      window.requestAnimationFrame(() => document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      return;
+    }
+    const selector = section.target === "offers" && offers.length ? "#offres" : "#catalogue";
+    document.querySelector(selector)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function renderMarketingSections(placement: StorefrontMarketingSection["placement"]) {
+    const sections = marketingSections.filter((section) => section.placement === placement);
+    if (!sections.length) return null;
+    return <section className="storefront-v3-marketing-zone" data-placement={placement}>
+      <div className={`storefront-v3-marketing-grid ${sections.length === 1 ? "single" : ""}`}>
+        {sections.map((section) => <article className={`storefront-v3-marketing-card ${section.imageUrl ? "has-image" : ""}`} key={section.id}>
+          {section.imageUrl && <div className="storefront-v3-marketing-media"><SafeImage src={section.imageUrl} alt={section.title} fallback={<div className="storefront-v3-marketing-fallback">MJ</div>} /></div>}
+          <div className="storefront-v3-marketing-copy">
+            <div>{section.badge && <span className="storefront-v3-marketing-badge">{section.badge}</span>}{section.eyebrow && <small>{section.eyebrow}</small>}</div>
+            <h2>{section.title}</h2>
+            {section.body && <p>{section.body}</p>}
+            <button type="button" onClick={() => openMarketingTarget(section)}>{section.ctaLabel || t.discover} →</button>
+          </div>
+        </article>)}
+      </div>
+    </section>;
+  }
 
   return <main className="storefront-v3 storefront-shell" dir={lang === "ar" ? "rtl" : "ltr"}>
     <div className="storefront-v3-marquee" aria-label={announcement}>
@@ -450,10 +480,14 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       })}</div>
     </section>}
 
+    {renderMarketingSections("after_categories")}
+
     {offers.length > 0 && <section className="storefront-v3-section storefront-v3-packs">
       <header className="storefront-v3-section-head"><div><small>{t.packsKicker}</small><h2>{t.packs}</h2></div></header>
       <div className="storefront-v3-grid packs">{offers.slice(0, 6).map((item) => <ProductCard key={`pack-${item.id}`} item={item} lang={lang} t={t} add={add} />)}</div>
     </section>}
+
+    {renderMarketingSections("before_catalogue")}
 
     <section className="storefront-v3-section storefront-v3-catalogue" id="catalogue">
       <header className="storefront-v3-section-head"><div><small>{brand}</small><h2>{t.allProducts}</h2></div><strong>{filtered.length} {t.products}</strong></header>
@@ -468,6 +502,8 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     </section>
 
     <section className="storefront-v3-how" id="commande"><small>{brand}</small><h2>{t.whyOrder}</h2><div><article><b>01</b><strong>{t.step1}</strong><p>{t.step1Text}</p></article><article><b>02</b><strong>{t.step2}</strong><p>{t.step2Text}</p></article><article><b>03</b><strong>{t.step3}</strong><p>{t.step3Text}</p></article></div></section>
+
+    {renderMarketingSections("before_contact")}
 
     <section className="storefront-v3-contact" id="contact"><div><small>{brand}</small><h2>{t.helpTitle}</h2><p>{t.helpText}</p></div>{waUrl && <a href={waUrl} target="_blank" rel="noreferrer">{t.whatsapp} →</a>}</section>
     <footer className="storefront-v3-footer"><div><strong>{brand}</strong><small>{localized?.shippingNote || catalog?.shippingNote}</small></div><span>© {new Date().getFullYear()} {brand}</span></footer>
