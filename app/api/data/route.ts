@@ -1068,8 +1068,8 @@ export async function POST(request: Request) {
       if (selected.length !== orderIds.length) return Response.json({ error: "Une ou plusieurs commandes sélectionnées sont introuvables." }, { status: 404 });
       const normalizedCarrier = carrier.toLocaleLowerCase("fr").replace(/\s+/g, " ");
       for (const order of selected) {
-        if (order.status !== "Livrée" || order.paymentStatus !== "À encaisser" || order.fulfillmentType === "Magasin physique") {
-          return Response.json({ error: `${order.orderRef} n’est plus une commande livrée en attente d’encaissement.` }, { status: 409 });
+        if (order.status !== "Livrée" || !["À encaisser", "Encaissé"].includes(order.paymentStatus) || order.fulfillmentType === "Magasin physique") {
+          return Response.json({ error: `${order.orderRef} n’est pas une commande livrée pouvant être rapprochée.` }, { status: 409 });
         }
         if (order.carrier.trim().toLocaleLowerCase("fr").replace(/\s+/g, " ") !== normalizedCarrier) {
           return Response.json({ error: `${order.orderRef} appartient à ${order.carrier}, pas à ${carrier}.` }, { status: 409 });
@@ -1134,10 +1134,10 @@ export async function POST(request: Request) {
           database.prepare(`
             UPDATE orders
             SET payment_status = 'Encaissé',
-                paid_at = ?,
+                paid_at = COALESCE(paid_at, ?),
                 carrier_invoice_code = CASE WHEN carrier_invoice_code = '' THEN ? ELSE carrier_invoice_code END,
                 updated_at = ?
-            WHERE id = ? AND payment_status = 'À encaisser' AND status = 'Livrée'
+            WHERE id = ? AND payment_status IN ('À encaisser', 'Encaissé') AND status = 'Livrée'
           `).bind(receivedAt, reference, now, order.id),
         );
       }
