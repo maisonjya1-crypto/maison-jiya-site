@@ -51,6 +51,12 @@ type CmsSettings = {
   heroText: string;
   shippingNote: string;
   metaPixelId: string;
+  promoEnabled: boolean;
+  promoBadge: string;
+  promoTitle: string;
+  promoText: string;
+  promoCtaLabel: string;
+  promoOfferId: number;
   contactWhatsapp: string;
   defaultBusinessWhatsapp: string;
   contactUsesDefault: boolean;
@@ -78,6 +84,12 @@ const emptyData: CmsData = {
     heroText: "",
     shippingNote: "",
     metaPixelId: "",
+    promoEnabled: false,
+    promoBadge: "OFFRE",
+    promoTitle: "",
+    promoText: "",
+    promoCtaLabel: "Voir l’offre",
+    promoOfferId: 0,
     contactWhatsapp: "",
     defaultBusinessWhatsapp: "",
     contactUsesDefault: true,
@@ -323,6 +335,12 @@ function IdentityPanel({ data, save, uploadMany, removeMedia }: {
         heroText: form.get("heroText"),
         shippingNote: form.get("shippingNote"),
         metaPixelId: form.get("metaPixelId"),
+        promoEnabled: form.get("promoEnabled") === "on",
+        promoBadge: form.get("promoBadge"),
+        promoTitle: form.get("promoTitle"),
+        promoText: form.get("promoText"),
+        promoCtaLabel: form.get("promoCtaLabel"),
+        promoOfferId: form.get("promoOfferId"),
         contactWhatsapp: form.get("contactWhatsapp"),
         useDefaultWhatsapp,
       });
@@ -355,8 +373,33 @@ function IdentityPanel({ data, save, uploadMany, removeMedia }: {
         </label>
       </div>
 
-      <label><span>Meta Pixel ID (optionnel)</span><input name="metaPixelId" inputMode="numeric" defaultValue={data.settings.metaPixelId} placeholder="Ex. 123456789…" disabled={!data.canEdit} /></label>
-      <button className="primary-button" type="submit" disabled={!data.canEdit || saving}>{saving ? "Enregistrement…" : "Enregistrer identité & contact"}</button>
+      <div className="storefront-cms-promo-box">
+        <div>
+          <span>Barre promotionnelle</span>
+          <h3>Mettre une offre en avant en haut de la boutique</h3>
+          <p>Tu écris librement le message : pack, -20 %, « 1+1=3 », remise, cadeau… Le bouton peut renvoyer vers une offre réelle déjà créée.</p>
+        </div>
+        <label className="storefront-cms-visible">
+          <input name="promoEnabled" type="checkbox" defaultChecked={data.settings.promoEnabled} disabled={!data.canEdit} />
+          <span>Afficher la barre promotionnelle</span>
+        </label>
+        <div className="storefront-cms-form-grid">
+          <label><span>Petit badge</span><input name="promoBadge" defaultValue={data.settings.promoBadge} placeholder="OFFRE, -20 %, PACK…" disabled={!data.canEdit} /></label>
+          <label><span>Titre</span><input name="promoTitle" defaultValue={data.settings.promoTitle} placeholder="Ex. 1+1=3 ce week-end" disabled={!data.canEdit} /></label>
+        </div>
+        <label><span>Texte libre</span><input name="promoText" defaultValue={data.settings.promoText} placeholder="Ex. Choisis 3 bracelets et paie le prix de 2." disabled={!data.canEdit} /></label>
+        <div className="storefront-cms-form-grid">
+          <label><span>Texte du bouton</span><input name="promoCtaLabel" defaultValue={data.settings.promoCtaLabel} placeholder="Voir l’offre" disabled={!data.canEdit} /></label>
+          <label><span>Offre liée au bouton (facultatif)</span><select name="promoOfferId" defaultValue={String(data.settings.promoOfferId || 0)} disabled={!data.canEdit}><option value="0">Catalogue / offres générales</option>{data.offers.map((offer) => <option key={offer.id} value={offer.id}>{offer.name}</option>)}</select></label>
+        </div>
+      </div>
+
+      <div className="storefront-cms-pixel-box">
+        <div><span>Meta Pixel</span><h3>{data.settings.metaPixelId ? "Pixel configuré" : "Pixel non configuré"}</h3><p>{data.settings.metaPixelId ? "Le site déclenche PageView, ViewContent, AddToCart, InitiateCheckout et Purchase après une commande enregistrée." : "Ajoute l’identifiant de ton Pixel Meta pour activer le suivi de la boutique."}</p></div>
+        <label><span>Meta Pixel ID (optionnel)</span><input name="metaPixelId" inputMode="numeric" defaultValue={data.settings.metaPixelId} placeholder="Ex. 123456789…" disabled={!data.canEdit} /></label>
+        <small>Purchase correspond à une commande COD enregistrée sur le site. L’encaissement réel reste géré séparément dans Maison Jiya.</small>
+      </div>
+      <button className="primary-button" type="submit" disabled={!data.canEdit || saving}>{saving ? "Enregistrement…" : "Enregistrer identité, promo & tracking"}</button>
     </form>
 
     <div className="storefront-cms-card storefront-cms-brand-media">
@@ -452,8 +495,8 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
         {product.media[0] ? <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={mediaUrl(product.media[0].id)} alt="" loading="lazy" decoding="async" />
-        </> : <span className="storefront-cms-product-placeholder">{publicCategory(product.category).slice(0, 1)}</span>}
-        <div><strong>{product.publicName || product.internalName}</strong><small>{product.productCode} · {publicCategory(product.category)}</small></div>
+        </> : <span className="storefront-cms-product-placeholder">!</span>}
+        <div><strong>{product.publicName || product.internalName}</strong><small>{product.productCode} · {publicCategory(product.category)}{!product.media.length ? " · photo manquante : masqué du site" : ""}</small></div>
       </div>
       <div className="storefront-cms-product-status"><span className={effectiveOut ? "out" : "in"}>{effectiveOut ? "Rupture" : "Disponible"}</span><strong>{money(product.publicPrice || product.internalPrice)}</strong><small>Stock réel : {product.stockQuantity}</small></div>
       <b>⌄</b>
