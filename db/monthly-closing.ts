@@ -13,8 +13,8 @@ import {
   type MonthlyClosingOrder,
 } from "../lib/monthly-closing";
 
-type SourceOrder = MonthlyClosingOrder & { fulfillmentType: string };
-type SourceExpense = MonthlyClosingExpense & { paymentStatus: string; account: string | null };
+type SourceOrder = MonthlyClosingOrder & { fulfillmentType: string; refundedAt: string | null };
+type SourceExpense = MonthlyClosingExpense & { paymentStatus: string; account: string | null; paidAt: string | null };
 type SourceCapital = MonthlyClosingCapital & { account: string | null };
 
 type TreasuryPurchaseRow = {
@@ -22,16 +22,13 @@ type TreasuryPurchaseRow = {
   paymentStatus: string;
   account: string | null;
   invoiceId: number | null;
+  paidAt: string | null;
 };
 
 type TreasurySupplierPaymentRow = {
   amount: number;
   account: string | null;
-};
-
-type ProductValueRow = {
-  purchasePrice: number;
-  stockQuantity: number;
+  paidAt: string;
 };
 
 type InventorySessionValueRow = {
@@ -72,7 +69,6 @@ async function monthlySourceRows(database: D1Database) {
     carrierSettlements,
     purchases,
     supplierPayments,
-    products,
   ] = await Promise.all([
     database.prepare(`
       SELECT
@@ -86,6 +82,7 @@ async function monthlySourceRows(database: D1Database) {
         fees,
         return_cost AS returnCost,
         paid_at AS paidAt,
+        refunded_at AS refundedAt,
         created_at AS createdAt,
         updated_at AS updatedAt
       FROM orders
@@ -96,7 +93,7 @@ async function monthlySourceRows(database: D1Database) {
       FROM order_status_history
     `).all<MonthlyClosingHistory>(),
     database.prepare(`
-      SELECT amount, expense_date AS expenseDate, payment_status AS paymentStatus, account
+      SELECT amount, expense_date AS expenseDate, payment_status AS paymentStatus, account, paid_at AS paidAt
       FROM expenses
     `).all<SourceExpense>(),
     database.prepare(`
@@ -125,18 +122,14 @@ async function monthlySourceRows(database: D1Database) {
             SELECT 1 FROM supplier_invoices WHERE supplier_invoices.purchase_ref = purchases.purchase_ref
           )
           THEN 1 ELSE NULL
-        END AS invoiceId
+        END AS invoiceId,
+        paid_at AS paidAt
       FROM purchases
     `).all<TreasuryPurchaseRow>(),
     database.prepare(`
-      SELECT amount, account
+      SELECT amount, account, paid_at AS paidAt
       FROM supplier_payments
     `).all<TreasurySupplierPaymentRow>(),
-    database.prepare(`
-      SELECT purchase_price AS purchasePrice, stock_quantity AS stockQuantity
-      FROM products
-      WHERE archived_at IS NULL
-    `).all<ProductValueRow>(),
   ]);
 
   return {
@@ -149,7 +142,6 @@ async function monthlySourceRows(database: D1Database) {
     carrierSettlements: carrierSettlements.results,
     purchases: purchases.results,
     supplierPayments: supplierPayments.results,
-    products: products.results,
   };
 }
 
@@ -180,8 +172,7 @@ export async function buildMonthlyClosingPreview(database: D1Database, monthKey:
     database.prepare(`
       SELECT close_date AS closeDate, actual_total AS actualTotal
       FROM daily_closings
-      WHERE close_date <= ?
-      ORDER BY close_date DESC, id DESC
+      WHERE close_date = ?
       LIMIT 1
     `).bind(bounds.end).first<DailyClosingValueRow>(),
     database.prepare(`
@@ -197,19 +188,33 @@ export async function buildMonthlyClosingPreview(database: D1Database, monthKey:
     ? `Inventaire ${latestInventory.sessionRef} · ${String(latestInventory.completedAt || "").slice(0, 10)}`
     : "Aucun inventaire clôturé pendant ce mois";
 
-  const currentTreasury = calculateTreasuryAccounts({
-    orders: rows.orders,
-    purchases: rows.purchases,
-    supplierPayments: rows.supplierPayments,
-    expenses: rows.expenses,
-    ads: rows.ads,
-    capital: rows.capital,
-    carrierSettlementAdjustment: rows.carrierSettlements.reduce((sum, settlement) => sum + Number(settlement.differenceAmount || 0), 0),
+  const historicalTreasury = calculateTreasuryAccounts({
+    orders: rows.orders
+      .filter((order) => businessDateKey(order.createdAt) <= bounds.end)
+      .map((order) => ({
+        ...order,
+        paymentStatus: order.paidAt && businessDateKey(order.paidAt) <= bounds.end ? "Encaissé" : "Non encaissé",
+        returnCost: order.refundedAt && businessDateKey(order.refundedAt) <= bounds.end ? order.returnCost : 0,
+      })),
+    purchases: rows.purchases.map((purchase) => ({
+      ...purchase,
+      paymentStatus: purchase.paidAt && businessDateKey(purchase.paidAt) <= bounds.end ? "Payé" : "À payer",
+    })),
+    supplierPayments: rows.supplierPayments.filter((payment) => businessDateKey(payment.paidAt) <= bounds.end),
+    expenses: rows.expenses.map((expense) => ({
+      ...expense,
+      paymentStatus: expense.paidAt && businessDateKey(expense.paidAt) <= bounds.end ? "Payé" : "À payer",
+    })),
+    ads: rows.ads.filter((ad) => businessDateKey(ad.performanceDate) <= bounds.end),
+    capital: rows.capital.filter((entry) => businessDateKey(entry.entryDate) <= bounds.end),
+    carrierSettlementAdjustment: rows.carrierSettlements
+      .filter((settlement) => businessDateKey(settlement.settlementDate) <= bounds.end)
+      .reduce((sum, settlement) => sum + Number(settlement.differenceAmount || 0), 0),
   });
-  const cashEnd = latestDailyClosing ? Number(latestDailyClosing.actualTotal || 0) : currentTreasury.total;
+  const cashEnd = latestDailyClosing ? Number(latestDailyClosing.actualTotal || 0) : historicalTreasury.total;
   const cashEndSource = latestDailyClosing
     ? `Clôture quotidienne ${latestDailyClosing.closeDate}`
-    : "Trésorerie calculée au moment de la clôture";
+    : `Trésorerie reconstruite avec les flux datés jusqu’au ${bounds.end}`;
 
   return buildMonthlyFinancialSnapshot({
     monthKey,
