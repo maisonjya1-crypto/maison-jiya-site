@@ -121,6 +121,18 @@ const categoryCopy: Record<StorefrontLanguage, Record<string, string>> = {
 
 const INITIAL_VISIBLE = 24;
 const itemKey = (item: Pick<CatalogItem, "kind" | "id">) => `${item.kind === "offer" ? "o" : "p"}:${item.id}`;
+
+function sanitizeStoredCart(value: unknown): Cart {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const clean: Cart = {};
+  for (const [key, rawQuantity] of Object.entries(value as Record<string, unknown>)) {
+    if (!/^[op]:\d+$/.test(key)) continue;
+    const quantity = Number(rawQuantity);
+    if (!Number.isInteger(quantity) || quantity <= 0) continue;
+    clean[key] = Math.min(20, quantity);
+  }
+  return clean;
+}
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("fr");
 const isBestSeller = (badge: string) => normalize(badge || "").replace(/[^a-z0-9]/g, "").includes("bestseller");
 
@@ -316,7 +328,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         const savedLang = localStorage.getItem("maison-jiya-language-v3");
         if (savedLang === "fr" || savedLang === "ar" || savedLang === "en") setLang(savedLang);
         const savedCart = localStorage.getItem("maison-jiya-cart-v3");
-        if (savedCart) setCart(JSON.parse(savedCart) as Cart);
+        if (savedCart) setCart(sanitizeStoredCart(JSON.parse(savedCart)));
       } catch { /* stockage facultatif */ }
       setPreferencesLoaded(true);
       const params = new URLSearchParams(window.location.search);
@@ -383,6 +395,25 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const weekly = (weeklyOffers.length ? weeklyOffers : products).slice(0, 8);
   const collectionCategories = (catalog?.categories || []).filter((item) => item !== "Packs & offres").slice(0, 6);
 
+  useEffect(() => {
+    if (!preferencesLoaded || !catalog) return;
+    const validItems = new Map(items.map((item) => [itemKey(item), item]));
+    setCart((current) => {
+      const next: Cart = {};
+      let changed = false;
+      for (const [key, quantity] of Object.entries(current)) {
+        const item = validItems.get(key);
+        if (!item || !item.available) {
+          changed = true;
+          continue;
+        }
+        next[key] = quantity;
+      }
+      if (!changed && Object.keys(next).length === Object.keys(current).length) return current;
+      return next;
+    });
+  }, [catalog, items, preferencesLoaded]);
+
   const cartLines = useMemo(() => Object.entries(cart).map(([key, quantity]) => {
     const item = items.find((candidate) => itemKey(candidate) === key);
     return item ? { key, item, quantity } : null;
@@ -406,7 +437,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
 
   function updateQuantity(key: string, quantity: number) {
     setCart((current) => {
-      if (quantity <= 0) {
+      if (!Number.isInteger(quantity) || quantity <= 0) {
         const next = { ...current };
         delete next[key];
         return next;
@@ -448,8 +479,8 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       setCart({});
       setCheckoutOpen(false);
       track("Lead", { value: orderTotal, currency: "MAD", content_name: "Commande COD", order_id: orderRef });
-    } catch {
-      setSubmitError(t.orderFailed);
+    } catch (error) {
+      setSubmitError(error instanceof Error && error.message ? error.message : t.orderFailed);
     } finally {
       setSubmitting(false);
     }
@@ -594,9 +625,9 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         <header><div><small>{brand}</small><h2>{t.orderTitle}</h2><p>{t.orderSubtitle}</p></div><button type="button" onClick={() => setCheckoutOpen(false)} aria-label={t.close}>×</button></header>
         <div className="storefront-v3-checkout-summary"><span>{itemCount} {t.products}</span><strong>{money(total, lang)}</strong></div>
         <form onSubmit={(event) => void submitOrder(event)}>
-          <label><span>{t.fullName} *</span><input name="customerName" autoComplete="name" required minLength={2} /></label>
-          <div className="storefront-v3-form-row"><label><span>{t.phone} *</span><input name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="06 12 34 56 78" required /></label><label><span>{t.city} *</span><input name="city" autoComplete="address-level2" required /></label></div>
-          <label><span>{t.address} *</span><textarea name="address" autoComplete="street-address" rows={3} minLength={5} required /></label>
+          <label><span>{t.fullName} *</span><input name="customerName" autoComplete="name" required minLength={2} maxLength={120} /></label>
+          <div className="storefront-v3-form-row"><label><span>{t.phone} *</span><input name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="06 12 34 56 78" required maxLength={40} /></label><label><span>{t.city} *</span><input name="city" autoComplete="address-level2" required maxLength={100} /></label></div>
+          <label><span>{t.address} *</span><textarea name="address" autoComplete="street-address" rows={3} minLength={5} maxLength={260} required /></label>
           <label><span>{t.note} ({t.optional})</span><textarea name="note" rows={2} maxLength={240} /></label>
           <label className="storefront-v3-honeypot" aria-hidden="true"><span>Website</span><input name="website" tabIndex={-1} autoComplete="off" /></label>
           {submitError && <p className="storefront-v3-submit-error" role="alert">{submitError}</p>}
