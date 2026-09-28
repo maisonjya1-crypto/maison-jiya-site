@@ -69,7 +69,7 @@ export type MonthlyFinancialSnapshot = {
   manualCapitalIn: number;
   manualCapitalOut: number;
   stockValueStart: number | null;
-  stockValueEnd: number;
+  stockValueEnd: number | null;
   stockValueSource: string;
   cashEnd: number;
   cashEndSource: string;
@@ -135,7 +135,7 @@ export function buildMonthlyFinancialSnapshot({
   capital: MonthlyClosingCapital[];
   carrierSettlements: MonthlyClosingCarrierSettlement[];
   stockValueStart: number | null;
-  stockValueEnd: number;
+  stockValueEnd: number | null;
   stockValueSource: string;
   cashEnd: number;
   cashEndSource: string;
@@ -197,7 +197,7 @@ export function buildMonthlyFinancialSnapshot({
     manualCapitalIn,
     manualCapitalOut,
     stockValueStart: stockValueStart === null ? null : roundMoney(stockValueStart),
-    stockValueEnd: roundMoney(stockValueEnd),
+    stockValueEnd: stockValueEnd === null ? null : roundMoney(stockValueEnd),
     stockValueSource: stockValueSource.slice(0, 160),
     cashEnd: roundMoney(cashEnd),
     cashEndSource: cashEndSource.slice(0, 160),
