@@ -270,7 +270,7 @@ export const monthlyClosings = sqliteTable(
     manualCapitalIn: integer("manual_capital_in").notNull().default(0),
     manualCapitalOut: integer("manual_capital_out").notNull().default(0),
     stockValueStart: integer("stock_value_start"),
-    stockValueEnd: integer("stock_value_end").notNull().default(0),
+    stockValueEnd: integer("stock_value_end"),
     stockValueSource: text("stock_value_source").notNull().default(""),
     cashEnd: integer("cash_end").notNull().default(0),
     cashEndSource: text("cash_end_source").notNull().default(""),
