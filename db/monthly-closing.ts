@@ -191,11 +191,18 @@ export async function buildMonthlyClosingPreview(database: D1Database, monthKey:
   const historicalTreasury = calculateTreasuryAccounts({
     orders: rows.orders
       .filter((order) => businessDateKey(order.createdAt) <= bounds.end)
-      .map((order) => ({
-        ...order,
-        paymentStatus: order.paidAt && businessDateKey(order.paidAt) <= bounds.end ? "Encaissé" : "Non encaissé",
-        returnCost: order.refundedAt && businessDateKey(order.refundedAt) <= bounds.end ? order.returnCost : 0,
-      })),
+      .map((order) => {
+        const refundedBeforeEnd = Boolean(order.refundedAt) && businessDateKey(order.refundedAt as string) <= bounds.end;
+        return {
+          ...order,
+          paymentStatus: refundedBeforeEnd
+            ? "Remboursé"
+            : order.paidAt && businessDateKey(order.paidAt) <= bounds.end
+              ? "Encaissé"
+              : "Non encaissé",
+          returnCost: refundedBeforeEnd ? order.returnCost : 0,
+        };
+      }),
     purchases: rows.purchases.map((purchase) => ({
       ...purchase,
       paymentStatus: purchase.paidAt && businessDateKey(purchase.paidAt) <= bounds.end ? "Payé" : "À payer",
