@@ -53,7 +53,10 @@ test("le catalogue public expose et affiche les blocs aux trois emplacements", a
   assert.match(loader, /imageUrl: mediaByOwner\.get/);
   assert.match(loader, /marketing:/);
   assert.match(types, /export type StorefrontMarketingSection/);
-  assert.match(client, /renderMarketingSections\("after_categories"\)/);
+  const approved = await readText("app/boutique/storefront-approved-design-enhancement.tsx");
+  assert.match(approved, /exactCategoryPromos/);
+  assert.match(approved, /data-placement="after_categories"/);
+  assert.doesNotMatch(client, /renderMarketingSections\("after_categories"\)/);
   assert.match(client, /renderMarketingSections\("before_catalogue"\)/);
   assert.match(client, /renderMarketingSections\("before_contact"\)/);
   assert.match(client, /openMarketingTarget/);
