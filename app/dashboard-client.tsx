@@ -4862,15 +4862,8 @@ function CarrierSettlementsPage({
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
 
-  useEffect(() => {
-    if (!carrier && carriers.length) setCarrier(carriers[0]);
-    if (carrier && !carriers.includes(carrier)) {
-      setCarrier(carriers[0] || "");
-      setSelectedIds([]);
-    }
-  }, [carrier, carriers]);
-
-  const carrierOrders = eligibleOrders.filter((order) => order.carrier === carrier);
+  const effectiveCarrier = carriers.includes(carrier) ? carrier : carriers[0] || "";
+  const carrierOrders = eligibleOrders.filter((order) => order.carrier === effectiveCarrier);
   const selectedOrders = carrierOrders.filter((order) => selectedIds.includes(order.id));
   const expectedAmount = selectedOrders.reduce((sum, order) => sum + Math.max(0, order.saleAmount - order.shippingCost - order.fees), 0);
   const parsedActual = Math.max(0, Number(actualAmount.replace(",", ".")) || 0);
@@ -4901,7 +4894,7 @@ function CarrierSettlementsPage({
     event.preventDefault();
     const form = event.currentTarget;
     if (saving || !data.access.canEdit) return;
-    if (!carrier || !selectedIds.length) {
+    if (!effectiveCarrier || !selectedIds.length) {
       setFormError("Sélectionnez un transporteur et au moins une commande.");
       return;
     }
@@ -4915,7 +4908,7 @@ function CarrierSettlementsPage({
       const values = Object.fromEntries(new FormData(form));
       await submit("addCarrierSettlement", {
         ...values,
-        carrier,
+        carrier: effectiveCarrier,
         actualAmount: String(parsedActual),
         orderIdsJson: JSON.stringify(selectedIds),
       });
@@ -4950,13 +4943,13 @@ function CarrierSettlementsPage({
       </section>
 
       <section className="panel carrier-reconcile-panel">
-        <PanelHead kicker="Nouveau rapprochement" title="Associer un virement aux commandes livrées" total={carrier ? carrier : "Aucun transporteur"} />
+        <PanelHead kicker="Nouveau rapprochement" title="Associer un virement aux commandes livrées" total={effectiveCarrier || "Aucun transporteur"} />
         {carriers.length ? (
           <form onSubmit={saveSettlement}>
             <div className="carrier-settlement-form-head">
               <label className="field">
                 <span>Transporteur *</span>
-                <select value={carrier} onChange={(event) => chooseCarrier(event.target.value)}>
+                <select value={effectiveCarrier} onChange={(event) => chooseCarrier(event.target.value)}>
                   {carriers.map((name) => <option key={name}>{name}</option>)}
                 </select>
               </label>
