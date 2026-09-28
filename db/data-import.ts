@@ -649,11 +649,12 @@ function valueFor(row: ImportRow, column: string, spec: TableSpec, allowedUserId
   return value;
 }
 
-function insertStatement(database: D1Database, exportKey: string, row: ImportRow, allowedUserIds: Set<number>) {
+function insertStatement(database: D1Database, exportKey: string, row: ImportRow, allowedUserIds: Set<number>, columnsOverride?: string[]) {
   const spec = TABLE_SPECS[exportKey];
-  const values = spec.columns.map((column) => valueFor(row, column, spec, allowedUserIds));
-  const placeholders = spec.columns.map(() => "?").join(", ");
-  return database.prepare(`INSERT INTO ${spec.table} (${spec.columns.join(", ")}) VALUES (${placeholders})`).bind(...values);
+  const columns = columnsOverride || spec.columns;
+  const values = columns.map((column) => valueFor(row, column, spec, allowedUserIds));
+  const placeholders = columns.map(() => "?").join(", ");
+  return database.prepare(`INSERT INTO ${spec.table} (${columns.join(", ")}) VALUES (${placeholders})`).bind(...values);
 }
 
 function settingsRows(tables: Record<string, ImportRow[]>) {
@@ -670,6 +671,17 @@ export function previewPortableDataImport(raw: string): PortableImportSummary {
 export async function restorePortableDataImport(database: D1Database, raw: string): Promise<PortableImportSummary> {
   const { data, summary } = parsePortableExport(raw);
   await ensureStorefrontCms(database);
+
+  const recurringTable = await database.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recurring_expenses' LIMIT 1",
+  ).first<{ name: string }>();
+  const hasRecurringExpensesTable = Boolean(recurringTable?.name);
+  const expenseColumns = (await database.prepare("PRAGMA table_info(expenses)").all<{ name: string }>()).results;
+  const expenseColumnNames = new Set(expenseColumns.map((row) => row.name));
+  const supportsRecurringExpenseLinks = expenseColumnNames.has("recurring_expense_id") && expenseColumnNames.has("recurring_period");
+  if (!hasRecurringExpensesTable && rowsFor(data.tables, "charges_recurrentes").length > 0) {
+    throw new Error("Cet export contient des charges récurrentes mais la base cible doit d’abord être mise à jour.");
+  }
 
   // Filet de sécurité persistant : cette copie est créée avant toute suppression.
   await createDailyBackup(database, "Avant import d’un export portable", true);
@@ -702,7 +714,7 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
     database.prepare("DELETE FROM purchases"),
     database.prepare("DELETE FROM suppliers"),
     database.prepare("DELETE FROM expenses"),
-    database.prepare("DELETE FROM recurring_expenses"),
+    ...(hasRecurringExpensesTable ? [database.prepare("DELETE FROM recurring_expenses")] : []),
     database.prepare("DELETE FROM ad_performance"),
     database.prepare("DELETE FROM products"),
     database.prepare("DELETE FROM audit_logs"),
@@ -754,8 +766,12 @@ export async function restorePortableDataImport(database: D1Database, raw: strin
   ] as const;
 
   for (const exportKey of orderedKeys) {
+    if (exportKey === "charges_recurrentes" && !hasRecurringExpensesTable) continue;
     const rows = exportKey === "parametres" ? settingsRows(data.tables) : rowsFor(data.tables, exportKey);
-    for (const row of rows) statements.push(insertStatement(database, exportKey, row, allowedUserIds));
+    const columnsOverride = exportKey === "depenses" && !supportsRecurringExpenseLinks
+      ? TABLE_SPECS.depenses.columns.filter((column) => !["recurring_expense_id", "recurring_period"].includes(column))
+      : undefined;
+    for (const row of rows) statements.push(insertStatement(database, exportKey, row, allowedUserIds, columnsOverride));
   }
 
   await database.batch(statements);
