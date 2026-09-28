@@ -1,0 +1,46 @@
+/* Correctif final galerie produit : neutralise les anciennes règles génériques de boutons. */
+.storefront-approved-design .storefront-v3-product-info .storefront-v3-product-title-button{
+  width:auto!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+  color:#111!important;
+  box-shadow:none!important;
+  font:inherit!important;
+  line-height:inherit!important;
+  text-align:inherit!important;
+}
+.storefront-approved-design .storefront-v3-product-info .storefront-v3-product-title-button:hover{
+  background:transparent!important;
+  color:#111!important;
+  text-decoration:underline!important;
+  text-underline-offset:3px!important;
+}
+.storefront-approved-design .storefront-v3-product-info .storefront-v3-view-product{
+  width:100%!important;
+  min-height:40px!important;
+  margin-top:10px!important;
+  border:1px solid #111!important;
+  background:#fff!important;
+  color:#111!important;
+  box-shadow:none!important;
+}
+.storefront-approved-design .storefront-v3-product-info .storefront-v3-view-product:hover{
+  background:#f4f1ee!important;
+  color:#111!important;
+}
+.storefront-approved-design .storefront-v3-product-info .storefront-v3-add-product{
+  width:100%!important;
+  min-height:40px!important;
+  margin-top:7px!important;
+  border:1px solid #111!important;
+  background:#111!important;
+  color:#fff!important;
+}
+.storefront-approved-design .storefront-v3-product-info .storefront-v3-add-product:disabled{
+  border-color:#b9b2b9!important;
+  background:#b9b2b9!important;
+  color:#fff!important;
+}

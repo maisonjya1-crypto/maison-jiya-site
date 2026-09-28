@@ -39,3 +39,23 @@ test("la galerie conserve l'ajout panier et reste responsive", () => {
   assert.match(styles, /storefront-v3-product-thumbnails/);
   assert.match(styles, /@media\(max-width:760px\)/);
 });
+
+
+test("le correctif final garde le titre lisible et sépare Voir du bouton panier", async () => {
+  const layout = await readFile(new URL("../app/boutique/layout.tsx", import.meta.url), "utf8");
+  const hotfix = await readFile(new URL("../app/boutique/storefront-gallery-hotfix.css", import.meta.url), "utf8");
+
+  assert.match(layout, /import "\.\/storefront-gallery-hotfix\.css";/);
+  assert.ok(
+    layout.indexOf('import "./storefront-gallery-hotfix.css";') > layout.indexOf('import "./storefront-entrance.css";'),
+    "Le correctif galerie doit être chargé en dernier."
+  );
+  assert.match(hotfix, /storefront-v3-product-title-button/);
+  assert.match(hotfix, /background:transparent!important/);
+  assert.match(hotfix, /storefront-v3-view-product/);
+  assert.match(hotfix, /background:#fff!important/);
+  assert.match(hotfix, /color:#111!important/);
+  assert.match(hotfix, /storefront-v3-add-product/);
+  assert.match(hotfix, /background:#111!important/);
+  assert.match(hotfix, /color:#fff!important/);
+});
