@@ -42,11 +42,12 @@ test("API et interface permettent créer modifier suspendre et réactiver", asyn
 });
 
 test("les charges récurrentes suivent sauvegarde export import et Google Sheets", async () => {
-  const [backup, exportSource, importSource, sheets] = await Promise.all([
+  const [backup, exportSource, importSource, sheets, sheetsRoute] = await Promise.all([
     read("db/backups.ts"),
     read("db/data-export.ts"),
     read("db/data-import.ts"),
     read("db/google-sheets-sync.ts"),
+    read("app/api/backup/google-sheets/route.ts"),
   ]);
   assert.match(backup, /recurringExpenses/);
   assert.match(backup, /recurring_expenses/);
@@ -54,4 +55,6 @@ test("les charges récurrentes suivent sauvegarde export import et Google Sheets
   assert.match(importSource, /charges_recurrentes/);
   assert.match(importSource, /recurring_expense_id/);
   assert.match(sheets, /"recurring_expenses"/);
+  assert.match(sheetsRoute, /"recurring-expenses"/);
+  assert.match(sheetsRoute, /recurringExpenses/);
 });
