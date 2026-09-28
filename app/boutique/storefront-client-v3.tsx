@@ -480,8 +480,6 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       })}</div>
     </section>}
 
-    {renderMarketingSections("after_categories")}
-
     {offers.length > 0 && <section className="storefront-v3-section storefront-v3-packs">
       <header className="storefront-v3-section-head"><div><small>{t.packsKicker}</small><h2>{t.packs}</h2></div></header>
       <div className="storefront-v3-grid packs">{offers.slice(0, 6).map((item) => <ProductCard key={`pack-${item.id}`} item={item} lang={lang} t={t} add={add} />)}</div>
