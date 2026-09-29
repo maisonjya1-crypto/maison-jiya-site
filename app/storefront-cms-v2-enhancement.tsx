@@ -122,28 +122,84 @@ const mediaUrl = (id: number) => `/api/storefront/media/${id}`;
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("fr");
 const publicCategory = (category: string) => ["Wallet", "Wallets", "Portefeuille", "Portefeuilles"].includes(category) ? "Portefeuilles" : category;
 
+async function encodeCanvas(canvas: HTMLCanvasElement, mimeType: "image/webp" | "image/jpeg", quality: number) {
+  return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mimeType, quality));
+}
+
 async function canvasBlob(canvas: HTMLCanvasElement, quality: number) {
-  return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", quality));
+  const webp = await encodeCanvas(canvas, "image/webp", quality);
+  if (webp?.type === "image/webp") return webp;
+  return encodeCanvas(canvas, "image/jpeg", quality);
+}
+
+async function loadImageForCanvas(file: File) {
+  if (typeof createImageBitmap === "function") {
+    try {
+      const bitmap = await createImageBitmap(file);
+      if (bitmap.width > 0 && bitmap.height > 0) {
+        return {
+          source: bitmap as CanvasImageSource,
+          width: bitmap.width,
+          height: bitmap.height,
+          release: () => bitmap.close(),
+        };
+      }
+      bitmap.close();
+    } catch {
+      // Safari/iOS peut refuser createImageBitmap pour certaines photos locales.
+    }
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  const image = new Image();
+  image.decoding = "async";
+  try {
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("Décodage image impossible"));
+      image.src = objectUrl;
+    });
+    if (!image.naturalWidth || !image.naturalHeight) throw new Error("Dimensions d’image invalides");
+    return {
+      source: image as CanvasImageSource,
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      release: () => URL.revokeObjectURL(objectUrl),
+    };
+  } catch {
+    URL.revokeObjectURL(objectUrl);
+    throw new Error("Cette photo ne peut pas être lue sur ce téléphone. Essaie une autre photo ou une capture d’écran.");
+  }
 }
 
 async function compressImage(file: File, kind: UploadKind) {
-  if (!file.type.match(/^image\/(jpeg|png|webp)$/)) throw new Error("Choisis une image JPG, PNG ou WebP.");
-  const bitmap = await createImageBitmap(file);
+  if (!file || file.size <= 0) throw new Error("Choisis une photo.");
+  if (file.type && !file.type.startsWith("image/")) throw new Error("Choisis un fichier image.");
+  if (file.size > 30_000_000) throw new Error("Cette photo est trop lourde. Choisis une photo de moins de 30 Mo.");
+
+  const image = await loadImageForCanvas(file);
   const limits = kind === "gallery"
     ? { maxSide: 1000, targetBytes: 420_000, maxBytes: 650_000 }
     : kind === "logo"
       ? { maxSide: 800, targetBytes: 260_000, maxBytes: 450_000 }
       : { maxSide: 1600, targetBytes: 600_000, maxBytes: 850_000 };
-  const scale = Math.min(1, limits.maxSide / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const scale = Math.min(1, limits.maxSide / Math.max(image.width, image.height));
+  const width = Math.max(1, Math.round(image.width * scale));
+  const height = Math.max(1, Math.round(image.height * scale));
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d");
-  if (!context) throw new Error("Impossible de préparer cette image.");
-  context.drawImage(bitmap, 0, 0, width, height);
-  bitmap.close();
+  if (!context) {
+    image.release();
+    throw new Error("Impossible de préparer cette image.");
+  }
+
+  try {
+    context.drawImage(image.source, 0, 0, width, height);
+  } finally {
+    image.release();
+  }
 
   let lastBlob: Blob | null = null;
   for (const quality of [0.78, 0.68, 0.58, 0.48, 0.4]) {
@@ -151,7 +207,10 @@ async function compressImage(file: File, kind: UploadKind) {
     if (lastBlob && lastBlob.size <= limits.targetBytes) break;
   }
   if (!lastBlob || lastBlob.size > limits.maxBytes) throw new Error("Cette photo reste trop lourde après compression.");
-  return new File([lastBlob], file.name.replace(/\.[^.]+$/, "") + ".webp", { type: "image/webp" });
+
+  const extension = lastBlob.type === "image/webp" ? "webp" : "jpg";
+  const baseName = file.name ? file.name.replace(/\.[^.]+$/, "") : "photo";
+  return new File([lastBlob], `${baseName}.${extension}`, { type: lastBlob.type || "image/jpeg" });
 }
 
 export default function StorefrontCmsV2Enhancement() {
@@ -461,7 +520,7 @@ function MediaSlot({ title, media, canEdit, onFiles, onRemove }: {
     </> : <span>Aucune image</span>}</div>
     <section>
       <strong>{title}</strong><small>JPG, PNG ou WebP</small>
-      {canEdit && <label className="storefront-cms-upload">Choisir une photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void onFiles(event.target.files)} /></label>}
+      {canEdit && <label className="storefront-cms-upload">Choisir une photo<input type="file" accept="image/*" onChange={(event) => { const files = event.currentTarget.files; void onFiles(files); event.currentTarget.value = ""; }} /></label>}
       {media && canEdit && <button type="button" onClick={() => void onRemove(media.id)}>Supprimer</button>}
     </section>
   </div>;
@@ -480,7 +539,7 @@ function GalleryEditor({ ownerType, ownerId, media, canEdit, uploadMany, removeM
   return <div className="storefront-cms-gallery">
     <div className="storefront-cms-gallery-head">
       <div><strong>{title}</strong><small>{media.length}/{MAX_GALLERY} photo(s) · la première est le visuel principal.</small></div>
-      {canEdit && remaining > 0 && <label className="storefront-cms-upload">＋ Ajouter des photos<input type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => void uploadMany(ownerType, ownerId, "gallery", event.target.files, remaining)} /></label>}
+      {canEdit && remaining > 0 && <label className="storefront-cms-upload">＋ Ajouter des photos<input type="file" multiple accept="image/*" onChange={(event) => { const files = event.currentTarget.files; void uploadMany(ownerType, ownerId, "gallery", files, remaining); event.currentTarget.value = ""; }} /></label>}
     </div>
     <div className="storefront-cms-gallery-grid">
       {media.map((item, index) => <figure key={item.id}>
@@ -667,7 +726,7 @@ function MarketingEditor({ section, canEdit, save, uploadMany, removeMedia, isNe
         <section>
           <strong>Visuel du bloc</strong>
           <small>Une seule image. Un nouveau fichier remplace automatiquement l’ancien.</small>
-          {canEdit && <label className="storefront-cms-upload">＋ {image ? "Remplacer l’image" : "Ajouter une image"}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void uploadMany("marketing", section.id, "gallery", event.target.files, 1)} /></label>}
+          {canEdit && <label className="storefront-cms-upload">＋ {image ? "Remplacer l’image" : "Ajouter une image"}<input type="file" accept="image/*" onChange={(event) => { const files = event.currentTarget.files; void uploadMany("marketing", section.id, "gallery", files, 1); event.currentTarget.value = ""; }} /></label>}
           {canEdit && image && <button className="danger-text-button" type="button" onClick={() => void removeMedia(image.id)}>Supprimer l’image</button>}
         </section>
       </div> : <div className="storefront-cms-public-category-note">Crée d’abord le bloc. Ensuite tu pourras lui ajouter son image.</div>}
