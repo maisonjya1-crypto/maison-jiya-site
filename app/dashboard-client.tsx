@@ -1332,6 +1332,7 @@ export default function DashboardClient() {
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
       {inventorySelection && <InventoryCountModal product={inventorySelection} close={() => setInventorySelection(null)} submit={submit} />}
       {printOrder && <PrintOrderSheet order={printOrder} />}
+      <BlockCalculatorLayer active={active} />
     </main>
   );
 }
@@ -3011,6 +3012,251 @@ function PanelHead({ kicker, title, action, onClick, total }: { kicker: string; 
       </div>
       {action ? <button onClick={onClick}>{action}</button> : <span className="panel-total">{total}</span>}
     </div>
+  );
+}
+
+type CalculatorOperator = "+" | "-" | "×" | "÷";
+
+function formatCalculatorValue(value: number) {
+  if (!Number.isFinite(value)) return "Erreur";
+  const normalized = Math.abs(value) < 1e-12 ? 0 : value;
+  return Number(normalized.toFixed(8)).toLocaleString("fr-FR", {
+    useGrouping: false,
+    maximumFractionDigits: 8,
+  });
+}
+
+function BlockCalculatorLayer({ active }: { active: string }) {
+  const [open, setOpen] = useState(false);
+  const [contextLabel, setContextLabel] = useState(active);
+  const [display, setDisplay] = useState("0");
+  const [storedValue, setStoredValue] = useState<number | null>(null);
+  const [operator, setOperator] = useState<CalculatorOperator | null>(null);
+  const [waitingForOperand, setWaitingForOperand] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const currentValue = () => Number(display.replace(",", "."));
+
+  const resetCalculator = useCallback(() => {
+    setDisplay("0");
+    setStoredValue(null);
+    setOperator(null);
+    setWaitingForOperand(false);
+    setCopied(false);
+  }, []);
+
+  const applyOperation = useCallback((left: number, right: number, selected: CalculatorOperator) => {
+    if (selected === "+") return left + right;
+    if (selected === "-") return left - right;
+    if (selected === "×") return left * right;
+    return right === 0 ? Number.NaN : left / right;
+  }, []);
+
+  const inputDigit = useCallback((digit: string) => {
+    setDisplay((current) => {
+      if (current === "Erreur" || waitingForOperand) return digit;
+      return current === "0" ? digit : current + digit;
+    });
+    if (waitingForOperand) setWaitingForOperand(false);
+    setCopied(false);
+  }, [waitingForOperand]);
+
+  const inputDecimal = useCallback(() => {
+    setDisplay((current) => {
+      if (current === "Erreur" || waitingForOperand) return "0,";
+      return current.includes(",") ? current : current + ",";
+    });
+    if (waitingForOperand) setWaitingForOperand(false);
+    setCopied(false);
+  }, [waitingForOperand]);
+
+  const chooseOperator = useCallback((next: CalculatorOperator) => {
+    const input = currentValue();
+    if (!Number.isFinite(input)) {
+      resetCalculator();
+      return;
+    }
+    if (storedValue === null) {
+      setStoredValue(input);
+    } else if (operator && !waitingForOperand) {
+      const result = applyOperation(storedValue, input, operator);
+      setDisplay(formatCalculatorValue(result));
+      setStoredValue(Number.isFinite(result) ? result : null);
+      if (!Number.isFinite(result)) {
+        setOperator(null);
+        setWaitingForOperand(true);
+        return;
+      }
+    }
+    setOperator(next);
+    setWaitingForOperand(true);
+    setCopied(false);
+  }, [applyOperation, operator, resetCalculator, storedValue, waitingForOperand]);
+
+  const equals = useCallback(() => {
+    if (storedValue === null || !operator) return;
+    const input = currentValue();
+    if (!Number.isFinite(input)) return;
+    const result = applyOperation(storedValue, input, operator);
+    setDisplay(formatCalculatorValue(result));
+    setStoredValue(null);
+    setOperator(null);
+    setWaitingForOperand(true);
+    setCopied(false);
+  }, [applyOperation, operator, storedValue]);
+
+  const toggleSign = useCallback(() => {
+    const input = currentValue();
+    if (!Number.isFinite(input)) return;
+    setDisplay(formatCalculatorValue(-input));
+    setCopied(false);
+  }, [display]);
+
+  const percent = useCallback(() => {
+    const input = currentValue();
+    if (!Number.isFinite(input)) return;
+    setDisplay(formatCalculatorValue(input / 100));
+    setCopied(false);
+  }, [display]);
+
+  const copyResult = useCallback(async () => {
+    if (display === "Erreur") return;
+    try {
+      await navigator.clipboard.writeText(display.replace(",", "."));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
+  }, [display]);
+
+  useEffect(() => {
+    const root = document.querySelector<HTMLElement>(".workspace");
+    if (!root) return;
+
+    const selector = [
+      ".panel",
+      ".hero-card",
+      ".reinvest-card",
+      ".kpi-grid > article",
+      ".product-card",
+      ".inventory-product-grid > article",
+      ".inventory-never-grid > article",
+      ".mobile-order-card",
+    ].join(",");
+
+    const decorate = () => {
+      root.querySelectorAll<HTMLElement>(selector).forEach((host) => {
+        if (host.dataset.calculatorReady === "true") return;
+        host.dataset.calculatorReady = "true";
+        host.classList.add("block-calculator-host");
+        const trigger = document.createElement("button");
+        trigger.type = "button";
+        trigger.className = "block-calculator-trigger";
+        trigger.textContent = "123";
+        trigger.title = "Ouvrir la calculatrice";
+        trigger.setAttribute("aria-label", "Ouvrir la calculatrice pour ce bloc");
+        host.appendChild(trigger);
+      });
+    };
+
+    decorate();
+    const observer = new MutationObserver(decorate);
+    observer.observe(root, { childList: true, subtree: true });
+
+    const onCalculatorClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const trigger = target?.closest<HTMLButtonElement>(".block-calculator-trigger");
+      if (!trigger || !root.contains(trigger)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const host = trigger.parentElement;
+      const label = host?.querySelector<HTMLElement>("h2, h3, .card-kicker, strong, p")?.textContent?.trim();
+      setContextLabel((label || active).slice(0, 90));
+      resetCalculator();
+      setOpen(true);
+    };
+
+    root.addEventListener("click", onCalculatorClick, true);
+    return () => {
+      observer.disconnect();
+      root.removeEventListener("click", onCalculatorClick, true);
+      root.querySelectorAll(".block-calculator-trigger").forEach((node) => node.remove());
+      root.querySelectorAll<HTMLElement>("[data-calculator-ready='true']").forEach((host) => {
+        delete host.dataset.calculatorReady;
+        host.classList.remove("block-calculator-host");
+      });
+    };
+  }, [active, resetCalculator]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        return;
+      }
+      if (/^[0-9]$/.test(event.key)) inputDigit(event.key);
+      else if (event.key === "." || event.key === ",") inputDecimal();
+      else if (event.key === "+") chooseOperator("+");
+      else if (event.key === "-") chooseOperator("-");
+      else if (event.key === "*") chooseOperator("×");
+      else if (event.key === "/") chooseOperator("÷");
+      else if (event.key === "Enter" || event.key === "=") equals();
+      else if (event.key === "%") percent();
+      else return;
+      event.preventDefault();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [chooseOperator, equals, inputDecimal, inputDigit, open, percent]);
+
+  if (!open || typeof document === "undefined") return null;
+
+  const key = (label: string, onClick: () => void, className = "") => (
+    <button type="button" className={className} onClick={onClick}>{label}</button>
+  );
+
+  return createPortal(
+    <aside className="block-calculator-popover" role="dialog" aria-modal="false" aria-label="Calculatrice Maison Jiya">
+      <div className="block-calculator-head">
+        <div>
+          <span>Calculatrice</span>
+          <strong>{contextLabel}</strong>
+        </div>
+        <button type="button" onClick={() => setOpen(false)} aria-label="Fermer la calculatrice">×</button>
+      </div>
+      <div className="block-calculator-display" aria-live="polite">
+        <small>{storedValue !== null && operator ? `${formatCalculatorValue(storedValue)} ${operator}` : "MAD · quantités · marges"}</small>
+        <strong>{display}</strong>
+      </div>
+      <div className="block-calculator-grid">
+        {key("C", resetCalculator, "utility")}
+        {key("±", toggleSign, "utility")}
+        {key("%", percent, "utility")}
+        {key("÷", () => chooseOperator("÷"), "operator")}
+        {key("7", () => inputDigit("7"))}
+        {key("8", () => inputDigit("8"))}
+        {key("9", () => inputDigit("9"))}
+        {key("×", () => chooseOperator("×"), "operator")}
+        {key("4", () => inputDigit("4"))}
+        {key("5", () => inputDigit("5"))}
+        {key("6", () => inputDigit("6"))}
+        {key("-", () => chooseOperator("-"), "operator")}
+        {key("1", () => inputDigit("1"))}
+        {key("2", () => inputDigit("2"))}
+        {key("3", () => inputDigit("3"))}
+        {key("+", () => chooseOperator("+"), "operator")}
+        {key("0", () => inputDigit("0"), "zero")}
+        {key(",", inputDecimal)}
+        {key("=", equals, "equals")}
+      </div>
+      <div className="block-calculator-foot">
+        <span>Ne modifie aucune donnée du logiciel.</span>
+        <button type="button" onClick={() => void copyResult()}>{copied ? "Copié ✓" : "Copier le résultat"}</button>
+      </div>
+    </aside>,
+    document.body,
   );
 }
 function OrderActions({ order, onEdit, onPrint, onDelete }: { order: Order; onEdit: (o: Order) => void; onPrint: (o: Order) => void; onDelete: (o: Order) => void }) {

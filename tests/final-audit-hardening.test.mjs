@@ -95,3 +95,17 @@ test("la version Meta reste définie dans Wrangler sans exposer les secrets", as
   assert.doesNotMatch(wrangler, /META_ACCESS_TOKEN/);
   assert.doesNotMatch(wrangler, /META_AD_ACCOUNT_ID/);
 });
+
+
+test("la calculatrice contextuelle est disponible dans les blocs privés sans modifier les données", async () => {
+  const dashboard = await read("app/dashboard-client.tsx");
+  const styles = await read("app/globals.css");
+  assert.match(dashboard, /function BlockCalculatorLayer/);
+  assert.match(dashboard, /block-calculator-trigger/);
+  assert.match(dashboard, /MAD · quantités · marges/);
+  assert.match(dashboard, /Ne modifie aucune donnée du logiciel/);
+  assert.match(dashboard, /<BlockCalculatorLayer active={active} \/>/);
+  assert.match(styles, /\.block-calculator-popover/);
+  assert.match(styles, /\.block-calculator-grid/);
+  assert.match(styles, /\.block-calculator-trigger/);
+});
