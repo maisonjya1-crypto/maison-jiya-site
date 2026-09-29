@@ -87,3 +87,11 @@ test("un simple snapshot ne recalcule plus toutes les affectations de capital", 
   assert.doesNotMatch(snapshot, /reconcileOrderAllocations\(\)/);
   assert.match(route, /allocationSensitiveActions/);
 });
+
+
+test("la version Meta reste définie dans Wrangler sans exposer les secrets", async () => {
+  const wrangler = await read("wrangler.jsonc");
+  assert.match(wrangler, /"META_API_VERSION"\s*:\s*"v26\.0"/);
+  assert.doesNotMatch(wrangler, /META_ACCESS_TOKEN/);
+  assert.doesNotMatch(wrangler, /META_AD_ACCOUNT_ID/);
+});
