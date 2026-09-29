@@ -800,6 +800,23 @@ function parseCarrierNames(settings: Record<string, string>) {
     .filter((name, index, names) => name.length >= 2 && names.findIndex((item) => item.toLocaleLowerCase("fr") === name.toLocaleLowerCase("fr")) === index);
 }
 
+class ApiResponseFormatError extends Error {
+  constructor(public status: number, public contentType: string) {
+    super("Le serveur a renvoyé une réponse inattendue. Rechargez la page puis réessayez.");
+    this.name = "ApiResponseFormatError";
+  }
+}
+
+async function readApiJson<T>(response: Response): Promise<T> {
+  const contentType = response.headers.get("content-type") || "";
+  const raw = await response.text();
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new ApiResponseFormatError(response.status, contentType);
+  }
+}
+
 export default function DashboardClient() {
   const [active, setActive] = useState("Vue d’ensemble");
   const [data, setData] = useState<Data>(emptyData);
@@ -822,10 +839,10 @@ export default function DashboardClient() {
     setError("");
     try {
       const response = await fetch("/api/data");
-      const body = (await response.json()) as Data & { error?: string };
+      const body = await readApiJson<Data & { error?: string }>(response);
       if (response.status === 401) {
         const authResponse = await fetch("/api/auth", { cache: "no-store" });
-        const authBody = (await authResponse.json()) as { configured?: boolean; error?: string };
+        const authBody = await readApiJson<{ configured?: boolean; error?: string }>(authResponse);
         if (!authResponse.ok) throw new Error(authBody.error || "La connexion est momentanément indisponible.");
         setAuthConfigured(Boolean(authBody.configured));
         setAuthRequired(true);
@@ -871,6 +888,26 @@ export default function DashboardClient() {
       : `mj-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
     const retrySafe = retrySafeMutationActions.has(action);
 
+    const recoverCommittedInventoryCount = async (): Promise<{ response: Response; body: Data & { error?: string; message?: string; code?: string } } | null> => {
+      if (action !== "countInventorySessionProduct") return null;
+      const sessionId = Number(values.sessionId);
+      const productId = Number(values.productId);
+      if (!sessionId || !productId) return null;
+      try {
+        const refreshResponse = await fetch("/api/data", { cache: "no-store" });
+        const refreshBody = await readApiJson<Data & { error?: string; message?: string; code?: string }>(refreshResponse);
+        if (!refreshResponse.ok) return null;
+        const persisted = refreshBody.inventoryCounts.some((count) => count.sessionId === sessionId && count.productId === productId);
+        if (!persisted) return null;
+        return {
+          response: new Response(null, { status: 200 }),
+          body: { ...refreshBody, message: "Produit compté et stock contrôlé" },
+        };
+      } catch {
+        return null;
+      }
+    };
+
     const send = async (attempt = 0): Promise<{ response: Response; body: Data & { error?: string; message?: string; code?: string } }> => {
       try {
         const response = await fetch("/api/data", {
@@ -878,7 +915,7 @@ export default function DashboardClient() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ action, ...values, requestKey }),
         });
-        const body = (await response.json()) as Data & { error?: string; message?: string; code?: string };
+        const body = await readApiJson<Data & { error?: string; message?: string; code?: string }>(response);
         if (!response.ok && retrySafe && body.code === "MUTATION_IN_PROGRESS" && attempt < 3) {
           await new Promise((resolve) => setTimeout(resolve, 450 * (attempt + 1)));
           return send(attempt + 1);
@@ -889,6 +926,8 @@ export default function DashboardClient() {
           await new Promise((resolve) => setTimeout(resolve, 450 * (attempt + 1)));
           return send(attempt + 1);
         }
+        const recovered = await recoverCommittedInventoryCount();
+        if (recovered) return recovered;
         throw networkError;
       }
     };
@@ -3991,7 +4030,8 @@ function InventorySessionCountModal({ session, product, close, onSaved, submit }
             });
             if (onSaved) onSaved(); else close();
           } catch (error) {
-            setFormError(error instanceof Error ? error.message : "Comptage impossible.");
+            const message = error instanceof Error ? error.message : "Comptage impossible.";
+            setFormError(message.includes("Unexpected token") ? "Réponse serveur invalide. Rechargez la page puis réessayez." : message);
             setSaving(false);
           }
         }}>
