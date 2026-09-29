@@ -3963,7 +3963,7 @@ function ReorderingPage({
   );
 }
 
-function InventorySessionCountModal({ session, product, close, submit }: { session: InventorySession; product: Product; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function InventorySessionCountModal({ session, product, close, onSaved, submit }: { session: InventorySession; product: Product; close: () => void; onSaved?: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [physicalQuantity, setPhysicalQuantity] = useState(String(product.stockQuantity));
@@ -3989,7 +3989,7 @@ function InventorySessionCountModal({ session, product, close, submit }: { sessi
               expectedSystemQuantity: String(product.stockQuantity),
               ...Object.fromEntries(new FormData(event.currentTarget)),
             });
-            close();
+            if (onSaved) onSaved(); else close();
           } catch (error) {
             setFormError(error instanceof Error ? error.message : "Comptage impossible.");
             setSaving(false);
@@ -4016,6 +4016,8 @@ function InventorySessionCountModal({ session, product, close, submit }: { sessi
 
 function InventoryPage({ products, sessions, counts, canEdit, submit }: { products: Product[]; sessions: InventorySession[]; counts: InventoryCount[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
+  const [countQueue, setCountQueue] = useState<number[]>([]);
   const [search, setSearch] = useState("");
   const [starting, setStarting] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
@@ -4026,6 +4028,8 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
   const remaining = activeProducts.filter((product) => !countedIds.has(product.id));
   const normalizedSearch = search.trim().toLocaleLowerCase("fr");
   const visibleProducts = remaining.filter((product) => !normalizedSearch || `${product.productCode} ${product.name} ${product.category}`.toLocaleLowerCase("fr").includes(normalizedSearch));
+  const selectedRemainingProducts = remaining.filter((product) => selectedProductIds.includes(product.id));
+  const allVisibleSelected = visibleProducts.length > 0 && visibleProducts.every((product) => selectedProductIds.includes(product.id));
   const neverCounted = activeProducts.filter((product) => !counts.some((count) => count.productId === product.id));
   const frequent = activeProducts.map((product) => ({
     product,
@@ -4045,6 +4049,39 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
     if (!window.confirm(`Clôturer ${activeSession.sessionRef} ?\n\nLes corrections de stock déjà validées resteront définitives et le bilan sera figé.`)) return;
     setFinalizing(true);
     try { await submit("finalizeInventorySession", { sessionId: String(activeSession.id) }); } finally { setFinalizing(false); }
+  }
+
+  function toggleProductSelection(productId: number) {
+    setSelectedProductIds((current) => current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId]);
+  }
+
+  function toggleVisibleSelection() {
+    const visibleIds = visibleProducts.map((product) => product.id);
+    setSelectedProductIds((current) => {
+      if (allVisibleSelected) return current.filter((id) => !visibleIds.includes(id));
+      return Array.from(new Set([...current, ...visibleIds]));
+    });
+  }
+
+  function startSelectedCounting() {
+    if (!canEdit || !selectedRemainingProducts.length) return;
+    const [first, ...rest] = selectedRemainingProducts;
+    setCountQueue(rest.map((product) => product.id));
+    setSelectedProduct(first);
+  }
+
+  function handleCountSaved() {
+    if (!selectedProduct) return;
+    const completedId = selectedProduct.id;
+    setSelectedProductIds((current) => current.filter((id) => id !== completedId));
+    const [nextId, ...rest] = countQueue;
+    setCountQueue(rest);
+    setSelectedProduct(nextId ? activeProducts.find((product) => product.id === nextId) || null : null);
+  }
+
+  function closeCountModal() {
+    setSelectedProduct(null);
+    setCountQueue([]);
   }
 
   const currentValue = activeProducts.reduce((sum, product) => sum + product.stockQuantity * product.purchasePrice, 0);
@@ -4071,15 +4108,23 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
           </div>
           <div className="inventory-session-toolbar">
             <label><span>Rechercher un produit à compter</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="SKU, nom ou catégorie" /></label>
-            <button className="primary-button" type="button" disabled={!canEdit || activeSession.countedProductCount < activeSession.expectedProductCount || finalizing} onClick={() => void finalizeSession()}>{finalizing ? "Clôture…" : "Clôturer l’inventaire"}</button>
+            <div className="inventory-session-toolbar-actions">
+              <button className="secondary-button" type="button" disabled={!canEdit || !visibleProducts.length} onClick={toggleVisibleSelection}>{allVisibleSelected ? "Tout désélectionner" : "Sélectionner les visibles"}</button>
+              <button className="secondary-button inventory-bulk-count-button" type="button" disabled={!canEdit || !selectedRemainingProducts.length} onClick={startSelectedCounting}>Compter la sélection ({selectedRemainingProducts.length})</button>
+              <button className="primary-button" type="button" disabled={!canEdit || activeSession.countedProductCount < activeSession.expectedProductCount || finalizing} onClick={() => void finalizeSession()}>{finalizing ? "Clôture…" : "Clôturer l’inventaire"}</button>
+            </div>
           </div>
           {visibleProducts.length ? (
             <div className="inventory-product-grid">{visibleProducts.map((product) => (
-              <article key={product.id}>
+              <article key={product.id} className={selectedProductIds.includes(product.id) ? "selected" : undefined}>
+                <label className="inventory-product-select">
+                  <input type="checkbox" checked={selectedProductIds.includes(product.id)} disabled={!canEdit} onChange={() => toggleProductSelection(product.id)} />
+                  <span>Sélectionner</span>
+                </label>
                 <div><strong>{product.name}</strong><small>{product.productCode} · {product.category}</small></div>
                 <div><span>Stock système</span><strong>{product.stockQuantity}</strong></div>
                 <div><span>Valeur</span><strong>{money(product.stockQuantity * product.purchasePrice)}</strong></div>
-                <button type="button" className="secondary-button" disabled={!canEdit} onClick={() => setSelectedProduct(product)}>Compter</button>
+                <button type="button" className="secondary-button" disabled={!canEdit} onClick={() => { setCountQueue([]); setSelectedProduct(product); }}>Compter</button>
               </article>
             ))}</div>
           ) : remaining.length ? <EmptyState title="Aucun produit trouvé" text="Modifiez la recherche." /> : <div className="inventory-ready-to-close"><strong>✓ Tous les produits de la session sont comptés.</strong><p>Vous pouvez maintenant clôturer l’inventaire.</p></div>}
@@ -4114,7 +4159,7 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
         <PanelHead kicker="Historique" title="Sessions clôturées" total={String(sessions.filter((session) => session.status === "Clôturé").length)} />
         {latestClosed.length ? <div className="table-scroll"><table><thead><tr><th>Session</th><th>Date</th><th>Responsable</th><th>Produits</th><th>Unités système</th><th>Unités réelles</th><th>Valeur avant</th><th>Valeur après</th><th>Pertes</th></tr></thead><tbody>{latestClosed.map((session) => <tr key={session.id}><td><strong>{session.sessionRef}</strong></td><td>{session.completedAt ? dateTimeLabel(session.completedAt) : "—"}</td><td>{session.startedByName}</td><td>{session.countedProductCount}</td><td>{session.totalSystemUnits}</td><td>{session.totalPhysicalUnits}</td><td>{money(session.valueBefore)}</td><td>{money(session.valueAfter)}</td><td className={session.lossValue > 0 ? "money-negative" : ""}>{money(session.lossValue)}</td></tr>)}</tbody></table></div> : <EmptyState title="Aucun inventaire clôturé" text="Le premier bilan apparaîtra ici après la clôture d’une session." />}
       </section>
-      {activeSession && selectedProduct ? <InventorySessionCountModal session={activeSession} product={selectedProduct} close={() => setSelectedProduct(null)} submit={submit} /> : null}
+      {activeSession && selectedProduct ? <InventorySessionCountModal session={activeSession} product={selectedProduct} close={closeCountModal} onSaved={handleCountSaved} submit={submit} /> : null}
     </>
   );
 }
