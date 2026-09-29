@@ -4159,7 +4159,7 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
         <PanelHead kicker="Historique" title="Sessions clôturées" total={String(sessions.filter((session) => session.status === "Clôturé").length)} />
         {latestClosed.length ? <div className="table-scroll"><table><thead><tr><th>Session</th><th>Date</th><th>Responsable</th><th>Produits</th><th>Unités système</th><th>Unités réelles</th><th>Valeur avant</th><th>Valeur après</th><th>Pertes</th></tr></thead><tbody>{latestClosed.map((session) => <tr key={session.id}><td><strong>{session.sessionRef}</strong></td><td>{session.completedAt ? dateTimeLabel(session.completedAt) : "—"}</td><td>{session.startedByName}</td><td>{session.countedProductCount}</td><td>{session.totalSystemUnits}</td><td>{session.totalPhysicalUnits}</td><td>{money(session.valueBefore)}</td><td>{money(session.valueAfter)}</td><td className={session.lossValue > 0 ? "money-negative" : ""}>{money(session.lossValue)}</td></tr>)}</tbody></table></div> : <EmptyState title="Aucun inventaire clôturé" text="Le premier bilan apparaîtra ici après la clôture d’une session." />}
       </section>
-      {activeSession && selectedProduct ? <InventorySessionCountModal session={activeSession} product={selectedProduct} close={closeCountModal} onSaved={handleCountSaved} submit={submit} /> : null}
+      {activeSession && selectedProduct ? <InventorySessionCountModal key={selectedProduct.id} session={activeSession} product={selectedProduct} close={closeCountModal} onSaved={handleCountSaved} submit={submit} /> : null}
     </>
   );
 }
