@@ -102,8 +102,14 @@ test("l’interface inventaire expose progression, recherche, pertes, écarts fr
   assert.match(dashboard, /Pertes inventaire/);
   assert.match(dashboard, /Clôturer l’inventaire/);
   assert.match(dashboard, /SKU, nom ou catégorie/);
+  assert.match(dashboard, /Sélectionner les visibles/);
+  assert.match(dashboard, /Compter la sélection/);
+  assert.match(dashboard, /inventory-product-select/);
+  assert.match(dashboard, /onSaved={handleCountSaved}/);
   assert.match(styles, /inventory-session-progress/);
   assert.match(styles, /inventory-product-grid/);
+  assert.match(styles, /inventory-session-toolbar-actions/);
+  assert.match(styles, /inventory-product-grid article\.selected/);
   assert.match(exporter, /sessions_inventaire/);
   assert.match(importer, /sessions_inventaire/);
   assert.match(sheets, /inventory-sessions/);
