@@ -41,3 +41,15 @@ test("les onglets restent au-dessus du contenu du CMS", async () => {
   assert.match(css, /storefront-cms-v2 \.storefront-cms-tabs/);
   assert.match(css, /z-index:\s*20/);
 });
+
+
+test("l’upload photo mobile accepte le sélecteur natif et possède un fallback iPhone/Safari", async () => {
+  const source = await readText("app/storefront-cms-v2-enhancement.tsx");
+  assert.match(source, /accept="image\/\*"/);
+  assert.match(source, /typeof createImageBitmap === "function"/);
+  assert.match(source, /URL\.createObjectURL\(file\)/);
+  assert.match(source, /new Image\(\)/);
+  assert.match(source, /image\/jpeg/);
+  assert.match(source, /event\.currentTarget\.value = ""/);
+  assert.doesNotMatch(source, /file\.type\.match\(\/\^image\\\/\(jpeg\|png\|webp\)\$\//);
+});
