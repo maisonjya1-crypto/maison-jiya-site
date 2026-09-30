@@ -1,3 +1,4 @@
+// Maison Jiya release: storefront-tabs-static-v2
 const APP_URL = "/?source=mobile-app";
 const APP_ICON = "/jiya-gestion-192.png";
 

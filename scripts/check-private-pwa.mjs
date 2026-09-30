@@ -64,7 +64,7 @@ const pwaClient = await readText("app/private-pwa.tsx");
 assert.match(pwaClient, /navigator\.standalone|standalone/);
 assert.match(pwaClient, /MacIntel/);
 assert.match(pwaClient, /Installer sur iPhone/);
-assert.match(pwaClient, /private-sw\.js\?v=4/);
+assert.match(pwaClient, /private-sw\.js\?v=5/);
 assert.match(pwaClient, /MaisonJiyaAndroid\\\//);
 assert.match(pwaClient, /MaisonJiyaNative/);
 assert.match(pwaClient, /requestNotificationPermission/);

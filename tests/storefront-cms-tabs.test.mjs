@@ -36,10 +36,11 @@ test("le lien boutique depuis le logiciel force une navigation fraîche dans la 
   assert.match(source, /target="_blank"/);
 });
 
-test("les onglets restent au-dessus du contenu du CMS", async () => {
+test("les onglets restent dans le flux normal du CMS", async () => {
   const css = await readText("app/storefront-cms-v2.css");
   assert.match(css, /storefront-cms-v2 \.storefront-cms-tabs/);
-  assert.match(css, /z-index:\s*20/);
+  assert.match(css, /position:\s*static/);
+  assert.doesNotMatch(css, /storefront-cms-v2 \.storefront-cms-tabs\s*\{[^}]*z-index:\s*20/);
 });
 
 
@@ -167,4 +168,21 @@ test("les onglets du CMS mobile défilent avec la page", async () => {
   const styles = await readText("app/storefront-cms-v2.css");
   assert.match(styles, /storefront-cms-v2 \.storefront-cms-tabs[\s\S]*position:\s*static\s*!important/);
   assert.match(styles, /storefront-cms-v2 \.storefront-cms-tabs[\s\S]*top:\s*auto\s*!important/);
+});
+
+
+test("les onglets boutique ne peuvent plus redevenir sticky", async () => {
+  const baseStyles = await readText("app/storefront-cms.css");
+  const v2Styles = await readText("app/storefront-cms-v2.css");
+  const source = await readText("app/storefront-cms-v2-enhancement.tsx");
+
+  const baseBlock = baseStyles.match(/\.storefront-cms-tabs\s*\{([\s\S]*?)\}/)?.[1] || "";
+  assert.doesNotMatch(baseBlock, /position:\s*sticky/);
+  assert.match(baseBlock, /position:\s*static/);
+  assert.match(baseBlock, /top:\s*auto/);
+
+  const v2Block = v2Styles.match(/\.storefront-cms-v2 \.storefront-cms-tabs\s*\{([\s\S]*?)\}/)?.[1] || "";
+  assert.doesNotMatch(v2Block, /position:\s*sticky/);
+  assert.match(v2Block, /position:\s*static/);
+  assert.match(source, /style=\{\{ position: "static", top: "auto" \}\}/);
 });
