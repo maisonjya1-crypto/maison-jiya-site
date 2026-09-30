@@ -27,3 +27,11 @@ test("les familles principales gardent des IDs immédiatement reconnaissables", 
   assert.match(migration, /WHEN 27 THEN 'BX-BIJ-01'/); // Boite bijoux
   assert.match(migration, /WHEN 4 THEN 'E-AP3-01'/);    // AirPods Pro 3
 });
+
+
+test("la migration D1 reste compatible avec le déploiement Cloudflare distant", () => {
+  assert.doesNotMatch(migration, /BEGIN\s+TRANSACTION/i);
+  assert.doesNotMatch(migration, /\bCOMMIT\b/i);
+  assert.doesNotMatch(migration, /MJ-TMP-/);
+  assert.equal((migration.match(/UPDATE\s+products/gi) || []).length, 1);
+});

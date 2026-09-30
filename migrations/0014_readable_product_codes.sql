@@ -1,13 +1,7 @@
 -- Maison Jiya — IDs produit lisibles et courts.
 -- Seul products.product_code est modifie.
 -- Les IDs numeriques internes restent inchanges afin de conserver toutes les relations stock/commandes/achats/offres/photos.
-BEGIN TRANSACTION;
-
--- Etape temporaire pour garantir l'absence de collision avec l'index UNIQUE pendant le renommage.
-UPDATE products
-SET product_code = 'MJ-TMP-' || id || '-20260930'
-WHERE id BETWEEN 1 AND 88;
-
+-- Une seule requete UPDATE est utilisee afin de rester compatible avec les migrations Cloudflare D1 distantes.
 UPDATE products
 SET product_code = CASE id
     WHEN 1 THEN 'E-AP-01'
@@ -101,5 +95,3 @@ SET product_code = CASE id
     ELSE product_code
   END
 WHERE id BETWEEN 1 AND 88;
-
-COMMIT;
