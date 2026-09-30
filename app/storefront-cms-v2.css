@@ -262,3 +262,74 @@
 @media (max-width: 760px) {
   .storefront-cms-marketing-image { grid-template-columns: 1fr; }
 }
+
+
+/* Mobile CMS: upload rapide et défilement tactile fluide */
+.storefront-cms-v2 {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: manipulation;
+}
+.storefront-cms-v2 .storefront-cms-product form,
+.storefront-cms-v2 .storefront-cms-gallery,
+.storefront-cms-v2 .storefront-cms-gallery-grid {
+  touch-action: pan-y;
+}
+.storefront-cms-v2 .storefront-cms-upload {
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.storefront-cms-v2 .storefront-cms-upload input {
+  width: 1px !important;
+  height: 1px !important;
+  inset: auto !important;
+  opacity: 0 !important;
+  pointer-events: none;
+}
+.storefront-cms-upload-progress {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: calc(100vw - 32px);
+  padding: 11px 14px;
+  border: 1px solid rgba(111, 86, 128, .18);
+  border-radius: 999px;
+  background: rgba(255,255,255,.96);
+  color: #4d3d53;
+  box-shadow: 0 12px 34px rgba(45,31,52,.16);
+  font-size: 12px;
+  font-weight: 800;
+}
+.storefront-cms-upload-spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border: 2px solid rgba(111,86,128,.2);
+  border-top-color: #6f5680;
+  border-radius: 999px;
+  animation: storefront-cms-upload-spin .7s linear infinite;
+}
+@keyframes storefront-cms-upload-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 760px) {
+  .storefront-cms-v2 .storefront-cms-tabs {
+    overflow-x: visible;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .storefront-cms-v2 .storefront-cms-tabs button {
+    flex: 1 1 calc(50% - 6px);
+    justify-content: center;
+    min-width: 0;
+  }
+  .storefront-cms-v2 .storefront-cms-product > summary,
+  .storefront-cms-v2 .storefront-cms-product form,
+  .storefront-cms-v2 .storefront-cms-gallery {
+    touch-action: pan-y;
+  }
+}
