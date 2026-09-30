@@ -36,10 +36,11 @@ test("le lien boutique depuis le logiciel force une navigation fraîche dans la 
   assert.match(source, /target="_blank"/);
 });
 
-test("les onglets restent au-dessus du contenu du CMS", async () => {
+test("les onglets restent dans le flux normal du CMS", async () => {
   const css = await readText("app/storefront-cms-v2.css");
   assert.match(css, /storefront-cms-v2 \.storefront-cms-tabs/);
-  assert.match(css, /z-index:\s*20/);
+  assert.match(css, /position:\s*static/);
+  assert.doesNotMatch(css, /storefront-cms-v2 \.storefront-cms-tabs\s*\{[^}]*z-index:\s*20/);
 });
 
 
