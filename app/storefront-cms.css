@@ -63,9 +63,9 @@
   border: 1px solid var(--line, #ded5e2);
   border-radius: 15px;
   background: var(--surface, #fff);
-  position: sticky;
-  top: -24px;
-  z-index: 4;
+  position: static;
+  top: auto;
+  z-index: auto;
   margin-bottom: 18px;
 }
 .storefront-cms-tabs button { border-color: transparent; background: transparent; display: flex; align-items: center; gap: 8px; }
@@ -212,7 +212,7 @@
   .storefront-cms-save-row,
   .storefront-cms-offer-intro { align-items: stretch; flex-direction: column; }
   .storefront-cms-topbar > div:last-child { flex-wrap: wrap; }
-  .storefront-cms-tabs { overflow-x: auto; top: -14px; }
+  .storefront-cms-tabs { overflow-x: auto; position: static; top: auto; }
   .storefront-cms-tabs button { white-space: nowrap; }
   .storefront-cms-form-grid,
   .storefront-cms-product-editgrid,
