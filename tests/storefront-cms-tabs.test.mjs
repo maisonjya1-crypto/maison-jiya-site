@@ -53,3 +53,20 @@ test("l’upload photo mobile accepte le sélecteur natif et possède un fallbac
   assert.match(source, /event\.currentTarget\.value = ""/);
   assert.doesNotMatch(source, /file\.type\.match\(\/\^image\\\/\(jpeg\|png\|webp\)\$\//);
 });
+
+
+test("le CMS mobile ajoute une photo sans recharger tout l’écran et garde le produit ouvert", async () => {
+  const source = await readText("app/storefront-cms-v2-enhancement.tsx");
+  const css = await readText("app/storefront-cms-v2.css");
+  const route = await readText("app/api/storefront/admin/media/route.ts");
+  assert.match(source, /function addMediaLocally/);
+  assert.match(source, /if \(body\.media\) addMediaLocally\(body\.media\)/);
+  assert.doesNotMatch(source.slice(source.indexOf("async function uploadMany"), source.indexOf("const categories")), /await load\(\)/);
+  assert.match(source, /<ProductEditor key=\{product\.productId\}/);
+  assert.match(source, /storefront-cms-upload-progress/);
+  assert.match(source, /targetBytes: 300_000/);
+  assert.match(route, /Response\.json\(\{ ok: true, media \}/);
+  assert.match(css, /-webkit-overflow-scrolling:\s*touch/);
+  assert.match(css, /pointer-events:\s*none/);
+  assert.match(css, /storefront-cms-v2 \.storefront-cms-tabs[^}]*flex-wrap:\s*wrap/s);
+});
