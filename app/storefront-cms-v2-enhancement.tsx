@@ -122,6 +122,12 @@ const mediaUrl = (id: number) => `/api/storefront/media/${id}`;
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("fr");
 const publicCategory = (category: string) => ["Wallet", "Wallets", "Portefeuille", "Portefeuilles"].includes(category) ? "Portefeuilles" : category;
 
+function acknowledgeLocalLiveVersion(version: number | undefined) {
+  const parsed = Number(version || 0);
+  if (!Number.isFinite(parsed) || parsed <= 0) return;
+  window.dispatchEvent(new CustomEvent("maison-jiya-local-live-version", { detail: { version: parsed } }));
+}
+
 async function encodeCanvas(canvas: HTMLCanvasElement, mimeType: "image/webp" | "image/jpeg", quality: number) {
   return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mimeType, quality));
 }
@@ -346,9 +352,10 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
         form.set("kind", kind);
         form.set("file", file);
         const response = await fetch("/api/storefront/admin/media", { method: "POST", body: form });
-        const body = await response.json() as { error?: string; media?: Media };
+        const body = await response.json() as { error?: string; media?: Media; liveVersion?: number };
         if (!response.ok) throw new Error(body.error || "Upload impossible.");
         if (body.media) addMediaLocally(body.media);
+        acknowledgeLocalLiveVersion(body.liveVersion);
       }
       setNotice(selected.length > 1 ? `${selected.length} photos ajoutées` : "Photo ajoutée");
     } catch (caught) {
@@ -361,12 +368,13 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
   async function removeMedia(id: number) {
     if (!window.confirm("Supprimer cette photo de la boutique publique ?")) return;
     const response = await fetch(`/api/storefront/admin/media?id=${id}`, { method: "DELETE" });
-    const body = await response.json() as { error?: string };
+    const body = await response.json() as { error?: string; liveVersion?: number };
     if (!response.ok) {
       setError(body.error || "Suppression impossible.");
       return;
     }
     removeMediaLocally(id);
+    acknowledgeLocalLiveVersion(body.liveVersion);
   }
 
   const categories = useMemo(() => ["Toutes", ...Array.from(new Set(data.products.map((product) => publicCategory(product.category)))).sort((a, b) => a.localeCompare(b, "fr"))], [data.products]);
