@@ -180,8 +180,9 @@
 
 /* Onglets CMS : rester cliquables et garder le catalogue léger. */
 .storefront-cms-v2 .storefront-cms-tabs {
-  top: 0;
-  z-index: 20;
+  position: static;
+  top: auto;
+  z-index: auto;
   isolation: isolate;
   box-shadow: 0 8px 24px rgba(42, 32, 45, .06);
 }
