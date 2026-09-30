@@ -73,12 +73,30 @@ export async function POST(request: Request) {
     const base64 = toBase64(bytes);
     const order = await database.prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS nextOrder FROM storefront_media WHERE owner_type = ? AND owner_id = ? AND kind = ?")
       .bind(ownerType, ownerId, kind).first<{ nextOrder: number }>();
+    const sortOrder = Number(order?.nextOrder || 0);
     await database.prepare(`
       INSERT INTO storefront_media (owner_type, owner_id, kind, mime_type, data_base64, byte_size, sort_order, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `).bind(ownerType, ownerId, kind, file.type, base64, bytes.length, Number(order?.nextOrder || 0)).run();
+    `).bind(ownerType, ownerId, kind, file.type, base64, bytes.length, sortOrder).run();
 
-    return Response.json({ ok: true }, { headers: { "cache-control": "no-store" } });
+    const media = await database.prepare(`
+      SELECT id, owner_type AS ownerType, owner_id AS ownerId, kind,
+             mime_type AS mimeType, sort_order AS sortOrder, created_at AS createdAt
+      FROM storefront_media
+      WHERE owner_type = ? AND owner_id = ? AND kind = ? AND sort_order = ?
+      ORDER BY id DESC
+      LIMIT 1
+    `).bind(ownerType, ownerId, kind, sortOrder).first<{
+      id: number;
+      ownerType: string;
+      ownerId: number;
+      kind: string;
+      mimeType: string;
+      sortOrder: number;
+      createdAt: string;
+    }>();
+
+    return Response.json({ ok: true, media }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     console.error("Maison Jiya storefront media upload failed", error);
     return Response.json({ error: error instanceof Error ? error.message : "Upload impossible." }, { status: 400 });
