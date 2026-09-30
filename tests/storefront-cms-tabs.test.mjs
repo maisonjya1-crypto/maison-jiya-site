@@ -60,7 +60,7 @@ test("le CMS mobile ajoute une photo sans recharger tout l’écran et garde le 
   const css = await readText("app/storefront-cms-v2.css");
   const route = await readText("app/api/storefront/admin/media/route.ts");
   assert.match(source, /function addMediaLocally/);
-  assert.match(source, /if \(body\.media\) addMediaLocally\(body\.media\)/);
+  assert.match(source, /if \(body\.media\) replaceMediaLocally\(tempId, \{ \.\.\.body\.media, previewUrl: activePreview \}\)/);
   assert.doesNotMatch(source.slice(source.indexOf("async function uploadMany"), source.indexOf("const categories")), /await load\(\)/);
   assert.match(source, /<ProductEditor key=\{product\.productId\}/);
   assert.match(source, /storefront-cms-upload-progress/);
@@ -119,4 +119,38 @@ test("la compression photo mobile réduit la mémoire avant le canvas quand les 
   assert.match(source, /loadImageForCanvas\(file, limits\.maxSide\)/);
   assert.match(source, /canvas\.width = 1/);
   assert.match(source, /canvas\.height = 1/);
+});
+
+
+test("la photo choisie apparaît immédiatement et reste visible pendant/après l’upload", async () => {
+  const source = await readText("app/storefront-cms-v2-enhancement.tsx");
+  const styles = await readText("app/storefront-cms-v2.css");
+  assert.match(source, /previewUrl\?: string/);
+  assert.match(source, /URL\.createObjectURL\(raw\)/);
+  assert.match(source, /pending:\s*true/);
+  assert.match(source, /replaceMediaLocally\(tempId, \{ \.\.\.body\.media, previewUrl: activePreview \}\)/);
+  assert.match(source, /mediaSrc\(item\)/);
+  assert.match(styles, /storefront-cms-photo-pending/);
+});
+
+test("le CMS mobile utilise un seul scroller plein écran et permet le geste vertical dans les cartes", async () => {
+  const styles = await readText("app/storefront-cms-v2.css");
+  const source = await readText("app/storefront-cms-v2-enhancement.tsx");
+  assert.match(styles, /storefront-cms-page\.storefront-cms-v2[\s\S]*position:\s*fixed/);
+  assert.match(styles, /height:\s*100dvh/);
+  assert.match(styles, /overflow-y:\s*scroll/);
+  assert.match(styles, /touch-action:\s*pan-y pinch-zoom/);
+  assert.match(source, /document\.body\.style\.overflow = "hidden"/);
+  assert.match(source, /document\.documentElement\.style\.overflow = "hidden"/);
+});
+
+test("le catalogue public permet de créer un nouveau produit à stock 0 et sur commande", async () => {
+  const source = await readText("app/storefront-cms-v2-enhancement.tsx");
+  assert.match(source, /Ajouter un produit hors stock/);
+  assert.match(source, /action:\s*"addProduct"/);
+  assert.match(source, /initialQuantity:\s*0/);
+  assert.match(source, /availabilityMode:\s*"available"/);
+  assert.match(source, /badge:\s*"Sur commande"/);
+  assert.match(source, /stock interne est créé à 0/);
+  assert.match(source, /const effectiveOut = product\.availabilityMode === "out_of_stock"/);
 });

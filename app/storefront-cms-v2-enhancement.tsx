@@ -11,6 +11,8 @@ type Media = {
   mimeType: string;
   sortOrder: number;
   createdAt: string;
+  previewUrl?: string;
+  pending?: boolean;
 };
 
 type CmsProduct = {
@@ -119,6 +121,7 @@ const emptyData: CmsData = {
 
 const money = (value: number) => `${Number(value).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD`;
 const mediaUrl = (id: number) => `/api/storefront/media/${id}`;
+const mediaSrc = (media: Media) => media.previewUrl || mediaUrl(media.id);
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("fr");
 const publicCategory = (category: string) => ["Wallet", "Wallets", "Portefeuille", "Portefeuilles"].includes(category) ? "Portefeuilles" : category;
 
@@ -347,7 +350,11 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
   const [category, setCategory] = useState("Toutes");
   const [productLimit, setProductLimit] = useState(16);
   const [uploadingLabel, setUploadingLabel] = useState("");
+  const [showNewProduct, setShowNewProduct] = useState(false);
+  const [creatingNewProduct, setCreatingNewProduct] = useState(false);
   const pageRef = useRef<HTMLElement | null>(null);
+  const previewUrlsRef = useRef(new Set<string>());
+  const pendingMediaIdRef = useRef(-1);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) {
@@ -376,6 +383,19 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
     window.addEventListener("maison-jiya-live-refresh", refreshSilently);
     return () => window.removeEventListener("maison-jiya-live-refresh", refreshSilently);
   }, [load]);
+
+  useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      previewUrlsRef.current.clear();
+    };
+  }, []);
 
   async function save(payload: Record<string, unknown>) {
     setError("");
@@ -406,6 +426,28 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
     });
   }
 
+  function replaceMediaLocally(tempId: number, media: Media) {
+    const replace = (items: Media[]) => items.map((item) => item.id === tempId ? media : item);
+    setData((current) => ({
+      ...current,
+      brandMedia: replace(current.brandMedia),
+      products: current.products.map((product) => ({ ...product, media: replace(product.media) })),
+      offers: current.offers.map((offer) => ({ ...offer, media: replace(offer.media) })),
+      marketingSections: current.marketingSections.map((section) => ({ ...section, media: replace(section.media) })),
+    }));
+  }
+
+  function removeMediaLocallyWithoutServer(id: number) {
+    const drop = (items: Media[]) => items.filter((item) => item.id !== id);
+    setData((current) => ({
+      ...current,
+      brandMedia: drop(current.brandMedia),
+      products: current.products.map((product) => ({ ...product, media: drop(product.media) })),
+      offers: current.offers.map((offer) => ({ ...offer, media: drop(offer.media) })),
+      marketingSections: current.marketingSections.map((section) => ({ ...section, media: drop(section.media) })),
+    }));
+  }
+
   function removeMediaLocally(id: number) {
     const drop = (items: Media[]) => items.filter((item) => item.id !== id);
     setData((current) => ({
@@ -428,19 +470,59 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
       if (!selected.length) throw new Error(`Maximum ${MAX_GALLERY} photos par produit ou pack.`);
       for (let index = 0; index < selected.length; index += 1) {
         const raw = selected[index];
-        setUploadingLabel(selected.length > 1 ? `Préparation photo ${index + 1}/${selected.length}…` : "Préparation de la photo…");
-        const file = await compressImage(raw, kind);
-        setUploadingLabel(selected.length > 1 ? `Envoi photo ${index + 1}/${selected.length}…` : "Envoi de la photo…");
-        const form = new FormData();
-        form.set("ownerType", ownerType);
-        form.set("ownerId", String(ownerId));
-        form.set("kind", kind);
-        form.set("file", file);
-        const response = await fetch("/api/storefront/admin/media", { method: "POST", body: form });
-        const body = await response.json() as { error?: string; media?: Media; liveVersion?: number };
-        if (!response.ok) throw new Error(body.error || "Upload impossible.");
-        if (body.media) addMediaLocally(body.media);
-        acknowledgeLocalLiveVersion(body.liveVersion);
+        const tempId = pendingMediaIdRef.current--;
+        const rawPreview = URL.createObjectURL(raw);
+        previewUrlsRef.current.add(rawPreview);
+        addMediaLocally({
+          id: tempId,
+          ownerType,
+          ownerId,
+          kind,
+          mimeType: raw.type || "image/*",
+          sortOrder: 10_000 + index,
+          createdAt: new Date().toISOString(),
+          previewUrl: rawPreview,
+          pending: true,
+        });
+
+        let activePreview = rawPreview;
+        try {
+          setUploadingLabel(selected.length > 1 ? `Préparation photo ${index + 1}/${selected.length}…` : "Préparation de la photo…");
+          const file = await compressImage(raw, kind);
+          const compressedPreview = URL.createObjectURL(file);
+          previewUrlsRef.current.add(compressedPreview);
+          replaceMediaLocally(tempId, {
+            id: tempId,
+            ownerType,
+            ownerId,
+            kind,
+            mimeType: file.type,
+            sortOrder: 10_000 + index,
+            createdAt: new Date().toISOString(),
+            previewUrl: compressedPreview,
+            pending: true,
+          });
+          URL.revokeObjectURL(rawPreview);
+          previewUrlsRef.current.delete(rawPreview);
+          activePreview = compressedPreview;
+
+          setUploadingLabel(selected.length > 1 ? `Envoi photo ${index + 1}/${selected.length}…` : "Envoi de la photo…");
+          const form = new FormData();
+          form.set("ownerType", ownerType);
+          form.set("ownerId", String(ownerId));
+          form.set("kind", kind);
+          form.set("file", file);
+          const response = await fetch("/api/storefront/admin/media", { method: "POST", body: form });
+          const body = await response.json() as { error?: string; media?: Media; liveVersion?: number };
+          if (!response.ok) throw new Error(body.error || "Upload impossible.");
+          if (body.media) replaceMediaLocally(tempId, { ...body.media, previewUrl: activePreview });
+          acknowledgeLocalLiveVersion(body.liveVersion);
+        } catch (uploadError) {
+          removeMediaLocallyWithoutServer(tempId);
+          URL.revokeObjectURL(activePreview);
+          previewUrlsRef.current.delete(activePreview);
+          throw uploadError;
+        }
       }
       setNotice(selected.length > 1 ? `${selected.length} photos ajoutées` : "Photo ajoutée");
     } catch (caught) {
@@ -464,6 +546,88 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
       removeMediaLocally(id);
       acknowledgeLocalLiveVersion(body.liveVersion);
     } finally {
+      setLocalMutationActive(false);
+    }
+  }
+
+  async function createOutOfStockProduct(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!data.canEdit || creatingNewProduct) return;
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const productCode = String(form.get("productCode") || "").trim().toUpperCase();
+    const name = String(form.get("name") || "").trim();
+    const categoryValue = String(form.get("category") || "Autre");
+    const purchasePrice = Number(form.get("purchasePrice") || 0);
+    const salePrice = Number(form.get("salePrice") || 0);
+    const minimumSalePriceInput = Number(form.get("minimumSalePrice") || 0);
+    const minimumSalePrice = minimumSalePriceInput > 0 ? minimumSalePriceInput : salePrice;
+
+    if (!productCode || !name || !Number.isFinite(salePrice) || salePrice <= 0) {
+      setError("Référence, nom et prix public sont obligatoires.");
+      return;
+    }
+
+    setCreatingNewProduct(true);
+    setError("");
+    setNotice("");
+    setLocalMutationActive(true);
+    try {
+      const requestKey = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `storefront-${Date.now()}`;
+      const createResponse = await fetch("/api/data", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "addProduct",
+          requestKey,
+          productCode,
+          name,
+          category: categoryValue,
+          purchasePrice: Number.isFinite(purchasePrice) && purchasePrice >= 0 ? purchasePrice : 0,
+          salePrice,
+          minimumSalePrice,
+          initialQuantity: 0,
+        }),
+      });
+      const createBody = await createResponse.json() as { error?: string };
+      if (!createResponse.ok) throw new Error(createBody.error || "Création du produit impossible.");
+
+      const snapshotResponse = await fetch("/api/storefront/admin", { cache: "no-store" });
+      const snapshotBody = await snapshotResponse.json() as CmsData & { error?: string };
+      if (!snapshotResponse.ok) throw new Error(snapshotBody.error || "Produit créé, mais rechargement du catalogue impossible.");
+      const created = snapshotBody.products.find((product) => product.productCode.toUpperCase() === productCode);
+      if (!created) throw new Error("Produit créé, mais introuvable dans le catalogue public.");
+
+      const publishResponse = await fetch("/api/storefront/admin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "saveProduct",
+          productId: created.productId,
+          publicName: name,
+          publicPrice: salePrice,
+          isVisible: true,
+          availabilityMode: "available",
+          badge: "Sur commande",
+          description: "",
+          sortOrder: 0,
+        }),
+      });
+      const publishBody = await publishResponse.json() as CmsData & { error?: string };
+      if (!publishResponse.ok) throw new Error(publishBody.error || "Produit créé, mais publication impossible.");
+
+      setData(publishBody);
+      setQuery(productCode);
+      setCategory("Toutes");
+      setProductLimit(16);
+      setShowNewProduct(false);
+      setNotice("Produit hors stock ajouté · ajoute maintenant sa photo.");
+      formElement.reset();
+      window.requestAnimationFrame(() => pageRef.current?.scrollTo({ top: 0, behavior: "smooth" }));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Création du produit impossible.");
+    } finally {
+      setCreatingNewProduct(false);
       setLocalMutationActive(false);
     }
   }
@@ -519,6 +683,27 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
     {loading ? <div className="storefront-cms-loading">Chargement de la boutique publique…</div> : <>
       {tab === "identity" && <IdentityPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />}
       {tab === "products" && <div className="storefront-cms-products">
+        <div className="storefront-cms-catalog-actions">
+          <div>
+            <strong>Catalogue public</strong>
+            <small>Tu peux aussi préparer un article que tu n’as pas encore en stock.</small>
+          </div>
+          <button type="button" className="primary-button" disabled={!data.canEdit} onClick={() => setShowNewProduct((value) => !value)}>{showNewProduct ? "Annuler" : "＋ Ajouter un produit hors stock"}</button>
+        </div>
+        {showNewProduct && <form className="storefront-cms-new-product" onSubmit={(event) => void createOutOfStockProduct(event)}>
+          <div className="storefront-cms-new-product-head">
+            <div><strong>Nouveau produit · stock initial 0</strong><small>Il sera « Sur commande ». Il apparaîtra sur la boutique dès que tu ajoutes une photo.</small></div>
+          </div>
+          <div className="storefront-cms-new-product-grid">
+            <label><span>Référence / ID produit</span><input name="productCode" required placeholder="ex. MJ-MONTRE-25" /></label>
+            <label><span>Nom</span><input name="name" required placeholder="Nom du produit" /></label>
+            <label><span>Catégorie</span><select name="category" defaultValue="Montres"><option>Montres</option><option>Bijoux</option><option>Portefeuilles</option><option>Autre</option></select></label>
+            <label><span>Coût d’achat (MAD)</span><input name="purchasePrice" type="number" min="0" step="0.01" placeholder="0 si pas encore connu" /></label>
+            <label><span>Prix public (MAD)</span><input name="salePrice" type="number" min="1" step="1" required /></label>
+            <label><span>Prix minimum (MAD)</span><input name="minimumSalePrice" type="number" min="0" step="1" placeholder="Sinon = prix public" /></label>
+          </div>
+          <div className="storefront-cms-new-product-foot"><small>Aucune quantité de stock n’est inventée : le stock interne est créé à 0.</small><button className="primary-button" type="submit" disabled={creatingNewProduct}>{creatingNewProduct ? "Création…" : "Créer à stock 0"}</button></div>
+        </form>}
         <div className="storefront-cms-filterbar">
           <label><span>Rechercher</span><input value={query} onChange={(event) => { setQuery(event.target.value); setProductLimit(16); }} placeholder="Nom, référence…" /></label>
           <label><span>Catégorie</span><select value={category} onChange={(event) => { setCategory(event.target.value); setProductLimit(16); }}>{categories.map((item) => <option key={item}>{item}</option>)}</select></label>
@@ -675,9 +860,10 @@ function GalleryEditor({ ownerType, ownerId, media, canEdit, uploadMany, removeM
     <div className="storefront-cms-gallery-grid">
       {media.map((item, index) => <figure key={item.id}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={mediaUrl(item.id)} alt="" loading="lazy" decoding="async" />
+        <img src={mediaSrc(item)} alt="" loading={item.pending ? "eager" : "lazy"} decoding={item.pending ? "sync" : "async"} />
         {index === 0 && <span className="storefront-cms-main-photo">Principale</span>}
-        {canEdit && <button type="button" onClick={() => void removeMedia(item.id)}>×</button>}
+        {item.pending && <span className="storefront-cms-photo-pending">Envoi…</span>}
+        {canEdit && !item.pending && <button type="button" onClick={() => void removeMedia(item.id)}>×</button>}
       </figure>)}
       {!media.length && <div className="storefront-cms-no-media">Sélectionne une ou plusieurs photos à la fois.</div>}
     </div>
@@ -715,17 +901,18 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
     }
   }
 
-  const effectiveOut = product.stockQuantity <= 0 || product.availabilityMode === "out_of_stock";
+  const effectiveOut = product.availabilityMode === "out_of_stock";
+  const availabilityLabel = effectiveOut ? "Rupture" : product.stockQuantity <= 0 ? "Sur commande" : "Disponible";
   return <details className="storefront-cms-product" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary>
       <div className="storefront-cms-product-main">
         {product.media[0] ? <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={mediaUrl(product.media[0].id)} alt="" loading="lazy" decoding="async" />
+          <img src={mediaSrc(product.media[0])} alt="" loading={product.media[0].pending ? "eager" : "lazy"} decoding={product.media[0].pending ? "sync" : "async"} />
         </> : <span className="storefront-cms-product-placeholder">!</span>}
         <div><strong>{product.publicName || product.internalName}</strong><small>{product.productCode} · {publicCategory(product.category)}{!product.media.length ? " · photo manquante : masqué du site" : ""}</small></div>
       </div>
-      <div className="storefront-cms-product-status"><span className={effectiveOut ? "out" : "in"}>{effectiveOut ? "Rupture" : "Disponible"}</span><strong>{money(product.publicPrice || product.internalPrice)}</strong><small>Stock réel : {product.stockQuantity}</small></div>
+      <div className="storefront-cms-product-status"><span className={effectiveOut ? "out" : "in"}>{availabilityLabel}</span><strong>{money(product.publicPrice || product.internalPrice)}</strong><small>Stock réel : {product.stockQuantity}</small></div>
       <b>⌄</b>
     </summary>
 
@@ -733,7 +920,7 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
       <div className="storefront-cms-product-editgrid">
         <label><span>Nom sur le site public</span><input name="publicName" defaultValue={product.publicName} disabled={!canEdit} /></label>
         <label><span>Prix public (MAD)</span><input name="publicPrice" type="number" min="0" step="1" defaultValue={product.publicPrice} disabled={!canEdit} /></label>
-        <label><span>Disponibilité publique</span><select name="availabilityMode" defaultValue={product.availabilityMode} disabled={!canEdit}><option value="auto">Automatique selon le stock</option><option value="available">Disponible si stock réel &gt; 0</option><option value="out_of_stock">Forcer « Rupture »</option></select></label>
+        <label><span>Disponibilité publique</span><select name="availabilityMode" defaultValue={product.availabilityMode} disabled={!canEdit}><option value="auto">Disponible à la commande</option><option value="available">Disponible à la commande même avec stock 0</option><option value="out_of_stock">Forcer « Rupture »</option></select></label>
         <label><span>Badge</span><input name="badge" defaultValue={product.badge} placeholder="Nouveau, Best-seller…" disabled={!canEdit} /></label>
         <label><span>Ordre d’affichage</span><input name="sortOrder" type="number" defaultValue={product.sortOrder} disabled={!canEdit} /></label>
         <label className="storefront-cms-visible"><input name="isVisible" type="checkbox" defaultChecked={product.isVisible} disabled={!canEdit} /><span>Afficher ce produit sur le site public</span></label>
