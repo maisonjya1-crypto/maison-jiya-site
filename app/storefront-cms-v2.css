@@ -435,3 +435,13 @@
   .storefront-cms-new-product-foot .primary-button { width:100%; }
   .storefront-cms-new-product-grid { grid-template-columns:1fr; }
 }
+
+
+/* Mobile CMS: keep the private bottom navigation behind the storefront editor. */
+@media (max-width: 900px), (pointer: coarse), (hover: none) {
+  .storefront-cms-page.storefront-cms-v2 {
+    z-index: 5000 !important;
+    isolation: isolate;
+    background: var(--page, #f7f4f8);
+  }
+}
