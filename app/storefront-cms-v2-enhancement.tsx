@@ -179,7 +179,7 @@ async function compressImage(file: File, kind: UploadKind) {
 
   const image = await loadImageForCanvas(file);
   const limits = kind === "gallery"
-    ? { maxSide: 1000, targetBytes: 420_000, maxBytes: 650_000 }
+    ? { maxSide: 900, targetBytes: 300_000, maxBytes: 450_000 }
     : kind === "logo"
       ? { maxSide: 800, targetBytes: 260_000, maxBytes: 450_000 }
       : { maxSide: 1600, targetBytes: 600_000, maxBytes: 850_000 };
@@ -264,6 +264,7 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Toutes");
   const [productLimit, setProductLimit] = useState(16);
+  const [uploadingLabel, setUploadingLabel] = useState("");
   const pageRef = useRef<HTMLElement | null>(null);
 
   const load = useCallback(async () => {
@@ -301,6 +302,31 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
     window.setTimeout(() => setNotice(""), 2400);
   }
 
+  function addMediaLocally(media: Media) {
+    const append = (items: Media[], replaceKind = false) => {
+      const filtered = items.filter((item) => item.id !== media.id && (!replaceKind || item.kind !== media.kind));
+      return [...filtered, media].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+    };
+    setData((current) => {
+      if (media.ownerType === "brand") return { ...current, brandMedia: append(current.brandMedia, true) };
+      if (media.ownerType === "product") return { ...current, products: current.products.map((product) => product.productId === media.ownerId ? { ...product, media: append(product.media) } : product) };
+      if (media.ownerType === "offer") return { ...current, offers: current.offers.map((offer) => offer.id === media.ownerId ? { ...offer, media: append(offer.media) } : offer) };
+      if (media.ownerType === "marketing") return { ...current, marketingSections: current.marketingSections.map((section) => section.id === media.ownerId ? { ...section, media: append(section.media, true) } : section) };
+      return current;
+    });
+  }
+
+  function removeMediaLocally(id: number) {
+    const drop = (items: Media[]) => items.filter((item) => item.id !== id);
+    setData((current) => ({
+      ...current,
+      brandMedia: drop(current.brandMedia),
+      products: current.products.map((product) => ({ ...product, media: drop(product.media) })),
+      offers: current.offers.map((offer) => ({ ...offer, media: drop(offer.media) })),
+      marketingSections: current.marketingSections.map((section) => ({ ...section, media: drop(section.media) })),
+    }));
+  }
+
   async function uploadMany(ownerType: UploadOwner, ownerId: number, kind: UploadKind, files: FileList | null, maxFiles?: number) {
     if (!files?.length) return;
     setError("");
@@ -309,21 +335,26 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
       const allowed = kind === "gallery" ? Math.max(0, Math.min(MAX_GALLERY, maxFiles ?? MAX_GALLERY)) : 1;
       const selected = Array.from(files).slice(0, allowed);
       if (!selected.length) throw new Error(`Maximum ${MAX_GALLERY} photos par produit ou pack.`);
-      for (const raw of selected) {
+      for (let index = 0; index < selected.length; index += 1) {
+        const raw = selected[index];
+        setUploadingLabel(selected.length > 1 ? `Préparation photo ${index + 1}/${selected.length}…` : "Préparation de la photo…");
         const file = await compressImage(raw, kind);
+        setUploadingLabel(selected.length > 1 ? `Envoi photo ${index + 1}/${selected.length}…` : "Envoi de la photo…");
         const form = new FormData();
         form.set("ownerType", ownerType);
         form.set("ownerId", String(ownerId));
         form.set("kind", kind);
         form.set("file", file);
         const response = await fetch("/api/storefront/admin/media", { method: "POST", body: form });
-        const body = await response.json() as { error?: string };
+        const body = await response.json() as { error?: string; media?: Media };
         if (!response.ok) throw new Error(body.error || "Upload impossible.");
+        if (body.media) addMediaLocally(body.media);
       }
-      await load();
       setNotice(selected.length > 1 ? `${selected.length} photos ajoutées` : "Photo ajoutée");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Upload impossible.");
+    } finally {
+      setUploadingLabel("");
     }
   }
 
@@ -335,7 +366,7 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
       setError(body.error || "Suppression impossible.");
       return;
     }
-    await load();
+    removeMediaLocally(id);
   }
 
   const categories = useMemo(() => ["Toutes", ...Array.from(new Set(data.products.map((product) => publicCategory(product.category)))).sort((a, b) => a.localeCompare(b, "fr"))], [data.products]);
@@ -384,6 +415,7 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
 
     {notice && <div className="storefront-cms-notice success">✓ {notice}</div>}
     {error && <div className="storefront-cms-notice error">{error}</div>}
+    {uploadingLabel && <div className="storefront-cms-upload-progress" role="status"><span className="storefront-cms-upload-spinner" />{uploadingLabel}</div>}
 
     {loading ? <div className="storefront-cms-loading">Chargement de la boutique publique…</div> : <>
       {tab === "identity" && <IdentityPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />}
@@ -395,7 +427,7 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
         </div>
         <div className="storefront-cms-public-category-note">Électronique et Boîtes sont volontairement exclues de la boutique publique. Wallets est affiché aux clients sous le nom « Portefeuilles ».</div>
         <div className="storefront-cms-product-list">
-          {visibleProducts.map((product) => <ProductEditor key={`${product.productId}-${product.publicName}-${product.publicPrice}-${product.media.length}`} product={product} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />)}
+          {visibleProducts.map((product) => <ProductEditor key={product.productId} product={product} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />)}
         </div>
         {visibleProducts.length < filteredProducts.length && <div className="storefront-cms-load-more-wrap"><button type="button" className="secondary-button" onClick={() => setProductLimit((value) => value + 16)}>Afficher 16 produits de plus ({filteredProducts.length - visibleProducts.length} restant(s))</button></div>}
       </div>}
