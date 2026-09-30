@@ -77,6 +77,7 @@ export default function PrivatePwa() {
   const lastDataVersion = useRef<number | null>(null);
   const lastNativeOrderIds = useRef<Set<string> | null>(null);
   const nativePermissionPending = useRef(false);
+  const localLiveVersion = useRef<number | null>(null);
 
   const clearHideTimer = useCallback(() => {
     if (hideTimer.current !== null) {
@@ -253,6 +254,17 @@ export default function PrivatePwa() {
   }, []);
 
   useEffect(() => {
+    const acknowledgeLocalVersion = (event: Event) => {
+      const version = Number((event as CustomEvent<{ version?: number }>).detail?.version || 0);
+      if (!Number.isFinite(version) || version <= 0) return;
+      localLiveVersion.current = version;
+      lastDataVersion.current = version;
+    };
+    window.addEventListener("maison-jiya-local-live-version", acknowledgeLocalVersion);
+    return () => window.removeEventListener("maison-jiya-local-live-version", acknowledgeLocalVersion);
+  }, []);
+
+  useEffect(() => {
     if (!nativeAndroid && !installed) return;
     let cancelled = false;
     const refreshIfChanged = async () => {
@@ -283,6 +295,11 @@ export default function PrivatePwa() {
           return;
         }
         if (currentVersion !== lastDataVersion.current) {
+          if (localLiveVersion.current !== null && currentVersion <= localLiveVersion.current) {
+            lastDataVersion.current = currentVersion;
+            localLiveVersion.current = null;
+            return;
+          }
           lastDataVersion.current = currentVersion;
           window.location.reload();
         }
