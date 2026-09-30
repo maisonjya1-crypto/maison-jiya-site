@@ -154,3 +154,10 @@ test("le catalogue public permet de créer un nouveau produit à stock 0 et sur 
   assert.match(source, /stock interne est créé à 0/);
   assert.match(source, /const effectiveOut = product\.availabilityMode === "out_of_stock"/);
 });
+
+
+test("le CMS mobile reste au-dessus de la barre de navigation privée", async () => {
+  const styles = await readText("app/storefront-cms-v2.css");
+  assert.match(styles, /storefront-cms-page\.storefront-cms-v2[\s\S]*z-index:\s*5000\s*!important/);
+  assert.match(styles, /storefront-cms-page\.storefront-cms-v2[\s\S]*isolation:\s*isolate/);
+});
