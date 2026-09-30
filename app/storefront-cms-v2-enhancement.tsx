@@ -669,7 +669,7 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
       </div>
     </header>
 
-    <nav className="storefront-cms-tabs" aria-label="Sections de la boutique publique">
+    <nav className="storefront-cms-tabs" aria-label="Sections de la boutique publique" style={{ position: "static", top: "auto" }}>
       <button type="button" className={tab === "identity" ? "active" : ""} aria-pressed={tab === "identity"} onClick={() => switchTab("identity")}>Identité & contact</button>
       <button type="button" className={tab === "products" ? "active" : ""} aria-pressed={tab === "products"} onClick={() => switchTab("products")}>Catalogue public <b>{data.products.length}</b></button>
       <button type="button" className={tab === "offers" ? "active" : ""} aria-pressed={tab === "offers"} onClick={() => switchTab("offers")}>Packs & offres <b>{data.offers.length}</b></button>
