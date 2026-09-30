@@ -1,7 +1,7 @@
 -- Maison Jiya — IDs produit lisibles et courts.
 -- Seul products.product_code est modifie.
 -- Les IDs numeriques internes restent inchanges afin de conserver toutes les relations stock/commandes/achats/offres/photos.
--- Une seule requete UPDATE est utilisee : Cloudflare D1 refuse BEGIN TRANSACTION dans les migrations distantes.
+-- Une seule requete UPDATE est utilisee afin de rester compatible avec les migrations Cloudflare D1 distantes.
 UPDATE products
 SET product_code = CASE id
     WHEN 1 THEN 'E-AP-01'
