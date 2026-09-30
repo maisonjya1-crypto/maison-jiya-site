@@ -553,7 +553,8 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
   async function createOutOfStockProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!data.canEdit || creatingNewProduct) return;
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const productCode = String(form.get("productCode") || "").trim().toUpperCase();
     const name = String(form.get("name") || "").trim();
     const categoryValue = String(form.get("category") || "Autre");
@@ -621,7 +622,7 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
       setProductLimit(16);
       setShowNewProduct(false);
       setNotice("Produit hors stock ajouté · ajoute maintenant sa photo.");
-      event.currentTarget.reset();
+      formElement.reset();
       window.requestAnimationFrame(() => pageRef.current?.scrollTo({ top: 0, behavior: "smooth" }));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Création du produit impossible.");
