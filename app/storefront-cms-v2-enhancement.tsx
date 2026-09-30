@@ -860,7 +860,7 @@ function GalleryEditor({ ownerType, ownerId, media, canEdit, uploadMany, removeM
     <div className="storefront-cms-gallery-grid">
       {media.map((item, index) => <figure key={item.id}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={mediaSrc(item)} alt="" loading="lazy" decoding="async" />
+        <img src={mediaSrc(item)} alt="" loading={item.pending ? "eager" : "lazy"} decoding={item.pending ? "sync" : "async"} />
         {index === 0 && <span className="storefront-cms-main-photo">Principale</span>}
         {item.pending && <span className="storefront-cms-photo-pending">Envoi…</span>}
         {canEdit && !item.pending && <button type="button" onClick={() => void removeMedia(item.id)}>×</button>}
@@ -908,7 +908,7 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
       <div className="storefront-cms-product-main">
         {product.media[0] ? <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={mediaSrc(product.media[0])} alt="" loading="lazy" decoding="async" />
+          <img src={mediaSrc(product.media[0])} alt="" loading={product.media[0].pending ? "eager" : "lazy"} decoding={product.media[0].pending ? "sync" : "async"} />
         </> : <span className="storefront-cms-product-placeholder">!</span>}
         <div><strong>{product.publicName || product.internalName}</strong><small>{product.productCode} · {publicCategory(product.category)}{!product.media.length ? " · photo manquante : masqué du site" : ""}</small></div>
       </div>
