@@ -161,3 +161,10 @@ test("le CMS mobile reste au-dessus de la barre de navigation privée", async ()
   assert.match(styles, /storefront-cms-page\.storefront-cms-v2[\s\S]*z-index:\s*5000\s*!important/);
   assert.match(styles, /storefront-cms-page\.storefront-cms-v2[\s\S]*isolation:\s*isolate/);
 });
+
+
+test("les onglets du CMS mobile défilent avec la page", async () => {
+  const styles = await readText("app/storefront-cms-v2.css");
+  assert.match(styles, /storefront-cms-v2 \.storefront-cms-tabs[\s\S]*position:\s*static\s*!important/);
+  assert.match(styles, /storefront-cms-v2 \.storefront-cms-tabs[\s\S]*top:\s*auto\s*!important/);
+});

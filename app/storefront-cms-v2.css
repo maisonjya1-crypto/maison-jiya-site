@@ -445,3 +445,13 @@
     background: var(--page, #f7f4f8);
   }
 }
+
+
+/* Mobile CMS: tabs scroll away with the page instead of following the user. */
+@media (max-width: 900px), (pointer: coarse), (hover: none) {
+  .storefront-cms-v2 .storefront-cms-tabs {
+    position: static !important;
+    top: auto !important;
+    z-index: auto !important;
+  }
+}
