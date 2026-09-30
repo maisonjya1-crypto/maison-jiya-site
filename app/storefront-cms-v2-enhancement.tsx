@@ -128,6 +128,10 @@ function acknowledgeLocalLiveVersion(version: number | undefined) {
   window.dispatchEvent(new CustomEvent("maison-jiya-local-live-version", { detail: { version: parsed } }));
 }
 
+function setLocalMutationActive(active: boolean) {
+  window.dispatchEvent(new CustomEvent(active ? "maison-jiya-local-mutation-start" : "maison-jiya-local-mutation-end"));
+}
+
 async function encodeCanvas(canvas: HTMLCanvasElement, mimeType: "image/webp" | "image/jpeg", quality: number) {
   return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mimeType, quality));
 }
@@ -337,6 +341,7 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
     if (!files?.length) return;
     setError("");
     setNotice("");
+    setLocalMutationActive(true);
     try {
       const allowed = kind === "gallery" ? Math.max(0, Math.min(MAX_GALLERY, maxFiles ?? MAX_GALLERY)) : 1;
       const selected = Array.from(files).slice(0, allowed);
@@ -362,19 +367,25 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
       setError(caught instanceof Error ? caught.message : "Upload impossible.");
     } finally {
       setUploadingLabel("");
+      setLocalMutationActive(false);
     }
   }
 
   async function removeMedia(id: number) {
     if (!window.confirm("Supprimer cette photo de la boutique publique ?")) return;
-    const response = await fetch(`/api/storefront/admin/media?id=${id}`, { method: "DELETE" });
-    const body = await response.json() as { error?: string; liveVersion?: number };
-    if (!response.ok) {
-      setError(body.error || "Suppression impossible.");
-      return;
+    setLocalMutationActive(true);
+    try {
+      const response = await fetch(`/api/storefront/admin/media?id=${id}`, { method: "DELETE" });
+      const body = await response.json() as { error?: string; liveVersion?: number };
+      if (!response.ok) {
+        setError(body.error || "Suppression impossible.");
+        return;
+      }
+      removeMediaLocally(id);
+      acknowledgeLocalLiveVersion(body.liveVersion);
+    } finally {
+      setLocalMutationActive(false);
     }
-    removeMediaLocally(id);
-    acknowledgeLocalLiveVersion(body.liveVersion);
   }
 
   const categories = useMemo(() => ["Toutes", ...Array.from(new Set(data.products.map((product) => publicCategory(product.category)))).sort((a, b) => a.localeCompare(b, "fr"))], [data.products]);
