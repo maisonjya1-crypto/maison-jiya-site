@@ -65,7 +65,7 @@ test("le CMS mobile ajoute une photo sans recharger tout l’écran et garde le 
   assert.match(source, /<ProductEditor key=\{product\.productId\}/);
   assert.match(source, /storefront-cms-upload-progress/);
   assert.match(source, /targetBytes: 300_000/);
-  assert.match(route, /Response\.json\(\{ ok: true, media \}/);
+  assert.match(route, /Response\.json\(\{ ok: true, media, liveVersion:/);
   assert.match(css, /-webkit-overflow-scrolling:\s*touch/);
   assert.match(css, /pointer-events:\s*none/);
   assert.match(css, /storefront-cms-v2 \.storefront-cms-tabs[^}]*flex-wrap:\s*wrap/s);
