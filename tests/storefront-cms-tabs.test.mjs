@@ -96,3 +96,27 @@ test("la PWA ne redémarre pas si le polling voit la version changer pendant un 
   assert.match(pwa, /localMutationDepth\.current > 0/);
   assert.match(pwa, /lastDataVersion\.current = currentVersion;\s*return;/);
 });
+
+
+test("les changements live ne peuvent plus redémarrer complètement la PWA", async () => {
+  const pwa = await readText("app/private-pwa.tsx");
+  const dashboard = await readText("app/dashboard-client.tsx");
+  const cms = await readText("app/storefront-cms-v2-enhancement.tsx");
+  assert.doesNotMatch(pwa, /window\.location\.reload\(\)/);
+  assert.match(pwa, /maison-jiya-live-refresh/);
+  assert.match(dashboard, /window\.addEventListener\("maison-jiya-live-refresh"/);
+  assert.match(dashboard, /loadData\(true\)/);
+  assert.match(cms, /window\.addEventListener\("maison-jiya-live-refresh"/);
+  assert.match(cms, /load\(true\)/);
+});
+
+test("la compression photo mobile réduit la mémoire avant le canvas quand les dimensions sont lisibles", async () => {
+  const source = await readText("app/storefront-cms-v2-enhancement.tsx");
+  assert.match(source, /async function readEncodedImageDimensions/);
+  assert.match(source, /resizeWidth:\s*targetWidth/);
+  assert.match(source, /resizeHeight:\s*targetHeight/);
+  assert.match(source, /resizeQuality:\s*"high"/);
+  assert.match(source, /loadImageForCanvas\(file, limits\.maxSide\)/);
+  assert.match(source, /canvas\.width = 1/);
+  assert.match(source, /canvas\.height = 1/);
+});

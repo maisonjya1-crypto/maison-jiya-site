@@ -833,12 +833,14 @@ export default function DashboardClient() {
   const [authRequired, setAuthRequired] = useState(false);
   const [authConfigured, setAuthConfigured] = useState(true);
 
-  const loadData = useCallback(async () => {
-    setAuthChecking(true);
-    setLoading(true);
-    setError("");
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) {
+      setAuthChecking(true);
+      setLoading(true);
+      setError("");
+    }
     try {
-      const response = await fetch("/api/data");
+      const response = await fetch("/api/data", { cache: "no-store" });
       const body = await readApiJson<Data & { error?: string }>(response);
       if (response.status === 401) {
         const authResponse = await fetch("/api/auth", { cache: "no-store" });
@@ -852,10 +854,12 @@ export default function DashboardClient() {
       setData(body);
       setAuthRequired(false);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Données indisponibles");
+      if (!silent) setError(caught instanceof Error ? caught.message : "Données indisponibles");
     } finally {
-      setLoading(false);
-      setAuthChecking(false);
+      if (!silent) {
+        setLoading(false);
+        setAuthChecking(false);
+      }
     }
   }, []);
   useEffect(() => {
@@ -863,6 +867,11 @@ export default function DashboardClient() {
       void loadData();
     }, 0);
     return () => window.clearTimeout(timer);
+  }, [loadData]);
+  useEffect(() => {
+    const refreshSilently = () => void loadData(true);
+    window.addEventListener("maison-jiya-live-refresh", refreshSilently);
+    return () => window.removeEventListener("maison-jiya-live-refresh", refreshSilently);
   }, [loadData]);
   useEffect(() => {
     const clearPrintOrder = () => setPrintOrder(null);

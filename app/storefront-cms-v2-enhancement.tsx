@@ -142,9 +142,74 @@ async function canvasBlob(canvas: HTMLCanvasElement, quality: number) {
   return encodeCanvas(canvas, "image/jpeg", quality);
 }
 
-async function loadImageForCanvas(file: File) {
+async function readEncodedImageDimensions(file: File) {
+  try {
+    const bytes = new Uint8Array(await file.slice(0, Math.min(file.size, 512_000)).arrayBuffer());
+
+    if (bytes.length >= 24 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const width = view.getUint32(16);
+      const height = view.getUint32(20);
+      if (width > 0 && height > 0) return { width, height };
+    }
+
+    if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+      let offset = 2;
+      while (offset + 9 < bytes.length) {
+        if (bytes[offset] !== 0xff) {
+          offset += 1;
+          continue;
+        }
+        const marker = bytes[offset + 1];
+        if (marker === 0xd8 || marker === 0xd9) {
+          offset += 2;
+          continue;
+        }
+        if (offset + 4 > bytes.length) break;
+        const size = (bytes[offset + 2] << 8) | bytes[offset + 3];
+        if (size < 2 || offset + 2 + size > bytes.length) break;
+        const isSof = [
+          0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7,
+          0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
+        ].includes(marker);
+        if (isSof && size >= 7) {
+          const height = (bytes[offset + 5] << 8) | bytes[offset + 6];
+          const width = (bytes[offset + 7] << 8) | bytes[offset + 8];
+          if (width > 0 && height > 0) return { width, height };
+        }
+        offset += 2 + size;
+      }
+    }
+  } catch {
+    // Le décodage navigateur prendra le relais.
+  }
+  return null;
+}
+
+async function loadImageForCanvas(file: File, maxSide: number) {
   if (typeof createImageBitmap === "function") {
     try {
+      const encoded = await readEncodedImageDimensions(file);
+      if (encoded) {
+        const scale = Math.min(1, maxSide / Math.max(encoded.width, encoded.height));
+        const targetWidth = Math.max(1, Math.round(encoded.width * scale));
+        const targetHeight = Math.max(1, Math.round(encoded.height * scale));
+        const bitmap = await createImageBitmap(file, {
+          resizeWidth: targetWidth,
+          resizeHeight: targetHeight,
+          resizeQuality: "high",
+        });
+        if (bitmap.width > 0 && bitmap.height > 0) {
+          return {
+            source: bitmap as CanvasImageSource,
+            width: bitmap.width,
+            height: bitmap.height,
+            release: () => bitmap.close(),
+          };
+        }
+        bitmap.close();
+      }
+
       const bitmap = await createImageBitmap(file);
       if (bitmap.width > 0 && bitmap.height > 0) {
         return {
@@ -174,9 +239,13 @@ async function loadImageForCanvas(file: File) {
       source: image as CanvasImageSource,
       width: image.naturalWidth,
       height: image.naturalHeight,
-      release: () => URL.revokeObjectURL(objectUrl),
+      release: () => {
+        image.src = "";
+        URL.revokeObjectURL(objectUrl);
+      },
     };
   } catch {
+    image.src = "";
     URL.revokeObjectURL(objectUrl);
     throw new Error("Cette photo ne peut pas être lue sur ce téléphone. Essaie une autre photo ou une capture d’écran.");
   }
@@ -187,12 +256,12 @@ async function compressImage(file: File, kind: UploadKind) {
   if (file.type && !file.type.startsWith("image/")) throw new Error("Choisis un fichier image.");
   if (file.size > 30_000_000) throw new Error("Cette photo est trop lourde. Choisis une photo de moins de 30 Mo.");
 
-  const image = await loadImageForCanvas(file);
   const limits = kind === "gallery"
     ? { maxSide: 900, targetBytes: 300_000, maxBytes: 450_000 }
     : kind === "logo"
       ? { maxSide: 800, targetBytes: 260_000, maxBytes: 450_000 }
       : { maxSide: 1600, targetBytes: 600_000, maxBytes: 850_000 };
+  const image = await loadImageForCanvas(file, limits.maxSide);
   const scale = Math.min(1, limits.maxSide / Math.max(image.width, image.height));
   const width = Math.max(1, Math.round(image.width * scale));
   const height = Math.max(1, Math.round(image.height * scale));
@@ -220,7 +289,10 @@ async function compressImage(file: File, kind: UploadKind) {
 
   const extension = lastBlob.type === "image/webp" ? "webp" : "jpg";
   const baseName = file.name ? file.name.replace(/\.[^.]+$/, "") : "photo";
-  return new File([lastBlob], `${baseName}.${extension}`, { type: lastBlob.type || "image/jpeg" });
+  const compressed = new File([lastBlob], `${baseName}.${extension}`, { type: lastBlob.type || "image/jpeg" });
+  canvas.width = 1;
+  canvas.height = 1;
+  return compressed;
 }
 
 export default function StorefrontCmsV2Enhancement() {
@@ -277,24 +349,32 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
   const [uploadingLabel, setUploadingLabel] = useState("");
   const pageRef = useRef<HTMLElement | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const load = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
     try {
       const response = await fetch("/api/storefront/admin", { cache: "no-store" });
       const body = await response.json() as CmsData & { error?: string };
       if (!response.ok) throw new Error(body.error || "Boutique publique indisponible.");
       setData(body);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Boutique publique indisponible.");
+      if (!silent) setError(caught instanceof Error ? caught.message : "Boutique publique indisponible.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
+  }, [load]);
+
+  useEffect(() => {
+    const refreshSilently = () => void load(true);
+    window.addEventListener("maison-jiya-live-refresh", refreshSilently);
+    return () => window.removeEventListener("maison-jiya-live-refresh", refreshSilently);
   }, [load]);
 
   async function save(payload: Record<string, unknown>) {
