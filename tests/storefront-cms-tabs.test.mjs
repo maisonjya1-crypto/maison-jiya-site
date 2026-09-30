@@ -83,3 +83,16 @@ test("un ajout photo local ne provoque plus le rechargement complet de la PWA", 
   assert.match(pwa, /currentVersion <= localLiveVersion\.current/);
   assert.match(media, /liveVersion: Number\(syncState\?\.version \|\| 0\)/);
 });
+
+
+test("la PWA ne redémarre pas si le polling voit la version changer pendant un upload photo local", async () => {
+  const cms = await readText("app/storefront-cms-v2-enhancement.tsx");
+  const pwa = await readText("app/private-pwa.tsx");
+  assert.match(cms, /maison-jiya-local-mutation-start/);
+  assert.match(cms, /maison-jiya-local-mutation-end/);
+  assert.match(cms, /setLocalMutationActive\(true\)/);
+  assert.match(cms, /setLocalMutationActive\(false\)/);
+  assert.match(pwa, /const localMutationDepth = useRef\(0\)/);
+  assert.match(pwa, /localMutationDepth\.current > 0/);
+  assert.match(pwa, /lastDataVersion\.current = currentVersion;\s*return;/);
+});
