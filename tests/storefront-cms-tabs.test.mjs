@@ -60,7 +60,7 @@ test("le CMS mobile ajoute une photo sans recharger tout l’écran et garde le 
   const css = await readText("app/storefront-cms-v2.css");
   const route = await readText("app/api/storefront/admin/media/route.ts");
   assert.match(source, /function addMediaLocally/);
-  assert.match(source, /if \(body\.media\) addMediaLocally\(body\.media\)/);
+  assert.match(source, /if \(body\.media\) replaceMediaLocally\(tempId, \{ \.\.\.body\.media, previewUrl: activePreview \}\)/);
   assert.doesNotMatch(source.slice(source.indexOf("async function uploadMany"), source.indexOf("const categories")), /await load\(\)/);
   assert.match(source, /<ProductEditor key=\{product\.productId\}/);
   assert.match(source, /storefront-cms-upload-progress/);
