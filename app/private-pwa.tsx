@@ -78,6 +78,7 @@ export default function PrivatePwa() {
   const lastNativeOrderIds = useRef<Set<string> | null>(null);
   const nativePermissionPending = useRef(false);
   const localLiveVersion = useRef<number | null>(null);
+  const localMutationDepth = useRef(0);
 
   const clearHideTimer = useCallback(() => {
     if (hideTimer.current !== null) {
@@ -260,8 +261,20 @@ export default function PrivatePwa() {
       localLiveVersion.current = version;
       lastDataVersion.current = version;
     };
+    const beginLocalMutation = () => {
+      localMutationDepth.current += 1;
+    };
+    const endLocalMutation = () => {
+      localMutationDepth.current = Math.max(0, localMutationDepth.current - 1);
+    };
     window.addEventListener("maison-jiya-local-live-version", acknowledgeLocalVersion);
-    return () => window.removeEventListener("maison-jiya-local-live-version", acknowledgeLocalVersion);
+    window.addEventListener("maison-jiya-local-mutation-start", beginLocalMutation);
+    window.addEventListener("maison-jiya-local-mutation-end", endLocalMutation);
+    return () => {
+      window.removeEventListener("maison-jiya-local-live-version", acknowledgeLocalVersion);
+      window.removeEventListener("maison-jiya-local-mutation-start", beginLocalMutation);
+      window.removeEventListener("maison-jiya-local-mutation-end", endLocalMutation);
+    };
   }, []);
 
   useEffect(() => {
@@ -295,6 +308,10 @@ export default function PrivatePwa() {
           return;
         }
         if (currentVersion !== lastDataVersion.current) {
+          if (localMutationDepth.current > 0) {
+            lastDataVersion.current = currentVersion;
+            return;
+          }
           if (localLiveVersion.current !== null && currentVersion <= localLiveVersion.current) {
             lastDataVersion.current = currentVersion;
             localLiveVersion.current = null;
