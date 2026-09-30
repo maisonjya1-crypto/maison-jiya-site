@@ -96,7 +96,10 @@ export async function POST(request: Request) {
       createdAt: string;
     }>();
 
-    return Response.json({ ok: true, media }, { headers: { "cache-control": "no-store" } });
+    const syncState = await database.prepare("SELECT current_version AS version FROM google_sheets_sync_state WHERE id = 1")
+      .first<{ version: number }>();
+
+    return Response.json({ ok: true, media, liveVersion: Number(syncState?.version || 0) }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     console.error("Maison Jiya storefront media upload failed", error);
     return Response.json({ error: error instanceof Error ? error.message : "Upload impossible." }, { status: 400 });
@@ -114,5 +117,7 @@ export async function DELETE(request: Request) {
   const database = await getRawDb();
   await ensureStorefrontCms(database);
   await database.prepare("DELETE FROM storefront_media WHERE id = ?").bind(id).run();
-  return Response.json({ ok: true }, { headers: { "cache-control": "no-store" } });
+  const syncState = await database.prepare("SELECT current_version AS version FROM google_sheets_sync_state WHERE id = 1")
+    .first<{ version: number }>();
+  return Response.json({ ok: true, liveVersion: Number(syncState?.version || 0) }, { headers: { "cache-control": "no-store" } });
 }
