@@ -318,7 +318,7 @@ export default function PrivatePwa() {
             return;
           }
           lastDataVersion.current = currentVersion;
-          window.location.reload();
+          window.dispatchEvent(new CustomEvent("maison-jiya-live-refresh", { detail: { version: currentVersion } }));
         }
       } catch {
         // La récupération réseau Android/iPhone existante prendra le relais.
