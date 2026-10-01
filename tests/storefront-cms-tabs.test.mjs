@@ -44,15 +44,16 @@ test("les onglets restent dans le flux normal du CMS", async () => {
 });
 
 
-test("l’upload photo mobile accepte le sélecteur natif et possède un fallback iPhone/Safari", async () => {
+test("l’upload photo mobile accepte le sélecteur natif et décode les photos iPhone sans étirement EXIF", async () => {
   const source = await readText("app/storefront-cms-v2-enhancement.tsx");
   assert.match(source, /accept="image\/\*"/);
-  assert.match(source, /typeof createImageBitmap === "function"/);
   assert.match(source, /URL\.createObjectURL\(file\)/);
   assert.match(source, /new Image\(\)/);
-  assert.match(source, /image\/jpeg/);
+  assert.match(source, /image\.naturalWidth/);
+  assert.match(source, /image\.naturalHeight/);
   assert.match(source, /event\.currentTarget\.value = ""/);
-  assert.doesNotMatch(source, /file\.type\.match\(\/\^image\\\/\(jpeg\|png\|webp\)\$\//);
+  assert.doesNotMatch(source, /readEncodedImageDimensions/);
+  assert.doesNotMatch(source, /resizeWidth:/);
 });
 
 
@@ -61,14 +62,15 @@ test("le CMS mobile ajoute une photo sans recharger tout l’écran et garde le 
   const css = await readText("app/storefront-cms-v2.css");
   const route = await readText("app/api/storefront/admin/media/route.ts");
   assert.match(source, /function addMediaLocally/);
-  assert.match(source, /if \(body\.media\) replaceMediaLocally\(tempId, \{ \.\.\.body\.media, previewUrl: activePreview \}\)/);
-  assert.doesNotMatch(source.slice(source.indexOf("async function uploadMany"), source.indexOf("const categories")), /await load\(\)/);
+  assert.match(source, /if \(!body\.media\) throw new Error/);
+  assert.match(source, /replaceMediaLocally\(tempId, \{ \.\.\.body\.media, previewUrl: activePreview, pending: false \}\)/);
+  assert.match(source, /void load\(true\)/);
   assert.match(source, /<ProductEditor key=\{product\.productId\}/);
   assert.match(source, /storefront-cms-upload-progress/);
-  assert.match(source, /targetBytes: 300_000/);
+  assert.match(source, /targetBytes: 260_000/);
   assert.match(route, /Response\.json\(\{ ok: true, media, liveVersion:/);
   assert.match(css, /-webkit-overflow-scrolling:\s*touch/);
-  assert.match(css, /pointer-events:\s*none/);
+  assert.match(css, /pointer-events:\s*auto\s*!important/);
   assert.match(css, /storefront-cms-v2 \.storefront-cms-tabs[^}]*flex-wrap:\s*wrap/s);
 });
 
@@ -111,15 +113,16 @@ test("les changements live ne peuvent plus redémarrer complètement la PWA", as
   assert.match(cms, /load\(true\)/);
 });
 
-test("la compression photo mobile réduit la mémoire avant le canvas quand les dimensions sont lisibles", async () => {
+test("la compression photo mobile respecte l’orientation décodée et libère le canvas", async () => {
   const source = await readText("app/storefront-cms-v2-enhancement.tsx");
-  assert.match(source, /async function readEncodedImageDimensions/);
-  assert.match(source, /resizeWidth:\s*targetWidth/);
-  assert.match(source, /resizeHeight:\s*targetHeight/);
-  assert.match(source, /resizeQuality:\s*"high"/);
-  assert.match(source, /loadImageForCanvas\(file, limits\.maxSide\)/);
+  assert.match(source, /async function loadImageForCanvas\(file: File\)/);
+  assert.match(source, /image\.naturalWidth/);
+  assert.match(source, /image\.naturalHeight/);
+  assert.match(source, /const scale = Math\.min\(1, limits\.maxSide \/ Math\.max\(image\.width, image\.height\)\)/);
   assert.match(source, /canvas\.width = 1/);
   assert.match(source, /canvas\.height = 1/);
+  assert.match(source, /Décodage de la photo trop long/);
+  assert.match(source, /8_000/);
 });
 
 
@@ -129,7 +132,7 @@ test("la photo choisie apparaît immédiatement et reste visible pendant/après 
   assert.match(source, /previewUrl\?: string/);
   assert.match(source, /URL\.createObjectURL\(raw\)/);
   assert.match(source, /pending:\s*true/);
-  assert.match(source, /replaceMediaLocally\(tempId, \{ \.\.\.body\.media, previewUrl: activePreview \}\)/);
+  assert.match(source, /replaceMediaLocally\(tempId, \{ \.\.\.body\.media, previewUrl: activePreview, pending: false \}\)/);
   assert.match(source, /mediaSrc\(item\)/);
   assert.match(styles, /storefront-cms-photo-pending/);
 });
