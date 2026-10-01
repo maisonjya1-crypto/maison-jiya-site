@@ -168,6 +168,8 @@ const legacySchemaStatements = [
     sale_price INTEGER NOT NULL,
     minimum_sale_price INTEGER DEFAULT 0 NOT NULL,
     stock_quantity INTEGER DEFAULT 0 NOT NULL,
+    stock_verification_status TEXT DEFAULT 'À vérifier' NOT NULL,
+    last_inventory_at TEXT,
     archived_at TEXT,
     archived_by_user_id INTEGER,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL

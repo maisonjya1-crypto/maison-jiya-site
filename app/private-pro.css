@@ -1119,3 +1119,78 @@
   }
   .app-shell .decision-center-list{grid-template-columns:1fr}
 }
+
+
+/* Inventory verification + automatic readable product IDs */
+.inventory-product-add-note {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #ded5e2);
+  border-radius: 14px;
+  background: var(--surface-soft, #f8f4f8);
+}
+.inventory-product-add-note strong { font-size: 14px; }
+.inventory-product-add-note span { font-size: 12px; opacity: .78; line-height: 1.45; }
+
+.product-code-field small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.product-code-field small button {
+  border: 0;
+  background: transparent;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+.product-derived-category {
+  display: grid;
+  gap: 6px;
+  align-content: end;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px dashed var(--line, #ded5e2);
+}
+.product-derived-category span { font-size: 12px; opacity: .7; }
+.product-derived-category strong { font-size: 14px; }
+
+.stock-level.unknown {
+  border-style: dashed;
+}
+.stock-level.unknown small {
+  max-width: 210px;
+}
+
+.inventory-never-grid article span {
+  display: block;
+  margin-top: 7px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.inventory-product-grid article .status {
+  margin-top: 7px;
+}
+.inventory-product-grid article > div > small {
+  display: block;
+}
+.inventory-add-found-button {
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .inventory-session-toolbar-actions {
+    align-items: stretch;
+  }
+  .inventory-session-toolbar-actions > button {
+    width: 100%;
+  }
+  .inventory-product-add-note,
+  .product-derived-category {
+    grid-column: 1 / -1;
+  }
+}

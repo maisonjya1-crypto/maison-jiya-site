@@ -16,6 +16,7 @@ import { calculateSmartCapital } from "../lib/smart-capital";
 import { buildDashboardPilotage } from "../lib/dashboard-pilotage";
 import { buildDashboardAlerts } from "../lib/dashboard-alerts";
 import { buildDashboardDecisions } from "../lib/dashboard-decisions";
+import { categoryForNature, productNatureOptions, suggestProductCode } from "../lib/product-code";
 
 type Order = {
   id: number;
@@ -219,6 +220,8 @@ type Product = {
   stockQuantity: number;
   stockAlertThreshold: number;
   reorderCoverDays: number;
+  stockVerificationStatus: "À vérifier" | "Compté" | "Rupture confirmée";
+  lastInventoryAt: string | null;
   archivedAt: string | null;
   archivedByUserId: number | null;
   createdAt: string;
@@ -1335,7 +1338,7 @@ export default function DashboardClient() {
         )}
         {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} print={printOrderSlip} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} restoreProduct={restoreProduct} moveStock={openStock} countInventory={openInventory} submit={submit} />}
       </section>
-      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} ads={data.ads} close={() => setModal(null)} submit={submit} />}
+      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} ads={data.ads} inventorySession={data.inventorySessions.find((session) => session.status === "En cours") || null} close={() => setModal(null)} submit={submit} />}
       {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} ads={data.ads} close={() => setSelectedOrder(null)} print={() => printOrderSlip(selectedOrder)} submit={submit} />}
       {selectedEntity && <EntityModal selection={selectedEntity} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
@@ -1666,7 +1669,7 @@ function Page({
     pilotage,
   });
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
-  if (active === "Inventaire") return <InventoryPage products={data.products} sessions={data.inventorySessions} counts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} />;
+  if (active === "Inventaire") return <InventoryPage products={data.products} sessions={data.inventorySessions} counts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAddProduct={() => open("product")} />;
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} onRestore={restoreProduct} />;
   if (active === "Réapprovisionnement") return <ReorderingPage data={data} metrics={metrics} submit={submit} onEditProduct={editEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
@@ -4297,7 +4300,7 @@ function InventorySessionCountModal({ session, product, close, onSaved, submit }
           </div>
           <div className="form-grid">
             <label className="field"><span>Quantité physique *</span><input name="physicalQuantity" type="number" inputMode="numeric" min="0" value={physicalQuantity} onChange={(event) => setPhysicalQuantity(event.target.value)} required /></label>
-            {difference !== 0 ? <Select label="Motif de l’écart *" name="reason" options={["Casse", "Perte", "Vol", "Erreur de saisie", "Autre"]} /> : <input type="hidden" name="reason" value="Aucun écart" />}
+            {difference !== 0 ? <Select label="Motif de l’écart *" name="reason" options={["Casse", "Perte", "Vol", "Erreur de saisie", "Article trouvé", "Autre"]} /> : <input type="hidden" name="reason" value="Aucun écart" />}
             <Field label="Note complémentaire" name="note" maxLength={240} />
           </div>
           <p className="inventory-warning">{difference === 0 ? "✓ Stock conforme." : difference < 0 ? `Le stock sera corrigé à ${parsed}. Perte valorisée : ${money(loss)}.` : `Le stock sera corrigé à ${parsed}. L’écart positif sera tracé.`}</p>
@@ -4309,7 +4312,7 @@ function InventorySessionCountModal({ session, product, close, onSaved, submit }
   );
 }
 
-function InventoryPage({ products, sessions, counts, canEdit, submit }: { products: Product[]; sessions: InventorySession[]; counts: InventoryCount[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function InventoryPage({ products, sessions, counts, canEdit, submit, onAddProduct }: { products: Product[]; sessions: InventorySession[]; counts: InventoryCount[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAddProduct: () => void }) {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
   const [countQueue, setCountQueue] = useState<number[]>([]);
@@ -4326,6 +4329,7 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
   const selectedRemainingProducts = remaining.filter((product) => selectedProductIds.includes(product.id));
   const allVisibleSelected = visibleProducts.length > 0 && visibleProducts.every((product) => selectedProductIds.includes(product.id));
   const neverCounted = activeProducts.filter((product) => !counts.some((count) => count.productId === product.id));
+  const unverifiedProducts = activeProducts.filter((product) => product.stockVerificationStatus === "À vérifier");
   const frequent = activeProducts.map((product) => ({
     product,
     differences: counts.filter((count) => count.productId === product.id && count.difference !== 0).length,
@@ -4340,8 +4344,11 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
   }
   async function finalizeSession() {
     if (!activeSession || !canEdit || finalizing) return;
-    if (activeSession.countedProductCount < activeSession.expectedProductCount) return;
-    if (!window.confirm(`Clôturer ${activeSession.sessionRef} ?\n\nLes corrections de stock déjà validées resteront définitives et le bilan sera figé.`)) return;
+    const pending = Math.max(0, activeSession.expectedProductCount - activeSession.countedProductCount);
+    const warning = pending > 0
+      ? `Terminer ${activeSession.sessionRef} avec ${pending} produit(s) encore « À vérifier » ?\n\nLeur quantité actuelle ne sera PAS remplacée par 0. Ils resteront signalés pour un prochain contrôle.`
+      : `Clôturer ${activeSession.sessionRef} ?\n\nTous les produits ont été comptés. Les corrections validées resteront dans l’historique.`;
+    if (!window.confirm(warning)) return;
     setFinalizing(true);
     try { await submit("finalizeInventorySession", { sessionId: String(activeSession.id) }); } finally { setFinalizing(false); }
   }
@@ -4383,8 +4390,8 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
   return (
     <>
       <section className="kpi-grid stock-kpis">
-        <Kpi label="Valeur stock réelle" value={money(currentValue)} detail="Quantités actuelles × coût d’achat" />
-        <Kpi label="Jamais comptés" value={String(neverCounted.length)} detail={`${activeProducts.length} produit(s) actif(s)`} danger={neverCounted.length > 0} />
+        <Kpi label="Valeur stock système" value={money(currentValue)} detail="Quantités actuelles × coût d’achat" />
+        <Kpi label="À vérifier" value={String(unverifiedProducts.length)} detail={`${activeProducts.length} produit(s) actif(s)`} danger={unverifiedProducts.length > 0} />
         <Kpi label="Sessions clôturées" value={String(sessions.filter((session) => session.status === "Clôturé").length)} detail="Historique conservé" />
         <Kpi label="Pertes inventaire" value={money(sessions.reduce((sum, session) => sum + session.lossValue, 0))} detail="Valeur des écarts négatifs" danger={sessions.some((session) => session.lossValue > 0)} />
       </section>
@@ -4398,15 +4405,17 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
           <div className="inventory-session-progress">
             <div><span>Progression</span><strong>{activeSession.countedProductCount} / {activeSession.expectedProductCount}</strong></div>
             <div className="progress"><span className="green" style={{ width: `${activeSession.expectedProductCount ? Math.min(100, (activeSession.countedProductCount / activeSession.expectedProductCount) * 100) : 100}%` }} /></div>
+            <div><span>À vérifier</span><strong>{Math.max(0, activeSession.expectedProductCount - activeSession.countedProductCount)}</strong></div>
             <div><span>Ajustements</span><strong>{activeSession.totalAdjustmentUnits} unité(s)</strong></div>
             <div><span>Pertes détectées</span><strong className={activeSession.lossValue > 0 ? "money-negative" : ""}>{money(activeSession.lossValue)}</strong></div>
           </div>
           <div className="inventory-session-toolbar">
             <label><span>Rechercher un produit à compter</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="SKU, nom ou catégorie" /></label>
             <div className="inventory-session-toolbar-actions">
+              <button className="secondary-button inventory-add-found-button" type="button" disabled={!canEdit} onClick={onAddProduct}>＋ Ajouter un article trouvé</button>
               <button className="secondary-button" type="button" disabled={!canEdit || !visibleProducts.length} onClick={toggleVisibleSelection}>{allVisibleSelected ? "Tout désélectionner" : "Sélectionner les visibles"}</button>
               <button className="secondary-button inventory-bulk-count-button" type="button" disabled={!canEdit || !selectedRemainingProducts.length} onClick={startSelectedCounting}>Compter la sélection ({selectedRemainingProducts.length})</button>
-              <button className="primary-button" type="button" disabled={!canEdit || activeSession.countedProductCount < activeSession.expectedProductCount || finalizing} onClick={() => void finalizeSession()}>{finalizing ? "Clôture…" : "Clôturer l’inventaire"}</button>
+              <button className="primary-button" type="button" disabled={!canEdit || finalizing} onClick={() => void finalizeSession()}>{finalizing ? "Clôture…" : activeSession.countedProductCount < activeSession.expectedProductCount ? "Terminer avec articles à vérifier" : "Clôturer l’inventaire"}</button>
             </div>
           </div>
           {visibleProducts.length ? (
@@ -4416,9 +4425,9 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
                   <input type="checkbox" checked={selectedProductIds.includes(product.id)} disabled={!canEdit} onChange={() => toggleProductSelection(product.id)} />
                   <span>Sélectionner</span>
                 </label>
-                <div><strong>{product.name}</strong><small>{product.productCode} · {product.category}</small></div>
-                <div><span>Stock système</span><strong>{product.stockQuantity}</strong></div>
-                <div><span>Valeur</span><strong>{money(product.stockQuantity * product.purchasePrice)}</strong></div>
+                <div><strong>{product.name}</strong><small>{product.productCode} · {product.category}</small><Status value="À vérifier" /></div>
+                <div><span>Stock système</span><strong>{product.stockQuantity}</strong><small>Non remplacé tant que vous ne comptez pas.</small></div>
+                <div><span>Valeur système</span><strong>{money(product.stockQuantity * product.purchasePrice)}</strong></div>
                 <button type="button" className="secondary-button" disabled={!canEdit} onClick={() => { setCountQueue([]); setSelectedProduct(product); }}>Compter</button>
               </article>
             ))}</div>
@@ -4427,22 +4436,22 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
           {sessionCounts.length ? (
             <details className="inventory-counted-details">
               <summary>Déjà comptés · {sessionCounts.length}</summary>
-              <div className="table-scroll"><table><thead><tr><th>Produit</th><th>Système</th><th>Physique</th><th>Écart</th><th>Motif</th><th>Perte</th></tr></thead><tbody>
-                {sessionCounts.map((count) => <tr key={count.id}><td><strong>{count.productName}</strong><small>{count.productCode}</small></td><td>{count.systemQuantity}</td><td>{count.physicalQuantity}</td><td className={moneyTone(count.difference)}>{count.difference > 0 ? "+" : ""}{count.difference}</td><td>{count.reason}</td><td className={count.lossValue > 0 ? "money-negative" : ""}>{money(count.lossValue)}</td></tr>)}
+              <div className="table-scroll"><table><thead><tr><th>Produit</th><th>État</th><th>Système</th><th>Physique</th><th>Écart</th><th>Motif</th><th>Perte</th></tr></thead><tbody>
+                {sessionCounts.map((count) => <tr key={count.id}><td><strong>{count.productName}</strong><small>{count.productCode}</small></td><td><Status value={count.physicalQuantity === 0 ? "Rupture confirmée" : "Compté"} /></td><td>{count.systemQuantity}</td><td>{count.physicalQuantity}</td><td className={moneyTone(count.difference)}>{count.difference > 0 ? "+" : ""}{count.difference}</td><td>{count.reason}</td><td className={count.lossValue > 0 ? "money-negative" : ""}>{money(count.lossValue)}</td></tr>)}
               </tbody></table></div>
             </details>
           ) : null}
         </section>
       ) : (
         <section className="panel inventory-start-card">
-          <div><span className="card-kicker">Inventaire physique</span><h2>Démarrer un nouveau comptage</h2><p>La session fige le nombre de produits à contrôler. Chaque écart corrigera le stock et restera justifié dans l’historique.</p></div>
-          <button className="primary-button" type="button" disabled={!canEdit || starting} onClick={() => void startSession()}>{starting ? "Création…" : "＋ Démarrer l’inventaire"}</button>
+          <div><span className="card-kicker">Inventaire physique</span><h2>Démarrer un nouveau comptage</h2><p>Le stock actuel reste votre stock système. Tous les articles passent « À vérifier », puis vous confirmez seulement ceux que vous avez réellement comptés. Vous pouvez aussi ajouter de nouveaux articles pendant la session.</p></div>
+          <button className="primary-button" type="button" disabled={!canEdit || starting} onClick={() => void startSession()}>{starting ? "Création…" : "＋ Démarrer l’inventaire récent"}</button>
         </section>
       )}
 
       <section className="panel page-panel">
-        <PanelHead kicker="Contrôle" title="Produits jamais comptés" total={String(neverCounted.length)} />
-        {neverCounted.length ? <div className="inventory-never-grid">{neverCounted.slice(0, 12).map((product) => <article key={product.id}><strong>{product.name}</strong><small>{product.productCode} · stock {product.stockQuantity}</small></article>)}</div> : <div className="pending-empty">✓ Tous les produits actifs ont déjà été contrôlés au moins une fois.</div>}
+        <PanelHead kicker="Contrôle actuel" title="Stocks à vérifier" total={String(unverifiedProducts.length)} />
+        {unverifiedProducts.length ? <div className="inventory-never-grid">{unverifiedProducts.slice(0, 24).map((product) => <article key={product.id}><strong>{product.name}</strong><small>{product.productCode} · stock système {product.stockQuantity}</small><span>À vérifier{product.lastInventoryAt ? ` · dernier comptage ${dateLabel(product.lastInventoryAt)}` : neverCounted.some((row) => row.id === product.id) ? " · jamais compté" : ""}</span></article>)}</div> : <div className="pending-empty">✓ Tous les produits actifs ont un comptage physique confirmé.</div>}
       </section>
 
       <section className="panel page-panel">
@@ -4452,7 +4461,7 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
 
       <section className="panel page-panel">
         <PanelHead kicker="Historique" title="Sessions clôturées" total={String(sessions.filter((session) => session.status === "Clôturé").length)} />
-        {latestClosed.length ? <div className="table-scroll"><table><thead><tr><th>Session</th><th>Date</th><th>Responsable</th><th>Produits</th><th>Unités système</th><th>Unités réelles</th><th>Valeur avant</th><th>Valeur après</th><th>Pertes</th></tr></thead><tbody>{latestClosed.map((session) => <tr key={session.id}><td><strong>{session.sessionRef}</strong></td><td>{session.completedAt ? dateTimeLabel(session.completedAt) : "—"}</td><td>{session.startedByName}</td><td>{session.countedProductCount}</td><td>{session.totalSystemUnits}</td><td>{session.totalPhysicalUnits}</td><td>{money(session.valueBefore)}</td><td>{money(session.valueAfter)}</td><td className={session.lossValue > 0 ? "money-negative" : ""}>{money(session.lossValue)}</td></tr>)}</tbody></table></div> : <EmptyState title="Aucun inventaire clôturé" text="Le premier bilan apparaîtra ici après la clôture d’une session." />}
+        {latestClosed.length ? <div className="table-scroll"><table><thead><tr><th>Session</th><th>Date</th><th>État</th><th>Responsable</th><th>Produits</th><th>Unités vérifiées</th><th>Valeur système / réelle</th><th>Pertes</th></tr></thead><tbody>{latestClosed.map((session) => { const complete = session.countedProductCount >= session.expectedProductCount; return <tr key={session.id}><td><strong>{session.sessionRef}</strong></td><td>{session.completedAt ? dateTimeLabel(session.completedAt) : "—"}</td><td><Status value={complete ? "Complet" : "Partiel"} /></td><td>{session.startedByName}</td><td>{session.countedProductCount} / {session.expectedProductCount}</td><td>{session.totalPhysicalUnits}</td><td>{money(session.valueAfter)}<small>{complete ? "Physiquement vérifiée" : "Provisoire · contient du stock à vérifier"}</small></td><td className={session.lossValue > 0 ? "money-negative" : ""}>{money(session.lossValue)}</td></tr>; })}</tbody></table></div> : <EmptyState title="Aucun inventaire clôturé" text="Le premier bilan apparaîtra ici après la clôture d’une session." />}
       </section>
       {activeSession && selectedProduct ? <InventorySessionCountModal key={selectedProduct.id} session={activeSession} product={selectedProduct} close={closeCountModal} onSaved={handleCountSaved} submit={submit} /> : null}
     </>
@@ -4603,7 +4612,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                         <td><strong>{money(product.salePrice)}</strong></td>
                         <td>{money(product.minimumSalePrice || product.salePrice)}</td>
                         <td>{product.stockAlertThreshold}</td>
-                        <td><StockLevel quantity={product.stockQuantity} threshold={product.stockAlertThreshold} /></td>
+                        <td><StockLevel quantity={product.stockQuantity} threshold={product.stockAlertThreshold} verificationStatus={product.stockVerificationStatus} lastInventoryAt={product.lastInventoryAt} /></td>
                         <td>
                           <div className="entity-actions-row">
                             {product.archivedAt ? (
@@ -4634,7 +4643,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                     <div className="product-card-head">
                       <div><span>{product.productCode}</span><h3>{product.name}</h3></div>
                       <div className="product-card-actions">
-                        <StockLevel quantity={product.stockQuantity} threshold={product.stockAlertThreshold} />
+                        <StockLevel quantity={product.stockQuantity} threshold={product.stockAlertThreshold} verificationStatus={product.stockVerificationStatus} lastInventoryAt={product.lastInventoryAt} />
                         {product.archivedAt ? <Status value="Archivé" /> : <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />}
                       </div>
                     </div>
@@ -4744,11 +4753,13 @@ function ProductFilterBar({ search, category, categories, resultCount, totalCoun
     </div>
   );
 }
-function StockLevel({ quantity, threshold = 5 }: { quantity: number; threshold?: number }) {
+function StockLevel({ quantity, threshold = 5, verificationStatus, lastInventoryAt }: { quantity: number; threshold?: number; verificationStatus?: Product["stockVerificationStatus"]; lastInventoryAt?: string | null }) {
+  const unknown = verificationStatus === "À vérifier";
+  const confirmedOut = verificationStatus === "Rupture confirmée";
   return (
-    <span className={`stock-level ${quantity === 0 ? "empty" : quantity <= threshold ? "low" : "ok"}`}>
+    <span className={`stock-level ${unknown ? "unknown" : confirmedOut || quantity === 0 ? "empty" : quantity <= threshold ? "low" : "ok"}`}>
       <strong>{quantity}</strong> unité{quantity === 1 ? "" : "s"}
-      <small>{quantity === 0 ? "Rupture" : quantity <= threshold ? `Stock faible · seuil ${threshold}` : "Disponible"}</small>
+      <small>{unknown ? `À vérifier · stock système${lastInventoryAt ? ` · dernier comptage ${dateLabel(lastInventoryAt)}` : ""}` : confirmedOut ? "Rupture confirmée" : quantity === 0 ? "Rupture système" : quantity <= threshold ? `Stock faible · seuil ${threshold}` : "Disponible"}</small>
     </span>
   );
 }
@@ -5801,7 +5812,7 @@ function MonthlyClosingPanel({
   const previousClosing = data.monthlyClosings.find((closing) => closing.monthKey === previousKey) || null;
   const existing = data.monthlyClosings.find((closing) => closing.monthKey === selectedMonth) || null;
   const latestInventory = [...data.inventorySessions]
-    .filter((session) => session.status === "Clôturé" && session.completedAt && businessDateKey(session.completedAt) >= bounds.start && businessDateKey(session.completedAt) <= bounds.end)
+    .filter((session) => session.status === "Clôturé" && session.countedProductCount >= session.expectedProductCount && session.completedAt && businessDateKey(session.completedAt) >= bounds.start && businessDateKey(session.completedAt) <= bounds.end)
     .sort((left, right) => String(right.completedAt).localeCompare(String(left.completedAt)))[0] || null;
   const stockValueEnd = latestInventory ? latestInventory.valueAfter : null;
   const stockValueSource = latestInventory
@@ -7183,7 +7194,7 @@ function MonthlyCapitalChart({
   );
 }
 function Status({ value }: { value: string }) {
-  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration", "OK", "Actif", "Reçu", "Rapproché"].includes(value) ? "success" : ["Retour", "Annulée", "Annulé", "Inactif", "Refusée", "Retournée", "Remboursé", "Non encaissé", "Rupture", "Critique", "En retard"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande", "Commandé"].includes(value) ? "info" : "warning";
+  const tone = ["Livrée", "Encaissé", "Payé", "Connecté", "Configuré", "Entrée", "Réintégration", "OK", "Actif", "Reçu", "Rapproché", "Compté", "Complet"].includes(value) ? "success" : ["Retour", "Annulée", "Annulé", "Inactif", "Refusée", "Retournée", "Remboursé", "Non encaissé", "Rupture", "Rupture confirmée", "Critique", "En retard"].includes(value) ? "danger" : ["Expédiée", "En livraison", "Vente", "Commande", "Commandé"].includes(value) ? "info" : "warning";
   return <span className={`status ${tone}`}>{value}</span>;
 }
 
@@ -7302,7 +7313,7 @@ function CarrierQuoteChooser({ city, defaultCarrier = "", defaultFee = 0, locked
   );
 }
 
-function EntryModal({ kind, carrierNames, products, suppliers, purchases, supplierInvoices, ads, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; products: Product[]; suppliers: Supplier[]; purchases: Purchase[]; supplierInvoices: SupplierInvoice[]; ads: Ad[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function EntryModal({ kind, carrierNames, products, suppliers, purchases, supplierInvoices, ads, inventorySession, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; products: Product[]; suppliers: Supplier[]; purchases: Purchase[]; supplierInvoices: SupplierInvoice[]; ads: Ad[]; inventorySession: InventorySession | null; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const labels = {
     order: "Nouvelle commande",
     purchase: "Nouveau bon de commande",
@@ -7323,7 +7334,17 @@ function EntryModal({ kind, carrierNames, products, suppliers, purchases, suppli
   const [orderFulfillment, setOrderFulfillment] = useState<"Livraison" | "Magasin physique">("Livraison");
   const [purchaseMode, setPurchaseMode] = useState<"Retrait fournisseur" | "Livraison fournisseur">("Retrait fournisseur");
   const [receiveImmediately, setReceiveImmediately] = useState(true);
+  const [productNature, setProductNature] = useState("Montre");
+  const [productName, setProductName] = useState("");
+  const [productCode, setProductCode] = useState("");
+  const [productCodeManual, setProductCodeManual] = useState(false);
+  const [productInitialQuantity, setProductInitialQuantity] = useState("0");
+  const [inventoryStockMode, setInventoryStockMode] = useState<"known" | "unknown">("known");
   const selectedProduct = products.find((product) => String(product.id) === selectedProductId) || null;
+  const productCategory = categoryForNature(productNature);
+  const suggestedProductCode = productName.trim()
+    ? suggestProductCode({ name: productName, nature: productNature, existingCodes: products.map((product) => product.productCode) })
+    : "";
 
   const initialPurchaseProduct = products[0] || null;
   const [purchaseLines, setPurchaseLines] = useState<Array<{ key: number; productId: string; item: string; quantity: string; unitCost: string }>>([
@@ -7450,10 +7471,51 @@ function EntryModal({ kind, carrierNames, products, suppliers, purchases, suppli
           <div className="form-grid">
             {kind === "product" && (
               <>
-                <Field label="ID produit / SKU *" name="productCode" required />
-                <Field label="Nom du produit *" name="name" required />
-                <Select label="Catégorie *" name="category" options={productCategoryOptions} />
-                <Field label="Quantité initiale *" name="initialQuantity" type="number" inputMode="numeric" defaultValue="0" min="0" required />
+                {inventorySession ? (
+                  <div className="inventory-product-add-note">
+                    <strong>Ajout pendant {inventorySession.sessionRef}</strong>
+                    <span>Le produit sera ajouté au catalogue et à l’inventaire actuel. Si sa quantité est inconnue, il restera « À vérifier » sans être considéré comme une rupture.</span>
+                  </div>
+                ) : null}
+                <label className="field">
+                  <span>Nature du produit *</span>
+                  <select name="productNature" value={productNature} onChange={(event) => { setProductNature(event.target.value); setProductCodeManual(false); }}>
+                    {productNatureOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Nom du produit *</span>
+                  <input name="name" value={productName} onChange={(event) => setProductName(event.target.value)} placeholder="Ex. Cartier Santos blanc" required />
+                </label>
+                <label className="field product-code-field">
+                  <span>ID produit proposé *</span>
+                  <input name="productCode" value={productCodeManual ? productCode : suggestedProductCode} onChange={(event) => { setProductCode(event.target.value.toUpperCase()); setProductCodeManual(true); }} placeholder="Généré automatiquement" required />
+                  {suggestedProductCode ? (
+                    <small>Suggestion : <strong>{suggestedProductCode}</strong>{productCodeManual && productCode !== suggestedProductCode ? <button type="button" onClick={() => setProductCodeManual(false)}>Utiliser</button> : null}</small>
+                  ) : <small>Tapez le nom : l’ID sera proposé automatiquement.</small>}
+                </label>
+                <input type="hidden" name="category" value={productCategory} />
+                <div className="product-derived-category"><span>Catégorie</span><strong>{productCategory}</strong></div>
+                {inventorySession ? (
+                  <>
+                    <label className="field">
+                      <span>État du stock trouvé *</span>
+                      <select value={inventoryStockMode} onChange={(event) => setInventoryStockMode(event.target.value === "unknown" ? "unknown" : "known")}>
+                        <option value="known">Quantité comptée maintenant</option>
+                        <option value="unknown">Je ne connais pas encore la quantité</option>
+                      </select>
+                    </label>
+                    {inventoryStockMode === "known" ? (
+                      <label className="field"><span>Quantité physique comptée *</span><input name="initialQuantity" type="number" inputMode="numeric" min="0" value={productInitialQuantity} onChange={(event) => setProductInitialQuantity(event.target.value)} required /></label>
+                    ) : <input type="hidden" name="initialQuantity" value="0" />}
+                    <input type="hidden" name="inventoryQuantityConfirmed" value={inventoryStockMode === "known" ? "true" : "false"} />
+                  </>
+                ) : (
+                  <>
+                    <label className="field"><span>Quantité initiale *</span><input name="initialQuantity" type="number" inputMode="numeric" min="0" value={productInitialQuantity} onChange={(event) => setProductInitialQuantity(event.target.value)} required /></label>
+                    <input type="hidden" name="inventoryQuantityConfirmed" value="false" />
+                  </>
+                )}
                 <Field label="Seuil d’alerte stock *" name="stockAlertThreshold" type="number" inputMode="numeric" defaultValue="5" min="0" required />
                 <Field label="Couverture cible (jours) *" name="reorderCoverDays" type="number" inputMode="numeric" defaultValue="30" min="1" required />
                 <ProductPricingFields />
@@ -8226,7 +8288,7 @@ function InventoryCountModal({ product, close, submit }: { product: Product; clo
               <span>Quantité physique comptée *</span>
               <input name="physicalQuantity" type="number" inputMode="numeric" min="0" value={physicalQuantity} onChange={(event) => setPhysicalQuantity(event.target.value)} required />
             </label>
-            {difference !== 0 ? <Select label="Motif de l’écart *" name="reason" options={["Casse", "Perte", "Vol", "Erreur de saisie", "Autre"]} /> : <input type="hidden" name="reason" value="Aucun écart" />}
+            {difference !== 0 ? <Select label="Motif de l’écart *" name="reason" options={["Casse", "Perte", "Vol", "Erreur de saisie", "Article trouvé", "Autre"]} /> : <input type="hidden" name="reason" value="Aucun écart" />}
             <Field label="Note complémentaire" name="note" />
           </div>
           <p className="inventory-warning">{difference === 0 ? "✓ Aucun écart : le contrôle sera quand même enregistré." : `Le site corrigera automatiquement le stock de ${product.stockQuantity} à ${parsedPhysicalQuantity} unité(s).`}</p>

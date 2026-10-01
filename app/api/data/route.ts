@@ -16,6 +16,7 @@ import { buildSmartStockRecommendations } from "../../../db/smart-stock";
 import { supplierInvoiceIsOverdue, supplierInvoicePaymentStatus, syncPurchaseOrderPaymentState } from "../../../db/supplier-invoices";
 import { buildPurchaseReference, normalizedProcurementStatus, normalizeSupplierName, resolveSupplierProfile } from "../../../db/suppliers";
 import { normalizeOrderPaymentState, type OrderPaymentStatus } from "../../../lib/order-payment-lifecycle";
+import { categoryForNature, suggestProductCode } from "../../../lib/product-code";
 import { moveOrderToTrash, releaseTrashedOrderStock, restoreOrderFromTrash } from "../../../db/order-trash";
 import { adPerformance, auditLogs, capitalLedger, carrierEvents, carrierSettlementOrders, carrierSettlements, customers, dailyBackups, dailyClosings, monthlyClosings, expenses, recurringExpenses, inventoryCounts, inventorySessions, orders, orderStatusHistory, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../db/schema";
 import { createUser, getAuthenticatedUser, normalizeUsername, updateUserPassword, type AppUser } from "../../auth";
@@ -124,7 +125,7 @@ const fulfillmentTypes = ["Livraison", "Magasin physique"];
 const paymentStatuses = ["À encaisser", "Encaissé", "Non encaissé", "Remboursé"];
 const stockCommittedStatuses = new Set(["Confirmée", "Expédiée", "En livraison", "Livrée", "Retour"]);
 const returnReasons = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
-const inventoryDifferenceReasons = ["Casse", "Perte", "Vol", "Erreur de saisie", "Autre"];
+const inventoryDifferenceReasons = ["Casse", "Perte", "Vol", "Erreur de saisie", "Article trouvé", "Autre"];
 
 function inventoryDifferenceReason(value: unknown, difference: number) {
   if (difference === 0) return "Aucun écart";
@@ -2046,37 +2047,107 @@ export async function POST(request: Request) {
       auditEntityLabel = `${createdCount} créé(s), ${updatedCount} mis à jour, ${skippedCount} ignoré(s)`;
     } else if (payload.action === "addProduct") {
       const openInventory = await openInventorySession();
-      if (openInventory) return Response.json({ error: inventoryCatalogLockMessage(openInventory.sessionRef) }, { status: 409 });
-      const productCode = textValue(payload.productCode).toUpperCase();
+      const database = await getRawDb();
       const name = textValue(payload.name);
-      if (!productCode || !name) return Response.json({ error: "L’ID produit et le nom sont obligatoires." }, { status: 400 });
+      const productNature = textValue(payload.productNature, "Autre");
+      const requestedCode = textValue(payload.productCode).toUpperCase();
+      if (!name) return Response.json({ error: "Le nom du produit est obligatoire." }, { status: 400 });
+      const existingCodeRows = await database.prepare("SELECT product_code AS productCode FROM products").all<{ productCode: string }>();
+      const productCode = requestedCode || suggestProductCode({
+        name,
+        nature: productNature,
+        existingCodes: existingCodeRows.results.map((row) => row.productCode),
+      });
       const [duplicate] = await db.select({ id: products.id }).from(products).where(eq(products.productCode, productCode)).limit(1);
       if (duplicate) return Response.json({ error: "Cet ID produit existe déjà." }, { status: 409 });
-      const initialQuantity = numberValue(payload.initialQuantity);
+      const requestedInitialQuantity = numberValue(payload.initialQuantity);
+      const inventoryQuantityConfirmed = Boolean(openInventory) && textValue(payload.inventoryQuantityConfirmed) === "true";
+      const initialQuantity = openInventory && !inventoryQuantityConfirmed ? 0 : requestedInitialQuantity;
       const salePrice = moneyValue(payload.salePrice);
       const purchasePrice = moneyValue(payload.purchasePrice);
       const minimumSalePrice = moneyValue(payload.minimumSalePrice, salePrice);
-      const category = productCategory(payload.category);
+      const requestedCategory = textValue(payload.category);
+      const category = productCategory(requestedCategory || categoryForNature(productNature));
       const alertThreshold = stockAlertThreshold(payload.stockAlertThreshold, 5);
       const coverDays = reorderCoverDays(payload.reorderCoverDays, 30);
       const duplicateProductCreation = await protectMutation("addProduct");
       if (duplicateProductCreation) return duplicateProductCreation;
-      const rawDatabase = await getRawDb();
+      const verificationStatus = inventoryQuantityConfirmed
+        ? (initialQuantity === 0 ? "Rupture confirmée" : "Compté")
+        : "À vérifier";
+      const lastInventoryAt = inventoryQuantityConfirmed ? new Date().toISOString() : null;
       const productStatements = [
-        rawDatabase.prepare(`
-          INSERT INTO products (product_code, name, category, purchase_price, sale_price, minimum_sale_price, stock_quantity, stock_alert_threshold, reorder_cover_days)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(productCode, name, category, purchasePrice, salePrice, minimumSalePrice, initialQuantity, alertThreshold, coverDays),
+        database.prepare(`
+          INSERT INTO products (
+            product_code, name, category, purchase_price, sale_price, minimum_sale_price,
+            stock_quantity, stock_alert_threshold, reorder_cover_days,
+            stock_verification_status, last_inventory_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          productCode, name, category, purchasePrice, salePrice, minimumSalePrice,
+          initialQuantity, alertThreshold, coverDays, verificationStatus, lastInventoryAt,
+        ),
       ];
-      if (initialQuantity > 0) {
+
+      if (openInventory) {
+        if (inventoryQuantityConfirmed) {
+          const countRef = `${openInventory.sessionRef}-${productCode}-${crypto.randomUUID().slice(0, 3).toUpperCase()}`;
+          const valueAfter = initialQuantity * purchasePrice;
+          productStatements.push(
+            database.prepare(`
+              INSERT INTO inventory_counts (
+                count_ref, session_id, product_id, system_quantity, physical_quantity, difference,
+                reason, unit_cost, value_before, value_after, loss_value,
+                note, counted_by_user_id, counted_by_name
+              )
+              SELECT ?, ?, id, 0, ?, ?, 'Article ajouté pendant inventaire',
+                purchase_price, 0, ? * purchase_price, 0,
+                'Nouveau produit constaté physiquement', ?, ?
+              FROM products WHERE product_code = ?
+            `).bind(
+              countRef, openInventory.id, initialQuantity, initialQuantity, initialQuantity,
+              user.id, user.displayName, productCode,
+            ),
+            database.prepare(`
+              UPDATE inventory_sessions
+              SET expected_product_count = expected_product_count + 1,
+                  counted_product_count = counted_product_count + 1,
+                  total_physical_units = total_physical_units + ?,
+                  total_adjustment_units = total_adjustment_units + ?,
+                  value_after = value_after + ?
+              WHERE id = ? AND status = 'En cours'
+            `).bind(initialQuantity, initialQuantity, valueAfter, openInventory.id),
+          );
+          if (initialQuantity > 0) {
+            productStatements.push(
+              database.prepare(`
+                INSERT INTO stock_movements (product_id, movement_type, quantity, note)
+                SELECT id, 'Inventaire +', ?, ? FROM products WHERE product_code = ?
+              `).bind(initialQuantity, `Inventaire ${openInventory.sessionRef} · article trouvé`, productCode),
+            );
+          }
+          integrationMessage = `${name} ajouté et compté dans ${openInventory.sessionRef} · ${initialQuantity} unité(s).`;
+        } else {
+          productStatements.push(
+            database.prepare(`
+              UPDATE inventory_sessions
+              SET expected_product_count = expected_product_count + 1
+              WHERE id = ? AND status = 'En cours'
+            `).bind(openInventory.id),
+          );
+          integrationMessage = `${name} ajouté à ${openInventory.sessionRef} avec stock « À vérifier ». Aucun zéro de rupture n’a été inventé.`;
+        }
+      } else if (initialQuantity > 0) {
         productStatements.push(
-          rawDatabase.prepare(`
+          database.prepare(`
             INSERT INTO stock_movements (product_id, movement_type, quantity, note)
             SELECT id, 'Entrée', ?, 'Stock initial' FROM products WHERE product_code = ?
           `).bind(initialQuantity, productCode),
         );
       }
-      await rawDatabase.batch(productStatements);
+      await database.batch(productStatements);
+      auditEntityLabel = `${productCode} · ${name}`;
     } else if (payload.action === "updateProduct") {
       const openInventory = await openInventorySession();
       if (openInventory) return Response.json({ error: inventoryCatalogLockMessage(openInventory.sessionRef) }, { status: 409 });
@@ -2187,23 +2258,30 @@ export async function POST(request: Request) {
       const duplicateSession = await protectMutation("startInventorySession");
       if (duplicateSession) return duplicateSession;
       const sessionRef = `INV-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${crypto.randomUUID().slice(0, 5).toUpperCase()}`;
-      const inserted = await database.prepare(`
-        INSERT INTO inventory_sessions (
-          session_ref, status, note, expected_product_count, counted_product_count,
-          total_system_units, total_physical_units, total_adjustment_units,
-          value_before, value_after, loss_value,
-          started_by_user_id, started_by_name
-        ) VALUES (?, 'En cours', ?, ?, 0, ?, 0, 0, ?, 0, 0, ?, ?)
-      `).bind(
-        sessionRef,
-        textValue(payload.note).slice(0, 500),
-        Number(totals?.productCount || 0),
-        Number(totals?.totalUnits || 0),
-        Number(totals?.stockValue || 0),
-        user.id,
-        user.displayName,
-      ).run();
-      auditEntityId = String(inserted.meta?.last_row_id || sessionRef);
+      await database.batch([
+        database.prepare(`
+          INSERT INTO inventory_sessions (
+            session_ref, status, note, expected_product_count, counted_product_count,
+            total_system_units, total_physical_units, total_adjustment_units,
+            value_before, value_after, loss_value,
+            started_by_user_id, started_by_name
+          ) VALUES (?, 'En cours', ?, ?, 0, ?, 0, 0, ?, 0, 0, ?, ?)
+        `).bind(
+          sessionRef,
+          textValue(payload.note).slice(0, 500),
+          Number(totals?.productCount || 0),
+          Number(totals?.totalUnits || 0),
+          Number(totals?.stockValue || 0),
+          user.id,
+          user.displayName,
+        ),
+        database.prepare(`
+          UPDATE products
+          SET stock_verification_status = 'À vérifier'
+          WHERE archived_at IS NULL
+        `),
+      ]);
+      auditEntityId = sessionRef;
       auditEntityLabel = sessionRef;
       integrationMessage = `Session ${sessionRef} démarrée · ${Number(totals?.productCount || 0)} produit(s) à compter · valeur théorique ${Number(totals?.stockValue || 0).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.`;
     } else if (payload.action === "countInventorySessionProduct") {
@@ -2264,14 +2342,24 @@ export async function POST(request: Request) {
           note, user.id, user.displayName, productId, expectedRaw,
         ),
       ];
+      statements.push(
+        database.prepare(`
+          UPDATE products
+          SET stock_quantity = ?,
+              stock_verification_status = ?,
+              last_inventory_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND stock_quantity = ?
+            AND EXISTS (SELECT 1 FROM inventory_counts WHERE count_ref = ?)
+        `).bind(
+          physicalRaw,
+          physicalRaw === 0 ? "Rupture confirmée" : "Compté",
+          productId,
+          expectedRaw,
+          countRef,
+        ),
+      );
       if (difference !== 0) {
         statements.push(
-          database.prepare(`
-            UPDATE products
-            SET stock_quantity = ?
-            WHERE id = ? AND stock_quantity = ?
-              AND EXISTS (SELECT 1 FROM inventory_counts WHERE count_ref = ?)
-          `).bind(physicalRaw, productId, expectedRaw, countRef),
           database.prepare(`
             INSERT INTO stock_movements (product_id, movement_type, quantity, note)
             SELECT ?, ?, ?, ?
@@ -2319,14 +2407,15 @@ export async function POST(request: Request) {
       const database = await getRawDb();
       const session = await database.prepare(`
         SELECT id, session_ref AS sessionRef, status, expected_product_count AS expectedProductCount,
-          counted_product_count AS countedProductCount
+          counted_product_count AS countedProductCount,
+          total_system_units AS totalSystemUnits, value_before AS valueBefore
         FROM inventory_sessions WHERE id = ? LIMIT 1
-      `).bind(sessionId).first<{ id: number; sessionRef: string; status: string; expectedProductCount: number; countedProductCount: number }>();
+      `).bind(sessionId).first<{
+        id: number; sessionRef: string; status: string; expectedProductCount: number; countedProductCount: number;
+        totalSystemUnits: number; valueBefore: number;
+      }>();
       if (!session) return Response.json({ error: "Session d’inventaire introuvable." }, { status: 404 });
       if (session.status !== "En cours") return Response.json({ error: "Cette session est déjà clôturée." }, { status: 409 });
-      if (Number(session.countedProductCount) < Number(session.expectedProductCount)) {
-        return Response.json({ error: `Inventaire incomplet : ${session.countedProductCount}/${session.expectedProductCount} produit(s) compté(s).` }, { status: 409 });
-      }
       const duplicateFinalize = await protectMutation("finalizeInventorySession");
       if (duplicateFinalize) return duplicateFinalize;
       const totals = await database.prepare(`
@@ -2341,6 +2430,13 @@ export async function POST(request: Request) {
         FROM inventory_counts
         WHERE session_id = ?
       `).bind(sessionId).first<{ countedProductCount: number; totalSystemUnits: number; totalPhysicalUnits: number; totalAdjustmentUnits: number; valueBefore: number; valueAfter: number; lossValue: number }>();
+      const currentStock = await database.prepare(`
+        SELECT
+          COALESCE(SUM(stock_quantity * purchase_price), 0) AS stockValue
+        FROM products
+        WHERE archived_at IS NULL
+      `).first<{ stockValue: number }>();
+      const unverifiedCount = Math.max(0, Number(session.expectedProductCount) - Number(totals?.countedProductCount || 0));
       await database.prepare(`
         UPDATE inventory_sessions
         SET status = 'Clôturé',
@@ -2355,18 +2451,22 @@ export async function POST(request: Request) {
         WHERE id = ? AND status = 'En cours'
       `).bind(
         Number(totals?.countedProductCount || 0),
-        Number(totals?.totalSystemUnits || 0),
+        unverifiedCount > 0 ? Number(session.totalSystemUnits || 0) : Number(totals?.totalSystemUnits || 0),
         Number(totals?.totalPhysicalUnits || 0),
         Number(totals?.totalAdjustmentUnits || 0),
-        Number(totals?.valueBefore || 0),
-        Number(totals?.valueAfter || 0),
+        unverifiedCount > 0 ? Number(session.valueBefore || 0) : Number(totals?.valueBefore || 0),
+        unverifiedCount > 0 ? Number(currentStock?.stockValue || 0) : Number(totals?.valueAfter || 0),
         Number(totals?.lossValue || 0),
         sessionId,
       ).run();
       auditEntityId = String(sessionId);
       auditEntityLabel = session.sessionRef;
-      integrationMessage = `Inventaire ${session.sessionRef} clôturé · valeur réelle ${Number(totals?.valueAfter || 0).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD · pertes détectées ${Number(totals?.lossValue || 0).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.`;
+      integrationMessage = unverifiedCount > 0
+        ? `Inventaire ${session.sessionRef} terminé avec ${unverifiedCount} produit(s) « À vérifier ». Leur stock n’a pas été modifié.`
+        : `Inventaire ${session.sessionRef} clôturé · valeur réelle ${Number(totals?.valueAfter || 0).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD · pertes détectées ${Number(totals?.lossValue || 0).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.`;
     } else if (payload.action === "countInventory") {
+      const openSession = await openInventorySession();
+      if (openSession) return Response.json({ error: `Utilisez la session ${openSession.sessionRef} dans le module Inventaire pour compter ce produit.` }, { status: 409 });
       const productId = numberValue(payload.productId);
       const physicalRaw = Number(payload.physicalQuantity);
       const expectedRaw = Number(payload.expectedSystemQuantity);
@@ -2426,15 +2526,25 @@ export async function POST(request: Request) {
       );
 
       const statements = [inventoryInsert];
+      statements.push(
+        rawDatabase.prepare(`
+          UPDATE products
+          SET stock_quantity = ?,
+              stock_verification_status = ?,
+              last_inventory_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+            AND stock_quantity = ?
+            AND EXISTS (SELECT 1 FROM inventory_counts WHERE count_ref = ?)
+        `).bind(
+          physicalQuantity,
+          physicalQuantity === 0 ? "Rupture confirmée" : "Compté",
+          productId,
+          expectedSystemQuantity,
+          countRef,
+        ),
+      );
       if (difference !== 0) {
         statements.push(
-          rawDatabase.prepare(`
-            UPDATE products
-            SET stock_quantity = ?
-            WHERE id = ?
-              AND stock_quantity = ?
-              AND EXISTS (SELECT 1 FROM inventory_counts WHERE count_ref = ?)
-          `).bind(physicalQuantity, productId, expectedSystemQuantity, countRef),
           rawDatabase.prepare(`
             INSERT INTO stock_movements (product_id, movement_type, quantity, note)
             SELECT ?, ?, ?, ?
