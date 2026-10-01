@@ -298,12 +298,19 @@
   user-select: none;
   -webkit-user-select: none;
 }
+.storefront-cms-v2 .storefront-cms-upload {
+  position: relative;
+  overflow: hidden;
+}
 .storefront-cms-v2 .storefront-cms-upload input {
-  width: 1px !important;
-  height: 1px !important;
-  inset: auto !important;
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
   opacity: 0 !important;
-  pointer-events: none;
+  pointer-events: auto !important;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 .storefront-cms-upload-progress {
   position: fixed;
@@ -472,5 +479,53 @@
     position: static !important;
     top: auto !important;
     z-index: auto !important;
+  }
+}
+
+
+/* Photos produit : commandes tactiles fiables sur iPhone/iPad. */
+.storefront-cms-v2 .storefront-cms-photo-delete {
+  position:absolute;
+  z-index:12;
+  top:7px;
+  right:7px;
+  width:36px;
+  height:36px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:0;
+  border-radius:999px;
+  background:rgba(30,22,32,.9);
+  color:#fff;
+  cursor:pointer;
+  font-size:20px;
+  line-height:1;
+  touch-action:manipulation;
+  pointer-events:auto;
+  -webkit-tap-highlight-color:transparent;
+}
+.storefront-cms-v2 .storefront-cms-photo-delete:active {
+  transform:scale(.94);
+}
+.storefront-cms-v2 .storefront-cms-gallery-grid figure {
+  height:auto!important;
+  aspect-ratio:auto!important;
+  align-self:start;
+}
+.storefront-cms-v2 .storefront-cms-gallery-grid figure > img {
+  display:block!important;
+  width:100%!important;
+  height:auto!important;
+  max-height:none!important;
+  object-fit:contain!important;
+  object-position:center!important;
+}
+@media (max-width:760px) {
+  .storefront-cms-v2 .storefront-cms-photo-delete {
+    width:40px;
+    height:40px;
+    top:8px;
+    right:8px;
   }
 }

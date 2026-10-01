@@ -58,6 +58,34 @@ export async function POST(request: Request) {
     if (ownerType === "brand" && !["logo", "hero"].includes(kind)) throw new Error("Type d’image de marque invalide.");
     if (ownerType !== "brand" && kind !== "gallery") throw new Error("Utilisez la galerie pour les produits, packs et blocs marketing.");
 
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const base64 = toBase64(bytes);
+
+    // Idempotence mobile : si le téléphone coupe la réponse après l'écriture,
+    // un nouvel essai avec la même image ne crée pas de doublon.
+    const existing = await database.prepare(`
+      SELECT id, owner_type AS ownerType, owner_id AS ownerId, kind,
+             mime_type AS mimeType, sort_order AS sortOrder, created_at AS createdAt
+      FROM storefront_media
+      WHERE owner_type = ? AND owner_id = ? AND kind = ? AND data_base64 = ?
+      ORDER BY id DESC
+      LIMIT 1
+    `).bind(ownerType, ownerId, kind, base64).first<{
+      id: number;
+      ownerType: string;
+      ownerId: number;
+      kind: string;
+      mimeType: string;
+      sortOrder: number;
+      createdAt: string;
+    }>();
+
+    if (existing) {
+      const syncState = await database.prepare("SELECT current_version AS version FROM google_sheets_sync_state WHERE id = 1")
+        .first<{ version: number }>();
+      return Response.json({ ok: true, media: existing, liveVersion: Number(syncState?.version || 0), duplicate: true }, { headers: { "cache-control": "no-store" } });
+    }
+
     const count = await database.prepare("SELECT COUNT(*) AS count FROM storefront_media WHERE owner_type = ? AND owner_id = ? AND kind = ?")
       .bind(ownerType, ownerId, kind).first<{ count: number }>();
     const limit = ownerType === "brand" || ownerType === "marketing" ? 1 : GALLERY_LIMIT;
@@ -69,8 +97,6 @@ export async function POST(request: Request) {
       }
     }
 
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const base64 = toBase64(bytes);
     const order = await database.prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS nextOrder FROM storefront_media WHERE owner_type = ? AND owner_id = ? AND kind = ?")
       .bind(ownerType, ownerId, kind).first<{ nextOrder: number }>();
     const sortOrder = Number(order?.nextOrder || 0);
