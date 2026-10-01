@@ -145,3 +145,33 @@
     left:max(10px,calc(env(safe-area-inset-left,0px) + 10px))!important;
   }
 }
+
+
+/* Desktop : conserver aussi le ratio réel de chaque photo.
+   Le visuel n'est ni recadré ni étiré dans un carré artificiel. */
+@media(min-width:761px){
+  .storefront-approved-design .storefront-v3-product-gallery-main{
+    width:100%!important;
+    min-height:0!important;
+    height:auto!important;
+    aspect-ratio:auto!important;
+    display:grid!important;
+    place-items:center!important;
+    background:#fff!important;
+  }
+
+  .storefront-approved-design .storefront-v3-product-gallery-main>img{
+    display:block!important;
+    width:auto!important;
+    height:auto!important;
+    max-width:100%!important;
+    max-height:calc(100dvh - 170px)!important;
+    object-fit:contain!important;
+    background:#fff!important;
+  }
+
+  .storefront-approved-design .storefront-v3-product-thumbnails img{
+    object-fit:contain!important;
+    background:#fff!important;
+  }
+}
