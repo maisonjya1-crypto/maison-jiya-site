@@ -180,8 +180,8 @@
 .storefront-cms-gallery-head > div { display: grid; gap: 2px; }
 .storefront-cms-gallery-head small { color: var(--muted, #776d7b); }
 .storefront-cms-gallery-grid { margin-top: 10px; display: grid; grid-template-columns: repeat(6, minmax(90px, 1fr)); gap: 8px; }
-.storefront-cms-gallery-grid figure { position: relative; margin: 0; aspect-ratio: 1 / 1; border-radius: 10px; overflow: hidden; background: #f4f0f5; }
-.storefront-cms-gallery-grid img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.storefront-cms-gallery-grid figure { position: relative; margin: 0; border-radius: 10px; overflow: hidden; background: #fff; align-self: start; }
+.storefront-cms-gallery-grid img { display: block; width: 100%; height: auto; object-fit: contain; object-position: center; background: #fff; }
 .storefront-cms-gallery-grid figure button { position: absolute; top: 5px; right: 5px; width: 25px; height: 25px; border: 0; border-radius: 999px; background: rgba(30, 22, 32, .82); color: #fff; cursor: pointer; }
 .storefront-cms-no-media { grid-column: 1 / -1; min-height: 90px; border: 1px dashed var(--line, #d8cedc); border-radius: 10px; display: grid; place-items: center; color: var(--muted, #776d7b); font-size: 12px; }
 .storefront-cms-save-row { padding-top: 4px; }
@@ -239,11 +239,13 @@
 }
 @media (max-width: 780px) {
   .storefront-cms-gallery-grid figure {
-    aspect-ratio:1 / 1;
+    aspect-ratio:auto;
+    height:auto;
   }
   .storefront-cms-gallery-grid img {
+    display:block;
     width:100%;
-    height:100%;
+    height:auto;
     object-fit:contain;
   }
 }

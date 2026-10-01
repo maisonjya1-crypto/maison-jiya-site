@@ -175,3 +175,11 @@
     background:#fff!important;
   }
 }
+
+
+/* Toutes tailles : les miniatures de galerie montrent la photo entière. */
+.storefront-approved-design .storefront-v3-product-thumbnails img{
+  object-fit:contain!important;
+  object-position:center!important;
+  background:#fff!important;
+}

@@ -82,5 +82,7 @@ test("les photos gardent leur ratio réel sur desktop et dans le CMS mobile", as
   assert.match(hotfix, /storefront-v3-product-gallery-main\{[\s\S]*?aspect-ratio:auto!important/);
   assert.match(hotfix, /storefront-v3-product-gallery-main>img\{[\s\S]*?object-fit:contain!important/);
   assert.match(cmsStyles, /storefront-cms-gallery-grid img \{[^}]*object-fit: contain/);
+  assert.match(cmsStyles, /storefront-cms-gallery-grid img \{[^}]*height: auto/);
   assert.doesNotMatch(cmsStyles, /storefront-cms-gallery-grid img \{[^}]*object-fit: cover/);
+  assert.doesNotMatch(cmsStyles, /storefront-cms-gallery-grid figure \{[^}]*aspect-ratio: 1 \/ 1/);
 });
