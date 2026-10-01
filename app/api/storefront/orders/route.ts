@@ -294,7 +294,7 @@ export async function POST(request: Request) {
     const capturedItems = allocateSale(lines, saleAmount);
     const totalQuantity = capturedItems.reduce((sum, item) => sum + item.quantity, 0);
     const productCost = capturedItems.reduce((sum, item) => sum + item.unitCost * item.quantity, 0);
-    const productLabel = labels.join(" + ").slice(0, 600);
+    const productLabel = `${labels.join(" + ")}${promotion.applied ? " · OFFRE 2E -50%" : ""}`.slice(0, 600);
     const onlyOffer = cart.length === 1 && cart[0].kind === "offer" ? offers.find((offer) => offer.id === cart[0].id)?.name || "" : "";
 
     const duplicate = await database.prepare(`
