@@ -475,6 +475,8 @@ export const products = sqliteTable(
     stockQuantity: integer("stock_quantity").notNull().default(0),
     stockAlertThreshold: integer("stock_alert_threshold").notNull().default(5),
     reorderCoverDays: integer("reorder_cover_days").notNull().default(30),
+    stockVerificationStatus: text("stock_verification_status").notNull().default("À vérifier"),
+    lastInventoryAt: text("last_inventory_at"),
     archivedAt: text("archived_at"),
     archivedByUserId: integer("archived_by_user_id"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
