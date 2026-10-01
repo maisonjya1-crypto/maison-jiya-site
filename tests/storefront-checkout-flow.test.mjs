@@ -87,6 +87,58 @@ test("une commande produit à stock 0 est enregistrée En attente sans déduire 
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM order_status_history WHERE order_id = (SELECT id FROM orders WHERE order_ref = ?) AND to_status = 'En attente'").get(body.orderRef).n, 1);
 });
 
+
+test("deux articles au même prix déclenchent -50 % sur un seul des deux", async t => {
+  const db = await storefrontFixture();
+  t.after(() => db.sqlite.close());
+  const route = loadOrderRoute(db);
+
+  const response = await route.POST(orderRequest([{ kind: "product", id: 1, quantity: 2 }], "203.0.113.14"));
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(body.total, 375);
+  assert.equal(body.promotion?.code, "PROMO:2E50");
+  assert.equal(body.promotion?.discount, 125);
+
+  const order = db.sqlite.prepare(`
+    SELECT sale_amount AS saleAmount, product_cost AS productCost, quantity,
+           products, campaign, return_note AS returnNote
+    FROM orders WHERE order_ref = ?
+  `).get(body.orderRef);
+
+  assert.equal(order.saleAmount, 375);
+  assert.equal(order.productCost, 20);
+  assert.equal(order.quantity, 2);
+  assert.match(order.products, /OFFRE 2E -50%/);
+  assert.match(order.campaign, /PROMO:2E50/);
+  assert.match(order.returnNote, /Offre 2e article -50 % appliquée/);
+});
+
+test("avec deux prix différents la remise porte sur l'article éligible le moins cher", async t => {
+  const db = await storefrontFixture();
+  t.after(() => db.sqlite.close());
+
+  db.sqlite.exec(`
+    INSERT INTO products (id, product_code, name, category, purchase_price, sale_price, stock_quantity)
+    VALUES (2, 'TEST-2', 'Bijou test', 'Bijoux', 5, 100, 0);
+    INSERT INTO storefront_product_settings (
+      product_id, public_name, public_price, is_visible, availability_mode, badge, description, sort_order
+    ) VALUES (2, 'Bijou test', 100, 1, 'available', '', '', 1);
+  `);
+
+  const route = loadOrderRoute(db);
+  const response = await route.POST(orderRequest([
+    { kind: "product", id: 1, quantity: 1 },
+    { kind: "product", id: 2, quantity: 1 },
+  ], "203.0.113.15"));
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(body.promotion?.discount, 50);
+  assert.equal(body.total, 300);
+});
+
 test("un pack reste commandable avec ses composants à stock 0", async t => {
   const db = await storefrontFixture();
   t.after(() => db.sqlite.close());
@@ -161,4 +213,7 @@ test("le panier client nettoie le stockage local, les articles retirés et les q
   assert.match(client, /maxLength=\{100\}/);
   assert.match(client, /maxLength=\{260\}/);
   assert.match(client, /setSubmitError\(error instanceof Error && error\.message \? error\.message : t\.orderFailed\)/);
+  assert.match(client, /promoSecondItem/);
+  assert.match(client, /cartPricing\.discount/);
+  assert.match(client, /isSecondItemPromoCategory/);
 });
