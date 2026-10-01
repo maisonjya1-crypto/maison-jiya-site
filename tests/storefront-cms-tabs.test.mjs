@@ -134,6 +134,27 @@ test("la photo choisie apparaît immédiatement et reste visible pendant/après 
   assert.match(styles, /storefront-cms-photo-pending/);
 });
 
+test("le CMS desktop reste dans la hauteur visible et conserve toute sa zone scrollable", async () => {
+  const styles = await readText("app/storefront-cms-v2.css");
+  const source = await readText("app/storefront-cms-v2-enhancement.tsx");
+
+  assert.match(styles, /storefront-cms-page\.storefront-cms-v2\s*\{[^}]*position:\s*fixed/s);
+  assert.match(styles, /storefront-cms-page\.storefront-cms-v2\s*\{[^}]*height:\s*100dvh/s);
+  assert.match(styles, /storefront-cms-page\.storefront-cms-v2\s*\{[^}]*overflow-y:\s*auto/s);
+  assert.match(styles, /storefront-cms-page\.storefront-cms-v2\s*\{[^}]*scrollbar-gutter:\s*stable/s);
+  assert.match(source, /getBoundingClientRect\(\)\.left/);
+  assert.match(source, /workspaceLeft=\{workspaceLeft\}/);
+  assert.match(source, /style=\{\{ left: workspaceLeft \}\}/);
+});
+
+test("le correctif desktop ne casse pas le plein écran mobile", async () => {
+  const styles = await readText("app/storefront-cms-v2.css");
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]*storefront-cms-page\.storefront-cms-v2[\s\S]*left:\s*0\s*!important/);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]*height:\s*100dvh/);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]*touch-action:\s*pan-y pinch-zoom/);
+});
+
+
 test("le CMS mobile utilise un seul scroller plein écran et permet le geste vertical dans les cartes", async () => {
   const styles = await readText("app/storefront-cms-v2.css");
   const source = await readText("app/storefront-cms-v2-enhancement.tsx");
