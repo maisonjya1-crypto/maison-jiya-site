@@ -7345,9 +7345,6 @@ function EntryModal({ kind, carrierNames, products, suppliers, purchases, suppli
   const suggestedProductCode = productName.trim()
     ? suggestProductCode({ name: productName, nature: productNature, existingCodes: products.map((product) => product.productCode) })
     : "";
-  useEffect(() => {
-    if (!productCodeManual) setProductCode(suggestedProductCode);
-  }, [productCodeManual, suggestedProductCode]);
 
   const initialPurchaseProduct = products[0] || null;
   const [purchaseLines, setPurchaseLines] = useState<Array<{ key: number; productId: string; item: string; quantity: string; unitCost: string }>>([
@@ -7488,13 +7485,13 @@ function EntryModal({ kind, carrierNames, products, suppliers, purchases, suppli
                 </label>
                 <label className="field">
                   <span>Nom du produit *</span>
-                  <input name="name" value={productName} onChange={(event) => { setProductName(event.target.value); if (!productCodeManual) setProductCode(""); }} placeholder="Ex. Cartier Santos blanc" required />
+                  <input name="name" value={productName} onChange={(event) => setProductName(event.target.value)} placeholder="Ex. Cartier Santos blanc" required />
                 </label>
                 <label className="field product-code-field">
                   <span>ID produit proposé *</span>
-                  <input name="productCode" value={productCode} onChange={(event) => { setProductCode(event.target.value.toUpperCase()); setProductCodeManual(true); }} placeholder="Généré automatiquement" required />
+                  <input name="productCode" value={productCodeManual ? productCode : suggestedProductCode} onChange={(event) => { setProductCode(event.target.value.toUpperCase()); setProductCodeManual(true); }} placeholder="Généré automatiquement" required />
                   {suggestedProductCode ? (
-                    <small>Suggestion : <strong>{suggestedProductCode}</strong>{productCodeManual && productCode !== suggestedProductCode ? <button type="button" onClick={() => { setProductCodeManual(false); setProductCode(suggestedProductCode); }}>Utiliser</button> : null}</small>
+                    <small>Suggestion : <strong>{suggestedProductCode}</strong>{productCodeManual && productCode !== suggestedProductCode ? <button type="button" onClick={() => setProductCodeManual(false)}>Utiliser</button> : null}</small>
                   ) : <small>Tapez le nom : l’ID sera proposé automatiquement.</small>}
                 </label>
                 <input type="hidden" name="category" value={productCategory} />
