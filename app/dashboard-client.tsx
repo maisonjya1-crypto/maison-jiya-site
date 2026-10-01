@@ -16,6 +16,7 @@ import { calculateSmartCapital } from "../lib/smart-capital";
 import { buildDashboardPilotage } from "../lib/dashboard-pilotage";
 import { buildDashboardAlerts } from "../lib/dashboard-alerts";
 import { buildDashboardDecisions } from "../lib/dashboard-decisions";
+import { categoryForNature, productNatureOptions, suggestProductCode } from "../lib/product-code";
 
 type Order = {
   id: number;
@@ -219,6 +220,8 @@ type Product = {
   stockQuantity: number;
   stockAlertThreshold: number;
   reorderCoverDays: number;
+  stockVerificationStatus: "À vérifier" | "Compté" | "Rupture confirmée";
+  lastInventoryAt: string | null;
   archivedAt: string | null;
   archivedByUserId: number | null;
   createdAt: string;
@@ -1335,7 +1338,7 @@ export default function DashboardClient() {
         )}
         {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} print={printOrderSlip} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} restoreProduct={restoreProduct} moveStock={openStock} countInventory={openInventory} submit={submit} />}
       </section>
-      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} ads={data.ads} close={() => setModal(null)} submit={submit} />}
+      {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} ads={data.ads} inventorySession={data.inventorySessions.find((session) => session.status === "En cours") || null} close={() => setModal(null)} submit={submit} />}
       {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} ads={data.ads} close={() => setSelectedOrder(null)} print={() => printOrderSlip(selectedOrder)} submit={submit} />}
       {selectedEntity && <EntityModal selection={selectedEntity} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
@@ -1666,7 +1669,7 @@ function Page({
     pilotage,
   });
   if (active === "Commandes") return <OrdersPage orders={data.orders} onAdd={() => open("order")} onEdit={edit} onPrint={print} onDelete={remove} />;
-  if (active === "Inventaire") return <InventoryPage products={data.products} sessions={data.inventorySessions} counts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} />;
+  if (active === "Inventaire") return <InventoryPage products={data.products} sessions={data.inventorySessions} counts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAddProduct={() => open("product")} />;
   if (active === "Produits") return <ProductsPage products={data.products} orders={data.orders} movements={data.stockMovements} inventoryCounts={data.inventoryCounts} canEdit={data.access.canEdit} submit={submit} onAdd={() => open("product")} onMove={moveStock} onCount={countInventory} onEdit={editEntity} onDelete={removeEntity} onRestore={restoreProduct} />;
   if (active === "Réapprovisionnement") return <ReorderingPage data={data} metrics={metrics} submit={submit} onEditProduct={editEntity} />;
   if (active === "Colis") return <ShippingPage orders={data.orders} history={data.orderStatusHistory} settings={data.settings} onEdit={edit} onPrint={print} onDelete={remove} />;
@@ -4603,7 +4606,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                         <td><strong>{money(product.salePrice)}</strong></td>
                         <td>{money(product.minimumSalePrice || product.salePrice)}</td>
                         <td>{product.stockAlertThreshold}</td>
-                        <td><StockLevel quantity={product.stockQuantity} threshold={product.stockAlertThreshold} /></td>
+                        <td><StockLevel quantity={product.stockQuantity} threshold={product.stockAlertThreshold} verificationStatus={product.stockVerificationStatus} lastInventoryAt={product.lastInventoryAt} /></td>
                         <td>
                           <div className="entity-actions-row">
                             {product.archivedAt ? (
@@ -4634,7 +4637,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                     <div className="product-card-head">
                       <div><span>{product.productCode}</span><h3>{product.name}</h3></div>
                       <div className="product-card-actions">
-                        <StockLevel quantity={product.stockQuantity} threshold={product.stockAlertThreshold} />
+                        <StockLevel quantity={product.stockQuantity} threshold={product.stockAlertThreshold} verificationStatus={product.stockVerificationStatus} lastInventoryAt={product.lastInventoryAt} />
                         {product.archivedAt ? <Status value="Archivé" /> : <RecordActions label={`le produit ${product.name}`} onEdit={() => onEdit({ kind: "product", record: product })} onDelete={() => onDelete({ kind: "product", record: product })} />}
                       </div>
                     </div>
@@ -4744,11 +4747,13 @@ function ProductFilterBar({ search, category, categories, resultCount, totalCoun
     </div>
   );
 }
-function StockLevel({ quantity, threshold = 5 }: { quantity: number; threshold?: number }) {
+function StockLevel({ quantity, threshold = 5, verificationStatus, lastInventoryAt }: { quantity: number; threshold?: number; verificationStatus?: Product["stockVerificationStatus"]; lastInventoryAt?: string | null }) {
+  const unknown = verificationStatus === "À vérifier";
+  const confirmedOut = verificationStatus === "Rupture confirmée";
   return (
-    <span className={`stock-level ${quantity === 0 ? "empty" : quantity <= threshold ? "low" : "ok"}`}>
+    <span className={`stock-level ${unknown ? "unknown" : confirmedOut || quantity === 0 ? "empty" : quantity <= threshold ? "low" : "ok"}`}>
       <strong>{quantity}</strong> unité{quantity === 1 ? "" : "s"}
-      <small>{quantity === 0 ? "Rupture" : quantity <= threshold ? `Stock faible · seuil ${threshold}` : "Disponible"}</small>
+      <small>{unknown ? `À vérifier · stock système${lastInventoryAt ? ` · dernier comptage ${dateLabel(lastInventoryAt)}` : ""}` : confirmedOut ? "Rupture confirmée" : quantity === 0 ? "Rupture système" : quantity <= threshold ? `Stock faible · seuil ${threshold}` : "Disponible"}</small>
     </span>
   );
 }
@@ -5801,7 +5806,7 @@ function MonthlyClosingPanel({
   const previousClosing = data.monthlyClosings.find((closing) => closing.monthKey === previousKey) || null;
   const existing = data.monthlyClosings.find((closing) => closing.monthKey === selectedMonth) || null;
   const latestInventory = [...data.inventorySessions]
-    .filter((session) => session.status === "Clôturé" && session.completedAt && businessDateKey(session.completedAt) >= bounds.start && businessDateKey(session.completedAt) <= bounds.end)
+    .filter((session) => session.status === "Clôturé" && session.countedProductCount >= session.expectedProductCount && session.completedAt && businessDateKey(session.completedAt) >= bounds.start && businessDateKey(session.completedAt) <= bounds.end)
     .sort((left, right) => String(right.completedAt).localeCompare(String(left.completedAt)))[0] || null;
   const stockValueEnd = latestInventory ? latestInventory.valueAfter : null;
   const stockValueSource = latestInventory
@@ -7302,7 +7307,7 @@ function CarrierQuoteChooser({ city, defaultCarrier = "", defaultFee = 0, locked
   );
 }
 
-function EntryModal({ kind, carrierNames, products, suppliers, purchases, supplierInvoices, ads, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; products: Product[]; suppliers: Supplier[]; purchases: Purchase[]; supplierInvoices: SupplierInvoice[]; ads: Ad[]; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function EntryModal({ kind, carrierNames, products, suppliers, purchases, supplierInvoices, ads, inventorySession, close, submit }: { kind: Exclude<ModalName, null>; carrierNames: string[]; products: Product[]; suppliers: Supplier[]; purchases: Purchase[]; supplierInvoices: SupplierInvoice[]; ads: Ad[]; inventorySession: InventorySession | null; close: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const labels = {
     order: "Nouvelle commande",
     purchase: "Nouveau bon de commande",
@@ -7323,7 +7328,20 @@ function EntryModal({ kind, carrierNames, products, suppliers, purchases, suppli
   const [orderFulfillment, setOrderFulfillment] = useState<"Livraison" | "Magasin physique">("Livraison");
   const [purchaseMode, setPurchaseMode] = useState<"Retrait fournisseur" | "Livraison fournisseur">("Retrait fournisseur");
   const [receiveImmediately, setReceiveImmediately] = useState(true);
+  const [productNature, setProductNature] = useState("Montre");
+  const [productName, setProductName] = useState("");
+  const [productCode, setProductCode] = useState("");
+  const [productCodeManual, setProductCodeManual] = useState(false);
+  const [productInitialQuantity, setProductInitialQuantity] = useState("0");
+  const [inventoryStockMode, setInventoryStockMode] = useState<"known" | "unknown">("known");
   const selectedProduct = products.find((product) => String(product.id) === selectedProductId) || null;
+  const productCategory = categoryForNature(productNature);
+  const suggestedProductCode = productName.trim()
+    ? suggestProductCode({ name: productName, nature: productNature, existingCodes: products.map((product) => product.productCode) })
+    : "";
+  useEffect(() => {
+    if (!productCodeManual) setProductCode(suggestedProductCode);
+  }, [productCodeManual, suggestedProductCode]);
 
   const initialPurchaseProduct = products[0] || null;
   const [purchaseLines, setPurchaseLines] = useState<Array<{ key: number; productId: string; item: string; quantity: string; unitCost: string }>>([
@@ -7450,10 +7468,51 @@ function EntryModal({ kind, carrierNames, products, suppliers, purchases, suppli
           <div className="form-grid">
             {kind === "product" && (
               <>
-                <Field label="ID produit / SKU *" name="productCode" required />
-                <Field label="Nom du produit *" name="name" required />
-                <Select label="Catégorie *" name="category" options={productCategoryOptions} />
-                <Field label="Quantité initiale *" name="initialQuantity" type="number" inputMode="numeric" defaultValue="0" min="0" required />
+                {inventorySession ? (
+                  <div className="inventory-product-add-note">
+                    <strong>Ajout pendant {inventorySession.sessionRef}</strong>
+                    <span>Le produit sera ajouté au catalogue et à l’inventaire actuel. Si sa quantité est inconnue, il restera « À vérifier » sans être considéré comme une rupture.</span>
+                  </div>
+                ) : null}
+                <label className="field">
+                  <span>Nature du produit *</span>
+                  <select name="productNature" value={productNature} onChange={(event) => { setProductNature(event.target.value); setProductCodeManual(false); }}>
+                    {productNatureOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Nom du produit *</span>
+                  <input name="name" value={productName} onChange={(event) => { setProductName(event.target.value); if (!productCodeManual) setProductCode(""); }} placeholder="Ex. Cartier Santos blanc" required />
+                </label>
+                <label className="field product-code-field">
+                  <span>ID produit proposé *</span>
+                  <input name="productCode" value={productCode} onChange={(event) => { setProductCode(event.target.value.toUpperCase()); setProductCodeManual(true); }} placeholder="Généré automatiquement" required />
+                  {suggestedProductCode ? (
+                    <small>Suggestion : <strong>{suggestedProductCode}</strong>{productCodeManual && productCode !== suggestedProductCode ? <button type="button" onClick={() => { setProductCodeManual(false); setProductCode(suggestedProductCode); }}>Utiliser</button> : null}</small>
+                  ) : <small>Tapez le nom : l’ID sera proposé automatiquement.</small>}
+                </label>
+                <input type="hidden" name="category" value={productCategory} />
+                <div className="product-derived-category"><span>Catégorie</span><strong>{productCategory}</strong></div>
+                {inventorySession ? (
+                  <>
+                    <label className="field">
+                      <span>État du stock trouvé *</span>
+                      <select value={inventoryStockMode} onChange={(event) => setInventoryStockMode(event.target.value === "unknown" ? "unknown" : "known")}>
+                        <option value="known">Quantité comptée maintenant</option>
+                        <option value="unknown">Je ne connais pas encore la quantité</option>
+                      </select>
+                    </label>
+                    {inventoryStockMode === "known" ? (
+                      <label className="field"><span>Quantité physique comptée *</span><input name="initialQuantity" type="number" inputMode="numeric" min="0" value={productInitialQuantity} onChange={(event) => setProductInitialQuantity(event.target.value)} required /></label>
+                    ) : <input type="hidden" name="initialQuantity" value="0" />}
+                    <input type="hidden" name="inventoryQuantityConfirmed" value={inventoryStockMode === "known" ? "true" : "false"} />
+                  </>
+                ) : (
+                  <>
+                    <label className="field"><span>Quantité initiale *</span><input name="initialQuantity" type="number" inputMode="numeric" min="0" value={productInitialQuantity} onChange={(event) => setProductInitialQuantity(event.target.value)} required /></label>
+                    <input type="hidden" name="inventoryQuantityConfirmed" value="false" />
+                  </>
+                )}
                 <Field label="Seuil d’alerte stock *" name="stockAlertThreshold" type="number" inputMode="numeric" defaultValue="5" min="0" required />
                 <Field label="Couverture cible (jours) *" name="reorderCoverDays" type="number" inputMode="numeric" defaultValue="30" min="1" required />
                 <ProductPricingFields />
