@@ -136,7 +136,25 @@ function setLocalMutationActive(active: boolean) {
 }
 
 async function encodeCanvas(canvas: HTMLCanvasElement, mimeType: "image/webp" | "image/jpeg", quality: number) {
-  return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mimeType, quality));
+  return new Promise<Blob | null>((resolve) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(null);
+    }, 8_000);
+    try {
+      canvas.toBlob((blob) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        resolve(blob);
+      }, mimeType, quality);
+    } catch {
+      window.clearTimeout(timer);
+      resolve(null);
+    }
+  });
 }
 
 async function canvasBlob(canvas: HTMLCanvasElement, quality: number) {
@@ -145,96 +163,21 @@ async function canvasBlob(canvas: HTMLCanvasElement, quality: number) {
   return encodeCanvas(canvas, "image/jpeg", quality);
 }
 
-async function readEncodedImageDimensions(file: File) {
-  try {
-    const bytes = new Uint8Array(await file.slice(0, Math.min(file.size, 512_000)).arrayBuffer());
-
-    if (bytes.length >= 24 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
-      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-      const width = view.getUint32(16);
-      const height = view.getUint32(20);
-      if (width > 0 && height > 0) return { width, height };
-    }
-
-    if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
-      let offset = 2;
-      while (offset + 9 < bytes.length) {
-        if (bytes[offset] !== 0xff) {
-          offset += 1;
-          continue;
-        }
-        const marker = bytes[offset + 1];
-        if (marker === 0xd8 || marker === 0xd9) {
-          offset += 2;
-          continue;
-        }
-        if (offset + 4 > bytes.length) break;
-        const size = (bytes[offset + 2] << 8) | bytes[offset + 3];
-        if (size < 2 || offset + 2 + size > bytes.length) break;
-        const isSof = [
-          0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7,
-          0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
-        ].includes(marker);
-        if (isSof && size >= 7) {
-          const height = (bytes[offset + 5] << 8) | bytes[offset + 6];
-          const width = (bytes[offset + 7] << 8) | bytes[offset + 8];
-          if (width > 0 && height > 0) return { width, height };
-        }
-        offset += 2 + size;
-      }
-    }
-  } catch {
-    // Le décodage navigateur prendra le relais.
-  }
-  return null;
-}
-
-async function loadImageForCanvas(file: File, maxSide: number) {
-  if (typeof createImageBitmap === "function") {
-    try {
-      const encoded = await readEncodedImageDimensions(file);
-      if (encoded) {
-        const scale = Math.min(1, maxSide / Math.max(encoded.width, encoded.height));
-        const targetWidth = Math.max(1, Math.round(encoded.width * scale));
-        const targetHeight = Math.max(1, Math.round(encoded.height * scale));
-        const bitmap = await createImageBitmap(file, {
-          resizeWidth: targetWidth,
-          resizeHeight: targetHeight,
-          resizeQuality: "high",
-        });
-        if (bitmap.width > 0 && bitmap.height > 0) {
-          return {
-            source: bitmap as CanvasImageSource,
-            width: bitmap.width,
-            height: bitmap.height,
-            release: () => bitmap.close(),
-          };
-        }
-        bitmap.close();
-      }
-
-      const bitmap = await createImageBitmap(file);
-      if (bitmap.width > 0 && bitmap.height > 0) {
-        return {
-          source: bitmap as CanvasImageSource,
-          width: bitmap.width,
-          height: bitmap.height,
-          release: () => bitmap.close(),
-        };
-      }
-      bitmap.close();
-    } catch {
-      // Safari/iOS peut refuser createImageBitmap pour certaines photos locales.
-    }
-  }
-
+async function loadImageForCanvas(file: File) {
   const objectUrl = URL.createObjectURL(file);
   const image = new Image();
   image.decoding = "async";
   try {
     await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error("Décodage image impossible"));
+      const timer = window.setTimeout(() => reject(new Error("Décodage de la photo trop long.")), 12_000);
+      image.onload = () => {
+        window.clearTimeout(timer);
+        resolve();
+      };
+      image.onerror = () => {
+        window.clearTimeout(timer);
+        reject(new Error("Décodage image impossible"));
+      };
       image.src = objectUrl;
     });
     if (!image.naturalWidth || !image.naturalHeight) throw new Error("Dimensions d’image invalides");
@@ -250,7 +193,20 @@ async function loadImageForCanvas(file: File, maxSide: number) {
   } catch {
     image.src = "";
     URL.revokeObjectURL(objectUrl);
-    throw new Error("Cette photo ne peut pas être lue sur ce téléphone. Essaie une autre photo ou une capture d’écran.");
+    throw new Error("Cette photo ne peut pas être préparée correctement sur ce téléphone.");
+  }
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number, timeoutMessage: string) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(timeoutMessage);
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
   }
 }
 
@@ -260,11 +216,14 @@ async function compressImage(file: File, kind: UploadKind) {
   if (file.size > 30_000_000) throw new Error("Cette photo est trop lourde. Choisis une photo de moins de 30 Mo.");
 
   const limits = kind === "gallery"
-    ? { maxSide: 900, targetBytes: 300_000, maxBytes: 450_000 }
+    ? { maxSide: 900, targetBytes: 260_000, maxBytes: 420_000 }
     : kind === "logo"
-      ? { maxSide: 800, targetBytes: 260_000, maxBytes: 450_000 }
-      : { maxSide: 1600, targetBytes: 600_000, maxBytes: 850_000 };
-  const image = await loadImageForCanvas(file, limits.maxSide);
+      ? { maxSide: 800, targetBytes: 240_000, maxBytes: 420_000 }
+      : { maxSide: 1600, targetBytes: 560_000, maxBytes: 800_000 };
+  // Important iPhone/iPad : on décode d'abord l'image affichée par le navigateur.
+  // On ne redimensionne plus createImageBitmap avec les dimensions brutes du JPEG,
+  // car l'orientation EXIF peut inverser largeur/hauteur et étirer la photo.
+  const image = await loadImageForCanvas(file);
   const scale = Math.min(1, limits.maxSide / Math.max(image.width, image.height));
   const width = Math.max(1, Math.round(image.width * scale));
   const height = Math.max(1, Math.round(image.height * scale));
@@ -288,15 +247,15 @@ async function compressImage(file: File, kind: UploadKind) {
     lastBlob = await canvasBlob(canvas, quality);
     if (lastBlob && lastBlob.size <= limits.targetBytes) break;
   }
-  if (!lastBlob || lastBlob.size > limits.maxBytes) throw new Error("Cette photo reste trop lourde après compression.");
+  canvas.width = 1;
+  canvas.height = 1;
+  if (!lastBlob || lastBlob.size > limits.maxBytes) throw new Error("Cette photo n’a pas pu être compressée correctement.");
 
   const extension = lastBlob.type === "image/webp" ? "webp" : "jpg";
   const baseName = file.name ? file.name.replace(/\.[^.]+$/, "") : "photo";
-  const compressed = new File([lastBlob], `${baseName}.${extension}`, { type: lastBlob.type || "image/jpeg" });
-  canvas.width = 1;
-  canvas.height = 1;
-  return compressed;
+  return new File([lastBlob], `${baseName}.${extension}`, { type: lastBlob.type || "image/jpeg" });
 }
+
 
 export default function StorefrontCmsV2Enhancement() {
   const [navHost, setNavHost] = useState<PortalTarget | null>(null);
@@ -517,15 +476,22 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
           form.set("ownerId", String(ownerId));
           form.set("kind", kind);
           form.set("file", file);
-          const response = await fetch("/api/storefront/admin/media", { method: "POST", body: form });
+          const response = await fetchWithTimeout(
+            "/api/storefront/admin/media",
+            { method: "POST", body: form, cache: "no-store" },
+            25_000,
+            "L’envoi a pris trop de temps. Réessaie : l’écran ne restera plus bloqué."
+          );
           const body = await response.json() as { error?: string; media?: Media; liveVersion?: number };
           if (!response.ok) throw new Error(body.error || "Upload impossible.");
-          if (body.media) replaceMediaLocally(tempId, { ...body.media, previewUrl: activePreview });
+          if (!body.media) throw new Error("La photo a été envoyée mais la confirmation du serveur est invalide.");
+          replaceMediaLocally(tempId, { ...body.media, previewUrl: activePreview, pending: false });
           acknowledgeLocalLiveVersion(body.liveVersion);
         } catch (uploadError) {
           removeMediaLocallyWithoutServer(tempId);
           URL.revokeObjectURL(activePreview);
           previewUrlsRef.current.delete(activePreview);
+          void load(true);
           throw uploadError;
         }
       }
@@ -539,17 +505,26 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
   }
 
   async function removeMedia(id: number) {
-    if (!window.confirm("Supprimer cette photo de la boutique publique ?")) return;
+    if (!Number.isInteger(id) || id <= 0) return;
+    setError("");
+    setNotice("");
+    // Suppression optimiste : le bouton répond immédiatement au toucher.
+    removeMediaLocally(id);
     setLocalMutationActive(true);
     try {
-      const response = await fetch(`/api/storefront/admin/media?id=${id}`, { method: "DELETE" });
+      const response = await fetchWithTimeout(
+        `/api/storefront/admin/media?id=${id}`,
+        { method: "DELETE", cache: "no-store" },
+        15_000,
+        "La suppression a pris trop de temps. Le catalogue va se resynchroniser."
+      );
       const body = await response.json() as { error?: string; liveVersion?: number };
-      if (!response.ok) {
-        setError(body.error || "Suppression impossible.");
-        return;
-      }
-      removeMediaLocally(id);
+      if (!response.ok) throw new Error(body.error || "Suppression impossible.");
       acknowledgeLocalLiveVersion(body.liveVersion);
+      setNotice("Photo supprimée");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Suppression impossible.");
+      void load(true);
     } finally {
       setLocalMutationActive(false);
     }
@@ -868,7 +843,7 @@ function GalleryEditor({ ownerType, ownerId, media, canEdit, uploadMany, removeM
         <img src={mediaSrc(item)} alt="" loading={item.pending ? "eager" : "lazy"} decoding={item.pending ? "sync" : "async"} />
         {index === 0 && <span className="storefront-cms-main-photo">Principale</span>}
         {item.pending && <span className="storefront-cms-photo-pending">Envoi…</span>}
-        {canEdit && !item.pending && <button type="button" onClick={() => void removeMedia(item.id)}>×</button>}
+        {canEdit && !item.pending && <button className="storefront-cms-photo-delete" type="button" aria-label="Supprimer cette photo" title="Supprimer cette photo" onClick={(event) => { event.preventDefault(); event.stopPropagation(); void removeMedia(item.id); }}>×</button>}
       </figure>)}
       {!media.length && <div className="storefront-cms-no-media">Sélectionne une ou plusieurs photos à la fois.</div>}
     </div>
