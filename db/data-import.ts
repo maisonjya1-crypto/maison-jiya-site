@@ -37,13 +37,15 @@ const TABLE_SPECS: Record<string, TableSpec> = {
     table: "products",
     columns: [
       "id", "product_code", "name", "category", "purchase_price", "sale_price", "minimum_sale_price",
-      "stock_quantity", "stock_alert_threshold", "reorder_cover_days", "archived_at", "archived_by_user_id", "created_at",
+      "stock_quantity", "stock_alert_threshold", "reorder_cover_days", "stock_verification_status", "last_inventory_at", "archived_at", "archived_by_user_id", "created_at",
     ],
     defaults: {
       minimum_sale_price: (row) => scalar(row.sale_price, 0),
       stock_quantity: 0,
       stock_alert_threshold: 5,
       reorder_cover_days: 30,
+      stock_verification_status: "À vérifier",
+      last_inventory_at: null,
       archived_at: null,
       archived_by_user_id: null,
     },
