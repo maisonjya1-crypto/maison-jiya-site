@@ -301,12 +301,15 @@ async function compressImage(file: File, kind: UploadKind) {
 export default function StorefrontCmsV2Enhancement() {
   const [navHost, setNavHost] = useState<PortalTarget | null>(null);
   const [workspace, setWorkspace] = useState<HTMLElement | null>(null);
+  const [workspaceLeft, setWorkspaceLeft] = useState(0);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     const locate = () => {
+      const nextWorkspace = document.querySelector<HTMLElement>(".workspace");
       setNavHost(document.querySelector(".sidebar nav"));
-      setWorkspace(document.querySelector<HTMLElement>(".workspace"));
+      setWorkspace(nextWorkspace);
+      setWorkspaceLeft(nextWorkspace ? Math.max(0, Math.round(nextWorkspace.getBoundingClientRect().left)) : 0);
     };
     const timer = window.setTimeout(locate, 0);
     const observer = new MutationObserver(locate);
@@ -316,9 +319,11 @@ export default function StorefrontCmsV2Enhancement() {
       if (button && !(button as HTMLElement).dataset.storefrontCmsV2) setOpen(false);
     };
     document.addEventListener("click", closeFromOtherNav, true);
+    window.addEventListener("resize", locate);
     return () => {
       window.clearTimeout(timer);
       observer.disconnect();
+      window.removeEventListener("resize", locate);
       document.removeEventListener("click", closeFromOtherNav, true);
     };
   }, []);
@@ -336,11 +341,11 @@ export default function StorefrontCmsV2Enhancement() {
       </button>,
       navHost,
     )}
-    {open && workspace && createPortal(<StorefrontCmsPage close={() => setOpen(false)} />, workspace)}
+    {open && workspace && createPortal(<StorefrontCmsPage close={() => setOpen(false)} workspaceLeft={workspaceLeft} />, workspace)}
   </>;
 }
 
-function StorefrontCmsPage({ close }: { close: () => void }) {
+function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; workspaceLeft: number }) {
   const [data, setData] = useState<CmsData>(emptyData);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -652,7 +657,7 @@ function StorefrontCmsPage({ close }: { close: () => void }) {
     window.requestAnimationFrame(() => pageRef.current?.scrollTo({ top: 0, behavior: "auto" }));
   }
 
-  return <section ref={pageRef} className="storefront-cms-page storefront-cms-v2">
+  return <section ref={pageRef} className="storefront-cms-page storefront-cms-v2" style={{ left: workspaceLeft }}>
     <header className="storefront-cms-topbar">
       <div>
         <span>Boutique publique</span>
