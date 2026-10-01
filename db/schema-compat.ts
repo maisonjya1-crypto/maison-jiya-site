@@ -168,6 +168,8 @@ const legacySchemaStatements = [
     sale_price INTEGER NOT NULL,
     minimum_sale_price INTEGER DEFAULT 0 NOT NULL,
     stock_quantity INTEGER DEFAULT 0 NOT NULL,
+    stock_verification_status TEXT DEFAULT 'À vérifier' NOT NULL,
+    last_inventory_at TEXT,
     archived_at TEXT,
     archived_by_user_id INTEGER,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
@@ -343,6 +345,8 @@ async function ensureProductColumns(database: D1Database) {
   const columns = new Set(info.results.map((column) => column.name));
   const statements: D1PreparedStatement[] = [];
   if (!columns.has("minimum_sale_price")) statements.push(database.prepare("ALTER TABLE products ADD COLUMN minimum_sale_price INTEGER DEFAULT 0 NOT NULL"));
+  if (!columns.has("stock_verification_status")) statements.push(database.prepare("ALTER TABLE products ADD COLUMN stock_verification_status TEXT DEFAULT 'À vérifier' NOT NULL"));
+  if (!columns.has("last_inventory_at")) statements.push(database.prepare("ALTER TABLE products ADD COLUMN last_inventory_at TEXT"));
   if (!columns.has("archived_at")) statements.push(database.prepare("ALTER TABLE products ADD COLUMN archived_at TEXT"));
   if (!columns.has("archived_by_user_id")) statements.push(database.prepare("ALTER TABLE products ADD COLUMN archived_by_user_id INTEGER"));
   if (statements.length) await database.batch(statements);
