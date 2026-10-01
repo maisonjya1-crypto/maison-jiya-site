@@ -125,7 +125,7 @@ const fulfillmentTypes = ["Livraison", "Magasin physique"];
 const paymentStatuses = ["À encaisser", "Encaissé", "Non encaissé", "Remboursé"];
 const stockCommittedStatuses = new Set(["Confirmée", "Expédiée", "En livraison", "Livrée", "Retour"]);
 const returnReasons = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
-const inventoryDifferenceReasons = ["Casse", "Perte", "Vol", "Erreur de saisie", "Autre"];
+const inventoryDifferenceReasons = ["Casse", "Perte", "Vol", "Erreur de saisie", "Article trouvé", "Autre"];
 
 function inventoryDifferenceReason(value: unknown, difference: number) {
   if (difference === 0) return "Aucun écart";
