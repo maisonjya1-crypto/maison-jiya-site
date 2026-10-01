@@ -70,14 +70,16 @@ test("une sauvegarde complète conserve une session et ses comptages détaillés
   assert.equal(restoredCount.session_id, 50);
 });
 
-test("le workflow avancé impose un motif, protège le catalogue et refuse une clôture incomplète", async () => {
+test("le workflow avancé impose un motif, protège les modifications sensibles et accepte une clôture partielle sûre", async () => {
   const route = await readFile(new URL("../app/api/data/route.ts", import.meta.url), "utf8");
   assert.match(route, /payload\.action === "startInventorySession"/);
   assert.match(route, /payload\.action === "countInventorySessionProduct"/);
   assert.match(route, /payload\.action === "finalizeInventorySession"/);
   assert.match(route, /Choisissez un motif pour expliquer l’écart d’inventaire/);
   assert.match(route, /Ce produit a déjà été compté dans cette session/);
-  assert.match(route, /Inventaire incomplet/);
+  assert.doesNotMatch(route, /Inventaire incomplet/);
+  assert.match(route, /unverifiedCount/);
+  assert.match(route, /stock_verification_status = 'À vérifier'/);
   assert.match(route, /inventoryCatalogLockMessage/);
   assert.match(route, /value_before/);
   assert.match(route, /loss_value/);
@@ -97,7 +99,9 @@ test("l’interface inventaire expose progression, recherche, pertes, écarts fr
   ]);
   assert.match(dashboard, /function InventoryPage/);
   assert.match(dashboard, /Démarrer l’inventaire/);
-  assert.match(dashboard, /Produits jamais comptés/);
+  assert.match(dashboard, /Stocks à vérifier/);
+  assert.match(dashboard, /Ajouter un article trouvé/);
+  assert.match(dashboard, /Terminer avec articles à vérifier/);
   assert.match(dashboard, /Écarts fréquents/);
   assert.match(dashboard, /Pertes inventaire/);
   assert.match(dashboard, /Clôturer l’inventaire/);
