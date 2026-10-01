@@ -4312,7 +4312,7 @@ function InventorySessionCountModal({ session, product, close, onSaved, submit }
   );
 }
 
-function InventoryPage({ products, sessions, counts, canEdit, submit }: { products: Product[]; sessions: InventorySession[]; counts: InventoryCount[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function InventoryPage({ products, sessions, counts, canEdit, submit, onAddProduct }: { products: Product[]; sessions: InventorySession[]; counts: InventoryCount[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAddProduct: () => void }) {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
   const [countQueue, setCountQueue] = useState<number[]>([]);
@@ -4329,6 +4329,7 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
   const selectedRemainingProducts = remaining.filter((product) => selectedProductIds.includes(product.id));
   const allVisibleSelected = visibleProducts.length > 0 && visibleProducts.every((product) => selectedProductIds.includes(product.id));
   const neverCounted = activeProducts.filter((product) => !counts.some((count) => count.productId === product.id));
+  const unverifiedProducts = activeProducts.filter((product) => product.stockVerificationStatus === "À vérifier");
   const frequent = activeProducts.map((product) => ({
     product,
     differences: counts.filter((count) => count.productId === product.id && count.difference !== 0).length,
@@ -4343,8 +4344,11 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
   }
   async function finalizeSession() {
     if (!activeSession || !canEdit || finalizing) return;
-    if (activeSession.countedProductCount < activeSession.expectedProductCount) return;
-    if (!window.confirm(`Clôturer ${activeSession.sessionRef} ?\n\nLes corrections de stock déjà validées resteront définitives et le bilan sera figé.`)) return;
+    const pending = Math.max(0, activeSession.expectedProductCount - activeSession.countedProductCount);
+    const warning = pending > 0
+      ? `Terminer ${activeSession.sessionRef} avec ${pending} produit(s) encore « À vérifier » ?\n\nLeur quantité actuelle ne sera PAS remplacée par 0. Ils resteront signalés pour un prochain contrôle.`
+      : `Clôturer ${activeSession.sessionRef} ?\n\nTous les produits ont été comptés. Les corrections validées resteront dans l’historique.`;
+    if (!window.confirm(warning)) return;
     setFinalizing(true);
     try { await submit("finalizeInventorySession", { sessionId: String(activeSession.id) }); } finally { setFinalizing(false); }
   }
@@ -4386,8 +4390,8 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
   return (
     <>
       <section className="kpi-grid stock-kpis">
-        <Kpi label="Valeur stock réelle" value={money(currentValue)} detail="Quantités actuelles × coût d’achat" />
-        <Kpi label="Jamais comptés" value={String(neverCounted.length)} detail={`${activeProducts.length} produit(s) actif(s)`} danger={neverCounted.length > 0} />
+        <Kpi label="Valeur stock système" value={money(currentValue)} detail="Quantités actuelles × coût d’achat" />
+        <Kpi label="À vérifier" value={String(unverifiedProducts.length)} detail={`${activeProducts.length} produit(s) actif(s)`} danger={unverifiedProducts.length > 0} />
         <Kpi label="Sessions clôturées" value={String(sessions.filter((session) => session.status === "Clôturé").length)} detail="Historique conservé" />
         <Kpi label="Pertes inventaire" value={money(sessions.reduce((sum, session) => sum + session.lossValue, 0))} detail="Valeur des écarts négatifs" danger={sessions.some((session) => session.lossValue > 0)} />
       </section>
@@ -4401,15 +4405,17 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
           <div className="inventory-session-progress">
             <div><span>Progression</span><strong>{activeSession.countedProductCount} / {activeSession.expectedProductCount}</strong></div>
             <div className="progress"><span className="green" style={{ width: `${activeSession.expectedProductCount ? Math.min(100, (activeSession.countedProductCount / activeSession.expectedProductCount) * 100) : 100}%` }} /></div>
+            <div><span>À vérifier</span><strong>{Math.max(0, activeSession.expectedProductCount - activeSession.countedProductCount)}</strong></div>
             <div><span>Ajustements</span><strong>{activeSession.totalAdjustmentUnits} unité(s)</strong></div>
             <div><span>Pertes détectées</span><strong className={activeSession.lossValue > 0 ? "money-negative" : ""}>{money(activeSession.lossValue)}</strong></div>
           </div>
           <div className="inventory-session-toolbar">
             <label><span>Rechercher un produit à compter</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="SKU, nom ou catégorie" /></label>
             <div className="inventory-session-toolbar-actions">
+              <button className="secondary-button inventory-add-found-button" type="button" disabled={!canEdit} onClick={onAddProduct}>＋ Ajouter un article trouvé</button>
               <button className="secondary-button" type="button" disabled={!canEdit || !visibleProducts.length} onClick={toggleVisibleSelection}>{allVisibleSelected ? "Tout désélectionner" : "Sélectionner les visibles"}</button>
               <button className="secondary-button inventory-bulk-count-button" type="button" disabled={!canEdit || !selectedRemainingProducts.length} onClick={startSelectedCounting}>Compter la sélection ({selectedRemainingProducts.length})</button>
-              <button className="primary-button" type="button" disabled={!canEdit || activeSession.countedProductCount < activeSession.expectedProductCount || finalizing} onClick={() => void finalizeSession()}>{finalizing ? "Clôture…" : "Clôturer l’inventaire"}</button>
+              <button className="primary-button" type="button" disabled={!canEdit || finalizing} onClick={() => void finalizeSession()}>{finalizing ? "Clôture…" : activeSession.countedProductCount < activeSession.expectedProductCount ? "Terminer avec articles à vérifier" : "Clôturer l’inventaire"}</button>
             </div>
           </div>
           {visibleProducts.length ? (
@@ -4419,9 +4425,9 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
                   <input type="checkbox" checked={selectedProductIds.includes(product.id)} disabled={!canEdit} onChange={() => toggleProductSelection(product.id)} />
                   <span>Sélectionner</span>
                 </label>
-                <div><strong>{product.name}</strong><small>{product.productCode} · {product.category}</small></div>
-                <div><span>Stock système</span><strong>{product.stockQuantity}</strong></div>
-                <div><span>Valeur</span><strong>{money(product.stockQuantity * product.purchasePrice)}</strong></div>
+                <div><strong>{product.name}</strong><small>{product.productCode} · {product.category}</small><Status value="À vérifier" /></div>
+                <div><span>Stock système</span><strong>{product.stockQuantity}</strong><small>Non remplacé tant que vous ne comptez pas.</small></div>
+                <div><span>Valeur système</span><strong>{money(product.stockQuantity * product.purchasePrice)}</strong></div>
                 <button type="button" className="secondary-button" disabled={!canEdit} onClick={() => { setCountQueue([]); setSelectedProduct(product); }}>Compter</button>
               </article>
             ))}</div>
@@ -4430,22 +4436,22 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
           {sessionCounts.length ? (
             <details className="inventory-counted-details">
               <summary>Déjà comptés · {sessionCounts.length}</summary>
-              <div className="table-scroll"><table><thead><tr><th>Produit</th><th>Système</th><th>Physique</th><th>Écart</th><th>Motif</th><th>Perte</th></tr></thead><tbody>
-                {sessionCounts.map((count) => <tr key={count.id}><td><strong>{count.productName}</strong><small>{count.productCode}</small></td><td>{count.systemQuantity}</td><td>{count.physicalQuantity}</td><td className={moneyTone(count.difference)}>{count.difference > 0 ? "+" : ""}{count.difference}</td><td>{count.reason}</td><td className={count.lossValue > 0 ? "money-negative" : ""}>{money(count.lossValue)}</td></tr>)}
+              <div className="table-scroll"><table><thead><tr><th>Produit</th><th>État</th><th>Système</th><th>Physique</th><th>Écart</th><th>Motif</th><th>Perte</th></tr></thead><tbody>
+                {sessionCounts.map((count) => <tr key={count.id}><td><strong>{count.productName}</strong><small>{count.productCode}</small></td><td><Status value={count.physicalQuantity === 0 ? "Rupture confirmée" : "Compté"} /></td><td>{count.systemQuantity}</td><td>{count.physicalQuantity}</td><td className={moneyTone(count.difference)}>{count.difference > 0 ? "+" : ""}{count.difference}</td><td>{count.reason}</td><td className={count.lossValue > 0 ? "money-negative" : ""}>{money(count.lossValue)}</td></tr>)}
               </tbody></table></div>
             </details>
           ) : null}
         </section>
       ) : (
         <section className="panel inventory-start-card">
-          <div><span className="card-kicker">Inventaire physique</span><h2>Démarrer un nouveau comptage</h2><p>La session fige le nombre de produits à contrôler. Chaque écart corrigera le stock et restera justifié dans l’historique.</p></div>
-          <button className="primary-button" type="button" disabled={!canEdit || starting} onClick={() => void startSession()}>{starting ? "Création…" : "＋ Démarrer l’inventaire"}</button>
+          <div><span className="card-kicker">Inventaire physique</span><h2>Démarrer un nouveau comptage</h2><p>Le stock actuel reste votre stock système. Tous les articles passent « À vérifier », puis vous confirmez seulement ceux que vous avez réellement comptés. Vous pouvez aussi ajouter de nouveaux articles pendant la session.</p></div>
+          <button className="primary-button" type="button" disabled={!canEdit || starting} onClick={() => void startSession()}>{starting ? "Création…" : "＋ Démarrer l’inventaire récent"}</button>
         </section>
       )}
 
       <section className="panel page-panel">
-        <PanelHead kicker="Contrôle" title="Produits jamais comptés" total={String(neverCounted.length)} />
-        {neverCounted.length ? <div className="inventory-never-grid">{neverCounted.slice(0, 12).map((product) => <article key={product.id}><strong>{product.name}</strong><small>{product.productCode} · stock {product.stockQuantity}</small></article>)}</div> : <div className="pending-empty">✓ Tous les produits actifs ont déjà été contrôlés au moins une fois.</div>}
+        <PanelHead kicker="Contrôle actuel" title="Stocks à vérifier" total={String(unverifiedProducts.length)} />
+        {unverifiedProducts.length ? <div className="inventory-never-grid">{unverifiedProducts.slice(0, 24).map((product) => <article key={product.id}><strong>{product.name}</strong><small>{product.productCode} · stock système {product.stockQuantity}</small><span>À vérifier{product.lastInventoryAt ? ` · dernier comptage ${dateLabel(product.lastInventoryAt)}` : neverCounted.some((row) => row.id === product.id) ? " · jamais compté" : ""}</span></article>)}</div> : <div className="pending-empty">✓ Tous les produits actifs ont un comptage physique confirmé.</div>}
       </section>
 
       <section className="panel page-panel">
@@ -4455,7 +4461,7 @@ function InventoryPage({ products, sessions, counts, canEdit, submit }: { produc
 
       <section className="panel page-panel">
         <PanelHead kicker="Historique" title="Sessions clôturées" total={String(sessions.filter((session) => session.status === "Clôturé").length)} />
-        {latestClosed.length ? <div className="table-scroll"><table><thead><tr><th>Session</th><th>Date</th><th>Responsable</th><th>Produits</th><th>Unités système</th><th>Unités réelles</th><th>Valeur avant</th><th>Valeur après</th><th>Pertes</th></tr></thead><tbody>{latestClosed.map((session) => <tr key={session.id}><td><strong>{session.sessionRef}</strong></td><td>{session.completedAt ? dateTimeLabel(session.completedAt) : "—"}</td><td>{session.startedByName}</td><td>{session.countedProductCount}</td><td>{session.totalSystemUnits}</td><td>{session.totalPhysicalUnits}</td><td>{money(session.valueBefore)}</td><td>{money(session.valueAfter)}</td><td className={session.lossValue > 0 ? "money-negative" : ""}>{money(session.lossValue)}</td></tr>)}</tbody></table></div> : <EmptyState title="Aucun inventaire clôturé" text="Le premier bilan apparaîtra ici après la clôture d’une session." />}
+        {latestClosed.length ? <div className="table-scroll"><table><thead><tr><th>Session</th><th>Date</th><th>État</th><th>Responsable</th><th>Produits</th><th>Unités vérifiées</th><th>Valeur système / réelle</th><th>Pertes</th></tr></thead><tbody>{latestClosed.map((session) => { const complete = session.countedProductCount >= session.expectedProductCount; return <tr key={session.id}><td><strong>{session.sessionRef}</strong></td><td>{session.completedAt ? dateTimeLabel(session.completedAt) : "—"}</td><td><Status value={complete ? "Complet" : "Partiel"} /></td><td>{session.startedByName}</td><td>{session.countedProductCount} / {session.expectedProductCount}</td><td>{session.totalPhysicalUnits}</td><td>{money(session.valueAfter)}<small>{complete ? "Physiquement vérifiée" : "Provisoire · contient du stock à vérifier"}</small></td><td className={session.lossValue > 0 ? "money-negative" : ""}>{money(session.lossValue)}</td></tr>; })}</tbody></table></div> : <EmptyState title="Aucun inventaire clôturé" text="Le premier bilan apparaîtra ici après la clôture d’une session." />}
       </section>
       {activeSession && selectedProduct ? <InventorySessionCountModal key={selectedProduct.id} session={activeSession} product={selectedProduct} close={closeCountModal} onSaved={handleCountSaved} submit={submit} /> : null}
     </>
