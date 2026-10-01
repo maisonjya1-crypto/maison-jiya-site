@@ -4300,7 +4300,7 @@ function InventorySessionCountModal({ session, product, close, onSaved, submit }
           </div>
           <div className="form-grid">
             <label className="field"><span>Quantité physique *</span><input name="physicalQuantity" type="number" inputMode="numeric" min="0" value={physicalQuantity} onChange={(event) => setPhysicalQuantity(event.target.value)} required /></label>
-            {difference !== 0 ? <Select label="Motif de l’écart *" name="reason" options={["Casse", "Perte", "Vol", "Erreur de saisie", "Autre"]} /> : <input type="hidden" name="reason" value="Aucun écart" />}
+            {difference !== 0 ? <Select label="Motif de l’écart *" name="reason" options={["Casse", "Perte", "Vol", "Erreur de saisie", "Article trouvé", "Autre"]} /> : <input type="hidden" name="reason" value="Aucun écart" />}
             <Field label="Note complémentaire" name="note" maxLength={240} />
           </div>
           <p className="inventory-warning">{difference === 0 ? "✓ Stock conforme." : difference < 0 ? `Le stock sera corrigé à ${parsed}. Perte valorisée : ${money(loss)}.` : `Le stock sera corrigé à ${parsed}. L’écart positif sera tracé.`}</p>
@@ -8291,7 +8291,7 @@ function InventoryCountModal({ product, close, submit }: { product: Product; clo
               <span>Quantité physique comptée *</span>
               <input name="physicalQuantity" type="number" inputMode="numeric" min="0" value={physicalQuantity} onChange={(event) => setPhysicalQuantity(event.target.value)} required />
             </label>
-            {difference !== 0 ? <Select label="Motif de l’écart *" name="reason" options={["Casse", "Perte", "Vol", "Erreur de saisie", "Autre"]} /> : <input type="hidden" name="reason" value="Aucun écart" />}
+            {difference !== 0 ? <Select label="Motif de l’écart *" name="reason" options={["Casse", "Perte", "Vol", "Erreur de saisie", "Article trouvé", "Autre"]} /> : <input type="hidden" name="reason" value="Aucun écart" />}
             <Field label="Note complémentaire" name="note" />
           </div>
           <p className="inventory-warning">{difference === 0 ? "✓ Aucun écart : le contrôle sera quand même enregistré." : `Le site corrigera automatiquement le stock de ${product.stockQuantity} à ${parsedPhysicalQuantity} unité(s).`}</p>
