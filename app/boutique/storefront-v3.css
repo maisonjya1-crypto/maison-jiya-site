@@ -391,3 +391,60 @@
   .storefront-v3[dir="rtl"] .storefront-v3-product-dialog-close{right:auto;left:10px}
   .storefront-v3-gallery-arrow{width:38px;height:38px}
 }
+
+
+/* Offre 2e article -50 % : panier et checkout */
+.storefront-v3-promo-line{
+  color:#8a651f!important;
+  font-weight:800;
+}
+.storefront-v3-drawer footer>.storefront-v3-cart-subtotal strong{
+  color:var(--v3-muted);
+  font-size:11px;
+  font-weight:700;
+}
+.storefront-v3-cart-discount{
+  margin:8px 0;
+  padding:10px 12px;
+  border:1px solid #ead8a9;
+  border-radius:10px;
+  background:#fffaf0;
+  color:#6f5220;
+}
+.storefront-v3-cart-discount span{
+  display:grid;
+  gap:2px;
+  font-size:10px;
+  font-weight:850;
+}
+.storefront-v3-cart-discount span small{
+  color:#8c7244;
+  font-size:8px;
+  font-weight:700;
+}
+.storefront-v3-drawer footer>.storefront-v3-cart-discount strong{
+  color:#8a651f;
+  font-size:13px;
+}
+.storefront-v3-cart-promo-hint{
+  margin:8px 0 10px;
+  padding:9px 10px;
+  border-radius:9px;
+  background:#f8f6f8;
+  color:var(--v3-muted);
+  font-size:9px;
+  line-height:1.45;
+}
+.storefront-v3-cart-total{
+  padding-top:8px;
+  border-top:1px solid var(--v3-line);
+}
+.storefront-v3-checkout-summary>div{
+  display:grid;
+  gap:4px;
+}
+.storefront-v3-checkout-summary small{
+  color:#8a651f;
+  font-size:9px;
+  font-weight:800;
+}
