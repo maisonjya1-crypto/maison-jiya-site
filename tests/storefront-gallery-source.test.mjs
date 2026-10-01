@@ -72,3 +72,15 @@ test("le correctif final garde le titre lisible et sépare Voir du bouton panier
   assert.match(hotfix, /storefront-v3-overlay/);
   assert.match(hotfix, /max-height:calc\(100dvh - env\(safe-area-inset-top,0px\) - env\(safe-area-inset-bottom,0px\)\)!important/);
 });
+
+
+test("les photos gardent leur ratio réel sur desktop et dans le CMS mobile", async () => {
+  const hotfix = await readFile(new URL("../app/boutique/storefront-gallery-hotfix.css", import.meta.url), "utf8");
+  const cmsStyles = await readFile(new URL("../app/storefront-cms.css", import.meta.url), "utf8");
+
+  assert.match(hotfix, /@media\(min-width:761px\)/);
+  assert.match(hotfix, /storefront-v3-product-gallery-main\{[\s\S]*?aspect-ratio:auto!important/);
+  assert.match(hotfix, /storefront-v3-product-gallery-main>img\{[\s\S]*?object-fit:contain!important/);
+  assert.match(cmsStyles, /storefront-cms-gallery-grid img \{[^}]*object-fit: contain/);
+  assert.doesNotMatch(cmsStyles, /storefront-cms-gallery-grid img \{[^}]*object-fit: cover/);
+});
