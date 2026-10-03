@@ -33,6 +33,7 @@ const EXPORT_QUERIES: Record<string, string> = {
   parametres: "SELECT key, value, updated_at FROM settings WHERE key NOT LIKE 'security_%' AND key <> 'backup_webhook_url' ORDER BY key",
   boutique_produits: "SELECT * FROM storefront_product_settings ORDER BY product_id",
   boutique_offres: "SELECT * FROM storefront_offers ORDER BY id",
+  boutique_promotions: "SELECT * FROM storefront_promotions ORDER BY priority, id",
   boutique_composition_offres: "SELECT * FROM storefront_offer_items ORDER BY offer_id, product_id",
   boutique_medias: "SELECT * FROM storefront_media ORDER BY id",
   journal_sync_google_sheets: "SELECT * FROM google_sheets_sync_log ORDER BY id",
