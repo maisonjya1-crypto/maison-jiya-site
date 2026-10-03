@@ -1,3 +1,5 @@
+import type { StorefrontPromotion } from "../../lib/storefront-promotions";
+
 export type StorefrontLanguage = "fr" | "ar" | "en";
 
 export type CatalogItem = {
@@ -62,5 +64,6 @@ export type StorefrontCatalog = {
   localized?: Partial<Record<StorefrontLanguage, StorefrontLocaleCopy>>;
   products: CatalogItem[];
   offers: CatalogItem[];
+  promotions?: StorefrontPromotion[];
   categories: string[];
 };

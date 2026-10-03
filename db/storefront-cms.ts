@@ -35,6 +35,23 @@ export type StorefrontOfferItemRow = {
   quantity: number;
 };
 
+export type StorefrontPromotionRow = {
+  id: number;
+  name: string;
+  code: string;
+  description: string;
+  ruleType: "second_item_percent" | "percent_items" | "buy_x_get_y_free";
+  percentValue: number;
+  minimumQuantity: number;
+  buyQuantity: number;
+  freeQuantity: number;
+  eligibleCategories: string;
+  isActive: number;
+  priority: number;
+  createdAt: string;
+  updatedAt: string | null;
+};
+
 export type StorefrontMarketingSectionRow = {
   id: number;
   eyebrow: string;
@@ -187,6 +204,33 @@ export async function ensureStorefrontCms(database: D1Database) {
   `).bind(key, value)));
 
   await ensureManualCatalog(database);
+}
+
+export async function getStorefrontPromotions(database: D1Database, activeOnly = false) {
+  const where = activeOnly ? "WHERE is_active = 1" : "";
+  try {
+    return (await database.prepare(`
+      SELECT id, name, code, description,
+             rule_type AS ruleType,
+             percent_value AS percentValue,
+             minimum_quantity AS minimumQuantity,
+             buy_quantity AS buyQuantity,
+             free_quantity AS freeQuantity,
+             eligible_categories AS eligibleCategories,
+             is_active AS isActive,
+             priority,
+             created_at AS createdAt,
+             updated_at AS updatedAt
+      FROM storefront_promotions
+      ${where}
+      ORDER BY priority, id
+    `).all<StorefrontPromotionRow>()).results;
+  } catch (error) {
+    // Compatibility for a worker started before migration 0016 has been applied.
+    // Production deploys migrations before the worker, so this should only be transient/test-only.
+    console.warn("Maison Jiya promotions table unavailable", error);
+    return [];
+  }
 }
 
 export async function getStorefrontMedia(database: D1Database, ownerType?: string, ownerId?: number) {

@@ -54,7 +54,7 @@ const STOREFRONT_SYNC_TABLES = [
   "storefront_media",
 ] as const;
 
-const OPTIONAL_SYNC_TABLES = ["recurring_expenses"] as const;
+const OPTIONAL_SYNC_TABLES = ["recurring_expenses", "storefront_promotions"] as const;
 
 let schemaReady: Promise<void> | null = null;
 let storefrontTriggersReady: Promise<void> | null = null;

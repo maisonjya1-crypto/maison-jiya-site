@@ -1,5 +1,6 @@
 import type { StorefrontCatalog } from "../app/boutique/storefront-types";
 import { normalizeMoroccanPhone } from "./phone";
+import { normalizeEligibleCategories, type StorefrontPromotion } from "../lib/storefront-promotions";
 
 type PublicProductRow = {
   id: number;
@@ -12,6 +13,20 @@ type PublicProductRow = {
   description: string;
 };
 type PublicOfferRow = { id: number; name: string; description: string; price: number; comparePrice: number; badge: string };
+type PublicPromotionRow = {
+  id: number;
+  name: string;
+  code: string;
+  description: string;
+  ruleType: StorefrontPromotion["ruleType"];
+  percentValue: number;
+  minimumQuantity: number;
+  buyQuantity: number;
+  freeQuantity: number;
+  eligibleCategories: string;
+  isActive: number;
+  priority: number;
+};
 type PublicMarketingRow = {
   id: number;
   eyebrow: string;
@@ -136,6 +151,27 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
   const media = rows<MediaRow>(result[3]);
   const marketingRows = rows<PublicMarketingRow>(result[4]);
   const settingsRows = rows<SettingRow>(result[5]);
+  let promotionRows: PublicPromotionRow[] = [];
+  try {
+    promotionRows = (await database.prepare(`
+      SELECT id, name, code, description,
+             rule_type AS ruleType,
+             percent_value AS percentValue,
+             minimum_quantity AS minimumQuantity,
+             buy_quantity AS buyQuantity,
+             free_quantity AS freeQuantity,
+             eligible_categories AS eligibleCategories,
+             is_active AS isActive,
+             priority
+      FROM storefront_promotions
+      WHERE is_active = 1
+      ORDER BY priority, id
+      LIMIT 100
+    `).all<PublicPromotionRow>()).results;
+  } catch {
+    // Compatibility during a rolling deploy or tests created before migration 0016.
+    promotionRows = [];
+  }
   const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
 
   const mediaByOwner = new Map<string, string[]>();
@@ -187,6 +223,26 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       images,
     }];
   });
+
+  const publicPromotions: StorefrontPromotion[] = promotionRows.map((promotion) => ({
+    id: Number(promotion.id) || 0,
+    name: promotion.name?.trim() || "",
+    code: promotion.code?.trim() || "",
+    description: promotion.description?.trim() || "",
+    ruleType: promotion.ruleType,
+    percentValue: Math.max(0, Math.min(100, Number(promotion.percentValue) || 0)),
+    minimumQuantity: Math.max(1, Math.floor(Number(promotion.minimumQuantity) || 1)),
+    buyQuantity: Math.max(0, Math.floor(Number(promotion.buyQuantity) || 0)),
+    freeQuantity: Math.max(0, Math.floor(Number(promotion.freeQuantity) || 0)),
+    eligibleCategories: normalizeEligibleCategories(promotion.eligibleCategories).map((category) => {
+      if (category === "montres") return "Montres";
+      if (category === "bijoux") return "Bijoux";
+      if (category === "portefeuilles") return "Portefeuilles";
+      return category;
+    }),
+    isActive: Boolean(promotion.isActive),
+    priority: Number(promotion.priority) || 100,
+  })).filter((promotion) => promotion.name && promotion.code);
 
   const publicOffers = offers.flatMap((offer) => {
     const components = itemsByOffer.get(offer.id) || [];
@@ -282,6 +338,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     },
     products: publicProducts,
     offers: publicOffers,
+    promotions: publicPromotions,
     categories,
   };
 }

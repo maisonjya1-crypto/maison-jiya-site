@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { CatalogItem, StorefrontCatalog, StorefrontLanguage, StorefrontMarketingSection } from "./storefront-types";
-import { calculateSecondItemHalfOff, isSecondItemPromoCategory } from "../../lib/storefront-second-item-promo";
+import { calculateIndependentPromotions } from "../../lib/storefront-promotions";
 
 type Cart = Record<string, number>;
 type FbqFunction = ((...args: unknown[]) => void) & { queue?: unknown[][]; loaded?: boolean; version?: string };
@@ -86,7 +86,7 @@ const copy: Record<StorefrontLanguage, Copy> = {
     weeklyPromo: "PROMO DE LA SEMAINE", weeklyPromoKicker: "Nos offres du moment", bestSellers: "BEST SELLERS", bestSellersKicker: "Les favoris du moment", bestSellerText: "Une sélection de modèles appréciés par nos clients.",
     collections: "NOS COLLECTIONS", collectionsKicker: "Choisissez votre univers", packs: "NOS PACKS", packsKicker: "Des offres pensées pour vous", allProducts: "TOUS NOS MODÈLES",
     search: "Rechercher", searchPlaceholder: "Montre, portefeuille, référence…", category: "Catégorie", allCategories: "Toutes les catégories", products: "articles", loading: "Chargement du catalogue…",
-    unavailable: "Indisponible", addToCart: "Ajouter au panier", viewProduct: "Voir ce produit", loadMore: "Afficher plus", yourCart: "Votre panier", emptyCart: "Votre panier est vide.", subtotal: "Sous-total", total: "Total", promoSecondItem: "2e article à -50 %", promoApplied: "Offre appliquée", promoHint: "Ajoutez un 2e article : -50 % sur le moins cher des deux.", checkout: "Commander",
+    unavailable: "Indisponible", addToCart: "Ajouter au panier", viewProduct: "Voir ce produit", loadMore: "Afficher plus", yourCart: "Votre panier", emptyCart: "Votre panier est vide.", subtotal: "Sous-total", total: "Total", promoSecondItem: "Promotion", promoApplied: "Offre appliquée", promoHint: "Les promotions actives s’appliquent automatiquement, une seule à la fois.", checkout: "Commander",
     continueShopping: "Continuer mes achats", quantity: "Quantité", remove: "Supprimer", orderTitle: "Finaliser la commande", orderSubtitle: "Aucun paiement en ligne. Notre équipe vous contacte pour confirmer.", fullName: "Nom complet", phone: "Téléphone", city: "Ville", address: "Adresse de livraison",
     note: "Note", optional: "facultatif", confirmOrder: "Envoyer ma commande", sending: "Envoi…", orderSuccess: "Commande reçue", orderSuccessText: "Merci. Notre équipe vous contactera pour confirmer la disponibilité et votre commande avant préparation.", orderRef: "Référence", close: "Fermer", orderFailed: "Impossible d’enregistrer la commande. Vérifiez vos informations puis réessayez.",
     whyOrder: "COMMENT COMMANDER", step1: "1. Choisissez", step1Text: "Ajoutez les modèles et quantités qui vous plaisent, même si vous en souhaitez plusieurs.", step2: "2. Envoyez", step2Text: "Renseignez vos coordonnées et envoyez votre commande sans paiement en ligne.", step3: "3. Confirmez", step3Text: "Notre équipe vous contacte pour confirmer la disponibilité avant préparation et livraison.",
@@ -98,7 +98,7 @@ const copy: Record<StorefrontLanguage, Copy> = {
     weeklyPromo: "عرض الأسبوع", weeklyPromoKicker: "عروضنا الحالية", bestSellers: "الأكثر طلبًا", bestSellersKicker: "اختيارات العملاء", bestSellerText: "مجموعة مختارة من الموديلات المفضلة لدى عملائنا.",
     collections: "مجموعاتنا", collectionsKicker: "اختر ما يناسبك", packs: "الباقات", packsKicker: "عروض مختارة لك", allProducts: "جميع الموديلات",
     search: "بحث", searchPlaceholder: "ساعة، محفظة، مرجع…", category: "الفئة", allCategories: "جميع الفئات", products: "منتجات", loading: "جارٍ تحميل الكتالوج…",
-    unavailable: "غير متوفر", addToCart: "أضف إلى السلة", viewProduct: "عرض المنتج", loadMore: "عرض المزيد", yourCart: "سلة التسوق", emptyCart: "سلة التسوق فارغة.", subtotal: "المجموع قبل العرض", total: "المجموع", promoSecondItem: "القطعة الثانية بخصم 50٪", promoApplied: "تم تطبيق العرض", promoHint: "أضف قطعة ثانية: خصم 50٪ على الأرخص من القطعتين.", checkout: "إتمام الطلب",
+    unavailable: "غير متوفر", addToCart: "أضف إلى السلة", viewProduct: "عرض المنتج", loadMore: "عرض المزيد", yourCart: "سلة التسوق", emptyCart: "سلة التسوق فارغة.", subtotal: "المجموع قبل العرض", total: "المجموع", promoSecondItem: "عرض", promoApplied: "تم تطبيق العرض", promoHint: "تُطبّق العروض النشطة تلقائيًا، عرض واحد فقط في كل مرة.", checkout: "إتمام الطلب",
     continueShopping: "متابعة التسوق", quantity: "الكمية", remove: "حذف", orderTitle: "إتمام الطلب", orderSubtitle: "لا يوجد دفع إلكتروني. سيتواصل معك فريقنا لتأكيد الطلب.", fullName: "الاسم الكامل", phone: "رقم الهاتف", city: "المدينة", address: "عنوان التوصيل",
     note: "ملاحظة", optional: "اختياري", confirmOrder: "إرسال الطلب", sending: "جارٍ الإرسال…", orderSuccess: "تم استلام طلبك", orderSuccessText: "شكرًا لك. سيتواصل معك فريقنا لتأكيد توفر المنتجات والطلب قبل التجهيز.", orderRef: "رقم الطلب", close: "إغلاق", orderFailed: "تعذر تسجيل الطلب. تحقق من معلوماتك ثم حاول مرة أخرى.",
     whyOrder: "كيفية الطلب", step1: "1. اختر", step1Text: "أضف الموديلات والكميات التي تريدها، حتى إذا كنت ترغب في أكثر من قطعة.", step2: "2. أرسل الطلب", step2Text: "أدخل معلوماتك وأرسل الطلب من دون أي دفع إلكتروني.", step3: "3. التأكيد", step3Text: "سيتواصل معك فريقنا لتأكيد التوفر قبل تجهيز الطلب والتوصيل.",
@@ -110,7 +110,7 @@ const copy: Record<StorefrontLanguage, Copy> = {
     weeklyPromo: "WEEKLY PROMOTION", weeklyPromoKicker: "Current offers", bestSellers: "BEST SELLERS", bestSellersKicker: "Customer favorites", bestSellerText: "A selection of customer-favorite styles.",
     collections: "OUR COLLECTIONS", collectionsKicker: "Choose your style", packs: "OUR PACKS", packsKicker: "Offers selected for you", allProducts: "ALL MODELS",
     search: "Search", searchPlaceholder: "Watch, wallet, reference…", category: "Category", allCategories: "All categories", products: "items", loading: "Loading catalog…",
-    unavailable: "Unavailable", addToCart: "Add to cart", viewProduct: "View product", loadMore: "Show more", yourCart: "Your cart", emptyCart: "Your cart is empty.", subtotal: "Subtotal", total: "Total", promoSecondItem: "2nd item 50% off", promoApplied: "Offer applied", promoHint: "Add a 2nd item: 50% off the cheaper of the two.", checkout: "Checkout",
+    unavailable: "Unavailable", addToCart: "Add to cart", viewProduct: "View product", loadMore: "Show more", yourCart: "Your cart", emptyCart: "Your cart is empty.", subtotal: "Subtotal", total: "Total", promoSecondItem: "Promotion", promoApplied: "Offer applied", promoHint: "Active promotions apply automatically, one at a time.", checkout: "Checkout",
     continueShopping: "Continue shopping", quantity: "Quantity", remove: "Remove", orderTitle: "Complete your order", orderSubtitle: "No online payment. Our team will contact you to confirm the order.", fullName: "Full name", phone: "Phone", city: "City", address: "Delivery address",
     note: "Note", optional: "optional", confirmOrder: "Place my order", sending: "Sending…", orderSuccess: "Order received", orderSuccessText: "Thank you. Our team will contact you to confirm availability and your order before preparation.", orderRef: "Reference", close: "Close", orderFailed: "We could not register your order. Check your details and try again.",
     whyOrder: "HOW TO ORDER", step1: "1. Choose", step1Text: "Add the models and quantities you want, even when you need several pieces.", step2: "2. Send", step2Text: "Enter your details and place your order without any online payment.", step3: "3. Confirm", step3Text: "Our team contacts you to confirm availability before preparation and delivery.",
@@ -449,14 +449,20 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     return item ? { key, item, quantity } : null;
   }).filter((line): line is { key: string; item: CatalogItem; quantity: number } => Boolean(line)), [cart, items]);
   const itemCount = cartLines.reduce((sum, line) => sum + line.quantity, 0);
-  const cartPricing = useMemo(() => calculateSecondItemHalfOff(cartLines.map((line) => ({
-    key: line.key,
-    unitPrice: line.item.salePrice,
-    quantity: line.quantity,
-    eligible: line.item.kind === "product" && isSecondItemPromoCategory(line.item.category),
-  }))), [cartLines]);
+  const activePromotions = catalog?.promotions || [];
+  const cartPricing = useMemo(() => calculateIndependentPromotions(
+    cartLines.map((line) => ({
+      key: line.key,
+      kind: line.item.kind,
+      unitPrice: line.item.salePrice,
+      quantity: line.quantity,
+      category: line.item.category,
+    })),
+    activePromotions,
+  ), [cartLines, activePromotions]);
   const subtotal = cartPricing.subtotal;
   const total = cartPricing.total;
+  const primaryPromotion = activePromotions.slice().sort((left, right) => left.priority - right.priority || left.id - right.id)[0];
 
   function add(item: CatalogItem) {
     if (!item.available) return;
@@ -652,12 +658,14 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     {cartOpen && <div className="storefront-v3-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setCartOpen(false); }}>
       <aside className="storefront-v3-drawer" role="dialog" aria-modal="true" aria-label={t.yourCart}>
         <header><div><small>{brand}</small><h2>{t.yourCart}</h2></div><button type="button" onClick={() => setCartOpen(false)} aria-label={t.close}>×</button></header>
-        <div className="storefront-v3-cart-lines">{cartLines.length ? cartLines.map((line) => <article key={line.key}><div><strong>{line.item.name}</strong><small>{money(line.item.salePrice, lang)}</small>{cartPricing.applied && cartPricing.discountedKey === line.key && <small className="storefront-v3-promo-line">−50 % · 1 article</small>}</div><div className="storefront-v3-qty"><button type="button" aria-label={`${t.quantity} − · ${line.item.name}`} onClick={() => updateQuantity(line.key, line.quantity - 1)}>−</button><span aria-live="polite">{line.quantity}</span><button type="button" aria-label={`${t.quantity} + · ${line.item.name}`} onClick={() => updateQuantity(line.key, line.quantity + 1)}>+</button></div><button className="storefront-v3-remove" type="button" onClick={() => updateQuantity(line.key, 0)}>{t.remove}</button></article>) : <p className="storefront-v3-empty">{t.emptyCart}</p>}</div>
+        <div className="storefront-v3-cart-lines">{cartLines.length ? cartLines.map((line) => <article key={line.key}><div><strong>{line.item.name}</strong><small>{money(line.item.salePrice, lang)}</small>{cartPricing.applied && (cartPricing.discountedUnits[line.key] || 0) > 0 && <small className="storefront-v3-promo-line">{cartPricing.name} · {cartPricing.discountedUnits[line.key]} article(s)</small>}</div><div className="storefront-v3-qty"><button type="button" aria-label={`${t.quantity} − · ${line.item.name}`} onClick={() => updateQuantity(line.key, line.quantity - 1)}>−</button><span aria-live="polite">{line.quantity}</span><button type="button" aria-label={`${t.quantity} + · ${line.item.name}`} onClick={() => updateQuantity(line.key, line.quantity + 1)}>+</button></div><button className="storefront-v3-remove" type="button" onClick={() => updateQuantity(line.key, 0)}>{t.remove}</button></article>) : <p className="storefront-v3-empty">{t.emptyCart}</p>}</div>
         <footer>
           {cartLines.length > 0 && <div className="storefront-v3-cart-subtotal"><span>{t.subtotal}</span><strong>{money(subtotal, lang)}</strong></div>}
           {cartLines.length > 0 && (cartPricing.applied
-            ? <div className="storefront-v3-cart-discount"><span>{t.promoSecondItem}<small>{t.promoApplied}</small></span><strong>−{money(cartPricing.discount, lang)}</strong></div>
-            : <p className="storefront-v3-cart-promo-hint">{t.promoHint}</p>)}
+            ? <div className="storefront-v3-cart-discount"><span>{cartPricing.name}<small>{t.promoApplied} · non cumulable</small></span><strong>−{money(cartPricing.discount, lang)}</strong></div>
+            : activePromotions.length > 0
+              ? <p className="storefront-v3-cart-promo-hint"><strong>{primaryPromotion?.name}</strong><br />{primaryPromotion?.description || t.promoHint}</p>
+              : null)}
           <div className="storefront-v3-cart-total"><span>{t.total}</span><strong>{money(total, lang)}</strong></div>
           <small>{localized?.shippingNote || catalog?.shippingNote}</small><button type="button" disabled={!cartLines.length} onClick={beginCheckout}>{t.checkout}</button><button className="ghost" type="button" onClick={() => setCartOpen(false)}>{t.continueShopping}</button>
         </footer>
@@ -667,7 +675,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     {checkoutOpen && <div className="storefront-v3-overlay checkout" onMouseDown={(event) => { if (event.target === event.currentTarget) setCheckoutOpen(false); }}>
       <section className="storefront-v3-checkout" role="dialog" aria-modal="true" aria-label={t.orderTitle}>
         <header><div><small>{brand}</small><h2>{t.orderTitle}</h2><p>{t.orderSubtitle}</p></div><button type="button" onClick={() => setCheckoutOpen(false)} aria-label={t.close}>×</button></header>
-        <div className="storefront-v3-checkout-summary"><div><span>{itemCount} {t.products}</span>{cartPricing.applied && <small>{t.promoSecondItem} · −{money(cartPricing.discount, lang)}</small>}</div><strong>{money(total, lang)}</strong></div>
+        <div className="storefront-v3-checkout-summary"><div><span>{itemCount} {t.products}</span>{cartPricing.applied && <small>{cartPricing.name} · −{money(cartPricing.discount, lang)}</small>}</div><strong>{money(total, lang)}</strong></div>
         <form onSubmit={(event) => void submitOrder(event)}>
           <label><span>{t.fullName} *</span><input name="customerName" autoComplete="name" required minLength={2} maxLength={120} /></label>
           <div className="storefront-v3-form-row"><label><span>{t.phone} *</span><input name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="06 12 34 56 78" required maxLength={40} /></label><label><span>{t.city} *</span><input name="city" autoComplete="address-level2" required maxLength={100} /></label></div>
