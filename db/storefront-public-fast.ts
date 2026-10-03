@@ -106,21 +106,6 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       LIMIT 100
     `),
     database.prepare(`
-      SELECT id, name, code, description,
-             rule_type AS ruleType,
-             percent_value AS percentValue,
-             minimum_quantity AS minimumQuantity,
-             buy_quantity AS buyQuantity,
-             free_quantity AS freeQuantity,
-             eligible_categories AS eligibleCategories,
-             is_active AS isActive,
-             priority
-      FROM storefront_promotions
-      WHERE is_active = 1
-      ORDER BY priority, id
-      LIMIT 100
-    `),
-    database.prepare(`
       SELECT i.offer_id AS offerId, i.product_id AS productId,
              p.category AS category,
              COALESCE(s.availability_mode, 'available') AS availabilityMode,
@@ -162,11 +147,31 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
 
   const products = rows<PublicProductRow>(result[0]);
   const offers = rows<PublicOfferRow>(result[1]);
-  const promotionRows = rows<PublicPromotionRow>(result[2]);
-  const offerItems = rows<OfferItemRow>(result[3]);
-  const media = rows<MediaRow>(result[4]);
-  const marketingRows = rows<PublicMarketingRow>(result[5]);
-  const settingsRows = rows<SettingRow>(result[6]);
+  const offerItems = rows<OfferItemRow>(result[2]);
+  const media = rows<MediaRow>(result[3]);
+  const marketingRows = rows<PublicMarketingRow>(result[4]);
+  const settingsRows = rows<SettingRow>(result[5]);
+  let promotionRows: PublicPromotionRow[] = [];
+  try {
+    promotionRows = (await database.prepare(`
+      SELECT id, name, code, description,
+             rule_type AS ruleType,
+             percent_value AS percentValue,
+             minimum_quantity AS minimumQuantity,
+             buy_quantity AS buyQuantity,
+             free_quantity AS freeQuantity,
+             eligible_categories AS eligibleCategories,
+             is_active AS isActive,
+             priority
+      FROM storefront_promotions
+      WHERE is_active = 1
+      ORDER BY priority, id
+      LIMIT 100
+    `).all<PublicPromotionRow>()).results;
+  } catch {
+    // Compatibility during a rolling deploy or tests created before migration 0016.
+    promotionRows = [];
+  }
   const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
 
   const mediaByOwner = new Map<string, string[]>();
