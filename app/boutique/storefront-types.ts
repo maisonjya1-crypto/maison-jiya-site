@@ -64,6 +64,6 @@ export type StorefrontCatalog = {
   localized?: Partial<Record<StorefrontLanguage, StorefrontLocaleCopy>>;
   products: CatalogItem[];
   offers: CatalogItem[];
-  promotions: StorefrontPromotion[];
+  promotions?: StorefrontPromotion[];
   categories: string[];
 };
