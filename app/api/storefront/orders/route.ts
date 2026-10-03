@@ -2,8 +2,8 @@ import { getRawDb } from "../../../../db";
 import { normalizeMoroccanPhone } from "../../../../db/phone";
 import { ensurePlatformUpgrades } from "../../../../db/platform-upgrades";
 import { notifyNewOrder } from "../../../../db/push-notifications";
-import { ensureStorefrontCms } from "../../../../db/storefront-cms";
-import { calculateSecondItemHalfOff, isSecondItemPromoCategory, SECOND_ITEM_PROMO_CODE } from "../../../../lib/storefront-second-item-promo";
+import { ensureStorefrontCms, getStorefrontPromotions } from "../../../../db/storefront-cms";
+import { calculateIndependentPromotions, normalizeEligibleCategories, type StorefrontPromotion } from "../../../../lib/storefront-promotions";
 
 type RequestedCartItem = { kind: "product" | "offer"; id: number; quantity: number };
 type ProductRow = {
@@ -241,7 +241,7 @@ export async function POST(request: Request) {
 
     const expanded = new Map<number, { product: ProductRow; quantity: number; weight: number }>();
     const labels: string[] = [];
-    const promotionLines: Array<{ key: string; unitPrice: number; quantity: number; eligible: boolean }> = [];
+    const promotionLines: Array<{ key: string; kind: "product" | "offer"; unitPrice: number; quantity: number; category: string }> = [];
     let saleAmount = 0;
     for (const item of cart) {
       if (item.kind === "product") {
@@ -251,9 +251,10 @@ export async function POST(request: Request) {
         saleAmount += lineTotal;
         promotionLines.push({
           key: `product:${product.id}`,
+          kind: "product",
           unitPrice: product.publicPrice,
           quantity: item.quantity,
-          eligible: isSecondItemPromoCategory(product.category),
+          category: product.category,
         });
         labels.push(`${product.publicName || product.name} ×${item.quantity}`);
         const current = expanded.get(product.id);
@@ -263,9 +264,10 @@ export async function POST(request: Request) {
         saleAmount += offer.price * item.quantity;
         promotionLines.push({
           key: `offer:${offer.id}`,
+          kind: "offer",
           unitPrice: offer.price,
           quantity: item.quantity,
-          eligible: false,
+          category: "Packs & offres",
         });
         labels.push(`${offer.name} ×${item.quantity}`);
         const components = offerComponents.filter((component) => component.offerId === offer.id);
@@ -280,10 +282,23 @@ export async function POST(request: Request) {
     }
     if (saleAmount <= 0) throw new Error("Le montant de la commande est invalide.");
 
-    // Offre Maison Jiya : une seule remise par commande, égale à 50 % de
-    // l'article éligible le moins cher lorsqu'au moins deux articles éligibles
-    // sont présents. Les packs/offres déjà tarifés restent hors de cette promo.
-    const promotion = calculateSecondItemHalfOff(promotionLines);
+    // Chaque promotion est évaluée par son propre calculateur. Une seule règle
+    // automatique peut gagner par panier : aucun calcul ne se mélange avec un autre.
+    const promotionRules: StorefrontPromotion[] = (await getStorefrontPromotions(database, true)).map((rule) => ({
+      id: Number(rule.id) || 0,
+      name: rule.name,
+      code: rule.code,
+      description: rule.description,
+      ruleType: rule.ruleType,
+      percentValue: Number(rule.percentValue) || 0,
+      minimumQuantity: Number(rule.minimumQuantity) || 1,
+      buyQuantity: Number(rule.buyQuantity) || 0,
+      freeQuantity: Number(rule.freeQuantity) || 0,
+      eligibleCategories: normalizeEligibleCategories(rule.eligibleCategories),
+      isActive: Boolean(rule.isActive),
+      priority: Number(rule.priority) || 100,
+    }));
+    const promotion = calculateIndependentPromotions(promotionLines, promotionRules);
     saleAmount = promotion.total;
     if (saleAmount <= 0) throw new Error("Le montant de la commande est invalide.");
 
@@ -294,7 +309,7 @@ export async function POST(request: Request) {
     const capturedItems = allocateSale(lines, saleAmount);
     const totalQuantity = capturedItems.reduce((sum, item) => sum + item.quantity, 0);
     const productCost = capturedItems.reduce((sum, item) => sum + item.unitCost * item.quantity, 0);
-    const productLabel = `${labels.join(" + ")}${promotion.applied ? " · OFFRE 2E -50%" : ""}`.slice(0, 600);
+    const productLabel = `${labels.join(" + ")}${promotion.applied ? ` · OFFRE ${promotion.name}` : ""}`.slice(0, 600);
     const onlyOffer = cart.length === 1 && cart[0].kind === "offer" ? offers.find((offer) => offer.id === cart[0].id)?.name || "" : "";
 
     const duplicate = await database.prepare(`
@@ -315,9 +330,9 @@ export async function POST(request: Request) {
 
     const now = new Date().toISOString();
     const orderRef = `MJ-W${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
-    const promoAttribution = promotion.applied ? `${SECOND_ITEM_PROMO_CODE} -${promotion.discount} MAD` : "";
+    const promoAttribution = promotion.applied ? `${promotion.code} -${promotion.discount} MAD` : "";
     const attribution = [promoAttribution, campaign, utmSource && `src:${utmSource}`, utmMedium && `med:${utmMedium}`].filter(Boolean).join(" · ").slice(0, 120);
-    const promoNote = promotion.applied ? `Offre 2e article -50 % appliquée : -${promotion.discount} MAD.` : "";
+    const promoNote = promotion.applied ? `Offre ${promotion.name} appliquée : -${promotion.discount} MAD.` : "";
     const noteSuffix = [promoNote, note ? `Note client: ${note}` : ""].filter(Boolean).join(" ");
     await database.batch([
       database.prepare(`
@@ -345,7 +360,7 @@ export async function POST(request: Request) {
       ok: true,
       orderRef,
       total: saleAmount,
-      promotion: promotion.applied ? { code: SECOND_ITEM_PROMO_CODE, discount: promotion.discount } : null,
+      promotion: promotion.applied ? { id: promotion.promotionId, code: promotion.code, name: promotion.name, discount: promotion.discount } : null,
       payment: "Paiement à la livraison",
       message: "Commande reçue. Maison Jiya vous contactera pour confirmation.",
     }, {
