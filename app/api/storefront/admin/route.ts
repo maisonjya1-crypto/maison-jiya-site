@@ -1,7 +1,8 @@
 import { getAuthenticatedUser } from "../../../auth";
 import { getRawDb } from "../../../../db";
 import { normalizeMoroccanPhone } from "../../../../db/phone";
-import { ensureStorefrontCms, getStorefrontMedia, type StorefrontMarketingSectionRow, type StorefrontOfferItemRow, type StorefrontOfferRow, type StorefrontProductSettingRow } from "../../../../db/storefront-cms";
+import { ensureStorefrontCms, getStorefrontMedia, getStorefrontPromotions, type StorefrontMarketingSectionRow, type StorefrontOfferItemRow, type StorefrontOfferRow, type StorefrontProductSettingRow } from "../../../../db/storefront-cms";
+import { normalizeEligibleCategories } from "../../../../lib/storefront-promotions";
 
 type WhatsAppNumber = { label?: string; phone?: string; isDefault?: boolean };
 
@@ -26,6 +27,32 @@ function boolean(value: unknown, fallback = false) {
   if (value === "true" || value === "1" || value === 1) return true;
   if (value === "false" || value === "0" || value === 0) return false;
   return fallback;
+}
+
+function promotionCode(value: unknown, fallbackName: string) {
+  const explicit = text(value, 60).toUpperCase().replace(/[^A-Z0-9:_-]/g, "");
+  if (explicit) return explicit.startsWith("PROMO:") ? explicit : `PROMO:${explicit}`;
+  const slug = fallbackName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 36) || "OFFRE";
+  return `PROMO:${slug}`;
+}
+
+const canonicalPromotionCategories = new Map([
+  ["montres", "Montres"],
+  ["bijoux", "Bijoux"],
+  ["portefeuilles", "Portefeuilles"],
+]);
+
+function promotionCategories(value: unknown) {
+  const normalized = normalizeEligibleCategories(value);
+  return normalized
+    .map((category) => canonicalPromotionCategories.get(category))
+    .filter((category): category is string => Boolean(category));
 }
 
 function validOrigin(request: Request) {
@@ -102,6 +129,8 @@ async function snapshot(database: D1Database) {
     ORDER BY offer_id, product_id
   `).all<StorefrontOfferItemRow>()).results;
 
+  const promotions = await getStorefrontPromotions(database);
+
   const marketingSections = (await database.prepare(`
     SELECT id, eyebrow, title, body, badge, cta_label AS ctaLabel,
            target, placement, is_active AS isActive, sort_order AS sortOrder,
@@ -141,6 +170,11 @@ async function snapshot(database: D1Database) {
       isActive: Boolean(offer.isActive),
       items: offerItems.filter((item) => item.offerId === offer.id && allowedProductIds.has(item.productId)),
       media: media.filter((item) => item.ownerType === "offer" && item.ownerId === offer.id),
+    })),
+    promotions: promotions.map((promotion) => ({
+      ...promotion,
+      isActive: Boolean(promotion.isActive),
+      eligibleCategories: promotionCategories(promotion.eligibleCategories),
     })),
     marketingSections: marketingSections.map((section) => ({
       ...section,
@@ -242,6 +276,77 @@ export async function POST(request: Request) {
         text(payload.description, 600),
         integer(payload.sortOrder),
       ).run();
+    } else if (action === "savePromotion") {
+      const promotionId = integer(payload.promotionId);
+      const name = text(payload.name, 140);
+      if (!name) throw new Error("Le nom de la promotion est obligatoire.");
+      const ruleType = text(payload.ruleType, 40);
+      const allowedRuleTypes = new Set(["second_item_percent", "percent_items", "buy_x_get_y_free"]);
+      if (!allowedRuleTypes.has(ruleType)) throw new Error("Type de promotion invalide.");
+
+      const percentValue = Math.min(100, money(payload.percentValue));
+      const minimumQuantity = Math.max(ruleType === "second_item_percent" ? 2 : 1, Math.min(50, integer(payload.minimumQuantity, 1)));
+      const buyQuantity = Math.max(1, Math.min(20, integer(payload.buyQuantity, 2)));
+      const freeQuantity = Math.max(1, Math.min(20, integer(payload.freeQuantity, 1)));
+      if ((ruleType === "second_item_percent" || ruleType === "percent_items") && percentValue <= 0) {
+        throw new Error("Indiquez un pourcentage de remise supérieur à 0.");
+      }
+      const categories = promotionCategories(payload.eligibleCategories);
+      if (!categories.length) throw new Error("Choisissez au moins une catégorie concernée.");
+      const code = promotionCode(payload.code, name);
+      const priority = Math.max(1, Math.min(999, integer(payload.priority, 100)));
+
+      const duplicate = await database.prepare("SELECT id FROM storefront_promotions WHERE code = ? AND id <> ? LIMIT 1")
+        .bind(code, promotionId).first<{ id: number }>();
+      if (duplicate) throw new Error("Ce code de promotion existe déjà.");
+
+      if (promotionId > 0) {
+        const exists = await database.prepare("SELECT id FROM storefront_promotions WHERE id = ? LIMIT 1").bind(promotionId).first<{ id: number }>();
+        if (!exists) throw new Error("Cette promotion n’existe plus.");
+        await database.prepare(`
+          UPDATE storefront_promotions
+          SET name = ?, code = ?, description = ?, rule_type = ?, percent_value = ?,
+              minimum_quantity = ?, buy_quantity = ?, free_quantity = ?,
+              eligible_categories = ?, is_active = ?, priority = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(
+          name,
+          code,
+          text(payload.description, 700),
+          ruleType,
+          ruleType === "buy_x_get_y_free" ? 100 : percentValue,
+          minimumQuantity,
+          buyQuantity,
+          freeQuantity,
+          JSON.stringify(categories),
+          boolean(payload.isActive, true) ? 1 : 0,
+          priority,
+          promotionId,
+        ).run();
+      } else {
+        await database.prepare(`
+          INSERT INTO storefront_promotions (
+            name, code, description, rule_type, percent_value, minimum_quantity,
+            buy_quantity, free_quantity, eligible_categories, is_active, priority, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).bind(
+          name,
+          code,
+          text(payload.description, 700),
+          ruleType,
+          ruleType === "buy_x_get_y_free" ? 100 : percentValue,
+          minimumQuantity,
+          buyQuantity,
+          freeQuantity,
+          JSON.stringify(categories),
+          boolean(payload.isActive, true) ? 1 : 0,
+          priority,
+        ).run();
+      }
+    } else if (action === "deletePromotion") {
+      const promotionId = integer(payload.promotionId);
+      if (promotionId <= 0) throw new Error("Promotion invalide.");
+      await database.prepare("DELETE FROM storefront_promotions WHERE id = ?").bind(promotionId).run();
     } else if (action === "saveOffer") {
       const offerId = integer(payload.offerId);
       const name = text(payload.name, 140);
