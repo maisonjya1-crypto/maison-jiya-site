@@ -7,15 +7,16 @@ type PromoOrder = {
   campaign: string;
   status: string;
   source: string;
+  products: string;
   createdAt: string;
 };
 
-const SEEN_KEY = "maison-jiya-promo-order-seen-v1";
+const SEEN_KEY = "maison-jiya-promo-order-seen-v2";
 
 function isPromoOrder(order: PromoOrder) {
   return order.status === "En attente"
     && order.source === "Site web"
-    && order.campaign.includes("PROMO:2E50");
+    && order.campaign.includes("PROMO:");
 }
 
 export default function PromoOrderNotification() {
@@ -56,6 +57,10 @@ export default function PromoOrderNotification() {
   if (!visible || !orders.length) return null;
 
   const newest = orders[0];
+  const promoCode = newest.campaign.match(/PROMO:[A-Z0-9:_-]+/)?.[0] || "PROMO";
+  const promoName = newest.products.includes(" · OFFRE ")
+    ? newest.products.split(" · OFFRE ").pop()?.trim() || promoCode
+    : promoCode.replace(/^PROMO:/, "").replaceAll("-", " ");
 
   function close() {
     try { localStorage.setItem(SEEN_KEY, newest.orderRef); } catch { /* stockage facultatif */ }
@@ -71,10 +76,10 @@ export default function PromoOrderNotification() {
 
   return (
     <aside className="promo-order-private-notification" role="status" aria-live="polite">
-      <span className="promo-order-private-badge">−50%</span>
+      <span className="promo-order-private-badge">PROMO</span>
       <div className="promo-order-private-copy">
-        <strong>{orders.length === 1 ? "Nouvelle commande avec l’offre -50 %" : `${orders.length} commandes avec l’offre -50 %`}</strong>
-        <small>{newest.orderRef} · Le total inclut déjà la remise.</small>
+        <strong>{orders.length === 1 ? `Nouvelle commande avec l’offre « ${promoName} »` : `${orders.length} commandes avec une promotion`}</strong>
+        <small>{newest.orderRef} · {promoCode} · le total inclut déjà la remise.</small>
         <button type="button" onClick={openOrders}>Voir les commandes</button>
       </div>
       <button className="promo-order-private-close" type="button" onClick={close} aria-label="Fermer la notification">×</button>
