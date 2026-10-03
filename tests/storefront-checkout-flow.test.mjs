@@ -5,6 +5,8 @@ import { fixture, loadSource } from "./helpers/d1-fixture.mjs";
 
 async function storefrontFixture() {
   const db = await fixture();
+  const promotionMigration = await readFile(new URL("../migrations/0016_storefront_independent_promotions.sql", import.meta.url), "utf8");
+  db.sqlite.exec(promotionMigration);
   await loadSource("db/storefront-cms.ts").ensureStorefrontCms(db);
   db.sqlite.exec(`
     UPDATE products
@@ -33,7 +35,21 @@ function loadOrderRoute(db, options = {}) {
       },
     },
     "../../../../db/platform-upgrades": { ensurePlatformUpgrades: async () => ({ identityRestored: false }) },
-    "../../../../db/storefront-cms": { ensureStorefrontCms: async () => undefined },
+    "../../../../db/storefront-cms": {
+      ensureStorefrontCms: async () => undefined,
+      getStorefrontPromotions: async (_database, activeOnly = false) => {
+        const where = activeOnly ? "WHERE is_active = 1" : "";
+        return db.sqlite.prepare(`
+          SELECT id, name, code, description, rule_type AS ruleType,
+                 percent_value AS percentValue, minimum_quantity AS minimumQuantity,
+                 buy_quantity AS buyQuantity, free_quantity AS freeQuantity,
+                 eligible_categories AS eligibleCategories, is_active AS isActive,
+                 priority, created_at AS createdAt, updated_at AS updatedAt
+          FROM storefront_promotions ${where}
+          ORDER BY priority, id
+        `).all();
+      },
+    },
     "../../../../db/push-notifications": { notifyNewOrder: async () => ({ delivered: 0, subscriptions: 0 }) },
   });
 }
@@ -110,7 +126,7 @@ test("deux articles au même prix déclenchent -50 % sur un seul des deux", asyn
   assert.equal(order.saleAmount, 375);
   assert.equal(order.productCost, 20);
   assert.equal(order.quantity, 2);
-  assert.match(order.products, /OFFRE 2E -50%/);
+  assert.match(order.products, /OFFRE 2e article -50 %/);
   assert.match(order.campaign, /PROMO:2E50/);
   assert.match(order.returnNote, /Offre 2e article -50 % appliquée/);
 });
@@ -137,6 +153,87 @@ test("avec deux prix différents la remise porte sur l'article éligible le moin
   assert.equal(response.status, 201);
   assert.equal(body.promotion?.discount, 50);
   assert.equal(body.total, 300);
+});
+
+test("une autre promotion garde son propre calcul et ne réutilise pas le -50 %", async t => {
+  const db = await storefrontFixture();
+  t.after(() => db.sqlite.close());
+
+  db.sqlite.exec(`
+    UPDATE storefront_promotions SET is_active = 0 WHERE code = 'PROMO:2E50';
+    INSERT INTO storefront_promotions (
+      name, code, description, rule_type, percent_value, minimum_quantity,
+      buy_quantity, free_quantity, eligible_categories, is_active, priority
+    ) VALUES (
+      '-20 % bijoux', 'PROMO:BIJOUX20', '', 'percent_items', 20, 1,
+      0, 0, '["Bijoux"]', 1, 20
+    );
+    INSERT INTO products (id, product_code, name, category, purchase_price, sale_price, stock_quantity)
+    VALUES (2, 'TEST-BIJOU', 'Bijou test', 'Bijoux', 5, 100, 0);
+    INSERT INTO storefront_product_settings (
+      product_id, public_name, public_price, is_visible, availability_mode, badge, description, sort_order
+    ) VALUES (2, 'Bijou test', 100, 1, 'available', '', '', 1);
+  `);
+
+  const route = loadOrderRoute(db);
+  const response = await route.POST(orderRequest([
+    { kind: "product", id: 1, quantity: 1 },
+    { kind: "product", id: 2, quantity: 1 },
+  ], "203.0.113.16"));
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(body.promotion?.code, "PROMO:BIJOUX20");
+  assert.equal(body.promotion?.name, "-20 % bijoux");
+  assert.equal(body.promotion?.discount, 20);
+  assert.equal(body.total, 330);
+});
+
+test("deux promotions actives ne se cumulent jamais et la priorité décide", async t => {
+  const db = await storefrontFixture();
+  t.after(() => db.sqlite.close());
+
+  db.sqlite.exec(`
+    INSERT INTO storefront_promotions (
+      name, code, description, rule_type, percent_value, minimum_quantity,
+      buy_quantity, free_quantity, eligible_categories, is_active, priority
+    ) VALUES (
+      '-20 % bijoux', 'PROMO:BIJOUX20', '', 'percent_items', 20, 1,
+      0, 0, '["Bijoux"]', 1, 20
+    );
+    INSERT INTO products (id, product_code, name, category, purchase_price, sale_price, stock_quantity)
+    VALUES (2, 'TEST-BIJOU', 'Bijou test', 'Bijoux', 5, 100, 0);
+    INSERT INTO storefront_product_settings (
+      product_id, public_name, public_price, is_visible, availability_mode, badge, description, sort_order
+    ) VALUES (2, 'Bijou test', 100, 1, 'available', '', '', 1);
+  `);
+
+  const route = loadOrderRoute(db);
+  const response = await route.POST(orderRequest([
+    { kind: "product", id: 1, quantity: 1 },
+    { kind: "product", id: 2, quantity: 1 },
+  ], "203.0.113.17"));
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(body.promotion?.code, "PROMO:2E50");
+  assert.equal(body.promotion?.discount, 50);
+  assert.equal(body.total, 300);
+  assert.notEqual(body.total, 280);
+});
+
+test("désactiver toutes les promotions remet le panier au prix normal", async t => {
+  const db = await storefrontFixture();
+  t.after(() => db.sqlite.close());
+  db.sqlite.exec("UPDATE storefront_promotions SET is_active = 0");
+
+  const route = loadOrderRoute(db);
+  const response = await route.POST(orderRequest([{ kind: "product", id: 1, quantity: 2 }], "203.0.113.18"));
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(body.promotion, null);
+  assert.equal(body.total, 500);
 });
 
 test("un pack reste commandable avec ses composants à stock 0", async t => {
@@ -213,7 +310,8 @@ test("le panier client nettoie le stockage local, les articles retirés et les q
   assert.match(client, /maxLength=\{100\}/);
   assert.match(client, /maxLength=\{260\}/);
   assert.match(client, /setSubmitError\(error instanceof Error && error\.message \? error\.message : t\.orderFailed\)/);
-  assert.match(client, /promoSecondItem/);
+  assert.match(client, /calculateIndependentPromotions/);
   assert.match(client, /cartPricing\.discount/);
-  assert.match(client, /isSecondItemPromoCategory/);
+  assert.match(client, /cartPricing\.discountedUnits/);
+  assert.doesNotMatch(client, /calculateSecondItemHalfOff/);
 });
