@@ -15,7 +15,7 @@ test("l’export complet exige le propriétaire principal et interdit le cache",
 
 test("JSON et archive CSV couvrent les données métier et la boutique", () => {
   assert.match(exporter, /database\.batch/);
-  for (const table of ["orders", "customers", "products", "stock_movements", "purchases", "capital_ledger", "storefront_offers", "storefront_media"]) {
+  for (const table of ["orders", "customers", "products", "stock_movements", "purchases", "capital_ledger", "storefront_offers", "storefront_promotions", "storefront_media"]) {
     assert.match(exporter, new RegExp(table));
   }
   assert.match(route, /format === "json"/);
