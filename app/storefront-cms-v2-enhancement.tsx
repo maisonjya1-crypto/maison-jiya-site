@@ -987,28 +987,127 @@ function MediaSlot({ title, media, canEdit, onFiles, onRemove }: {
   </div>;
 }
 
-function GalleryEditor({ ownerType, ownerId, media, canEdit, uploadMany, removeMedia, title }: {
+function GalleryEditor({ ownerType, ownerId, media, canEdit, uploadMany, removeMedia, reorderMedia, retryMedia, discardFailedMedia, title }: {
   ownerType: "product" | "offer";
   ownerId: number;
   media: Media[];
   canEdit: boolean;
   uploadMany: UploadMany;
   removeMedia: (id: number) => Promise<void>;
+  reorderMedia: ReorderMedia;
+  retryMedia: RetryMedia;
+  discardFailedMedia: DiscardFailedMedia;
   title: string;
 }) {
+  const [draggingId, setDraggingId] = useState<number | null>(null);
   const remaining = Math.max(0, MAX_GALLERY - media.length);
+  const persisted = media.filter((item) => item.id > 0 && !item.pending && !item.failed);
+  const canReorder = canEdit && persisted.length > 1 && persisted.length === media.length;
+
+  function moveItem(itemId: number, targetIndex: number) {
+    if (!canReorder) return;
+    const currentIds = persisted.map((item) => item.id);
+    const fromIndex = currentIds.indexOf(itemId);
+    if (fromIndex < 0) return;
+    const boundedIndex = Math.max(0, Math.min(currentIds.length - 1, targetIndex));
+    if (fromIndex === boundedIndex) return;
+    const next = [...currentIds];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(boundedIndex, 0, moved);
+    void reorderMedia(ownerType, ownerId, next);
+  }
+
+  function makePrincipal(itemId: number) {
+    if (!canReorder) return;
+    const next = [itemId, ...persisted.filter((item) => item.id !== itemId).map((item) => item.id)];
+    void reorderMedia(ownerType, ownerId, next);
+  }
+
+  function dropOn(targetId: number) {
+    if (!canReorder || draggingId === null || draggingId === targetId) {
+      setDraggingId(null);
+      return;
+    }
+    const currentIds = persisted.map((item) => item.id);
+    const targetIndex = currentIds.indexOf(targetId);
+    const fromIndex = currentIds.indexOf(draggingId);
+    if (fromIndex < 0 || targetIndex < 0) {
+      setDraggingId(null);
+      return;
+    }
+    const next = [...currentIds];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(targetIndex, 0, moved);
+    setDraggingId(null);
+    void reorderMedia(ownerType, ownerId, next);
+  }
+
   return <div className="storefront-cms-gallery">
     <div className="storefront-cms-gallery-head">
-      <div><strong>{title}</strong><small>{media.length}/{MAX_GALLERY} photo(s) · la première est le visuel principal.</small></div>
+      <div>
+        <strong>{title}</strong>
+        <small>{media.length}/{MAX_GALLERY} photo(s) · choisis la principale ou réorganise l’ordre. Sur ordinateur tu peux aussi glisser-déposer.</small>
+      </div>
       {canEdit && remaining > 0 && <label className="storefront-cms-upload">＋ Ajouter des photos<input type="file" multiple accept="image/*" onChange={(event) => { const files = event.currentTarget.files; void uploadMany(ownerType, ownerId, "gallery", files, remaining); event.currentTarget.value = ""; }} /></label>}
     </div>
+
     <div className="storefront-cms-gallery-grid">
-      {media.map((item, index) => <figure key={item.id}>
+      {media.map((item, index) => <figure
+        key={item.id}
+        className={[
+          item.failed ? "storefront-cms-photo-failed" : "",
+          item.pending ? "storefront-cms-photo-uploading" : "",
+          draggingId === item.id ? "storefront-cms-photo-dragging" : "",
+        ].filter(Boolean).join(" ")}
+        draggable={canReorder && item.id > 0}
+        onDragStart={(event) => {
+          if (!canReorder || item.id <= 0) {
+            event.preventDefault();
+            return;
+          }
+          setDraggingId(item.id);
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", String(item.id));
+        }}
+        onDragOver={(event) => {
+          if (!canReorder || draggingId === null) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          dropOn(item.id);
+        }}
+        onDragEnd={() => setDraggingId(null)}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={mediaSrc(item)} alt="" loading={item.pending ? "eager" : "lazy"} decoding={item.pending ? "sync" : "async"} />
-        {index === 0 && <span className="storefront-cms-main-photo">Principale</span>}
-        {item.pending && <span className="storefront-cms-photo-pending">Envoi…</span>}
-        {canEdit && !item.pending && <button className="storefront-cms-photo-delete" type="button" aria-label="Supprimer cette photo" title="Supprimer cette photo" onClick={(event) => { event.preventDefault(); event.stopPropagation(); void removeMedia(item.id); }}>×</button>}
+
+        {index === 0 && item.id > 0 && !item.failed && <span className="storefront-cms-main-photo">Principale</span>}
+
+        {(item.pending || item.progress === 100) && !item.failed && <div className="storefront-cms-photo-progress" aria-live="polite">
+          <span><i style={{ width: `${Math.max(0, Math.min(100, item.progress || 0))}%` }} /></span>
+          <strong>{item.statusLabel || (item.pending ? "Envoi…" : "Terminé")}</strong>
+        </div>}
+
+        {item.failed && <div className="storefront-cms-photo-failure">
+          <strong>Envoi échoué</strong>
+          <small>{item.errorMessage || "La photo n’a pas été envoyée."}</small>
+          <div>
+            <button type="button" onClick={() => void retryMedia(item.id)}>Réessayer</button>
+            <button type="button" onClick={() => discardFailedMedia(item.id)}>Retirer</button>
+          </div>
+        </div>}
+
+        {canEdit && !item.pending && !item.failed && item.id > 0 && <>
+          <button className="storefront-cms-photo-delete" type="button" aria-label="Supprimer cette photo" title="Supprimer cette photo" onClick={(event) => { event.preventDefault(); event.stopPropagation(); void removeMedia(item.id); }}>×</button>
+          <div className="storefront-cms-photo-actions">
+            {index !== 0 && <button type="button" onClick={() => makePrincipal(item.id)}>☆ Principale</button>}
+            <button type="button" disabled={!canReorder || index === 0} onClick={() => moveItem(item.id, index - 1)} aria-label="Déplacer cette photo vers la gauche">←</button>
+            <button type="button" disabled={!canReorder || index === media.length - 1} onClick={() => moveItem(item.id, index + 1)} aria-label="Déplacer cette photo vers la droite">→</button>
+            {canReorder && <span title="Glisser-déposer pour réorganiser">⋮⋮</span>}
+          </div>
+        </>}
       </figure>)}
       {!media.length && <div className="storefront-cms-no-media">Sélectionne une ou plusieurs photos à la fois.</div>}
     </div>
