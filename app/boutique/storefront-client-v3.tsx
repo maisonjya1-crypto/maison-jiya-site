@@ -457,7 +457,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const allPromotions = catalog?.promotions || [];
   const activePromotions = allPromotions.filter((item) => item.isActive);
   const displayPromotions = activePromotions.filter((item) => item.displayEnabled);
-  const cartPricing = useMemo(() => calculateIndependentPromotions(
+  const cartPricing = calculateIndependentPromotions(
     cartLines.map((line) => ({
       key: line.key,
       kind: line.item.kind,
@@ -466,7 +466,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       category: line.item.category,
     })),
     activePromotions,
-  ), [cartLines, activePromotions]);
+  );
   const subtotal = cartPricing.subtotal;
   const total = cartPricing.total;
   const primaryPromotion = activePromotions.slice().sort((left, right) => left.priority - right.priority || left.id - right.id)[0];
