@@ -477,6 +477,87 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
     }));
   }
 
+  function releasePreview(url: string | undefined) {
+    if (!url || !previewUrlsRef.current.has(url)) return;
+    URL.revokeObjectURL(url);
+    previewUrlsRef.current.delete(url);
+  }
+
+  async function performMediaUpload(tempId: number, sequenceLabel = "") {
+    const job = retryUploadsRef.current.get(tempId);
+    if (!job) return false;
+
+    try {
+      let uploadFile = job.file;
+      let activePreview = job.previewUrl;
+
+      if (!job.prepared) {
+        setUploadingLabel(sequenceLabel ? `${sequenceLabel} · préparation…` : "Préparation de la photo…");
+        patchMediaLocally(tempId, { pending: true, failed: false, progress: 12, statusLabel: "Préparation…", errorMessage: "" });
+        uploadFile = await compressImage(job.file, job.kind);
+
+        const compressedPreview = URL.createObjectURL(uploadFile);
+        previewUrlsRef.current.add(compressedPreview);
+        releasePreview(activePreview);
+        activePreview = compressedPreview;
+        retryUploadsRef.current.set(tempId, { ...job, file: uploadFile, prepared: true, previewUrl: activePreview });
+        patchMediaLocally(tempId, {
+          mimeType: uploadFile.type,
+          previewUrl: activePreview,
+          pending: true,
+          failed: false,
+          progress: 35,
+          statusLabel: "35 % · prête",
+          errorMessage: "",
+        });
+      } else {
+        patchMediaLocally(tempId, { pending: true, failed: false, progress: 35, statusLabel: "35 % · prête", errorMessage: "" });
+      }
+
+      setUploadingLabel(sequenceLabel ? `${sequenceLabel} · envoi 70 %` : "Envoi de la photo · 70 %");
+      patchMediaLocally(tempId, { pending: true, failed: false, progress: 70, statusLabel: "70 % · envoi", errorMessage: "" });
+
+      const form = new FormData();
+      form.set("ownerType", job.ownerType);
+      form.set("ownerId", String(job.ownerId));
+      form.set("kind", job.kind);
+      form.set("file", uploadFile);
+      const response = await fetchWithTimeout(
+        "/api/storefront/admin/media",
+        { method: "POST", body: form, cache: "no-store" },
+        25_000,
+        "L’envoi a pris trop de temps. Tu peux maintenant appuyer sur Réessayer."
+      );
+      const body = await response.json() as { error?: string; media?: Media; liveVersion?: number };
+      if (!response.ok) throw new Error(body.error || "Upload impossible.");
+      if (!body.media) throw new Error("La photo a été envoyée mais la confirmation du serveur est invalide.");
+
+      replaceMediaLocally(tempId, {
+        ...body.media,
+        previewUrl: activePreview,
+        pending: false,
+        failed: false,
+        progress: 100,
+        statusLabel: "Terminé",
+        errorMessage: "",
+      });
+      retryUploadsRef.current.delete(tempId);
+      acknowledgeLocalLiveVersion(body.liveVersion);
+      return true;
+    } catch (uploadError) {
+      const message = uploadError instanceof Error ? uploadError.message : "Upload impossible.";
+      patchMediaLocally(tempId, {
+        pending: false,
+        failed: true,
+        progress: 0,
+        statusLabel: "Échec",
+        errorMessage: message,
+      });
+      setError(message);
+      return false;
+    }
+  }
+
   async function uploadMany(ownerType: UploadOwner, ownerId: number, kind: UploadKind, files: FileList | null, maxFiles?: number) {
     if (!files?.length) return;
     setError("");
@@ -486,74 +567,104 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
       const allowed = kind === "gallery" ? Math.max(0, Math.min(MAX_GALLERY, maxFiles ?? MAX_GALLERY)) : 1;
       const selected = Array.from(files).slice(0, allowed);
       if (!selected.length) throw new Error(`Maximum ${MAX_GALLERY} photos par produit ou pack.`);
+
+      let successCount = 0;
+      let failedCount = 0;
       for (let index = 0; index < selected.length; index += 1) {
         const raw = selected[index];
         const tempId = pendingMediaIdRef.current--;
         const rawPreview = URL.createObjectURL(raw);
         previewUrlsRef.current.add(rawPreview);
+        const sortOrder = 10_000 + index;
+        retryUploadsRef.current.set(tempId, {
+          ownerType,
+          ownerId,
+          kind,
+          file: raw,
+          prepared: false,
+          previewUrl: rawPreview,
+          sortOrder,
+        });
         addMediaLocally({
           id: tempId,
           ownerType,
           ownerId,
           kind,
           mimeType: raw.type || "image/*",
-          sortOrder: 10_000 + index,
+          sortOrder,
           createdAt: new Date().toISOString(),
           previewUrl: rawPreview,
           pending: true,
+          failed: false,
+          progress: 12,
+          statusLabel: "Préparation…",
         });
 
-        let activePreview = rawPreview;
-        try {
-          setUploadingLabel(selected.length > 1 ? `Préparation photo ${index + 1}/${selected.length}…` : "Préparation de la photo…");
-          const file = await compressImage(raw, kind);
-          const compressedPreview = URL.createObjectURL(file);
-          previewUrlsRef.current.add(compressedPreview);
-          replaceMediaLocally(tempId, {
-            id: tempId,
-            ownerType,
-            ownerId,
-            kind,
-            mimeType: file.type,
-            sortOrder: 10_000 + index,
-            createdAt: new Date().toISOString(),
-            previewUrl: compressedPreview,
-            pending: true,
-          });
-          URL.revokeObjectURL(rawPreview);
-          previewUrlsRef.current.delete(rawPreview);
-          activePreview = compressedPreview;
-
-          setUploadingLabel(selected.length > 1 ? `Envoi photo ${index + 1}/${selected.length}…` : "Envoi de la photo…");
-          const form = new FormData();
-          form.set("ownerType", ownerType);
-          form.set("ownerId", String(ownerId));
-          form.set("kind", kind);
-          form.set("file", file);
-          const response = await fetchWithTimeout(
-            "/api/storefront/admin/media",
-            { method: "POST", body: form, cache: "no-store" },
-            25_000,
-            "L’envoi a pris trop de temps. Réessaie : l’écran ne restera plus bloqué."
-          );
-          const body = await response.json() as { error?: string; media?: Media; liveVersion?: number };
-          if (!response.ok) throw new Error(body.error || "Upload impossible.");
-          if (!body.media) throw new Error("La photo a été envoyée mais la confirmation du serveur est invalide.");
-          replaceMediaLocally(tempId, { ...body.media, previewUrl: activePreview, pending: false });
-          acknowledgeLocalLiveVersion(body.liveVersion);
-        } catch (uploadError) {
-          removeMediaLocallyWithoutServer(tempId);
-          URL.revokeObjectURL(activePreview);
-          previewUrlsRef.current.delete(activePreview);
-          void load(true);
-          throw uploadError;
-        }
+        const ok = await performMediaUpload(tempId, selected.length > 1 ? `Photo ${index + 1}/${selected.length}` : "");
+        if (ok) successCount += 1;
+        else failedCount += 1;
       }
-      setNotice(selected.length > 1 ? `${selected.length} photos ajoutées` : "Photo ajoutée");
+
+      if (successCount > 0) setNotice(successCount > 1 ? `${successCount} photos ajoutées` : "Photo ajoutée");
+      if (failedCount > 0 && successCount > 0) setError(`${failedCount} photo(s) en échec · appuie sur Réessayer sous la photo concernée.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Upload impossible.");
     } finally {
       setUploadingLabel("");
+      setLocalMutationActive(false);
+    }
+  }
+
+  async function retryMedia(id: number) {
+    if (!retryUploadsRef.current.has(id)) return;
+    setError("");
+    setNotice("");
+    setLocalMutationActive(true);
+    try {
+      const ok = await performMediaUpload(id);
+      if (ok) setNotice("Photo envoyée avec succès");
+    } finally {
+      setUploadingLabel("");
+      setLocalMutationActive(false);
+    }
+  }
+
+  function discardFailedMedia(id: number) {
+    const job = retryUploadsRef.current.get(id);
+    if (job) releasePreview(job.previewUrl);
+    retryUploadsRef.current.delete(id);
+    removeMediaLocallyWithoutServer(id);
+  }
+
+  async function reorderMedia(ownerType: "product" | "offer", ownerId: number, orderedIds: number[]) {
+    if (!orderedIds.length || orderedIds.some((id) => id <= 0)) {
+      setError("Attends la fin des envois avant de réorganiser les photos.");
+      return;
+    }
+    setError("");
+    setNotice("");
+    reorderMediaLocally(ownerType, ownerId, orderedIds);
+    setLocalMutationActive(true);
+    try {
+      const response = await fetchWithTimeout(
+        "/api/storefront/admin/media",
+        {
+          method: "PUT",
+          cache: "no-store",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ownerType, ownerId, kind: "gallery", orderedIds }),
+        },
+        15_000,
+        "La réorganisation a pris trop de temps. Le catalogue va se resynchroniser."
+      );
+      const body = await response.json() as { error?: string; liveVersion?: number };
+      if (!response.ok) throw new Error(body.error || "Réorganisation impossible.");
+      acknowledgeLocalLiveVersion(body.liveVersion);
+      setNotice("Ordre des photos enregistré");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Réorganisation impossible.");
+      void load(true);
+    } finally {
       setLocalMutationActive(false);
     }
   }
