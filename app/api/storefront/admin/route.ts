@@ -174,7 +174,9 @@ async function snapshot(database: D1Database) {
     promotions: promotions.map((promotion) => ({
       ...promotion,
       isActive: Boolean(promotion.isActive),
+      displayEnabled: Boolean(promotion.displayEnabled),
       eligibleCategories: promotionCategories(promotion.eligibleCategories),
+      media: media.filter((item) => item.ownerType === "promotion" && item.ownerId === promotion.id),
     })),
     marketingSections: marketingSections.map((section) => ({
       ...section,
@@ -295,6 +297,9 @@ export async function POST(request: Request) {
       if (!categories.length) throw new Error("Choisissez au moins une catégorie concernée.");
       const code = promotionCode(payload.code, name);
       const priority = Math.max(1, Math.min(999, integer(payload.priority, 100)));
+      const displayEnabled = boolean(payload.displayEnabled, true);
+      const badge = text(payload.badge, 40) || "OFFRE";
+      const ctaLabel = text(payload.ctaLabel, 60) || "Voir les produits";
 
       const duplicate = await database.prepare("SELECT id FROM storefront_promotions WHERE code = ? AND id <> ? LIMIT 1")
         .bind(code, promotionId).first<{ id: number }>();
@@ -307,7 +312,8 @@ export async function POST(request: Request) {
           UPDATE storefront_promotions
           SET name = ?, code = ?, description = ?, rule_type = ?, percent_value = ?,
               minimum_quantity = ?, buy_quantity = ?, free_quantity = ?,
-              eligible_categories = ?, is_active = ?, priority = ?, updated_at = CURRENT_TIMESTAMP
+              eligible_categories = ?, is_active = ?, priority = ?,
+              display_enabled = ?, badge = ?, cta_label = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `).bind(
           name,
@@ -321,14 +327,18 @@ export async function POST(request: Request) {
           JSON.stringify(categories),
           boolean(payload.isActive, true) ? 1 : 0,
           priority,
+          displayEnabled ? 1 : 0,
+          badge,
+          ctaLabel,
           promotionId,
         ).run();
       } else {
         await database.prepare(`
           INSERT INTO storefront_promotions (
             name, code, description, rule_type, percent_value, minimum_quantity,
-            buy_quantity, free_quantity, eligible_categories, is_active, priority, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            buy_quantity, free_quantity, eligible_categories, is_active, priority,
+            display_enabled, badge, cta_label, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `).bind(
           name,
           code,
@@ -341,12 +351,18 @@ export async function POST(request: Request) {
           JSON.stringify(categories),
           boolean(payload.isActive, true) ? 1 : 0,
           priority,
+          displayEnabled ? 1 : 0,
+          badge,
+          ctaLabel,
         ).run();
       }
     } else if (action === "deletePromotion") {
       const promotionId = integer(payload.promotionId);
       if (promotionId <= 0) throw new Error("Promotion invalide.");
-      await database.prepare("DELETE FROM storefront_promotions WHERE id = ?").bind(promotionId).run();
+      await database.batch([
+        database.prepare("DELETE FROM storefront_media WHERE owner_type = 'promotion' AND owner_id = ?").bind(promotionId),
+        database.prepare("DELETE FROM storefront_promotions WHERE id = ?").bind(promotionId),
+      ]);
     } else if (action === "saveOffer") {
       const offerId = integer(payload.offerId);
       const name = text(payload.name, 140);
