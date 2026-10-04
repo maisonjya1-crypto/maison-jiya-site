@@ -14,6 +14,10 @@ type Media = {
   createdAt: string;
   previewUrl?: string;
   pending?: boolean;
+  failed?: boolean;
+  progress?: number;
+  statusLabel?: string;
+  errorMessage?: string;
 };
 
 type CmsProduct = {
@@ -112,6 +116,9 @@ type PortalTarget = Element | DocumentFragment;
 type UploadOwner = "brand" | "product" | "offer" | "marketing" | "promotion";
 type UploadKind = "logo" | "hero" | "gallery";
 type UploadMany = (ownerType: UploadOwner, ownerId: number, kind: UploadKind, files: FileList | null, maxFiles?: number) => Promise<void>;
+type ReorderMedia = (ownerType: "product" | "offer", ownerId: number, orderedIds: number[]) => Promise<void>;
+type RetryMedia = (id: number) => Promise<void>;
+type DiscardFailedMedia = (id: number) => void;
 
 const MAX_GALLERY = 6;
 const emptyData: CmsData = {
@@ -340,6 +347,15 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
   const pageRef = useRef<HTMLElement | null>(null);
   const previewUrlsRef = useRef(new Set<string>());
   const pendingMediaIdRef = useRef(-1);
+  const retryUploadsRef = useRef(new Map<number, {
+    ownerType: UploadOwner;
+    ownerId: number;
+    kind: UploadKind;
+    file: File;
+    prepared: boolean;
+    previewUrl: string;
+    sortOrder: number;
+  }>());
 
   const load = useCallback(async (silent = false) => {
     if (!silent) {
@@ -379,6 +395,7 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
       document.documentElement.style.overflow = previousHtmlOverflow;
       previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
       previewUrlsRef.current.clear();
+      retryUploadsRef.current.clear();
     };
   }, []);
 
@@ -397,6 +414,17 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
     window.setTimeout(() => setNotice(""), 2400);
   }
 
+  function mapMediaLists(transform: (items: Media[]) => Media[]) {
+    setData((current) => ({
+      ...current,
+      brandMedia: transform(current.brandMedia),
+      products: current.products.map((product) => ({ ...product, media: transform(product.media) })),
+      offers: current.offers.map((offer) => ({ ...offer, media: transform(offer.media) })),
+      promotions: current.promotions.map((promotion) => ({ ...promotion, media: transform(promotion.media) })),
+      marketingSections: current.marketingSections.map((section) => ({ ...section, media: transform(section.media) })),
+    }));
+  }
+
   function addMediaLocally(media: Media) {
     const append = (items: Media[], replaceKind = false) => {
       const filtered = items.filter((item) => item.id !== media.id && (!replaceKind || item.kind !== media.kind));
@@ -406,41 +434,46 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
       if (media.ownerType === "brand") return { ...current, brandMedia: append(current.brandMedia, true) };
       if (media.ownerType === "product") return { ...current, products: current.products.map((product) => product.productId === media.ownerId ? { ...product, media: append(product.media) } : product) };
       if (media.ownerType === "offer") return { ...current, offers: current.offers.map((offer) => offer.id === media.ownerId ? { ...offer, media: append(offer.media) } : offer) };
+      if (media.ownerType === "promotion") return { ...current, promotions: current.promotions.map((promotion) => promotion.id === media.ownerId ? { ...promotion, media: append(promotion.media, true) } : promotion) };
       if (media.ownerType === "marketing") return { ...current, marketingSections: current.marketingSections.map((section) => section.id === media.ownerId ? { ...section, media: append(section.media, true) } : section) };
       return current;
     });
   }
 
   function replaceMediaLocally(tempId: number, media: Media) {
-    const replace = (items: Media[]) => items.map((item) => item.id === tempId ? media : item);
-    setData((current) => ({
-      ...current,
-      brandMedia: replace(current.brandMedia),
-      products: current.products.map((product) => ({ ...product, media: replace(product.media) })),
-      offers: current.offers.map((offer) => ({ ...offer, media: replace(offer.media) })),
-      marketingSections: current.marketingSections.map((section) => ({ ...section, media: replace(section.media) })),
-    }));
+    mapMediaLists((items) => items.map((item) => item.id === tempId ? media : item));
+  }
+
+  function patchMediaLocally(id: number, patch: Partial<Media>) {
+    mapMediaLists((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
   }
 
   function removeMediaLocallyWithoutServer(id: number) {
-    const drop = (items: Media[]) => items.filter((item) => item.id !== id);
-    setData((current) => ({
-      ...current,
-      brandMedia: drop(current.brandMedia),
-      products: current.products.map((product) => ({ ...product, media: drop(product.media) })),
-      offers: current.offers.map((offer) => ({ ...offer, media: drop(offer.media) })),
-      marketingSections: current.marketingSections.map((section) => ({ ...section, media: drop(section.media) })),
-    }));
+    mapMediaLists((items) => items.filter((item) => item.id !== id));
   }
 
   function removeMediaLocally(id: number) {
-    const drop = (items: Media[]) => items.filter((item) => item.id !== id);
+    mapMediaLists((items) => items.filter((item) => item.id !== id));
+  }
+
+  function reorderMediaLocally(ownerType: "product" | "offer", ownerId: number, orderedIds: number[]) {
+    const positions = new Map(orderedIds.map((id, index) => [id, index]));
     setData((current) => ({
       ...current,
-      brandMedia: drop(current.brandMedia),
-      products: current.products.map((product) => ({ ...product, media: drop(product.media) })),
-      offers: current.offers.map((offer) => ({ ...offer, media: drop(offer.media) })),
-      marketingSections: current.marketingSections.map((section) => ({ ...section, media: drop(section.media) })),
+      products: ownerType === "product"
+        ? current.products.map((product) => product.productId === ownerId ? {
+            ...product,
+            media: [...product.media].sort((left, right) => (positions.get(left.id) ?? 999) - (positions.get(right.id) ?? 999))
+              .map((item, index) => ({ ...item, sortOrder: index })),
+          } : product)
+        : current.products,
+      offers: ownerType === "offer"
+        ? current.offers.map((offer) => offer.id === ownerId ? {
+            ...offer,
+            media: [...offer.media].sort((left, right) => (positions.get(left.id) ?? 999) - (positions.get(right.id) ?? 999))
+              .map((item, index) => ({ ...item, sortOrder: index })),
+          } : offer)
+        : current.offers,
     }));
   }
 
