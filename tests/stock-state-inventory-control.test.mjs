@@ -19,8 +19,8 @@ test("marquer Stock à vérifier ne modifie jamais la quantité système", async
   const end = route.indexOf('payload.action === "countInventory"', start);
   assert.ok(start >= 0 && end > start);
   const block = route.slice(start, end);
-  assert.match(block, /stockVerificationStatus: "À vérifier"/);
-  assert.doesNotMatch(block, /stockQuantity:/);
+  assert.match(block, /\.set\(\{ stockVerificationStatus: "À vérifier" \}\)/);
+  assert.doesNotMatch(block, /\.set\(\{[^}]*stockQuantity[^}]*\}\)/s);
   assert.doesNotMatch(block, /stock_quantity\s*=/);
   assert.match(block, /La quantité système/);
 });
