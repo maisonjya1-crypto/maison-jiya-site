@@ -174,8 +174,31 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       LIMIT 100
     `).all<PublicPromotionRow>()).results;
   } catch {
-    // Compatibility during a rolling deploy or tests created before migration 0016.
-    promotionRows = [];
+    try {
+      const legacy = (await database.prepare(`
+        SELECT id, name, code, description,
+               rule_type AS ruleType,
+               percent_value AS percentValue,
+               minimum_quantity AS minimumQuantity,
+               buy_quantity AS buyQuantity,
+               free_quantity AS freeQuantity,
+               eligible_categories AS eligibleCategories,
+               is_active AS isActive,
+               priority
+        FROM storefront_promotions
+        ORDER BY priority, id
+        LIMIT 100
+      `).all<Omit<PublicPromotionRow, "displayEnabled" | "badge" | "ctaLabel">>()).results;
+      promotionRows = legacy.map((row) => ({
+        ...row,
+        displayEnabled: 1,
+        badge: "OFFRE",
+        ctaLabel: "Voir les produits",
+      }));
+    } catch {
+      // Compatibility during a rolling deploy or tests created before migration 0016.
+      promotionRows = [];
+    }
   }
   const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
 
