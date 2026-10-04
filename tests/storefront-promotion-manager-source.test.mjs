@@ -60,3 +60,35 @@ test("la notification privée reconnaît toute promotion et plus seulement le -5
   assert.doesNotMatch(source, /campaign\.includes\("PROMO:2E50"\)/);
   assert.match(source, /Nouvelle commande avec l’offre/);
 });
+
+
+test("chaque promotion contrôle séparément son affichage public et son visuel", async () => {
+  const [migration, cms, admin, media, publicLoader, client] = await Promise.all([
+    read("migrations/0017_storefront_promotion_display.sql"),
+    read("app/storefront-cms-v2-enhancement.tsx"),
+    read("app/api/storefront/admin/route.ts"),
+    read("app/api/storefront/admin/media/route.ts"),
+    read("db/storefront-public-fast.ts"),
+    read("app/boutique/storefront-client-v3.tsx"),
+  ]);
+  assert.match(migration, /display_enabled/);
+  assert.match(migration, /cta_label/);
+  assert.match(cms, /Afficher cette promotion sur le site/);
+  assert.match(cms, /uploadMany\("promotion"/);
+  assert.match(cms, /Texte automatique/);
+  assert.match(admin, /display_enabled = \?/);
+  assert.match(admin, /owner_type = 'promotion'/);
+  assert.match(media, /"promotion"/);
+  assert.match(publicLoader, /imageUrl: mediaByOwner\.get\(\`promotion:/);
+  assert.match(client, /storefront-v3-auto-promotion-card/);
+  assert.match(client, /promotionRuleLabel/);
+  assert.match(client, /openPromotionProducts/);
+});
+
+test("le bouton d'une promotion filtre le catalogue aux catégories concernées", async () => {
+  const client = await read("app/boutique/storefront-client-v3.tsx");
+  assert.match(client, /setPromotionCategoryFilter\(promo\.eligibleCategories\)/);
+  assert.match(client, /item\.kind !== "product"/);
+  assert.match(client, /promotionCategoryFilter\.includes\(item\.category\)/);
+  assert.match(client, /clearPromotionProducts/);
+});
