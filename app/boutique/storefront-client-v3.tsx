@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { CatalogItem, StorefrontCatalog, StorefrontLanguage, StorefrontMarketingSection } from "./storefront-types";
-import { calculateIndependentPromotions } from "../../lib/storefront-promotions";
+import { calculateIndependentPromotions, promotionRuleLabel, type StorefrontPromotion } from "../../lib/storefront-promotions";
 
 type Cart = Record<string, number>;
 type FbqFunction = ((...args: unknown[]) => void) & { queue?: unknown[][]; loaded?: boolean; version?: string };
@@ -48,6 +48,8 @@ type Copy = {
   promoSecondItem: string;
   promoApplied: string;
   promoHint: string;
+  promotionProducts: string;
+  clearPromotionFilter: string;
   checkout: string;
   continueShopping: string;
   quantity: string;
@@ -86,7 +88,7 @@ const copy: Record<StorefrontLanguage, Copy> = {
     weeklyPromo: "PROMO DE LA SEMAINE", weeklyPromoKicker: "Nos offres du moment", bestSellers: "BEST SELLERS", bestSellersKicker: "Les favoris du moment", bestSellerText: "Une sélection de modèles appréciés par nos clients.",
     collections: "NOS COLLECTIONS", collectionsKicker: "Choisissez votre univers", packs: "NOS PACKS", packsKicker: "Des offres pensées pour vous", allProducts: "TOUS NOS MODÈLES",
     search: "Rechercher", searchPlaceholder: "Montre, portefeuille, référence…", category: "Catégorie", allCategories: "Toutes les catégories", products: "articles", loading: "Chargement du catalogue…",
-    unavailable: "Indisponible", addToCart: "Ajouter au panier", viewProduct: "Voir ce produit", loadMore: "Afficher plus", yourCart: "Votre panier", emptyCart: "Votre panier est vide.", subtotal: "Sous-total", total: "Total", promoSecondItem: "Promotion", promoApplied: "Offre appliquée", promoHint: "Les promotions actives s’appliquent automatiquement, une seule à la fois.", checkout: "Commander",
+    unavailable: "Indisponible", addToCart: "Ajouter au panier", viewProduct: "Voir ce produit", loadMore: "Afficher plus", yourCart: "Votre panier", emptyCart: "Votre panier est vide.", subtotal: "Sous-total", total: "Total", promoSecondItem: "Promotion", promoApplied: "Offre appliquée", promoHint: "Les promotions actives s’appliquent automatiquement, une seule à la fois.", promotionProducts: "Produits concernés par l’offre", clearPromotionFilter: "Voir tout le catalogue", checkout: "Commander",
     continueShopping: "Continuer mes achats", quantity: "Quantité", remove: "Supprimer", orderTitle: "Finaliser la commande", orderSubtitle: "Aucun paiement en ligne. Notre équipe vous contacte pour confirmer.", fullName: "Nom complet", phone: "Téléphone", city: "Ville", address: "Adresse de livraison",
     note: "Note", optional: "facultatif", confirmOrder: "Envoyer ma commande", sending: "Envoi…", orderSuccess: "Commande reçue", orderSuccessText: "Merci. Notre équipe vous contactera pour confirmer la disponibilité et votre commande avant préparation.", orderRef: "Référence", close: "Fermer", orderFailed: "Impossible d’enregistrer la commande. Vérifiez vos informations puis réessayez.",
     whyOrder: "COMMENT COMMANDER", step1: "1. Choisissez", step1Text: "Ajoutez les modèles et quantités qui vous plaisent, même si vous en souhaitez plusieurs.", step2: "2. Envoyez", step2Text: "Renseignez vos coordonnées et envoyez votre commande sans paiement en ligne.", step3: "3. Confirmez", step3Text: "Notre équipe vous contacte pour confirmer la disponibilité avant préparation et livraison.",
@@ -98,7 +100,7 @@ const copy: Record<StorefrontLanguage, Copy> = {
     weeklyPromo: "عرض الأسبوع", weeklyPromoKicker: "عروضنا الحالية", bestSellers: "الأكثر طلبًا", bestSellersKicker: "اختيارات العملاء", bestSellerText: "مجموعة مختارة من الموديلات المفضلة لدى عملائنا.",
     collections: "مجموعاتنا", collectionsKicker: "اختر ما يناسبك", packs: "الباقات", packsKicker: "عروض مختارة لك", allProducts: "جميع الموديلات",
     search: "بحث", searchPlaceholder: "ساعة، محفظة، مرجع…", category: "الفئة", allCategories: "جميع الفئات", products: "منتجات", loading: "جارٍ تحميل الكتالوج…",
-    unavailable: "غير متوفر", addToCart: "أضف إلى السلة", viewProduct: "عرض المنتج", loadMore: "عرض المزيد", yourCart: "سلة التسوق", emptyCart: "سلة التسوق فارغة.", subtotal: "المجموع قبل العرض", total: "المجموع", promoSecondItem: "عرض", promoApplied: "تم تطبيق العرض", promoHint: "تُطبّق العروض النشطة تلقائيًا، عرض واحد فقط في كل مرة.", checkout: "إتمام الطلب",
+    unavailable: "غير متوفر", addToCart: "أضف إلى السلة", viewProduct: "عرض المنتج", loadMore: "عرض المزيد", yourCart: "سلة التسوق", emptyCart: "سلة التسوق فارغة.", subtotal: "المجموع قبل العرض", total: "المجموع", promoSecondItem: "عرض", promoApplied: "تم تطبيق العرض", promoHint: "تُطبّق العروض النشطة تلقائيًا، عرض واحد فقط في كل مرة.", promotionProducts: "المنتجات المشمولة بالعرض", clearPromotionFilter: "عرض كل المنتجات", checkout: "إتمام الطلب",
     continueShopping: "متابعة التسوق", quantity: "الكمية", remove: "حذف", orderTitle: "إتمام الطلب", orderSubtitle: "لا يوجد دفع إلكتروني. سيتواصل معك فريقنا لتأكيد الطلب.", fullName: "الاسم الكامل", phone: "رقم الهاتف", city: "المدينة", address: "عنوان التوصيل",
     note: "ملاحظة", optional: "اختياري", confirmOrder: "إرسال الطلب", sending: "جارٍ الإرسال…", orderSuccess: "تم استلام طلبك", orderSuccessText: "شكرًا لك. سيتواصل معك فريقنا لتأكيد توفر المنتجات والطلب قبل التجهيز.", orderRef: "رقم الطلب", close: "إغلاق", orderFailed: "تعذر تسجيل الطلب. تحقق من معلوماتك ثم حاول مرة أخرى.",
     whyOrder: "كيفية الطلب", step1: "1. اختر", step1Text: "أضف الموديلات والكميات التي تريدها، حتى إذا كنت ترغب في أكثر من قطعة.", step2: "2. أرسل الطلب", step2Text: "أدخل معلوماتك وأرسل الطلب من دون أي دفع إلكتروني.", step3: "3. التأكيد", step3Text: "سيتواصل معك فريقنا لتأكيد التوفر قبل تجهيز الطلب والتوصيل.",
@@ -110,7 +112,7 @@ const copy: Record<StorefrontLanguage, Copy> = {
     weeklyPromo: "WEEKLY PROMOTION", weeklyPromoKicker: "Current offers", bestSellers: "BEST SELLERS", bestSellersKicker: "Customer favorites", bestSellerText: "A selection of customer-favorite styles.",
     collections: "OUR COLLECTIONS", collectionsKicker: "Choose your style", packs: "OUR PACKS", packsKicker: "Offers selected for you", allProducts: "ALL MODELS",
     search: "Search", searchPlaceholder: "Watch, wallet, reference…", category: "Category", allCategories: "All categories", products: "items", loading: "Loading catalog…",
-    unavailable: "Unavailable", addToCart: "Add to cart", viewProduct: "View product", loadMore: "Show more", yourCart: "Your cart", emptyCart: "Your cart is empty.", subtotal: "Subtotal", total: "Total", promoSecondItem: "Promotion", promoApplied: "Offer applied", promoHint: "Active promotions apply automatically, one at a time.", checkout: "Checkout",
+    unavailable: "Unavailable", addToCart: "Add to cart", viewProduct: "View product", loadMore: "Show more", yourCart: "Your cart", emptyCart: "Your cart is empty.", subtotal: "Subtotal", total: "Total", promoSecondItem: "Promotion", promoApplied: "Offer applied", promoHint: "Active promotions apply automatically, one at a time.", promotionProducts: "Products included in the offer", clearPromotionFilter: "View full catalog", checkout: "Checkout",
     continueShopping: "Continue shopping", quantity: "Quantity", remove: "Remove", orderTitle: "Complete your order", orderSubtitle: "No online payment. Our team will contact you to confirm the order.", fullName: "Full name", phone: "Phone", city: "City", address: "Delivery address",
     note: "Note", optional: "optional", confirmOrder: "Place my order", sending: "Sending…", orderSuccess: "Order received", orderSuccessText: "Thank you. Our team will contact you to confirm availability and your order before preparation.", orderRef: "Reference", close: "Close", orderFailed: "We could not register your order. Check your details and try again.",
     whyOrder: "HOW TO ORDER", step1: "1. Choose", step1Text: "Add the models and quantities you want, even when you need several pieces.", step2: "2. Send", step2Text: "Enter your details and place your order without any online payment.", step3: "3. Confirm", step3Text: "Our team contacts you to confirm availability before preparation and delivery.",
@@ -305,6 +307,8 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Tous");
+  const [promotionCategoryFilter, setPromotionCategoryFilter] = useState<string[]>([]);
+  const [promotionFilterName, setPromotionFilterName] = useState("");
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
   const [cart, setCart] = useState<Cart>({});
   const [cartOpen, setCartOpen] = useState(false);
@@ -432,11 +436,12 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const filtered = useMemo(() => {
     const clean = normalize(query.trim());
     return items.filter((item) => {
+      if (promotionCategoryFilter.length && (item.kind !== "product" || !promotionCategoryFilter.includes(item.category))) return false;
       if (category !== "Tous" && item.category !== category) return false;
       if (!clean) return true;
       return normalize(`${item.name} ${item.productCode} ${item.category} ${item.description}`).includes(clean);
     });
-  }, [category, items, query]);
+  }, [category, items, promotionCategoryFilter, query]);
   const visibleItems = filtered.slice(0, visibleCount);
   const bestSellers = products.filter((item) => isBestSeller(item.badge)).slice(0, 8);
   const promotedOffer = promotion?.offerId ? offers.find((item) => item.id === promotion.offerId) : undefined;
@@ -449,7 +454,9 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     return item ? { key, item, quantity } : null;
   }).filter((line): line is { key: string; item: CatalogItem; quantity: number } => Boolean(line)), [cart, items]);
   const itemCount = cartLines.reduce((sum, line) => sum + line.quantity, 0);
-  const activePromotions = catalog?.promotions || [];
+  const allPromotions = catalog?.promotions || [];
+  const activePromotions = allPromotions.filter((item) => item.isActive);
+  const displayPromotions = activePromotions.filter((item) => item.displayEnabled);
   const cartPricing = useMemo(() => calculateIndependentPromotions(
     cartLines.map((line) => ({
       key: line.key,
@@ -535,8 +542,23 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const waUrl = waDigits ? `https://wa.me/${waDigits}?text=${encodeURIComponent(waMessage)}` : "";
   const announcement = localized?.announcement || t.freeDelivery;
   const strip = catalog?.brandStrip?.length ? catalog.brandStrip : [brand, "MONTRES", "BIJOUX", "PORTEFEUILLES", "PACKS"];
-  const promotionTarget = offers.length ? "#offres" : "#catalogue";
+  const promotionTarget = displayPromotions.length ? "#promotions" : offers.length ? "#offres" : "#catalogue";
   const marketingSections = catalog?.marketingSections ?? [];
+
+  function openPromotionProducts(promo: StorefrontPromotion) {
+    setPromotionCategoryFilter(promo.eligibleCategories);
+    setPromotionFilterName(promo.name || promotionRuleLabel(promo));
+    setCategory("Tous");
+    setQuery("");
+    setVisibleCount(INITIAL_VISIBLE);
+    window.requestAnimationFrame(() => document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+
+  function clearPromotionProducts() {
+    setPromotionCategoryFilter([]);
+    setPromotionFilterName("");
+    setVisibleCount(INITIAL_VISIBLE);
+  }
 
   function openMarketingTarget(section: StorefrontMarketingSection) {
     if (["Montres", "Bijoux", "Portefeuilles"].includes(section.target)) {
@@ -574,7 +596,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
 
     <header className="storefront-v3-header">
       <nav className="storefront-v3-nav-links">
-        <a href="#catalogue">{t.catalogue}</a>{offers.length > 0 && <a href="#offres">{t.offers}</a>}<a href="#commande">{t.howToOrder}</a>
+        <a href="#catalogue">{t.catalogue}</a>{(displayPromotions.length > 0 || offers.length > 0) && <a href={displayPromotions.length ? "#promotions" : "#offres"}>{t.offers}</a>}<a href="#commande">{t.howToOrder}</a>
       </nav>
       <a className="storefront-v3-brand" href="/boutique" aria-label={`${brand} ${t.officialStore}`}>
         <SafeImage src={catalog?.logoUrl || "/maison-jiya-logo.jpeg"} alt={brand} priority fallback={<b>MJ</b>} />
@@ -605,6 +627,29 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
 
     <div className="storefront-v3-brand-strip" aria-label="Maison Jiya collections"><div className="storefront-v3-brand-strip-track">{[...strip, ...strip].map((item, index) => <span key={`${item}-${index}`}>{item}</span>)}</div></div>
 
+    {displayPromotions.length > 0 && <section className="storefront-v3-section storefront-v3-auto-promotions" id="promotions">
+      <header className="storefront-v3-section-head"><div><small>{t.weeklyPromoKicker}</small><h2>{t.offers}</h2></div></header>
+      <div className={`storefront-v3-auto-promotion-grid ${displayPromotions.length === 1 ? "single" : ""}`}>
+        {displayPromotions.map((promo, index) => {
+          const ruleLabel = promotionRuleLabel(promo);
+          return <article className={`storefront-v3-auto-promotion-card ${promo.imageUrl ? "has-image" : ""}`} key={promo.id}>
+            <div className="storefront-v3-auto-promotion-media">
+              {promo.imageUrl
+                ? <SafeImage src={promo.imageUrl} alt={promo.name || ruleLabel} priority={index === 0} fallback={<div className="storefront-v3-auto-promotion-fallback">{ruleLabel}</div>} />
+                : <div className="storefront-v3-auto-promotion-fallback"><small>{promo.badge || "OFFRE"}</small><strong>{ruleLabel}</strong></div>}
+            </div>
+            <div className="storefront-v3-auto-promotion-copy">
+              <div><span>{promo.badge || "OFFRE"}</span><small>{promo.eligibleCategories.map((item) => categoryCopy[lang][item] || item).join(" · ")}</small></div>
+              <h2>{ruleLabel}</h2>
+              {promo.name && promo.name !== ruleLabel && <strong>{promo.name}</strong>}
+              <p>{promo.description || (lang === "ar" ? "يُطبّق العرض تلقائيًا في السلة على المنتجات المؤهلة." : lang === "en" ? "The offer is applied automatically in the cart to eligible products." : "L’offre s’applique automatiquement dans le panier sur les produits éligibles.")}</p>
+              <button type="button" onClick={() => openPromotionProducts(promo)}>{promo.ctaLabel || t.promotionProducts} →</button>
+            </div>
+          </article>;
+        })}
+      </div>
+    </section>}
+
     {weekly.length > 0 && <section className="storefront-v3-section" id="offres">
       <header className="storefront-v3-section-head"><div><small>{t.weeklyPromoKicker}</small><h2>{t.weeklyPromo}</h2></div></header>
       <div className="storefront-v3-grid promo">{weekly.map((item, index) => <ProductCard key={`weekly-${item.kind}-${item.id}`} item={item} lang={lang} t={t} add={add} open={openItem} priority={index < 2} />)}</div>
@@ -619,7 +664,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       <header className="storefront-v3-section-head"><div><small>{t.collectionsKicker}</small><h2>{t.collections}</h2></div></header>
       <div className="storefront-v3-collection-grid">{collectionCategories.map((item) => {
         const representative = products.find((product) => product.category === item);
-        return <button type="button" key={item} onClick={() => { setCategory(item); document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth" }); }}>
+        return <button type="button" key={item} onClick={() => { clearPromotionProducts(); setCategory(item); document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth" }); }}>
           <div>{representative?.images[0] ? <SafeImage src={representative.images[0]} alt={item} fallback={<span>{item.slice(0, 1)}</span>} /> : <span>{item.slice(0, 1)}</span>}</div>
           <strong>{categoryCopy[lang][item] || item} →</strong>
         </button>;
@@ -635,9 +680,13 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
 
     <section className="storefront-v3-section storefront-v3-catalogue" id="catalogue">
       <header className="storefront-v3-section-head"><div><small>{brand}</small><h2>{t.allProducts}</h2></div><strong>{filtered.length} {t.products}</strong></header>
+      {promotionCategoryFilter.length > 0 && <div className="storefront-v3-promotion-filter">
+        <span><strong>{promotionFilterName}</strong><small>{t.promotionProducts} · {promotionCategoryFilter.map((item) => categoryCopy[lang][item] || item).join(" · ")}</small></span>
+        <button type="button" onClick={clearPromotionProducts}>{t.clearPromotionFilter}</button>
+      </div>}
       <div className="storefront-v3-tools">
-        <label><span>{t.search}</span><input value={query} onChange={(event) => { setQuery(event.target.value); setVisibleCount(INITIAL_VISIBLE); }} placeholder={t.searchPlaceholder} /></label>
-        <label><span>{t.category}</span><select value={category} onChange={(event) => { setCategory(event.target.value); setVisibleCount(INITIAL_VISIBLE); }}><option value="Tous">{t.allCategories}</option>{catalog?.categories.map((item) => <option key={item} value={item}>{categoryCopy[lang][item] || item}</option>)}</select></label>
+        <label><span>{t.search}</span><input value={query} onChange={(event) => { clearPromotionProducts(); setQuery(event.target.value); setVisibleCount(INITIAL_VISIBLE); }} placeholder={t.searchPlaceholder} /></label>
+        <label><span>{t.category}</span><select value={category} onChange={(event) => { clearPromotionProducts(); setCategory(event.target.value); setVisibleCount(INITIAL_VISIBLE); }}><option value="Tous">{t.allCategories}</option>{catalog?.categories.map((item) => <option key={item} value={item}>{categoryCopy[lang][item] || item}</option>)}</select></label>
       </div>
       {loading && <div className="storefront-v3-state">{t.loading}</div>}
       {error && <div className="storefront-v3-state error">{error}</div>}
