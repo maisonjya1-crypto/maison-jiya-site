@@ -20,7 +20,7 @@ test("le CMS permet de créer, activer, désactiver et prioriser chaque promotio
   assert.match(source, /function PromotionEditor/);
   assert.match(source, /action: "savePromotion"/);
   assert.match(source, /action: "deletePromotion"/);
-  assert.match(source, /Activer cette promotion/);
+  assert.match(source, /Activer le calcul de cette promotion/);
   assert.match(source, /Priorité/);
   assert.match(source, /Chaque offre a sa propre règle/);
   assert.match(source, /non cumulables/);
