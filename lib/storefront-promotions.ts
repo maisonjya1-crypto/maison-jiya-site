@@ -16,6 +16,10 @@ export type StorefrontPromotion = {
   eligibleCategories: string[];
   isActive: boolean;
   priority: number;
+  displayEnabled?: boolean;
+  badge?: string;
+  ctaLabel?: string;
+  imageUrl?: string;
 };
 
 export type PromotionCartLine = {
