@@ -314,6 +314,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   deleteProduct: { action: "Archivage", entityType: "Produit" },
   addStockMovement: { action: "Ajout", entityType: "Stock" },
   countInventory: { action: "Inventaire", entityType: "Stock" },
+  markProductStockUnverified: { action: "Vérification requise", entityType: "Stock" },
   startInventorySession: { action: "Ouverture", entityType: "Inventaire" },
   countInventorySessionProduct: { action: "Comptage", entityType: "Inventaire" },
   finalizeInventorySession: { action: "Clôture", entityType: "Inventaire" },
@@ -2464,6 +2465,25 @@ export async function POST(request: Request) {
       integrationMessage = unverifiedCount > 0
         ? `Inventaire ${session.sessionRef} terminé avec ${unverifiedCount} produit(s) « À vérifier ». Leur stock n’a pas été modifié.`
         : `Inventaire ${session.sessionRef} clôturé · valeur réelle ${Number(totals?.valueAfter || 0).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD · pertes détectées ${Number(totals?.lossValue || 0).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} MAD.`;
+    } else if (payload.action === "markProductStockUnverified") {
+      const openSession = await openInventorySession();
+      if (openSession) return Response.json({ error: `La session ${openSession.sessionRef} est en cours. Utilisez le module Inventaire pour gérer l’état de ce produit.` }, { status: 409 });
+      const productId = numberValue(payload.productId);
+      if (!productId) return Response.json({ error: "Produit invalide." }, { status: 400 });
+      const [product] = await db.select({
+        id: products.id,
+        productCode: products.productCode,
+        name: products.name,
+        stockQuantity: products.stockQuantity,
+        archivedAt: products.archivedAt,
+      }).from(products).where(eq(products.id, productId)).limit(1);
+      if (!product) return Response.json({ error: "Produit introuvable." }, { status: 404 });
+      if (product.archivedAt) return Response.json({ error: "Restaurez ce produit avant de modifier son état de stock." }, { status: 409 });
+
+      await db.update(products).set({ stockVerificationStatus: "À vérifier" }).where(eq(products.id, productId));
+      auditEntityId = String(productId);
+      auditEntityLabel = `${product.productCode} · ${product.name}`;
+      integrationMessage = `${product.name} marqué « Stock à vérifier ». La quantité système (${product.stockQuantity}) n’a pas été modifiée.`;
     } else if (payload.action === "countInventory") {
       const openSession = await openInventorySession();
       if (openSession) return Response.json({ error: `Utilisez la session ${openSession.sessionRef} dans le module Inventaire pour compter ce produit.` }, { status: 409 });
