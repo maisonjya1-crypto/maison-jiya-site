@@ -38,8 +38,8 @@ test("l'API valide les destinations et supprime aussi l'image d'un bloc supprim�
 
 test("les images marketing sont limitées à une et remplaçables", async () => {
   const source = await readText("app/api/storefront/admin/media/route.ts");
-  assert.match(source, /"product", "offer", "brand", "marketing"/);
-  assert.match(source, /ownerType === "brand" \|\| ownerType === "marketing" \? 1 : GALLERY_LIMIT/);
+  assert.match(source, /"product", "offer", "brand", "marketing", "promotion"/);
+  assert.match(source, /ownerType === "brand" \|\| ownerType === "marketing" \|\| ownerType === "promotion" \? 1 : GALLERY_LIMIT/);
   assert.match(source, /Bloc marketing introuvable/);
 });
 

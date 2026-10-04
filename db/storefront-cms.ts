@@ -48,6 +48,9 @@ export type StorefrontPromotionRow = {
   eligibleCategories: string;
   isActive: number;
   priority: number;
+  displayEnabled: number;
+  badge: string;
+  ctaLabel: string;
   createdAt: string;
   updatedAt: string | null;
 };
@@ -219,6 +222,9 @@ export async function getStorefrontPromotions(database: D1Database, activeOnly =
              eligible_categories AS eligibleCategories,
              is_active AS isActive,
              priority,
+             display_enabled AS displayEnabled,
+             badge,
+             cta_label AS ctaLabel,
              created_at AS createdAt,
              updated_at AS updatedAt
       FROM storefront_promotions
@@ -226,10 +232,34 @@ export async function getStorefrontPromotions(database: D1Database, activeOnly =
       ORDER BY priority, id
     `).all<StorefrontPromotionRow>()).results;
   } catch (error) {
-    // Compatibility for a worker started before migration 0016 has been applied.
-    // Production deploys migrations before the worker, so this should only be transient/test-only.
-    console.warn("Maison Jiya promotions table unavailable", error);
-    return [];
+    try {
+      const legacy = (await database.prepare(`
+        SELECT id, name, code, description,
+               rule_type AS ruleType,
+               percent_value AS percentValue,
+               minimum_quantity AS minimumQuantity,
+               buy_quantity AS buyQuantity,
+               free_quantity AS freeQuantity,
+               eligible_categories AS eligibleCategories,
+               is_active AS isActive,
+               priority,
+               created_at AS createdAt,
+               updated_at AS updatedAt
+        FROM storefront_promotions
+        ${where}
+        ORDER BY priority, id
+      `).all<Omit<StorefrontPromotionRow, "displayEnabled" | "badge" | "ctaLabel">>()).results;
+      return legacy.map((row) => ({
+        ...row,
+        displayEnabled: 1,
+        badge: "OFFRE",
+        ctaLabel: "Voir les produits",
+      }));
+    } catch {
+      // Compatibility for a worker started before migration 0016 has been applied.
+      console.warn("Maison Jiya promotions table unavailable", error);
+      return [];
+    }
   }
 }
 
