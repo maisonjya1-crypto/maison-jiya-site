@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
+import { promotionRuleLabel } from "../lib/storefront-promotions";
 
 type Media = {
   id: number;
@@ -46,6 +47,10 @@ type CmsPromotion = {
   eligibleCategories: string[];
   isActive: boolean;
   priority: number;
+  displayEnabled: boolean;
+  badge: string;
+  ctaLabel: string;
+  media: Media[];
 };
 type CmsOffer = {
   id: number;
@@ -104,7 +109,7 @@ type CmsData = {
 };
 
 type PortalTarget = Element | DocumentFragment;
-type UploadOwner = "brand" | "product" | "offer" | "marketing";
+type UploadOwner = "brand" | "product" | "offer" | "marketing" | "promotion";
 type UploadKind = "logo" | "hero" | "gallery";
 type UploadMany = (ownerType: UploadOwner, ownerId: number, kind: UploadKind, files: FileList | null, maxFiles?: number) => Promise<void>;
 
@@ -1053,17 +1058,29 @@ function MarketingEditor({ section, canEdit, save, uploadMany, removeMedia, isNe
   </details>;
 }
 
-function PromotionEditor({ promotion, canEdit, save, isNew = false }: {
+function PromotionEditor({ promotion, canEdit, save, uploadMany, removeMedia, isNew = false }: {
   promotion: CmsPromotion;
   canEdit: boolean;
   save: (payload: Record<string, unknown>) => Promise<void>;
+  uploadMany: UploadMany;
+  removeMedia: (id: number) => Promise<void>;
   isNew?: boolean;
 }) {
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(isNew);
   const [ruleType, setRuleType] = useState<CmsPromotion["ruleType"]>(promotion.ruleType);
+  const [percentValue, setPercentValue] = useState(promotion.percentValue || (promotion.ruleType === "second_item_percent" ? 50 : 20));
+  const [buyQuantity, setBuyQuantity] = useState(promotion.buyQuantity || 2);
+  const [freeQuantity, setFreeQuantity] = useState(promotion.freeQuantity || 1);
   const [categories, setCategories] = useState<string[]>(promotion.eligibleCategories.length ? promotion.eligibleCategories : ["Montres", "Bijoux", "Portefeuilles"]);
   const categoryOptions = ["Montres", "Bijoux", "Portefeuilles"];
+  const image = promotion.media?.[0];
+  const generatedRule = promotionRuleLabel({
+    ruleType,
+    percentValue,
+    buyQuantity,
+    freeQuantity,
+  });
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1082,17 +1099,23 @@ function PromotionEditor({ promotion, canEdit, save, isNew = false }: {
         code: promotion.code || form.get("code"),
         description: form.get("description"),
         ruleType,
-        percentValue: form.get("percentValue"),
+        percentValue,
         minimumQuantity: form.get("minimumQuantity"),
-        buyQuantity: form.get("buyQuantity"),
-        freeQuantity: form.get("freeQuantity"),
+        buyQuantity,
+        freeQuantity,
         eligibleCategories: categories,
         isActive: form.get("isActive") === "on",
+        displayEnabled: form.get("displayEnabled") === "on",
+        badge: form.get("badge"),
+        ctaLabel: form.get("ctaLabel"),
         priority: form.get("priority"),
       });
       if (isNew) {
         event.currentTarget.reset();
         setRuleType("second_item_percent");
+        setPercentValue(50);
+        setBuyQuantity(2);
+        setFreeQuantity(1);
         setCategories(["Montres", "Bijoux", "Portefeuilles"]);
       }
     } finally {
@@ -1116,7 +1139,7 @@ function PromotionEditor({ promotion, canEdit, save, isNew = false }: {
       <div>
         <span>{isNew ? "＋ Nouvelle promotion" : promotion.code}</span>
         <strong>{isNew ? "Créer une promotion automatique" : promotion.name}</strong>
-        <small>{isNew ? "Chaque promotion garde son propre calcul, sans mélange." : `${promotion.eligibleCategories.join(", ")} · priorité ${promotion.priority}`}</small>
+        <small>{isNew ? "Chaque promotion garde son propre calcul, sans mélange." : `${generatedRule} · ${promotion.eligibleCategories.join(", ")} · priorité ${promotion.priority}`}</small>
       </div>
       {!isNew && <span className={promotion.isActive ? "storefront-cms-offer-active" : "storefront-cms-offer-off"}>{promotion.isActive ? "Activée" : "Désactivée"}</span>}
       <b>⌄</b>
@@ -1127,22 +1150,26 @@ function PromotionEditor({ promotion, canEdit, save, isNew = false }: {
         <strong>Règle indépendante</strong>
         <small>Une seule promotion automatique est appliquée par panier. Le calcul de cette offre ne peut jamais être utilisé par une autre offre.</small>
       </div>
+
       <div className="storefront-cms-product-editgrid">
-        <label><span>Nom de l’offre</span><input name="name" defaultValue={promotion.name} required disabled={!canEdit} placeholder="Ex. 2e article -50 %" /></label>
+        <label><span>Nom de l’offre</span><input name="name" defaultValue={promotion.name} required disabled={!canEdit} placeholder="Ex. Offre spéciale montres" /></label>
         {isNew && <label><span>Code interne (optionnel)</span><input name="code" defaultValue="" disabled={!canEdit} placeholder="Ex. 2E50" /></label>}
         <label><span>Type de calcul</span><select name="ruleType" value={ruleType} onChange={(event) => setRuleType(event.target.value as CmsPromotion["ruleType"])} disabled={!canEdit}>
           <option value="second_item_percent">2e article à -X %</option>
           <option value="percent_items">-X % sur une sélection</option>
           <option value="buy_x_get_y_free">X achetés + Y offert(s)</option>
         </select></label>
-        {(ruleType === "second_item_percent" || ruleType === "percent_items") && <label><span>Réduction (%)</span><input name="percentValue" type="number" min="1" max="100" step="1" defaultValue={promotion.percentValue || (ruleType === "second_item_percent" ? 50 : 20)} required disabled={!canEdit} /></label>}
+        {(ruleType === "second_item_percent" || ruleType === "percent_items") && <label><span>Réduction (%)</span><input name="percentValue" type="number" min="1" max="100" step="1" value={percentValue} onChange={(event) => setPercentValue(Number(event.target.value) || 0)} required disabled={!canEdit} /></label>}
         {ruleType !== "buy_x_get_y_free" && <label><span>Quantité minimum</span><input name="minimumQuantity" type="number" min={ruleType === "second_item_percent" ? 2 : 1} max="50" defaultValue={Math.max(ruleType === "second_item_percent" ? 2 : 1, promotion.minimumQuantity || 1)} disabled={!canEdit} /></label>}
         {ruleType === "buy_x_get_y_free" && <>
-          <label><span>Nombre acheté</span><input name="buyQuantity" type="number" min="1" max="20" defaultValue={promotion.buyQuantity || 2} required disabled={!canEdit} /></label>
-          <label><span>Nombre offert</span><input name="freeQuantity" type="number" min="1" max="20" defaultValue={promotion.freeQuantity || 1} required disabled={!canEdit} /></label>
+          <label><span>Nombre acheté</span><input name="buyQuantity" type="number" min="1" max="20" value={buyQuantity} onChange={(event) => setBuyQuantity(Number(event.target.value) || 1)} required disabled={!canEdit} /></label>
+          <label><span>Nombre offert</span><input name="freeQuantity" type="number" min="1" max="20" value={freeQuantity} onChange={(event) => setFreeQuantity(Number(event.target.value) || 1)} required disabled={!canEdit} /></label>
         </>}
         <label><span>Priorité</span><input name="priority" type="number" min="1" max="999" defaultValue={promotion.priority || 100} disabled={!canEdit} /><small>1 passe avant 10, 10 avant 100.</small></label>
-        <label className="storefront-cms-visible"><input name="isActive" type="checkbox" defaultChecked={promotion.isActive} disabled={!canEdit} /><span>Activer cette promotion</span></label>
+        <label className="storefront-cms-visible"><input name="isActive" type="checkbox" defaultChecked={promotion.isActive} disabled={!canEdit} /><span>Activer le calcul de cette promotion</span></label>
+        <label className="storefront-cms-visible"><input name="displayEnabled" type="checkbox" defaultChecked={promotion.displayEnabled} disabled={!canEdit} /><span>Afficher cette promotion sur le site</span></label>
+        <label><span>Badge public</span><input name="badge" defaultValue={promotion.badge || "OFFRE"} maxLength={40} disabled={!canEdit} placeholder="OFFRE" /></label>
+        <label><span>Bouton public</span><input name="ctaLabel" defaultValue={promotion.ctaLabel || "Voir les produits"} maxLength={60} disabled={!canEdit} placeholder="Voir les produits" /></label>
       </div>
 
       <fieldset className="storefront-cms-promotion-categories" disabled={!canEdit}>
@@ -1153,8 +1180,25 @@ function PromotionEditor({ promotion, canEdit, save, isNew = false }: {
         </label>)}
       </fieldset>
 
-      <label><span>Description interne</span><textarea name="description" rows={3} defaultValue={promotion.description} disabled={!canEdit} placeholder="Explique la règle pour toi et ton équipe…" /></label>
+      <label><span>Texte complémentaire public (optionnel)</span><textarea name="description" rows={3} defaultValue={promotion.description} disabled={!canEdit} placeholder="Si vide, le site affiche automatiquement la règle exacte de l’offre." /></label>
+      <div className="storefront-cms-promotion-rule-preview">
+        <strong>Texte automatique</strong>
+        <small>{generatedRule} · {categories.join(" + ")}</small>
+      </div>
       <div className="storefront-cms-promotion-rule-preview"><strong>Calcul</strong><small>{ruleSummary}</small></div>
+
+      {!isNew ? <div className="storefront-cms-marketing-image storefront-cms-promotion-image">
+        <div>{image ? <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={mediaSrc(image)} alt="" loading="lazy" decoding="async" />
+        </> : <span>Visuel de l’offre</span>}</div>
+        <section>
+          <strong>Visuel de cette promotion</strong>
+          <small>Une seule image. Elle reste liée uniquement à cette offre.</small>
+          {canEdit && <label className="storefront-cms-upload">＋ {image ? "Remplacer le visuel" : "Ajouter un visuel"}<input type="file" accept="image/*" onChange={(event) => { const files = event.currentTarget.files; void uploadMany("promotion", promotion.id, "gallery", files, 1); event.currentTarget.value = ""; }} /></label>}
+          {canEdit && image && <button className="danger-text-button" type="button" onClick={() => void removeMedia(image.id)}>Supprimer le visuel</button>}
+        </section>
+      </div> : <div className="storefront-cms-public-category-note">Crée d’abord la promotion. Ensuite tu pourras lui ajouter son visuel sans toucher aux autres offres.</div>}
 
       <div className="storefront-cms-save-row">
         {!isNew && canEdit ? <button className="danger-text-button" type="button" onClick={() => void removePromotion()}>Supprimer la promotion</button> : <small>Les packs à prix fixe restent séparés en dessous.</small>}
@@ -1184,6 +1228,10 @@ function OffersPanel({ data, save, uploadMany, removeMedia }: {
     eligibleCategories: ["Montres", "Bijoux", "Portefeuilles"],
     isActive: true,
     priority: 100,
+    displayEnabled: true,
+    badge: "OFFRE",
+    ctaLabel: "Voir les produits",
+    media: [],
   };
   const blank: CmsOffer = { id: 0, name: "", description: "", price: 0, comparePrice: 0, badge: "Offre", isActive: true, sortOrder: 0, items: [], media: [] };
   const visibleOffers = useMemo(() => {
@@ -1197,9 +1245,9 @@ function OffersPanel({ data, save, uploadMany, removeMedia }: {
       <div><span>Promotions automatiques</span><h2>Chaque offre a sa propre règle</h2><p>Active ou désactive chaque promotion séparément. Les promotions automatiques sont non cumulables : une règle ne réutilise jamais le calcul d’une autre.</p></div>
       <strong>{data.promotions.filter((promotion) => promotion.isActive).length} active(s)</strong>
     </div>
-    <PromotionEditor key="new-promotion" promotion={blankPromotion} canEdit={data.canEdit} save={save} isNew />
+    <PromotionEditor key="new-promotion" promotion={blankPromotion} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} isNew />
     <div className="storefront-cms-promotion-list">
-      {data.promotions.map((promotion) => <PromotionEditor key={promotion.id} promotion={promotion} canEdit={data.canEdit} save={save} />)}
+      {data.promotions.map((promotion) => <PromotionEditor key={`${promotion.id}-${promotion.media?.length || 0}`} promotion={promotion} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />)}
       {!data.promotions.length && <div className="storefront-cms-no-media">Aucune promotion automatique configurée.</div>}
     </div>
 
