@@ -981,6 +981,7 @@ export default function DashboardClient() {
       updateStockMovement: "Mouvement de stock mis à jour",
       deleteStockMovement: "Mouvement de stock supprimé",
       countInventory: "Inventaire enregistré et stock corrigé",
+      markProductStockUnverified: "Produit marqué Stock à vérifier sans modifier la quantité",
       startInventorySession: "Session d’inventaire démarrée",
       countInventorySessionProduct: "Produit compté et stock contrôlé",
       finalizeInventorySession: "Session d’inventaire clôturée",
@@ -4294,8 +4295,8 @@ function InventorySessionCountModal({ session, product, close, onSaved, submit }
           }
         }}>
           <div className="inventory-summary">
-            <div><span>Système</span><strong>{product.stockQuantity}</strong></div>
-            <div><span>Physique</span><strong>{parsed}</strong></div>
+            <div><span>Stock logiciel</span><strong>{product.stockQuantity}</strong></div>
+            <div><span>Stock compté</span><strong>{parsed}</strong></div>
             <div className={difference > 0 ? "positive" : difference < 0 ? "negative" : "neutral"}><span>Écart</span><strong>{difference > 0 ? "+" : ""}{difference}</strong></div>
           </div>
           <div className="form-grid">
@@ -4468,6 +4469,11 @@ function InventoryPage({ products, sessions, counts, canEdit, submit, onAddProdu
   );
 }
 
+function realStockState(product: Product): "En stock" | "Sur commande" | "Stock à vérifier" {
+  if (product.stockVerificationStatus === "À vérifier") return "Stock à vérifier";
+  return product.stockQuantity > 0 ? "En stock" : "Sur commande";
+}
+
 function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, submit, onAdd, onMove, onCount, onEdit, onDelete, onRestore }: { products: Product[]; orders: Order[]; movements: StockMovement[]; inventoryCounts: InventoryCount[]; canEdit: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void>; onAdd: () => void; onMove: (selection: StockSelection) => void; onCount: (product: Product) => void; onEdit: (selection: EditableEntity) => void; onDelete: (selection: EditableEntity) => void; onRestore: (product: Product) => void }) {
   const [profitSearch, setProfitSearch] = useState("");
   const [profitCategory, setProfitCategory] = useState("");
@@ -4535,6 +4541,16 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
   const catalogProducts = showArchived ? archivedProducts : activeProducts;
   const filteredProducts = catalogProducts.filter((product) => productMatches(product, catalogSearch, catalogCategory));
   const filteredProfit = filteredProfitability.reduce((sum, row) => sum + row.profit, 0);
+  const latestInventoryByProduct = new Map<number, InventoryCount>();
+  for (const count of [...inventoryCounts].sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id - left.id)) {
+    if (!latestInventoryByProduct.has(count.productId)) latestInventoryByProduct.set(count.productId, count);
+  }
+
+  async function markStockUnverified(product: Product) {
+    if (!canEdit || product.archivedAt || product.stockVerificationStatus === "À vérifier") return;
+    await submit("markProductStockUnverified", { productId: String(product.id) });
+  }
+
   return (
     <>
       <section className="kpi-grid stock-kpis">
@@ -4601,7 +4617,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
             <>
               <div className="desktop-product-table table-scroll">
                 <table>
-                  <thead><tr><th>ID produit</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Minimum</th><th>Seuil stock</th><th>Restant</th><th>Actions</th></tr></thead>
+                  <thead><tr><th>ID produit</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Minimum</th><th>Seuil stock</th><th>Restant</th><th>État réel</th><th>Actions</th></tr></thead>
                   <tbody>
                     {filteredProducts.map((product) => (
                       <tr key={product.id}>
@@ -4613,6 +4629,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                         <td>{money(product.minimumSalePrice || product.salePrice)}</td>
                         <td>{product.stockAlertThreshold}</td>
                         <td><StockLevel quantity={product.stockQuantity} threshold={product.stockAlertThreshold} verificationStatus={product.stockVerificationStatus} lastInventoryAt={product.lastInventoryAt} /></td>
+                        <td><RealStockStateControl product={product} canEdit={canEdit} onCount={onCount} onMarkUnverified={markStockUnverified} compact /></td>
                         <td>
                           <div className="entity-actions-row">
                             {product.archivedAt ? (
@@ -4648,6 +4665,7 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
                       </div>
                     </div>
                     <span className="category-chip">{product.category}</span>
+                    {!product.archivedAt && <RealStockStateControl product={product} canEdit={canEdit} onCount={onCount} onMarkUnverified={markStockUnverified} />}
                     <div className="product-prices">
                       <p>Prix d’achat<strong>{money(product.purchasePrice)}</strong></p>
                       <p>Prix de vente<strong>{money(product.salePrice)}</strong></p>
@@ -4673,6 +4691,26 @@ function ProductsPage({ products, orders, movements, inventoryCounts, canEdit, s
           )}
         </div>
       </details>
+      <section className="panel inventory-control-panel">
+        <PanelHead kicker="Contrôle stock" title="Inventaire de contrôle" total={String(activeProducts.length)} />
+        <p className="inventory-control-note">Le stock logiciel n’est jamais remplacé tant que tu ne valides pas un comptage. « Stock à vérifier » signale seulement un doute et ne change aucune quantité.</p>
+        {activeProducts.length ? <div className="table-scroll inventory-control-table"><table>
+          <thead><tr><th>Produit</th><th>État réel</th><th>Stock logiciel</th><th>Stock compté</th><th>Écart</th><th>Dernier contrôle</th><th>Corriger</th></tr></thead>
+          <tbody>{activeProducts.map((product) => {
+            const latest = latestInventoryByProduct.get(product.id);
+            return <tr key={product.id}>
+              <td><strong>{product.name}</strong><small>{product.productCode} · {product.category}</small></td>
+              <td><RealStockStateControl product={product} canEdit={canEdit} onCount={onCount} onMarkUnverified={markStockUnverified} compact /></td>
+              <td><strong>{product.stockQuantity}</strong><small>Quantité utilisée par le logiciel</small></td>
+              <td>{latest ? <><strong>{latest.physicalQuantity}</strong><small>{dateLabel(latest.createdAt)}</small></> : <span>—</span>}</td>
+              <td className={latest ? moneyTone(latest.difference) : undefined}>{latest ? <strong>{latest.difference > 0 ? "+" : ""}{latest.difference}</strong> : "—"}</td>
+              <td>{product.lastInventoryAt ? dateTimeLabel(product.lastInventoryAt) : "Jamais compté"}</td>
+              <td><button type="button" className="secondary-button inventory-control-correct" disabled={!canEdit} onClick={() => onCount(product)}>Corriger / compter</button></td>
+            </tr>;
+          })}</tbody>
+        </table></div> : <EmptyState title="Aucun produit actif" text="Ajoute un produit pour commencer le contrôle du stock." />}
+      </section>
+
       <details className="panel product-disclosure stock-history">
         <summary className="product-disclosure-summary">
           <div><span className="card-kicker">Historique</span><h2>Derniers mouvements</h2><p>Cliquez pour afficher les entrées, sorties et inventaires récents.</p></div>
@@ -4753,13 +4791,47 @@ function ProductFilterBar({ search, category, categories, resultCount, totalCoun
     </div>
   );
 }
+function RealStockStateControl({ product, canEdit, onCount, onMarkUnverified, compact = false }: {
+  product: Product;
+  canEdit: boolean;
+  onCount: (product: Product) => void;
+  onMarkUnverified: (product: Product) => Promise<void>;
+  compact?: boolean;
+}) {
+  const [saving, setSaving] = useState(false);
+  const current = realStockState(product);
+  const options = ["En stock", "Sur commande", "Stock à vérifier"] as const;
+
+  async function choose(next: (typeof options)[number]) {
+    if (!canEdit || saving || next === current) return;
+    if (next === "Stock à vérifier") {
+      setSaving(true);
+      try { await onMarkUnverified(product); } finally { setSaving(false); }
+      return;
+    }
+    onCount(product);
+  }
+
+  return <div className={`real-stock-state ${compact ? "compact" : ""}`} role="group" aria-label={`État réel du stock de ${product.name}`}>
+    {options.map((option) => <button
+      key={option}
+      type="button"
+      className={current === option ? "active" : ""}
+      aria-pressed={current === option}
+      disabled={!canEdit || saving || current === option}
+      title={option === "Stock à vérifier" ? "Ne modifie pas la quantité" : "Confirmer cet état par un comptage physique"}
+      onClick={() => void choose(option)}
+    >{option === "En stock" ? "✓ " : option === "Sur commande" ? "● " : "◌ "}{option}</button>)}
+  </div>;
+}
+
 function StockLevel({ quantity, threshold = 5, verificationStatus, lastInventoryAt }: { quantity: number; threshold?: number; verificationStatus?: Product["stockVerificationStatus"]; lastInventoryAt?: string | null }) {
   const unknown = verificationStatus === "À vérifier";
   const confirmedOut = verificationStatus === "Rupture confirmée";
   return (
     <span className={`stock-level ${unknown ? "unknown" : confirmedOut || quantity === 0 ? "empty" : quantity <= threshold ? "low" : "ok"}`}>
       <strong>{quantity}</strong> unité{quantity === 1 ? "" : "s"}
-      <small>{unknown ? `À vérifier · stock système${lastInventoryAt ? ` · dernier comptage ${dateLabel(lastInventoryAt)}` : ""}` : confirmedOut ? "Rupture confirmée" : quantity === 0 ? "Rupture système" : quantity <= threshold ? `Stock faible · seuil ${threshold}` : "Disponible"}</small>
+      <small>{unknown ? `Stock à vérifier · quantité logiciel conservée${lastInventoryAt ? ` · dernier comptage ${dateLabel(lastInventoryAt)}` : ""}` : confirmedOut || quantity === 0 ? "Sur commande" : quantity <= threshold ? `En stock · stock faible · seuil ${threshold}` : "En stock"}</small>
     </span>
   );
 }
@@ -8279,8 +8351,8 @@ function InventoryCountModal({ product, close, submit }: { product: Product; clo
           }
         }}>
           <div className="inventory-summary">
-            <div><span>Stock du site</span><strong>{product.stockQuantity}</strong></div>
-            <div><span>Stock physique</span><strong>{parsedPhysicalQuantity}</strong></div>
+            <div><span>Stock logiciel</span><strong>{product.stockQuantity}</strong></div>
+            <div><span>Stock compté</span><strong>{parsedPhysicalQuantity}</strong></div>
             <div className={difference > 0 ? "positive" : difference < 0 ? "negative" : "neutral"}><span>Écart</span><strong>{difference > 0 ? "+" : ""}{difference}</strong></div>
           </div>
           <div className="form-grid">
