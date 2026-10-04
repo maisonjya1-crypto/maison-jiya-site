@@ -48,6 +48,9 @@ export type StorefrontPromotionRow = {
   eligibleCategories: string;
   isActive: number;
   priority: number;
+  displayEnabled: number;
+  badge: string;
+  ctaLabel: string;
   createdAt: string;
   updatedAt: string | null;
 };
@@ -219,6 +222,9 @@ export async function getStorefrontPromotions(database: D1Database, activeOnly =
              eligible_categories AS eligibleCategories,
              is_active AS isActive,
              priority,
+             display_enabled AS displayEnabled,
+             badge,
+             cta_label AS ctaLabel,
              created_at AS createdAt,
              updated_at AS updatedAt
       FROM storefront_promotions
