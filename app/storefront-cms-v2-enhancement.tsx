@@ -546,13 +546,20 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
       return true;
     } catch (uploadError) {
       const message = uploadError instanceof Error ? uploadError.message : "Upload impossible.";
-      patchMediaLocally(tempId, {
-        pending: false,
-        failed: true,
-        progress: 0,
-        statusLabel: "Échec",
-        errorMessage: message,
-      });
+      if (job.ownerType === "product" || job.ownerType === "offer") {
+        patchMediaLocally(tempId, {
+          pending: false,
+          failed: true,
+          progress: 0,
+          statusLabel: "Échec",
+          errorMessage: message,
+        });
+      } else {
+        removeMediaLocallyWithoutServer(tempId);
+        releasePreview(retryUploadsRef.current.get(tempId)?.previewUrl);
+        retryUploadsRef.current.delete(tempId);
+        void load(true);
+      }
       setError(message);
       return false;
     }
