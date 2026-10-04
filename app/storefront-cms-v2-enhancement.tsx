@@ -1141,7 +1141,7 @@ function PromotionEditor({ promotion, canEdit, save, uploadMany, removeMedia, is
         <strong>{isNew ? "Créer une promotion automatique" : promotion.name}</strong>
         <small>{isNew ? "Chaque promotion garde son propre calcul, sans mélange." : `${generatedRule} · ${promotion.eligibleCategories.join(", ")} · priorité ${promotion.priority}`}</small>
       </div>
-      {!isNew && <span className={promotion.isActive ? "storefront-cms-offer-active" : "storefront-cms-offer-off"}>{promotion.isActive ? "Activée" : "Désactivée"}</span>}
+      {!isNew && <span className={promotion.isActive ? "storefront-cms-offer-active" : "storefront-cms-offer-off"}>{promotion.isActive ? `Calcul actif · ${promotion.displayEnabled ? "Visible" : "Masquée"}` : "Calcul désactivé"}</span>}
       <b>⌄</b>
     </summary>
 
