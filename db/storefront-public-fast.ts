@@ -26,6 +26,9 @@ type PublicPromotionRow = {
   eligibleCategories: string;
   isActive: number;
   priority: number;
+  displayEnabled: number;
+  badge: string;
+  ctaLabel: string;
 };
 type PublicMarketingRow = {
   id: number;
@@ -162,9 +165,11 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
              free_quantity AS freeQuantity,
              eligible_categories AS eligibleCategories,
              is_active AS isActive,
-             priority
+             priority,
+             display_enabled AS displayEnabled,
+             badge,
+             cta_label AS ctaLabel
       FROM storefront_promotions
-      WHERE is_active = 1
       ORDER BY priority, id
       LIMIT 100
     `).all<PublicPromotionRow>()).results;
@@ -242,6 +247,10 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     }),
     isActive: Boolean(promotion.isActive),
     priority: Number(promotion.priority) || 100,
+    displayEnabled: Boolean(promotion.displayEnabled),
+    badge: promotion.badge?.trim() || "OFFRE",
+    ctaLabel: promotion.ctaLabel?.trim() || "Voir les produits",
+    imageUrl: mediaByOwner.get(`promotion:${promotion.id}`)?.[0] || "",
   })).filter((promotion) => promotion.name && promotion.code);
 
   const publicOffers = offers.flatMap((offer) => {
