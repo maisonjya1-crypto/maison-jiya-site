@@ -856,11 +856,11 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
         </div>
         <div className="storefront-cms-public-category-note">Électronique et Boîtes sont volontairement exclues de la boutique publique. Wallets est affiché aux clients sous le nom « Portefeuilles ».</div>
         <div className="storefront-cms-product-list">
-          {visibleProducts.map((product) => <ProductEditor key={product.productId} product={product} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />)}
+          {visibleProducts.map((product) => <ProductEditor key={product.productId} product={product} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} reorderMedia={reorderMedia} retryMedia={retryMedia} discardFailedMedia={discardFailedMedia} />)}
         </div>
         {visibleProducts.length < filteredProducts.length && <div className="storefront-cms-load-more-wrap"><button type="button" className="secondary-button" onClick={() => setProductLimit((value) => value + 16)}>Afficher 16 produits de plus ({filteredProducts.length - visibleProducts.length} restant(s))</button></div>}
       </div>}
-      {tab === "offers" && <OffersPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />}
+      {tab === "offers" && <OffersPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} reorderMedia={reorderMedia} retryMedia={retryMedia} discardFailedMedia={discardFailedMedia} />}
       {tab === "marketing" && <MarketingPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />}
     </>}
   </section>;
@@ -1114,12 +1114,15 @@ function GalleryEditor({ ownerType, ownerId, media, canEdit, uploadMany, removeM
   </div>;
 }
 
-function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
+function ProductEditor({ product, canEdit, save, uploadMany, removeMedia, reorderMedia, retryMedia, discardFailedMedia }: {
   product: CmsProduct;
   canEdit: boolean;
   save: (payload: Record<string, unknown>) => Promise<void>;
   uploadMany: UploadMany;
   removeMedia: (id: number) => Promise<void>;
+  reorderMedia: ReorderMedia;
+  retryMedia: RetryMedia;
+  discardFailedMedia: DiscardFailedMedia;
 }) {
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
@@ -1170,7 +1173,7 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
         <label className="storefront-cms-visible"><input name="isVisible" type="checkbox" defaultChecked={product.isVisible} disabled={!canEdit} /><span>Afficher ce produit sur le site public</span></label>
       </div>
       <label><span>Description publique</span><textarea name="description" rows={3} defaultValue={product.description} placeholder="Courte description visible par les clients…" disabled={!canEdit} /></label>
-      <GalleryEditor ownerType="product" ownerId={product.productId} media={product.media} canEdit={canEdit} uploadMany={uploadMany} removeMedia={removeMedia} title="Photos du produit" />
+      <GalleryEditor ownerType="product" ownerId={product.productId} media={product.media} canEdit={canEdit} uploadMany={uploadMany} removeMedia={removeMedia} reorderMedia={reorderMedia} retryMedia={retryMedia} discardFailedMedia={discardFailedMedia} title="Photos du produit" />
       <div className="storefront-cms-save-row"><small>Prix interne : {money(product.internalPrice)} · stock interne : {product.stockQuantity}</small><button className="primary-button" type="submit" disabled={!canEdit || saving}>{saving ? "Enregistrement…" : "Enregistrer ce produit public"}</button></div>
     </form>}
   </details>;
@@ -1451,11 +1454,14 @@ function PromotionEditor({ promotion, canEdit, save, uploadMany, removeMedia, is
   </details>;
 }
 
-function OffersPanel({ data, save, uploadMany, removeMedia }: {
+function OffersPanel({ data, save, uploadMany, removeMedia, reorderMedia, retryMedia, discardFailedMedia }: {
   data: CmsData;
   save: (payload: Record<string, unknown>) => Promise<void>;
   uploadMany: UploadMany;
   removeMedia: (id: number) => Promise<void>;
+  reorderMedia: ReorderMedia;
+  retryMedia: RetryMedia;
+  discardFailedMedia: DiscardFailedMedia;
 }) {
   const [offerQuery, setOfferQuery] = useState("");
   const blankPromotion: CmsPromotion = {
@@ -1495,19 +1501,22 @@ function OffersPanel({ data, save, uploadMany, removeMedia }: {
     </div>
 
     <div className="storefront-cms-offer-intro storefront-cms-fixed-pack-intro"><div><span>Packs à prix fixe</span><h2>Compose des packs avec les vrais produits</h2><p>Ces packs ont leur propre prix final et restent séparés des promotions automatiques. Une promotion automatique ne s’applique jamais à un pack déjà remisé.</p></div><strong>{data.offers.filter((offer) => offer.isActive).length} pack(s) actif(s)</strong></div>
-    <OfferEditor key="new-offer" offer={blank} products={data.products} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} isNew />
+    <OfferEditor key="new-offer" offer={blank} products={data.products} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} reorderMedia={reorderMedia} retryMedia={retryMedia} discardFailedMedia={discardFailedMedia} isNew />
     <div className="storefront-cms-offer-list-tools"><label><span>Rechercher un pack existant</span><input value={offerQuery} onChange={(event) => setOfferQuery(event.target.value)} placeholder="Nom du pack, badge…" /></label><strong>{visibleOffers.length} résultat(s)</strong></div>
-    <div className="storefront-cms-offer-list">{visibleOffers.map((offer) => <OfferEditor key={`${offer.id}-${offer.name}-${offer.items.length}-${offer.media.length}`} offer={offer} products={data.products} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />)}</div>
+    <div className="storefront-cms-offer-list">{visibleOffers.map((offer) => <OfferEditor key={`${offer.id}-${offer.name}-${offer.items.length}-${offer.media.length}`} offer={offer} products={data.products} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} reorderMedia={reorderMedia} retryMedia={retryMedia} discardFailedMedia={discardFailedMedia} />)}</div>
   </div>;
 }
 
-function OfferEditor({ offer, products, canEdit, save, uploadMany, removeMedia, isNew = false }: {
+function OfferEditor({ offer, products, canEdit, save, uploadMany, removeMedia, reorderMedia, retryMedia, discardFailedMedia, isNew = false }: {
   offer: CmsOffer;
   products: CmsProduct[];
   canEdit: boolean;
   save: (payload: Record<string, unknown>) => Promise<void>;
   uploadMany: UploadMany;
   removeMedia: (id: number) => Promise<void>;
+  reorderMedia: ReorderMedia;
+  retryMedia: RetryMedia;
+  discardFailedMedia: DiscardFailedMedia;
   isNew?: boolean;
 }) {
   const [items, setItems] = useState<OfferItem[]>(offer.items);
@@ -1617,7 +1626,7 @@ function OfferEditor({ offer, products, canEdit, save, uploadMany, removeMedia, 
         </div>
       </div>
 
-      {!isNew && <GalleryEditor ownerType="offer" ownerId={offer.id} media={offer.media} canEdit={canEdit} uploadMany={uploadMany} removeMedia={removeMedia} title="Photos du pack / de l’offre" />}
+      {!isNew && <GalleryEditor ownerType="offer" ownerId={offer.id} media={offer.media} canEdit={canEdit} uploadMany={uploadMany} removeMedia={removeMedia} reorderMedia={reorderMedia} retryMedia={retryMedia} discardFailedMedia={discardFailedMedia} title="Photos du pack / de l’offre" />}
       {isNew && <div className="storefront-cms-public-category-note">Enregistre d’abord le pack. Dès qu’il est créé, sa fiche apparaît ci-dessous et tu peux ajouter jusqu’à {MAX_GALLERY} photos en une seule sélection.</div>}
 
       <div className="storefront-cms-save-row">
