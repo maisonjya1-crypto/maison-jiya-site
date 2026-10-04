@@ -1283,3 +1283,103 @@ button:focus-visible,textarea:focus-visible,input:focus-visible,select:focus-vis
   .block-calculator-popover{right:12px;bottom:12px;width:calc(100vw - 24px);border-radius:18px}
   .block-calculator-grid button{min-height:46px}
 }
+
+
+/* État réel du stock + inventaire de contrôle */
+.real-stock-state{
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+  min-width:180px;
+}
+.real-stock-state button{
+  min-height:31px;
+  padding:5px 8px;
+  border:1px solid var(--line);
+  border-radius:9px;
+  color:var(--muted);
+  background:var(--paper);
+  cursor:pointer;
+  font:inherit;
+  font-size:8px;
+  font-weight:750;
+  line-height:1.15;
+  touch-action:manipulation;
+}
+.real-stock-state button:hover:not(:disabled){
+  border-color:var(--accent-border);
+  color:var(--forest);
+  background:var(--accent-soft);
+}
+.real-stock-state button.active{
+  border-color:var(--accent-border);
+  color:var(--forest);
+  background:var(--accent-soft);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--forest) 8%,transparent);
+  opacity:1;
+}
+.real-stock-state button:disabled{
+  cursor:not-allowed;
+}
+.real-stock-state button.active:disabled{
+  opacity:1;
+}
+.real-stock-state.compact{
+  min-width:0;
+  max-width:210px;
+}
+.real-stock-state.compact button{
+  min-height:28px;
+  padding:4px 6px;
+  font-size:7px;
+}
+.inventory-control-panel{
+  margin-top:14px;
+  padding:22px;
+}
+.inventory-control-note{
+  margin:-6px 0 15px;
+  max-width:920px;
+  color:var(--muted);
+  font-size:9px;
+  line-height:1.55;
+}
+.inventory-control-table table{
+  min-width:980px;
+}
+.inventory-control-table td small{
+  display:block;
+  margin-top:3px;
+  color:var(--muted);
+  font-size:7px;
+}
+.inventory-control-correct{
+  min-height:34px;
+  white-space:nowrap;
+}
+.mobile-product-list .real-stock-state{
+  width:100%;
+  margin-top:10px;
+}
+.mobile-product-list .real-stock-state button{
+  flex:1 1 31%;
+}
+@media(max-width:720px){
+  .inventory-control-panel{
+    padding:16px;
+  }
+  .inventory-control-note{
+    margin-top:0;
+  }
+  .real-stock-state{
+    min-width:0;
+    width:100%;
+  }
+  .real-stock-state button{
+    flex:1 1 calc(50% - 5px);
+    min-height:38px;
+  }
+  .real-stock-state button:last-child{
+    flex-basis:100%;
+  }
+}
