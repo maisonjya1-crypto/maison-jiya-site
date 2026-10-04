@@ -135,6 +135,65 @@ export async function POST(request: Request) {
   }
 }
 
+export async function PUT(request: Request) {
+  if (!validOrigin(request)) return Response.json({ error: "Origine refusée." }, { status: 403 });
+  const user = await getAuthenticatedUser(request);
+  if (!user) return Response.json({ error: "Connexion requise." }, { status: 401 });
+  if (!["admin", "editor"].includes(user.role)) return Response.json({ error: "Votre compte est en lecture seule." }, { status: 403 });
+
+  try {
+    const body = await request.json() as {
+      ownerType?: string;
+      ownerId?: number;
+      kind?: string;
+      orderedIds?: number[];
+    };
+    const ownerType = String(body.ownerType || "");
+    const ownerId = Math.round(Number(body.ownerId || 0));
+    const kind = String(body.kind || "gallery");
+    const orderedIds = Array.isArray(body.orderedIds)
+      ? body.orderedIds.map((value) => Math.round(Number(value))).filter((value) => Number.isInteger(value) && value > 0)
+      : [];
+
+    if (!["product", "offer"].includes(ownerType)) throw new Error("Réorganisation non autorisée pour ce type d’image.");
+    if (!Number.isInteger(ownerId) || ownerId <= 0) throw new Error("Destination invalide.");
+    if (kind !== "gallery") throw new Error("Seules les galeries produit et pack peuvent être réorganisées.");
+    if (!orderedIds.length || orderedIds.length > GALLERY_LIMIT) throw new Error("Ordre des photos invalide.");
+    if (new Set(orderedIds).size !== orderedIds.length) throw new Error("Une photo est présente plusieurs fois dans l’ordre demandé.");
+
+    const database = await getRawDb();
+    await ensureStorefrontCms(database);
+
+    const placeholders = orderedIds.map(() => "?").join(",");
+    const rows = (await database.prepare(`
+      SELECT id
+      FROM storefront_media
+      WHERE owner_type = ? AND owner_id = ? AND kind = ?
+        AND id IN (${placeholders})
+      ORDER BY id
+    `).bind(ownerType, ownerId, kind, ...orderedIds).all<{ id: number }>()).results;
+
+    if (rows.length !== orderedIds.length) throw new Error("Une photo ne correspond plus à cette galerie.");
+
+    const total = await database.prepare(
+      "SELECT COUNT(*) AS count FROM storefront_media WHERE owner_type = ? AND owner_id = ? AND kind = ?"
+    ).bind(ownerType, ownerId, kind).first<{ count: number }>();
+    if (Number(total?.count || 0) !== orderedIds.length) throw new Error("La galerie a changé. Recharge puis réessaie.");
+
+    await database.batch(orderedIds.map((id, index) =>
+      database.prepare("UPDATE storefront_media SET sort_order = ? WHERE id = ? AND owner_type = ? AND owner_id = ? AND kind = ?")
+        .bind(index, id, ownerType, ownerId, kind)
+    ));
+
+    const syncState = await database.prepare("SELECT current_version AS version FROM google_sheets_sync_state WHERE id = 1")
+      .first<{ version: number }>();
+    return Response.json({ ok: true, orderedIds, liveVersion: Number(syncState?.version || 0) }, { headers: { "cache-control": "no-store" } });
+  } catch (error) {
+    console.error("Maison Jiya storefront media reorder failed", error);
+    return Response.json({ error: error instanceof Error ? error.message : "Réorganisation impossible." }, { status: 400 });
+  }
+}
+
 export async function DELETE(request: Request) {
   if (!validOrigin(request)) return Response.json({ error: "Origine refusée." }, { status: 403 });
   const user = await getAuthenticatedUser(request);
