@@ -627,3 +627,165 @@
     border-radius:10px;
   }
 }
+
+
+/* Gestion complète des photos produit / pack */
+.storefront-cms-v2 .storefront-cms-gallery-grid figure {
+  position:relative;
+  border:1px solid rgba(111,86,128,.10);
+  transition:border-color .16s ease, box-shadow .16s ease, opacity .16s ease;
+}
+.storefront-cms-v2 .storefront-cms-gallery-grid figure[draggable="true"] {
+  cursor:grab;
+}
+.storefront-cms-v2 .storefront-cms-gallery-grid figure[draggable="true"]:active {
+  cursor:grabbing;
+}
+.storefront-cms-v2 .storefront-cms-photo-dragging {
+  opacity:.55;
+  border-color:rgba(111,86,128,.45)!important;
+  box-shadow:0 0 0 3px rgba(111,86,128,.08);
+}
+.storefront-cms-v2 .storefront-cms-photo-actions {
+  position:absolute;
+  left:7px;
+  right:7px;
+  bottom:7px;
+  z-index:11;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  padding:5px;
+  border-radius:10px;
+  background:rgba(255,255,255,.94);
+  box-shadow:0 5px 16px rgba(35,27,38,.12);
+  backdrop-filter:blur(8px);
+}
+.storefront-cms-v2 .storefront-cms-photo-actions button {
+  min-height:30px;
+  padding:0 8px;
+  border:1px solid rgba(111,86,128,.16);
+  border-radius:8px;
+  background:#fff;
+  color:#493c4d;
+  font:inherit;
+  font-size:9px;
+  font-weight:800;
+  cursor:pointer;
+  touch-action:manipulation;
+}
+.storefront-cms-v2 .storefront-cms-photo-actions button:first-child {
+  flex:1 1 auto;
+  text-align:center;
+}
+.storefront-cms-v2 .storefront-cms-photo-actions button:disabled {
+  opacity:.35;
+  cursor:not-allowed;
+}
+.storefront-cms-v2 .storefront-cms-photo-actions > span {
+  margin-left:auto;
+  color:#756b78;
+  font-size:15px;
+  line-height:1;
+  cursor:grab;
+  user-select:none;
+}
+.storefront-cms-v2 .storefront-cms-photo-progress {
+  position:absolute;
+  left:7px;
+  right:7px;
+  bottom:7px;
+  z-index:13;
+  display:grid;
+  gap:5px;
+  padding:7px 8px;
+  border-radius:10px;
+  background:rgba(255,255,255,.96);
+  box-shadow:0 5px 16px rgba(35,27,38,.12);
+}
+.storefront-cms-v2 .storefront-cms-photo-progress > span {
+  height:5px;
+  overflow:hidden;
+  border-radius:999px;
+  background:#ece6ee;
+}
+.storefront-cms-v2 .storefront-cms-photo-progress > span > i {
+  display:block;
+  height:100%;
+  border-radius:999px;
+  background:#6f5680;
+  transition:width .2s ease;
+}
+.storefront-cms-v2 .storefront-cms-photo-progress strong {
+  color:#4d3d53;
+  font-size:9px;
+}
+.storefront-cms-v2 .storefront-cms-photo-failed {
+  border-color:rgba(171,74,74,.34)!important;
+}
+.storefront-cms-v2 .storefront-cms-photo-failure {
+  position:absolute;
+  inset:auto 7px 7px;
+  z-index:14;
+  display:grid;
+  gap:4px;
+  padding:8px;
+  border-radius:10px;
+  background:rgba(255,248,248,.97);
+  box-shadow:0 5px 16px rgba(95,36,36,.14);
+}
+.storefront-cms-v2 .storefront-cms-photo-failure strong {
+  color:#8b3333;
+  font-size:10px;
+}
+.storefront-cms-v2 .storefront-cms-photo-failure small {
+  max-height:32px;
+  overflow:hidden;
+  color:#865e5e;
+  font-size:8px;
+  line-height:1.35;
+}
+.storefront-cms-v2 .storefront-cms-photo-failure > div {
+  display:flex;
+  gap:6px;
+}
+.storefront-cms-v2 .storefront-cms-photo-failure button {
+  min-height:30px;
+  padding:0 9px;
+  border:1px solid rgba(139,51,51,.16);
+  border-radius:8px;
+  background:#fff;
+  color:#7b3434;
+  font:inherit;
+  font-size:9px;
+  font-weight:800;
+  cursor:pointer;
+  touch-action:manipulation;
+}
+.storefront-cms-v2 .storefront-cms-photo-failure button:first-child {
+  background:#7b3434;
+  color:#fff;
+}
+.storefront-cms-v2 .storefront-cms-main-photo {
+  z-index:10;
+}
+@media(max-width:760px) {
+  .storefront-cms-v2 .storefront-cms-photo-actions {
+    position:static;
+    margin:7px;
+    box-shadow:none;
+    border:1px solid rgba(111,86,128,.12);
+  }
+  .storefront-cms-v2 .storefront-cms-photo-actions > span {
+    display:none;
+  }
+  .storefront-cms-v2 .storefront-cms-photo-actions button {
+    min-height:34px;
+    font-size:9px;
+  }
+  .storefront-cms-v2 .storefront-cms-photo-progress,
+  .storefront-cms-v2 .storefront-cms-photo-failure {
+    position:static;
+    margin:7px;
+  }
+}

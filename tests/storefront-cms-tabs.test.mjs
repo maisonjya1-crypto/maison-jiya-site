@@ -63,7 +63,7 @@ test("le CMS mobile ajoute une photo sans recharger tout l’écran et garde le 
   const route = await readText("app/api/storefront/admin/media/route.ts");
   assert.match(source, /function addMediaLocally/);
   assert.match(source, /if \(!body\.media\) throw new Error/);
-  assert.match(source, /replaceMediaLocally\(tempId, \{ \.\.\.body\.media, previewUrl: activePreview, pending: false \}\)/);
+  assert.match(source, /replaceMediaLocally\(tempId, \{[\s\S]*\.\.\.body\.media,[\s\S]*previewUrl: activePreview,[\s\S]*pending: false,[\s\S]*progress: 100,[\s\S]*statusLabel: "Terminé"/);
   assert.match(source, /void load\(true\)/);
   assert.match(source, /<ProductEditor key=\{product\.productId\}/);
   assert.match(source, /storefront-cms-upload-progress/);
@@ -132,7 +132,7 @@ test("la photo choisie apparaît immédiatement et reste visible pendant/après 
   assert.match(source, /previewUrl\?: string/);
   assert.match(source, /URL\.createObjectURL\(raw\)/);
   assert.match(source, /pending:\s*true/);
-  assert.match(source, /replaceMediaLocally\(tempId, \{ \.\.\.body\.media, previewUrl: activePreview, pending: false \}\)/);
+  assert.match(source, /replaceMediaLocally\(tempId, \{[\s\S]*\.\.\.body\.media,[\s\S]*previewUrl: activePreview,[\s\S]*pending: false,[\s\S]*progress: 100,[\s\S]*statusLabel: "Terminé"/);
   assert.match(source, /mediaSrc\(item\)/);
   assert.match(styles, /storefront-cms-photo-pending/);
 });

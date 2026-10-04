@@ -14,6 +14,10 @@ type Media = {
   createdAt: string;
   previewUrl?: string;
   pending?: boolean;
+  failed?: boolean;
+  progress?: number;
+  statusLabel?: string;
+  errorMessage?: string;
 };
 
 type CmsProduct = {
@@ -112,6 +116,9 @@ type PortalTarget = Element | DocumentFragment;
 type UploadOwner = "brand" | "product" | "offer" | "marketing" | "promotion";
 type UploadKind = "logo" | "hero" | "gallery";
 type UploadMany = (ownerType: UploadOwner, ownerId: number, kind: UploadKind, files: FileList | null, maxFiles?: number) => Promise<void>;
+type ReorderMedia = (ownerType: "product" | "offer", ownerId: number, orderedIds: number[]) => Promise<void>;
+type RetryMedia = (id: number) => Promise<void>;
+type DiscardFailedMedia = (id: number) => void;
 
 const MAX_GALLERY = 6;
 const emptyData: CmsData = {
@@ -340,6 +347,15 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
   const pageRef = useRef<HTMLElement | null>(null);
   const previewUrlsRef = useRef(new Set<string>());
   const pendingMediaIdRef = useRef(-1);
+  const retryUploadsRef = useRef(new Map<number, {
+    ownerType: UploadOwner;
+    ownerId: number;
+    kind: UploadKind;
+    file: File;
+    prepared: boolean;
+    previewUrl: string;
+    sortOrder: number;
+  }>());
 
   const load = useCallback(async (silent = false) => {
     if (!silent) {
@@ -379,6 +395,7 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
       document.documentElement.style.overflow = previousHtmlOverflow;
       previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
       previewUrlsRef.current.clear();
+      retryUploadsRef.current.clear();
     };
   }, []);
 
@@ -397,6 +414,17 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
     window.setTimeout(() => setNotice(""), 2400);
   }
 
+  function mapMediaLists(transform: (items: Media[]) => Media[]) {
+    setData((current) => ({
+      ...current,
+      brandMedia: transform(current.brandMedia),
+      products: current.products.map((product) => ({ ...product, media: transform(product.media) })),
+      offers: current.offers.map((offer) => ({ ...offer, media: transform(offer.media) })),
+      promotions: current.promotions.map((promotion) => ({ ...promotion, media: transform(promotion.media) })),
+      marketingSections: current.marketingSections.map((section) => ({ ...section, media: transform(section.media) })),
+    }));
+  }
+
   function addMediaLocally(media: Media) {
     const append = (items: Media[], replaceKind = false) => {
       const filtered = items.filter((item) => item.id !== media.id && (!replaceKind || item.kind !== media.kind));
@@ -406,42 +434,135 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
       if (media.ownerType === "brand") return { ...current, brandMedia: append(current.brandMedia, true) };
       if (media.ownerType === "product") return { ...current, products: current.products.map((product) => product.productId === media.ownerId ? { ...product, media: append(product.media) } : product) };
       if (media.ownerType === "offer") return { ...current, offers: current.offers.map((offer) => offer.id === media.ownerId ? { ...offer, media: append(offer.media) } : offer) };
+      if (media.ownerType === "promotion") return { ...current, promotions: current.promotions.map((promotion) => promotion.id === media.ownerId ? { ...promotion, media: append(promotion.media, true) } : promotion) };
       if (media.ownerType === "marketing") return { ...current, marketingSections: current.marketingSections.map((section) => section.id === media.ownerId ? { ...section, media: append(section.media, true) } : section) };
       return current;
     });
   }
 
   function replaceMediaLocally(tempId: number, media: Media) {
-    const replace = (items: Media[]) => items.map((item) => item.id === tempId ? media : item);
-    setData((current) => ({
-      ...current,
-      brandMedia: replace(current.brandMedia),
-      products: current.products.map((product) => ({ ...product, media: replace(product.media) })),
-      offers: current.offers.map((offer) => ({ ...offer, media: replace(offer.media) })),
-      marketingSections: current.marketingSections.map((section) => ({ ...section, media: replace(section.media) })),
-    }));
+    mapMediaLists((items) => items.map((item) => item.id === tempId ? media : item));
+  }
+
+  function patchMediaLocally(id: number, patch: Partial<Media>) {
+    mapMediaLists((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
   }
 
   function removeMediaLocallyWithoutServer(id: number) {
-    const drop = (items: Media[]) => items.filter((item) => item.id !== id);
-    setData((current) => ({
-      ...current,
-      brandMedia: drop(current.brandMedia),
-      products: current.products.map((product) => ({ ...product, media: drop(product.media) })),
-      offers: current.offers.map((offer) => ({ ...offer, media: drop(offer.media) })),
-      marketingSections: current.marketingSections.map((section) => ({ ...section, media: drop(section.media) })),
-    }));
+    mapMediaLists((items) => items.filter((item) => item.id !== id));
   }
 
   function removeMediaLocally(id: number) {
-    const drop = (items: Media[]) => items.filter((item) => item.id !== id);
+    mapMediaLists((items) => items.filter((item) => item.id !== id));
+  }
+
+  function reorderMediaLocally(ownerType: "product" | "offer", ownerId: number, orderedIds: number[]) {
+    const positions = new Map(orderedIds.map((id, index) => [id, index]));
     setData((current) => ({
       ...current,
-      brandMedia: drop(current.brandMedia),
-      products: current.products.map((product) => ({ ...product, media: drop(product.media) })),
-      offers: current.offers.map((offer) => ({ ...offer, media: drop(offer.media) })),
-      marketingSections: current.marketingSections.map((section) => ({ ...section, media: drop(section.media) })),
+      products: ownerType === "product"
+        ? current.products.map((product) => product.productId === ownerId ? {
+            ...product,
+            media: [...product.media].sort((left, right) => (positions.get(left.id) ?? 999) - (positions.get(right.id) ?? 999))
+              .map((item, index) => ({ ...item, sortOrder: index })),
+          } : product)
+        : current.products,
+      offers: ownerType === "offer"
+        ? current.offers.map((offer) => offer.id === ownerId ? {
+            ...offer,
+            media: [...offer.media].sort((left, right) => (positions.get(left.id) ?? 999) - (positions.get(right.id) ?? 999))
+              .map((item, index) => ({ ...item, sortOrder: index })),
+          } : offer)
+        : current.offers,
     }));
+  }
+
+  function releasePreview(url: string | undefined) {
+    if (!url || !previewUrlsRef.current.has(url)) return;
+    URL.revokeObjectURL(url);
+    previewUrlsRef.current.delete(url);
+  }
+
+  async function performMediaUpload(tempId: number, sequenceLabel = "") {
+    const job = retryUploadsRef.current.get(tempId);
+    if (!job) return false;
+
+    try {
+      let uploadFile = job.file;
+      let activePreview = job.previewUrl;
+
+      if (!job.prepared) {
+        setUploadingLabel(sequenceLabel ? `${sequenceLabel} · préparation…` : "Préparation de la photo…");
+        patchMediaLocally(tempId, { pending: true, failed: false, progress: 12, statusLabel: "Préparation…", errorMessage: "" });
+        uploadFile = await compressImage(job.file, job.kind);
+
+        const compressedPreview = URL.createObjectURL(uploadFile);
+        previewUrlsRef.current.add(compressedPreview);
+        releasePreview(activePreview);
+        activePreview = compressedPreview;
+        retryUploadsRef.current.set(tempId, { ...job, file: uploadFile, prepared: true, previewUrl: activePreview });
+        patchMediaLocally(tempId, {
+          mimeType: uploadFile.type,
+          previewUrl: activePreview,
+          pending: true,
+          failed: false,
+          progress: 35,
+          statusLabel: "35 % · prête",
+          errorMessage: "",
+        });
+      } else {
+        patchMediaLocally(tempId, { pending: true, failed: false, progress: 35, statusLabel: "35 % · prête", errorMessage: "" });
+      }
+
+      setUploadingLabel(sequenceLabel ? `${sequenceLabel} · envoi 70 %` : "Envoi de la photo · 70 %");
+      patchMediaLocally(tempId, { pending: true, failed: false, progress: 70, statusLabel: "70 % · envoi", errorMessage: "" });
+
+      const form = new FormData();
+      form.set("ownerType", job.ownerType);
+      form.set("ownerId", String(job.ownerId));
+      form.set("kind", job.kind);
+      form.set("file", uploadFile);
+      const response = await fetchWithTimeout(
+        "/api/storefront/admin/media",
+        { method: "POST", body: form, cache: "no-store" },
+        25_000,
+        "L’envoi a pris trop de temps. Tu peux maintenant appuyer sur Réessayer."
+      );
+      const body = await response.json() as { error?: string; media?: Media; liveVersion?: number };
+      if (!response.ok) throw new Error(body.error || "Upload impossible.");
+      if (!body.media) throw new Error("La photo a été envoyée mais la confirmation du serveur est invalide.");
+
+      replaceMediaLocally(tempId, {
+        ...body.media,
+        previewUrl: activePreview,
+        pending: false,
+        failed: false,
+        progress: 100,
+        statusLabel: "Terminé",
+        errorMessage: "",
+      });
+      retryUploadsRef.current.delete(tempId);
+      acknowledgeLocalLiveVersion(body.liveVersion);
+      return true;
+    } catch (uploadError) {
+      const message = uploadError instanceof Error ? uploadError.message : "Upload impossible.";
+      if (job.ownerType === "product" || job.ownerType === "offer") {
+        patchMediaLocally(tempId, {
+          pending: false,
+          failed: true,
+          progress: 0,
+          statusLabel: "Échec",
+          errorMessage: message,
+        });
+      } else {
+        removeMediaLocallyWithoutServer(tempId);
+        releasePreview(retryUploadsRef.current.get(tempId)?.previewUrl);
+        retryUploadsRef.current.delete(tempId);
+        void load(true);
+      }
+      setError(message);
+      return false;
+    }
   }
 
   async function uploadMany(ownerType: UploadOwner, ownerId: number, kind: UploadKind, files: FileList | null, maxFiles?: number) {
@@ -453,74 +574,104 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
       const allowed = kind === "gallery" ? Math.max(0, Math.min(MAX_GALLERY, maxFiles ?? MAX_GALLERY)) : 1;
       const selected = Array.from(files).slice(0, allowed);
       if (!selected.length) throw new Error(`Maximum ${MAX_GALLERY} photos par produit ou pack.`);
+
+      let successCount = 0;
+      let failedCount = 0;
       for (let index = 0; index < selected.length; index += 1) {
         const raw = selected[index];
         const tempId = pendingMediaIdRef.current--;
         const rawPreview = URL.createObjectURL(raw);
         previewUrlsRef.current.add(rawPreview);
+        const sortOrder = 10_000 + index;
+        retryUploadsRef.current.set(tempId, {
+          ownerType,
+          ownerId,
+          kind,
+          file: raw,
+          prepared: false,
+          previewUrl: rawPreview,
+          sortOrder,
+        });
         addMediaLocally({
           id: tempId,
           ownerType,
           ownerId,
           kind,
           mimeType: raw.type || "image/*",
-          sortOrder: 10_000 + index,
+          sortOrder,
           createdAt: new Date().toISOString(),
           previewUrl: rawPreview,
           pending: true,
+          failed: false,
+          progress: 12,
+          statusLabel: "Préparation…",
         });
 
-        let activePreview = rawPreview;
-        try {
-          setUploadingLabel(selected.length > 1 ? `Préparation photo ${index + 1}/${selected.length}…` : "Préparation de la photo…");
-          const file = await compressImage(raw, kind);
-          const compressedPreview = URL.createObjectURL(file);
-          previewUrlsRef.current.add(compressedPreview);
-          replaceMediaLocally(tempId, {
-            id: tempId,
-            ownerType,
-            ownerId,
-            kind,
-            mimeType: file.type,
-            sortOrder: 10_000 + index,
-            createdAt: new Date().toISOString(),
-            previewUrl: compressedPreview,
-            pending: true,
-          });
-          URL.revokeObjectURL(rawPreview);
-          previewUrlsRef.current.delete(rawPreview);
-          activePreview = compressedPreview;
-
-          setUploadingLabel(selected.length > 1 ? `Envoi photo ${index + 1}/${selected.length}…` : "Envoi de la photo…");
-          const form = new FormData();
-          form.set("ownerType", ownerType);
-          form.set("ownerId", String(ownerId));
-          form.set("kind", kind);
-          form.set("file", file);
-          const response = await fetchWithTimeout(
-            "/api/storefront/admin/media",
-            { method: "POST", body: form, cache: "no-store" },
-            25_000,
-            "L’envoi a pris trop de temps. Réessaie : l’écran ne restera plus bloqué."
-          );
-          const body = await response.json() as { error?: string; media?: Media; liveVersion?: number };
-          if (!response.ok) throw new Error(body.error || "Upload impossible.");
-          if (!body.media) throw new Error("La photo a été envoyée mais la confirmation du serveur est invalide.");
-          replaceMediaLocally(tempId, { ...body.media, previewUrl: activePreview, pending: false });
-          acknowledgeLocalLiveVersion(body.liveVersion);
-        } catch (uploadError) {
-          removeMediaLocallyWithoutServer(tempId);
-          URL.revokeObjectURL(activePreview);
-          previewUrlsRef.current.delete(activePreview);
-          void load(true);
-          throw uploadError;
-        }
+        const ok = await performMediaUpload(tempId, selected.length > 1 ? `Photo ${index + 1}/${selected.length}` : "");
+        if (ok) successCount += 1;
+        else failedCount += 1;
       }
-      setNotice(selected.length > 1 ? `${selected.length} photos ajoutées` : "Photo ajoutée");
+
+      if (successCount > 0) setNotice(successCount > 1 ? `${successCount} photos ajoutées` : "Photo ajoutée");
+      if (failedCount > 0 && successCount > 0) setError(`${failedCount} photo(s) en échec · appuie sur Réessayer sous la photo concernée.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Upload impossible.");
     } finally {
       setUploadingLabel("");
+      setLocalMutationActive(false);
+    }
+  }
+
+  async function retryMedia(id: number) {
+    if (!retryUploadsRef.current.has(id)) return;
+    setError("");
+    setNotice("");
+    setLocalMutationActive(true);
+    try {
+      const ok = await performMediaUpload(id);
+      if (ok) setNotice("Photo envoyée avec succès");
+    } finally {
+      setUploadingLabel("");
+      setLocalMutationActive(false);
+    }
+  }
+
+  function discardFailedMedia(id: number) {
+    const job = retryUploadsRef.current.get(id);
+    if (job) releasePreview(job.previewUrl);
+    retryUploadsRef.current.delete(id);
+    removeMediaLocallyWithoutServer(id);
+  }
+
+  async function reorderMedia(ownerType: "product" | "offer", ownerId: number, orderedIds: number[]) {
+    if (!orderedIds.length || orderedIds.some((id) => id <= 0)) {
+      setError("Attends la fin des envois avant de réorganiser les photos.");
+      return;
+    }
+    setError("");
+    setNotice("");
+    reorderMediaLocally(ownerType, ownerId, orderedIds);
+    setLocalMutationActive(true);
+    try {
+      const response = await fetchWithTimeout(
+        "/api/storefront/admin/media",
+        {
+          method: "PUT",
+          cache: "no-store",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ownerType, ownerId, kind: "gallery", orderedIds }),
+        },
+        15_000,
+        "La réorganisation a pris trop de temps. Le catalogue va se resynchroniser."
+      );
+      const body = await response.json() as { error?: string; liveVersion?: number };
+      if (!response.ok) throw new Error(body.error || "Réorganisation impossible.");
+      acknowledgeLocalLiveVersion(body.liveVersion);
+      setNotice("Ordre des photos enregistré");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Réorganisation impossible.");
+      void load(true);
+    } finally {
       setLocalMutationActive(false);
     }
   }
@@ -712,11 +863,11 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
         </div>
         <div className="storefront-cms-public-category-note">Électronique et Boîtes sont volontairement exclues de la boutique publique. Wallets est affiché aux clients sous le nom « Portefeuilles ».</div>
         <div className="storefront-cms-product-list">
-          {visibleProducts.map((product) => <ProductEditor key={product.productId} product={product} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />)}
+          {visibleProducts.map((product) => <ProductEditor key={product.productId} product={product} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} reorderMedia={reorderMedia} retryMedia={retryMedia} discardFailedMedia={discardFailedMedia} />)}
         </div>
         {visibleProducts.length < filteredProducts.length && <div className="storefront-cms-load-more-wrap"><button type="button" className="secondary-button" onClick={() => setProductLimit((value) => value + 16)}>Afficher 16 produits de plus ({filteredProducts.length - visibleProducts.length} restant(s))</button></div>}
       </div>}
-      {tab === "offers" && <OffersPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />}
+      {tab === "offers" && <OffersPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} reorderMedia={reorderMedia} retryMedia={retryMedia} discardFailedMedia={discardFailedMedia} />}
       {tab === "marketing" && <MarketingPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />}
     </>}
   </section>;
@@ -843,40 +994,142 @@ function MediaSlot({ title, media, canEdit, onFiles, onRemove }: {
   </div>;
 }
 
-function GalleryEditor({ ownerType, ownerId, media, canEdit, uploadMany, removeMedia, title }: {
+function GalleryEditor({ ownerType, ownerId, media, canEdit, uploadMany, removeMedia, reorderMedia, retryMedia, discardFailedMedia, title }: {
   ownerType: "product" | "offer";
   ownerId: number;
   media: Media[];
   canEdit: boolean;
   uploadMany: UploadMany;
   removeMedia: (id: number) => Promise<void>;
+  reorderMedia: ReorderMedia;
+  retryMedia: RetryMedia;
+  discardFailedMedia: DiscardFailedMedia;
   title: string;
 }) {
+  const [draggingId, setDraggingId] = useState<number | null>(null);
   const remaining = Math.max(0, MAX_GALLERY - media.length);
+  const persisted = media.filter((item) => item.id > 0 && !item.pending && !item.failed);
+  const canReorder = canEdit && persisted.length > 1 && persisted.length === media.length;
+
+  function moveItem(itemId: number, targetIndex: number) {
+    if (!canReorder) return;
+    const currentIds = persisted.map((item) => item.id);
+    const fromIndex = currentIds.indexOf(itemId);
+    if (fromIndex < 0) return;
+    const boundedIndex = Math.max(0, Math.min(currentIds.length - 1, targetIndex));
+    if (fromIndex === boundedIndex) return;
+    const next = [...currentIds];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(boundedIndex, 0, moved);
+    void reorderMedia(ownerType, ownerId, next);
+  }
+
+  function makePrincipal(itemId: number) {
+    if (!canReorder) return;
+    const next = [itemId, ...persisted.filter((item) => item.id !== itemId).map((item) => item.id)];
+    void reorderMedia(ownerType, ownerId, next);
+  }
+
+  function dropOn(targetId: number) {
+    if (!canReorder || draggingId === null || draggingId === targetId) {
+      setDraggingId(null);
+      return;
+    }
+    const currentIds = persisted.map((item) => item.id);
+    const targetIndex = currentIds.indexOf(targetId);
+    const fromIndex = currentIds.indexOf(draggingId);
+    if (fromIndex < 0 || targetIndex < 0) {
+      setDraggingId(null);
+      return;
+    }
+    const next = [...currentIds];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(targetIndex, 0, moved);
+    setDraggingId(null);
+    void reorderMedia(ownerType, ownerId, next);
+  }
+
   return <div className="storefront-cms-gallery">
     <div className="storefront-cms-gallery-head">
-      <div><strong>{title}</strong><small>{media.length}/{MAX_GALLERY} photo(s) · la première est le visuel principal.</small></div>
+      <div>
+        <strong>{title}</strong>
+        <small>{media.length}/{MAX_GALLERY} photo(s) · choisis la principale ou réorganise l’ordre. Sur ordinateur tu peux aussi glisser-déposer.</small>
+      </div>
       {canEdit && remaining > 0 && <label className="storefront-cms-upload">＋ Ajouter des photos<input type="file" multiple accept="image/*" onChange={(event) => { const files = event.currentTarget.files; void uploadMany(ownerType, ownerId, "gallery", files, remaining); event.currentTarget.value = ""; }} /></label>}
     </div>
+
     <div className="storefront-cms-gallery-grid">
-      {media.map((item, index) => <figure key={item.id}>
+      {media.map((item, index) => <figure
+        key={item.id}
+        className={[
+          item.failed ? "storefront-cms-photo-failed" : "",
+          item.pending ? "storefront-cms-photo-uploading" : "",
+          draggingId === item.id ? "storefront-cms-photo-dragging" : "",
+        ].filter(Boolean).join(" ")}
+        draggable={canReorder && item.id > 0}
+        onDragStart={(event) => {
+          if (!canReorder || item.id <= 0) {
+            event.preventDefault();
+            return;
+          }
+          setDraggingId(item.id);
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", String(item.id));
+        }}
+        onDragOver={(event) => {
+          if (!canReorder || draggingId === null) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          dropOn(item.id);
+        }}
+        onDragEnd={() => setDraggingId(null)}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={mediaSrc(item)} alt="" loading={item.pending ? "eager" : "lazy"} decoding={item.pending ? "sync" : "async"} />
-        {index === 0 && <span className="storefront-cms-main-photo">Principale</span>}
-        {item.pending && <span className="storefront-cms-photo-pending">Envoi…</span>}
-        {canEdit && !item.pending && <button className="storefront-cms-photo-delete" type="button" aria-label="Supprimer cette photo" title="Supprimer cette photo" onClick={(event) => { event.preventDefault(); event.stopPropagation(); void removeMedia(item.id); }}>×</button>}
+
+        {index === 0 && item.id > 0 && !item.failed && <span className="storefront-cms-main-photo">Principale</span>}
+
+        {(item.pending || item.progress === 100) && !item.failed && <div className="storefront-cms-photo-progress" aria-live="polite">
+          <span><i style={{ width: `${Math.max(0, Math.min(100, item.progress || 0))}%` }} /></span>
+          <strong>{item.statusLabel || (item.pending ? "Envoi…" : "Terminé")}</strong>
+        </div>}
+
+        {item.failed && <div className="storefront-cms-photo-failure">
+          <strong>Envoi échoué</strong>
+          <small>{item.errorMessage || "La photo n’a pas été envoyée."}</small>
+          <div>
+            <button type="button" onClick={() => void retryMedia(item.id)}>Réessayer</button>
+            <button type="button" onClick={() => discardFailedMedia(item.id)}>Retirer</button>
+          </div>
+        </div>}
+
+        {canEdit && !item.pending && !item.failed && item.id > 0 && <>
+          <button className="storefront-cms-photo-delete" type="button" aria-label="Supprimer cette photo" title="Supprimer cette photo" onClick={(event) => { event.preventDefault(); event.stopPropagation(); void removeMedia(item.id); }}>×</button>
+          <div className="storefront-cms-photo-actions">
+            {index !== 0 && <button type="button" onClick={() => makePrincipal(item.id)}>☆ Principale</button>}
+            <button type="button" disabled={!canReorder || index === 0} onClick={() => moveItem(item.id, index - 1)} aria-label="Déplacer cette photo vers la gauche">←</button>
+            <button type="button" disabled={!canReorder || index === media.length - 1} onClick={() => moveItem(item.id, index + 1)} aria-label="Déplacer cette photo vers la droite">→</button>
+            {canReorder && <span title="Glisser-déposer pour réorganiser">⋮⋮</span>}
+          </div>
+        </>}
       </figure>)}
       {!media.length && <div className="storefront-cms-no-media">Sélectionne une ou plusieurs photos à la fois.</div>}
     </div>
   </div>;
 }
 
-function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
+function ProductEditor({ product, canEdit, save, uploadMany, removeMedia, reorderMedia, retryMedia, discardFailedMedia }: {
   product: CmsProduct;
   canEdit: boolean;
   save: (payload: Record<string, unknown>) => Promise<void>;
   uploadMany: UploadMany;
   removeMedia: (id: number) => Promise<void>;
+  reorderMedia: ReorderMedia;
+  retryMedia: RetryMedia;
+  discardFailedMedia: DiscardFailedMedia;
 }) {
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
@@ -927,7 +1180,7 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia }: {
         <label className="storefront-cms-visible"><input name="isVisible" type="checkbox" defaultChecked={product.isVisible} disabled={!canEdit} /><span>Afficher ce produit sur le site public</span></label>
       </div>
       <label><span>Description publique</span><textarea name="description" rows={3} defaultValue={product.description} placeholder="Courte description visible par les clients…" disabled={!canEdit} /></label>
-      <GalleryEditor ownerType="product" ownerId={product.productId} media={product.media} canEdit={canEdit} uploadMany={uploadMany} removeMedia={removeMedia} title="Photos du produit" />
+      <GalleryEditor ownerType="product" ownerId={product.productId} media={product.media} canEdit={canEdit} uploadMany={uploadMany} removeMedia={removeMedia} reorderMedia={reorderMedia} retryMedia={retryMedia} discardFailedMedia={discardFailedMedia} title="Photos du produit" />
       <div className="storefront-cms-save-row"><small>Prix interne : {money(product.internalPrice)} · stock interne : {product.stockQuantity}</small><button className="primary-button" type="submit" disabled={!canEdit || saving}>{saving ? "Enregistrement…" : "Enregistrer ce produit public"}</button></div>
     </form>}
   </details>;
@@ -1208,11 +1461,14 @@ function PromotionEditor({ promotion, canEdit, save, uploadMany, removeMedia, is
   </details>;
 }
 
-function OffersPanel({ data, save, uploadMany, removeMedia }: {
+function OffersPanel({ data, save, uploadMany, removeMedia, reorderMedia, retryMedia, discardFailedMedia }: {
   data: CmsData;
   save: (payload: Record<string, unknown>) => Promise<void>;
   uploadMany: UploadMany;
   removeMedia: (id: number) => Promise<void>;
+  reorderMedia: ReorderMedia;
+  retryMedia: RetryMedia;
+  discardFailedMedia: DiscardFailedMedia;
 }) {
   const [offerQuery, setOfferQuery] = useState("");
   const blankPromotion: CmsPromotion = {
@@ -1252,19 +1508,22 @@ function OffersPanel({ data, save, uploadMany, removeMedia }: {
     </div>
 
     <div className="storefront-cms-offer-intro storefront-cms-fixed-pack-intro"><div><span>Packs à prix fixe</span><h2>Compose des packs avec les vrais produits</h2><p>Ces packs ont leur propre prix final et restent séparés des promotions automatiques. Une promotion automatique ne s’applique jamais à un pack déjà remisé.</p></div><strong>{data.offers.filter((offer) => offer.isActive).length} pack(s) actif(s)</strong></div>
-    <OfferEditor key="new-offer" offer={blank} products={data.products} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} isNew />
+    <OfferEditor key="new-offer" offer={blank} products={data.products} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} reorderMedia={reorderMedia} retryMedia={retryMedia} discardFailedMedia={discardFailedMedia} isNew />
     <div className="storefront-cms-offer-list-tools"><label><span>Rechercher un pack existant</span><input value={offerQuery} onChange={(event) => setOfferQuery(event.target.value)} placeholder="Nom du pack, badge…" /></label><strong>{visibleOffers.length} résultat(s)</strong></div>
-    <div className="storefront-cms-offer-list">{visibleOffers.map((offer) => <OfferEditor key={`${offer.id}-${offer.name}-${offer.items.length}-${offer.media.length}`} offer={offer} products={data.products} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />)}</div>
+    <div className="storefront-cms-offer-list">{visibleOffers.map((offer) => <OfferEditor key={`${offer.id}-${offer.name}-${offer.items.length}-${offer.media.length}`} offer={offer} products={data.products} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} reorderMedia={reorderMedia} retryMedia={retryMedia} discardFailedMedia={discardFailedMedia} />)}</div>
   </div>;
 }
 
-function OfferEditor({ offer, products, canEdit, save, uploadMany, removeMedia, isNew = false }: {
+function OfferEditor({ offer, products, canEdit, save, uploadMany, removeMedia, reorderMedia, retryMedia, discardFailedMedia, isNew = false }: {
   offer: CmsOffer;
   products: CmsProduct[];
   canEdit: boolean;
   save: (payload: Record<string, unknown>) => Promise<void>;
   uploadMany: UploadMany;
   removeMedia: (id: number) => Promise<void>;
+  reorderMedia: ReorderMedia;
+  retryMedia: RetryMedia;
+  discardFailedMedia: DiscardFailedMedia;
   isNew?: boolean;
 }) {
   const [items, setItems] = useState<OfferItem[]>(offer.items);
@@ -1374,7 +1633,7 @@ function OfferEditor({ offer, products, canEdit, save, uploadMany, removeMedia, 
         </div>
       </div>
 
-      {!isNew && <GalleryEditor ownerType="offer" ownerId={offer.id} media={offer.media} canEdit={canEdit} uploadMany={uploadMany} removeMedia={removeMedia} title="Photos du pack / de l’offre" />}
+      {!isNew && <GalleryEditor ownerType="offer" ownerId={offer.id} media={offer.media} canEdit={canEdit} uploadMany={uploadMany} removeMedia={removeMedia} reorderMedia={reorderMedia} retryMedia={retryMedia} discardFailedMedia={discardFailedMedia} title="Photos du pack / de l’offre" />}
       {isNew && <div className="storefront-cms-public-category-note">Enregistre d’abord le pack. Dès qu’il est créé, sa fiche apparaît ci-dessous et tu peux ajouter jusqu’à {MAX_GALLERY} photos en une seule sélection.</div>}
 
       <div className="storefront-cms-save-row">
