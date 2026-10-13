@@ -13,9 +13,9 @@ const database = await readFile(new URL("db/schema-compat.ts", root), "utf8");
 test("la corbeille propose restaurer ou supprimer définitivement dans un menu trois points", () => {
   assert.match(dashboard, /className="order-actions trash-actions"/);
   assert.match(dashboard, /Supprimer définitivement/);
-  assert.match(dashboard, /submit\("deleteOrderPermanently"/);
-  assert.match(api, /payload\.action === "deleteOrderPermanently"/);
-  assert.match(api, /AND deleted_at IS NOT NULL/);
+  assert.match(dashboard, /submit\("deleteOrdersPermanentlyBulk"/);
+  assert.match(api, /payload\.action === "deleteOrdersPermanentlyBulk"/);
+  assert.match(api, /deleted_at IS NOT NULL/);
 });
 
 test("la barre latérale peut défiler indépendamment", () => {
