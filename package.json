@@ -46,7 +46,9 @@
     "wrangler": "4.132.0"
   },
   "overrides": {
-    "undici": "7.30.0"
+    "undici": "7.30.0",
+    "sharp": "0.35.5",
+    "source-map-js": "1.2.2"
   },
   "type": "module",
   "displayName": "Maison Jiya — Pilotage"
