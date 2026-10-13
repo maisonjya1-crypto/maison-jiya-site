@@ -8076,7 +8076,7 @@ function PrintOrderSheet({ order }: { order: Order }) {
         <article>
           <span>Destinataire</span>
           <strong>{order.customerName || "Cliente"}</strong>
-          <p>{order.phone || "Téléphone non renseigné"}</p>
+          <p>{order.phone === STORE_ANONYMOUS_PHONE ? "Téléphone non renseigné" : order.phone || "Téléphone non renseigné"}</p>
           <p>{order.city}</p>
         </article>
         <article>
