@@ -894,7 +894,7 @@ export async function POST(request: Request) {
       const anonymousStoreSale = isStoreSale && !providedName && !providedPhone;
       const name = anonymousStoreSale ? STORE_ANONYMOUS_NAME : providedName;
       const phone = anonymousStoreSale ? STORE_ANONYMOUS_PHONE : providedPhone!;
-      const city = textValue(payload.city, isStoreSale ? "Non renseignée" : "");
+      const city = isStoreSale ? (textValue(payload.city) || "Non renseignée") : textValue(payload.city);
       const address = isStoreSale ? "Magasin Maison Jiya" : textValue(payload.address).slice(0, 300);
       const productId = numberValue(payload.productId);
       const quantity = numberValue(payload.quantity, 1);
