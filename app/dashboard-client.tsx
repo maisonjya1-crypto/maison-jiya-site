@@ -976,6 +976,7 @@ export default function DashboardClient() {
       deleteOrder: "Commande placée dans la corbeille pendant 90 jours",
       restoreOrder: "Commande restaurée",
       deleteOrderPermanently: "Commande supprimée définitivement",
+      deleteOrdersPermanentlyBulk: "Commandes sélectionnées supprimées définitivement",
       updateProduct: "Produit mis à jour",
       archiveProduct: "Produit archivé sans supprimer son historique",
       restoreProduct: "Produit restauré dans le catalogue interne",
@@ -3574,18 +3575,60 @@ function TrashActions({ label, onRestore, onDelete }: { label: string; onRestore
 
 function TrashPage({ orders, canRestore, submit }: { orders: Order[]; canRestore: boolean; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
   const [renderedAt] = useState(() => Date.now());
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
+  const [deleting, setDeleting] = useState(false);
+
+  const availableIds = new Set(orders.map((order) => order.id));
+  const visibleSelectedIds = [...selectedIds].filter((id) => availableIds.has(id));
+  const selectedCount = visibleSelectedIds.length;
+  const allSelected = orders.length > 0 && selectedCount === orders.length;
+
+  function toggleOrder(orderId: number) {
+    if (deleting) return;
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (deleting) return;
+    setSelectedIds(allSelected ? new Set() : new Set(orders.map((order) => order.id)));
+  }
+
   async function restore(order: Order) {
-    if (!canRestore) return;
+    if (!canRestore || deleting) return;
     if (!window.confirm(`Restaurer la commande ${order.orderRef} ?\n\nElle réapparaîtra dans Commandes et Colis.`)) return;
     await submit("restoreOrder", { id: String(order.id) });
   }
-  async function removePermanently(order: Order) {
-    if (!canRestore) return;
+
+  async function deleteIds(ids: number[], label: string) {
+    if (!canRestore || deleting || !ids.length) return;
     const confirmed = window.confirm(
-      `Supprimer définitivement la commande ${order.orderRef} ?\n\nElle quittera la Corbeille avec son historique de statuts. Une sauvegarde de sécurité sera créée juste avant.`,
+      ids.length === 1
+        ? `Supprimer définitivement ${label} ?\n\nUne sauvegarde de sécurité sera créée juste avant.`
+        : `Supprimer définitivement les ${ids.length} commandes sélectionnées ?\n\nElles seront supprimées en une seule opération après une sauvegarde de sécurité unique.`,
     );
     if (!confirmed) return;
-    await submit("deleteOrderPermanently", { id: String(order.id) });
+
+    setDeleting(true);
+    try {
+      await submit("deleteOrdersPermanentlyBulk", { ids: JSON.stringify(ids) });
+      setSelectedIds(new Set());
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function removePermanently(order: Order) {
+    await deleteIds([order.id], `la commande ${order.orderRef}`);
+  }
+
+  async function removeSelected() {
+    const ids = visibleSelectedIds;
+    await deleteIds(ids, `${ids.length} commandes`);
   }
 
   return (
@@ -3600,33 +3643,57 @@ function TrashPage({ orders, canRestore, submit }: { orders: Order[]; canRestore
       {!canRestore ? (
         <div className="empty-state"><strong>Accès administrateur requis</strong><p>Seul le compte principal peut consulter et restaurer la corbeille.</p></div>
       ) : orders.length ? (
-        <div className="trash-list">
-          {orders.map((order) => {
-            const deletedAt = order.deletedAt ? new Date(order.deletedAt) : new Date();
-            const expiresAt = new Date(deletedAt.getTime() + 90 * 24 * 60 * 60 * 1000);
-            const daysLeft = Math.max(0, Math.ceil((expiresAt.getTime() - renderedAt) / (24 * 60 * 60 * 1000)));
-            return (
-              <article className="trash-row" key={order.id}>
-                <div>
-                  <strong>{order.orderRef} · {order.customerName}</strong>
-                  <small>{order.products} · {order.city} · supprimée le {dateLabel(deletedAt.toISOString())}</small>
-                </div>
-                <span className="trash-expiry">{daysLeft} jour{daysLeft > 1 ? "s" : ""} restant{daysLeft > 1 ? "s" : ""}</span>
-                <TrashActions
-                  label={`la commande supprimée ${order.orderRef}`}
-                  onRestore={() => void restore(order)}
-                  onDelete={() => void removePermanently(order)}
-                />
-              </article>
-            );
-          })}
-        </div>
+        <>
+          <div className="trash-selection-bar">
+            <label className="trash-select-all">
+              <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={deleting} />
+              <span>{allSelected ? "Tout désélectionner" : "Tout sélectionner"}</span>
+            </label>
+            <div>
+              <strong>{selectedCount} sélectionnée{selectedCount > 1 ? "s" : ""}</strong>
+              <button
+                type="button"
+                className="danger-button"
+                disabled={!selectedCount || deleting}
+                onClick={() => void removeSelected()}
+              >
+                {deleting ? `Suppression de ${selectedCount || "la sélection"}…` : `Supprimer la sélection${selectedCount ? ` (${selectedCount})` : ""}`}
+              </button>
+            </div>
+          </div>
+          <div className="trash-list">
+            {orders.map((order) => {
+              const deletedAt = order.deletedAt ? new Date(order.deletedAt) : new Date();
+              const expiresAt = new Date(deletedAt.getTime() + 90 * 24 * 60 * 60 * 1000);
+              const daysLeft = Math.max(0, Math.ceil((expiresAt.getTime() - renderedAt) / (24 * 60 * 60 * 1000)));
+              const selected = selectedIds.has(order.id);
+              return (
+                <article className={`trash-row ${selected ? "selected" : ""}`} key={order.id}>
+                  <label className="trash-row-selector" title={selected ? "Retirer de la sélection" : "Sélectionner cette commande"}>
+                    <input type="checkbox" checked={selected} onChange={() => toggleOrder(order.id)} disabled={deleting} aria-label={`Sélectionner la commande ${order.orderRef}`} />
+                  </label>
+                  <div>
+                    <strong>{order.orderRef} · {order.customerName}</strong>
+                    <small>{order.products} · {order.city} · supprimée le {dateLabel(deletedAt.toISOString())}</small>
+                  </div>
+                  <span className="trash-expiry">{daysLeft} jour{daysLeft > 1 ? "s" : ""} restant{daysLeft > 1 ? "s" : ""}</span>
+                  <TrashActions
+                    label={`la commande supprimée ${order.orderRef}`}
+                    onRestore={() => void restore(order)}
+                    onDelete={() => void removePermanently(order)}
+                  />
+                </article>
+              );
+            })}
+          </div>
+        </>
       ) : (
         <div className="empty-state"><strong>La corbeille est vide</strong><p>Les commandes supprimées apparaîtront ici pendant 90 jours.</p></div>
       )}
     </section>
   );
 }
+
 function OrdersPage({ orders, onAdd, onEdit, onPrint, onDelete }: { orders: Order[]; onAdd: () => void; onEdit: (o: Order) => void; onPrint: (o: Order) => void; onDelete: (o: Order) => void }) {
   return (
     <section className="panel page-panel">

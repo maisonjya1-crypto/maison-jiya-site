@@ -286,6 +286,7 @@ const auditLabels: Record<string, { action: string; entityType: string }> = {
   deleteOrder: { action: "Mise à la corbeille", entityType: "Commande" },
   restoreOrder: { action: "Restauration", entityType: "Commande" },
   deleteOrderPermanently: { action: "Suppression définitive", entityType: "Commande" },
+  deleteOrdersPermanentlyBulk: { action: "Suppression définitive groupée", entityType: "Commandes" },
   updateCustomer: { action: "Modification", entityType: "Client" },
   deleteCustomer: { action: "Suppression", entityType: "Client" },
   addSupplier: { action: "Ajout", entityType: "Fournisseur" },
@@ -1268,6 +1269,86 @@ export async function POST(request: Request) {
       ]);
       await database.prepare("DELETE FROM customers WHERE id = ? AND NOT EXISTS (SELECT 1 FROM orders WHERE orders.customer_id = customers.id)").bind(existingOrder.customerId).run();
       auditEntityLabel = existingOrder.orderRef;
+    } else if (payload.action === "deleteOrdersPermanentlyBulk") {
+      if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut supprimer définitivement des commandes." }, { status: 403 });
+      const ids = integerIdList(payload.ids, "commande", 200);
+      const database = await getRawDb();
+      const placeholders = ids.map(() => "?").join(",");
+      const selectedOrders = (await database.prepare(`
+        SELECT id,
+               order_ref AS orderRef,
+               customer_id AS customerId,
+               product_id AS productId,
+               quantity,
+               stock_deducted AS stockDeducted
+        FROM orders
+        WHERE deleted_at IS NOT NULL
+          AND id IN (${placeholders})
+        ORDER BY id
+      `).bind(...ids).all<{
+        id: number;
+        orderRef: string;
+        customerId: number;
+        productId: number | null;
+        quantity: number;
+        stockDeducted: number;
+      }>()).results;
+
+      if (selectedOrders.length !== ids.length) {
+        return Response.json({ error: "Une ou plusieurs commandes ne sont plus dans la corbeille. Actualisez puis réessayez." }, { status: 409 });
+      }
+
+      const settled = (await database.prepare(`
+        SELECT o.order_ref AS orderRef
+        FROM carrier_settlement_orders cso
+        JOIN orders o ON o.id = cso.order_id
+        WHERE cso.order_id IN (${placeholders})
+        LIMIT 1
+      `).bind(...ids).first<{ orderRef: string }>());
+      if (settled) {
+        return Response.json({ error: `La commande ${settled.orderRef} appartient à un règlement transporteur conservé dans l’historique et ne peut pas être supprimée définitivement.` }, { status: 409 });
+      }
+
+      // Une seule sauvegarde complète protège tout le lot au lieu d'en recréer une
+      // pour chaque commande. C'est beaucoup plus rapide pour une sélection multiple.
+      await createDailyBackup(database, `Avant suppression groupée de ${selectedOrders.length} commande(s)`, true);
+
+      const now = new Date().toISOString();
+      const statements: D1PreparedStatement[] = [];
+      for (const order of selectedOrders) {
+        if (order.stockDeducted && order.productId) {
+          statements.push(
+            database.prepare("UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?")
+              .bind(order.quantity, order.productId),
+            database.prepare(`
+              INSERT INTO stock_movements (product_id, order_id, movement_type, quantity, note, created_at)
+              VALUES (?, NULL, 'Réintégration', ?, ?, ?)
+            `).bind(order.productId, order.quantity, `Réintégration avant suppression définitive · ${order.orderRef}`, now),
+          );
+        }
+      }
+
+      statements.push(
+        database.prepare(`UPDATE stock_movements SET order_id = NULL WHERE order_id IN (${placeholders})`).bind(...ids),
+        database.prepare(`DELETE FROM order_status_history WHERE order_id IN (${placeholders})`).bind(...ids),
+        database.prepare(`UPDATE carrier_events SET order_id = NULL WHERE order_id IN (${placeholders})`).bind(...ids),
+        database.prepare(`DELETE FROM capital_ledger WHERE order_id IN (${placeholders}) AND is_automatic = 1`).bind(...ids),
+        database.prepare(`DELETE FROM orders WHERE deleted_at IS NOT NULL AND id IN (${placeholders})`).bind(...ids),
+      );
+      await database.batch(statements);
+
+      const customerIds = [...new Set(selectedOrders.map((order) => Number(order.customerId)).filter((id) => Number.isInteger(id) && id > 0))];
+      if (customerIds.length) {
+        const customerPlaceholders = customerIds.map(() => "?").join(",");
+        await database.prepare(`
+          DELETE FROM customers
+          WHERE id IN (${customerPlaceholders})
+            AND NOT EXISTS (SELECT 1 FROM orders WHERE orders.customer_id = customers.id)
+        `).bind(...customerIds).run();
+      }
+
+      auditEntityLabel = selectedOrders.map((order) => order.orderRef).join(", ").slice(0, 500);
+      integrationMessage = `${selectedOrders.length} commande(s) supprimée(s) définitivement en une seule opération.`;
     } else if (payload.action === "updateCustomer") {
       const id = numberValue(payload.id);
       const name = textValue(payload.name);
@@ -2918,6 +2999,7 @@ export async function POST(request: Request) {
       "deleteOrder",
       "restoreOrder",
       "deleteOrderPermanently",
+      "deleteOrdersPermanentlyBulk",
       "resetBusinessValues",
       "importPortableExport",
       "restoreBackup",
