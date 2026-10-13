@@ -120,6 +120,8 @@ function paidAtFromInput(value: unknown, fallbackIso = new Date().toISOString())
 }
 
 const orderStatuses = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
+const STORE_ANONYMOUS_PHONE = "__MAISON_JIYA_STORE_ANONYMOUS__";
+const STORE_ANONYMOUS_NAME = "Client magasin (anonyme)";
 const orderSources = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre", "Non renseignée"];
 const fulfillmentTypes = ["Livraison", "Magasin physique"];
 const paymentStatuses = ["À encaisser", "Encaissé", "Non encaissé", "Remboursé"];
@@ -577,7 +579,7 @@ async function snapshot(access: AccessInfo) {
   return {
     orders: orderRows,
     trash: trashRows,
-    customers: customerRows,
+    customers: customerRows.filter((customer) => customer.phone !== STORE_ANONYMOUS_PHONE),
     suppliers: supplierRows,
     purchases: enrichedPurchaseRows,
     supplierInvoices: enrichedInvoiceRows,
@@ -881,14 +883,24 @@ export async function POST(request: Request) {
     } else if (payload.action === "addOrder") {
       const selectedFulfillmentType = fulfillmentType(payload.fulfillmentType);
       const isStoreSale = selectedFulfillmentType === "Magasin physique";
-      const name = textValue(payload.customerName);
-      const phone = normalizeMoroccanPhone(textValue(payload.phone));
-      const city = textValue(payload.city, isStoreSale ? "Casablanca" : "");
+      const providedName = textValue(payload.customerName);
+      const providedPhoneRaw = textValue(payload.phone);
+      const providedPhone = providedPhoneRaw ? normalizeMoroccanPhone(providedPhoneRaw) : null;
+      if (!isStoreSale && !providedPhone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
+      if (isStoreSale && providedPhoneRaw && !providedPhone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
+      if (isStoreSale && Boolean(providedName) !== Boolean(providedPhone)) {
+        return Response.json({ error: "En magasin, renseignez le nom ET le téléphone pour enregistrer la cliente, ou laissez les deux vides pour une vente anonyme." }, { status: 400 });
+      }
+      const anonymousStoreSale = isStoreSale && !providedName && !providedPhone;
+      const name = anonymousStoreSale ? STORE_ANONYMOUS_NAME : providedName;
+      const phone = anonymousStoreSale ? STORE_ANONYMOUS_PHONE : providedPhone!;
+      const city = isStoreSale ? (textValue(payload.city) || "Non renseignée") : textValue(payload.city);
       const address = isStoreSale ? "Magasin Maison Jiya" : textValue(payload.address).slice(0, 300);
       const productId = numberValue(payload.productId);
       const quantity = numberValue(payload.quantity, 1);
-      if (!phone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
-      if (!name || !city || !productId || quantity < 1 || (!isStoreSale && !address)) return Response.json({ error: isStoreSale ? "Cliente, téléphone, ville, produit et quantité sont obligatoires." : "Cliente, téléphone, ville, adresse, produit et quantité sont obligatoires." }, { status: 400 });
+      if (!name || !phone || !productId || quantity < 1 || (!isStoreSale && (!city || !address))) {
+        return Response.json({ error: isStoreSale ? "Le produit et la quantité sont obligatoires." : "Cliente, téléphone, ville, adresse, produit et quantité sont obligatoires." }, { status: 400 });
+      }
       const [selectedProduct] = await db.select().from(products).where(and(eq(products.id, productId), isNull(products.archivedAt))).limit(1);
       if (!selectedProduct) return Response.json({ error: "Le produit sélectionné n’existe plus dans le catalogue." }, { status: 404 });
       const selectedStatus = isStoreSale ? "Livrée" : orderStatus(payload.status);
@@ -927,12 +939,15 @@ export async function POST(request: Request) {
       if (duplicateOrder) return duplicateOrder;
 
       const rawDb = await getRawDb();
+      const customerStatement = anonymousStoreSale
+        ? rawDb.prepare("INSERT OR IGNORE INTO customers (name, phone, city) VALUES (?, ?, ?)").bind(STORE_ANONYMOUS_NAME, STORE_ANONYMOUS_PHONE, "Non renseignée")
+        : rawDb.prepare(`
+            INSERT INTO customers (name, phone, city)
+            VALUES (?, ?, ?)
+            ON CONFLICT(phone) DO UPDATE SET name = excluded.name, city = excluded.city
+          `).bind(name, phone, city);
       const statements = [
-        rawDb.prepare(`
-          INSERT INTO customers (name, phone, city)
-          VALUES (?, ?, ?)
-          ON CONFLICT(phone) DO UPDATE SET name = excluded.name, city = excluded.city
-        `).bind(name, phone, city),
+        customerStatement,
         rawDb.prepare(`INSERT INTO orders (order_ref, customer_id, product_id, city, address, products, quantity, sale_amount, product_cost, shipping_cost, ad_cost, fees, return_cost, return_reason, return_note, source, campaign, fulfillment_type, status, payment_status, carrier, tracking_number, carrier_dispatch_state, stock_deducted, paid_at, updated_at)
           VALUES (?, (SELECT id FROM customers WHERE phone = ? LIMIT 1), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(orderRef, phone, productId, city, address, productLabel, quantity, saleAmount, selectedProduct.purchasePrice * quantity, selectedShippingCost, moneyValue(payload.adCost), moneyValue(payload.fees), selectedReturnReason, selectedReturnNote, selectedSource, selectedCampaign, selectedFulfillmentType, selectedStatus, selectedPaymentStatus, selectedCarrier, selectedTrackingNumber, selectedDispatchState, shouldDeductStock ? 1 : 0, selectedPaidAt, now),
         rawDb.prepare(`INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, changed_by_name, changed_at)
@@ -967,11 +982,15 @@ export async function POST(request: Request) {
       const nextStatus = switchingToStore ? "Livrée" : orderStatus(payload.status, existingOrder.status);
       if (isStoreSale && !["Livrée", "Retour", "Annulée"].includes(nextStatus)) return Response.json({ error: "Une vente magasin peut être livrée, retournée ou annulée." }, { status: 400 });
       const nextAddress = isStoreSale ? "Magasin Maison Jiya" : textValue(payload.address, existingOrder.address).slice(0, 300);
-      const nextPhone = normalizeMoroccanPhone(textValue(payload.phone));
+      const requestedPhoneRaw = textValue(payload.phone);
+      const nextPhone = requestedPhoneRaw ? normalizeMoroccanPhone(requestedPhoneRaw) : null;
       if (!isStoreSale && !nextAddress) return Response.json({ error: "L’adresse de livraison est obligatoire." }, { status: 400 });
-      if (!nextPhone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
-      const [duplicatePhone] = await db.select({ id: customers.id }).from(customers).where(eq(customers.phone, nextPhone)).limit(1);
-      if (duplicatePhone && duplicatePhone.id !== existingOrder.customerId) return Response.json({ error: "Ce numéro appartient déjà à un autre client." }, { status: 409 });
+      if (!isStoreSale && !nextPhone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
+      if (isStoreSale && requestedPhoneRaw && !nextPhone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
+      if (nextPhone) {
+        const [duplicatePhone] = await db.select({ id: customers.id }).from(customers).where(eq(customers.phone, nextPhone)).limit(1);
+        if (duplicatePhone && duplicatePhone.id !== existingOrder.customerId) return Response.json({ error: "Ce numéro appartient déjà à un autre client." }, { status: 409 });
+      }
       const nextReturnReason = nextStatus === "Retour" ? returnReason(payload.returnReason, existingOrder.returnReason) : existingOrder.returnReason;
       const nextReturnNote = nextStatus === "Retour" ? textValue(payload.returnNote, existingOrder.returnNote).slice(0, 240) : existingOrder.returnNote;
       if (nextStatus === "Retour" && !nextReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
@@ -1006,7 +1025,7 @@ export async function POST(request: Request) {
       const nextCarrierInvoiceCode = isStoreSale ? "" : existingOrder.carrierInvoiceCode;
       const rawDb = await getRawDb();
       const statements = [
-        rawDb.prepare("UPDATE customers SET phone = ? WHERE id = ?").bind(nextPhone, existingOrder.customerId),
+        ...(nextPhone ? [rawDb.prepare("UPDATE customers SET phone = ? WHERE id = ?").bind(nextPhone, existingOrder.customerId)] : []),
         rawDb.prepare(`UPDATE orders SET fulfillment_type = ?, status = ?, payment_status = ?, source = ?, campaign = ?, address = ?, shipping_cost = ?, carrier = ?, tracking_number = ?, carrier_dispatch_state = ?, carrier_authorized_at = ?, carrier_invoice_code = ?, return_cost = ?, return_reason = ?, return_note = ?, paid_at = ?, refunded_at = ?, stock_deducted = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
           .bind(nextFulfillmentType, nextStatus, nextPaymentStatus, nextSource, nextCampaign, nextAddress, isStoreSale ? 0 : moneyValue(payload.shippingCost), nextCarrier, nextTrackingNumber, nextDispatchState, nextCarrierAuthorizedAt, nextCarrierInvoiceCode, moneyValue(payload.returnCost), nextReturnReason, nextReturnNote, paymentState.paidAt, paymentState.refundedAt, nextStockDeducted ? 1 : 0, now, id),
       ];

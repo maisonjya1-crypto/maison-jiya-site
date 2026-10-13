@@ -42,3 +42,42 @@ test("Google Sheets distingue les ventes magasin et exclut celles-ci de Colis", 
   assert.match(backups, /"fulfillment_type"/);
   assert.match(backups, /row\[column\] \?\? "Livraison"/);
 });
+
+
+test("une vente magasin peut être anonyme sans nom, téléphone ni ville", async () => {
+  const [route, dashboard] = await Promise.all([
+    read("app/api/data/route.ts"),
+    read("app/dashboard-client.tsx"),
+  ]);
+  assert.match(route, /STORE_ANONYMOUS_PHONE/);
+  assert.match(route, /STORE_ANONYMOUS_NAME = "Client magasin \(anonyme\)"/);
+  assert.match(route, /anonymousStoreSale = isStoreSale && !providedName && !providedPhone/);
+  assert.match(route, /INSERT OR IGNORE INTO customers/);
+  assert.match(route, /customers: customerRows\.filter\(\(customer\) => customer\.phone !== STORE_ANONYMOUS_PHONE\)/);
+  assert.match(dashboard, /Nom de la cliente \(facultatif\)/);
+  assert.match(dashboard, /Téléphone \(facultatif\)/);
+  assert.match(dashboard, /Ville \(facultatif\)/);
+  assert.match(dashboard, /Client magasin \(anonyme\)/);
+});
+
+test("si une identité est saisie en magasin, nom et téléphone vont ensemble", async () => {
+  const route = await read("app/api/data/route.ts");
+  assert.match(route, /Boolean\(providedName\) !== Boolean\(providedPhone\)/);
+  assert.match(route, /renseignez le nom ET le téléphone/);
+  assert.match(route, /providedPhoneRaw && !providedPhone/);
+});
+
+test("la livraison garde nom téléphone ville et adresse obligatoires", async () => {
+  const dashboard = await read("app/dashboard-client.tsx");
+  assert.match(dashboard, /Nom de la cliente \*/);
+  assert.match(dashboard, /Téléphone \*/);
+  assert.match(dashboard, /Ville de livraison \*/);
+  assert.match(dashboard, /Adresse de livraison \*/);
+});
+
+test("le placeholder interne d'une vente anonyme n'apparait pas dans les exports clients", async () => {
+  const exportRoute = await read("app/api/backup/google-sheets/route.ts");
+  assert.match(exportRoute, /STORE_ANONYMOUS_PHONE/);
+  assert.match(exportRoute, /filter\(\(customer\) => customer\.phone !== STORE_ANONYMOUS_PHONE\)/);
+  assert.match(exportRoute, /row\.phone === STORE_ANONYMOUS_PHONE \? "" : row\.phone/);
+});
