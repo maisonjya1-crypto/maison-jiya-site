@@ -3578,16 +3578,9 @@ function TrashPage({ orders, canRestore, submit }: { orders: Order[]; canRestore
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    const available = new Set(orders.map((order) => order.id));
-    setSelectedIds((current) => {
-      const next = new Set([...current].filter((id) => available.has(id)));
-      if (next.size === current.size && [...next].every((id) => current.has(id))) return current;
-      return next;
-    });
-  }, [orders]);
-
-  const selectedCount = selectedIds.size;
+  const availableIds = new Set(orders.map((order) => order.id));
+  const visibleSelectedIds = [...selectedIds].filter((id) => availableIds.has(id));
+  const selectedCount = visibleSelectedIds.length;
   const allSelected = orders.length > 0 && selectedCount === orders.length;
 
   function toggleOrder(orderId: number) {
@@ -3634,7 +3627,7 @@ function TrashPage({ orders, canRestore, submit }: { orders: Order[]; canRestore
   }
 
   async function removeSelected() {
-    const ids = [...selectedIds];
+    const ids = visibleSelectedIds;
     await deleteIds(ids, `${ids.length} commandes`);
   }
 
