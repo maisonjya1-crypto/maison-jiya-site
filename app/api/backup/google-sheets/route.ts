@@ -3,6 +3,8 @@ import { getDb } from "../../../../db";
 import { adPerformance, capitalLedger, carrierSettlementOrders, carrierSettlements, customers, expenses, recurringExpenses, inventoryCounts, inventorySessions, monthlyClosings, orders, products, purchases, settings, stockMovements, supplierInvoices, supplierPayments, suppliers, users } from "../../../../db/schema";
 import { orderContributionBeforeGlobalAds } from "../../../../lib/finance";
 
+const STORE_ANONYMOUS_PHONE = "__MAISON_JIYA_STORE_ANONYMOUS__";
+
 const datasetNames = new Set([
   "orders",
   "products",
@@ -143,13 +145,13 @@ export async function GET(request: Request) {
         updatedAt: orders.updatedAt,
       }).from(orders).leftJoin(customers, eq(orders.customerId, customers.id)).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt));
 
-      const customerRows = await db.select().from(customers).orderBy(desc(customers.createdAt));
+      const customerRows = (await db.select().from(customers).orderBy(desc(customers.createdAt))).filter((customer) => customer.phone !== STORE_ANONYMOUS_PHONE);
       const orderNumbers = new Map([...orderRows].reverse().map((row, index) => [row.id, index + 1]));
       const customerNumbers = new Map([...customerRows].reverse().map((customer, index) => [customer.id, index + 1]));
 
       if (dataset === "orders") return csvResponse(
         ["N° commande", "Référence commande", "N° client", "Cliente", "Téléphone", "Ville", "Adresse", "Produits", "Quantité", "Prix de vente (MAD)", "Coût produit (MAD)", "Frais livraison (MAD)", "Coût publicité attribué (MAD)", "Autres frais (MAD)", "Coût retour (MAD)", "Motif du retour", "Détail du retour", "Source", "Campagne", "Mode de vente", "Statut", "Paiement", "Agence", "Numéro de suivi", "État création agence", "Autorisé le", "Facture agence", "Date encaissée", "Date remboursée", "Créée le", "Modifiée le", "Marge commande avant dépenses globales (MAD)", "ID technique commande", "ID technique client"],
-        orderRows.map((row) => [orderNumbers.get(row.id), row.orderRef, customerNumbers.get(row.customerId), row.customerName, row.phone, row.city, row.address, row.products, row.quantity, row.saleAmount, row.productCost, row.shippingCost, row.adCost, row.fees, row.returnCost, row.returnReason, row.returnNote, row.source, row.campaign, row.fulfillmentType, row.status, row.paymentStatus, row.carrier, row.trackingNumber, row.carrierDispatchState, row.carrierAuthorizedAt, row.carrierInvoiceCode, row.paidAt, row.refundedAt, row.createdAt, row.updatedAt, orderContributionBeforeGlobalAds(row), row.id, row.customerId]),
+        orderRows.map((row) => [orderNumbers.get(row.id), row.orderRef, customerNumbers.get(row.customerId), row.customerName, row.phone === STORE_ANONYMOUS_PHONE ? "" : row.phone, row.city, row.address, row.products, row.quantity, row.saleAmount, row.productCost, row.shippingCost, row.adCost, row.fees, row.returnCost, row.returnReason, row.returnNote, row.source, row.campaign, row.fulfillmentType, row.status, row.paymentStatus, row.carrier, row.trackingNumber, row.carrierDispatchState, row.carrierAuthorizedAt, row.carrierInvoiceCode, row.paidAt, row.refundedAt, row.createdAt, row.updatedAt, orderContributionBeforeGlobalAds(row), row.id, row.customerId]),
       );
 
       if (dataset === "shipments") return csvResponse(
