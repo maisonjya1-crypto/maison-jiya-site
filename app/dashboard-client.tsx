@@ -649,6 +649,7 @@ const retrySafeMutationActions = new Set([
 const orderStatusOptions = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
 const returnReasonOptions = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
 const orderSourceOptions = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre"];
+const STORE_ANONYMOUS_PHONE = "__MAISON_JIYA_STORE_ANONYMOUS__";
 const fulfillmentTypeOptions = ["Livraison", "Magasin physique"];
 const productCategoryOptions = ["Montres", "Bijoux", "Wallets", "Électronique", "Boîtes", "Autre"];
 const capitalMonthLabels = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
@@ -3897,7 +3898,7 @@ function CarrierManifestSheet({ manifest }: { manifest: { carrier: string; date:
       <div className="manifest-print-summary"><p><span>Nombre de colis</span><strong>{manifest.orders.length}</strong></p><p><span>Montant COD total</span><strong>{money(total)}</strong></p></div>
       <table>
         <thead><tr><th>#</th><th>Commande</th><th>Cliente</th><th>Téléphone</th><th>Ville</th><th>Produit</th><th>Suivi</th><th>COD</th><th>Statut</th></tr></thead>
-        <tbody>{manifest.orders.map((order, index) => <tr key={order.id}><td>{index + 1}</td><td>{order.orderRef}</td><td>{order.customerName}</td><td>{order.phone}</td><td>{order.city}</td><td>{order.products} × {order.quantity}</td><td>{order.trackingNumber || "À compléter"}</td><td>{money(order.saleAmount)}</td><td>{order.status}</td></tr>)}</tbody>
+        <tbody>{manifest.orders.map((order, index) => <tr key={order.id}><td>{index + 1}</td><td>{order.orderRef}</td><td>{order.customerName}</td><td>{order.phone === STORE_ANONYMOUS_PHONE ? "Non renseigné" : order.phone}</td><td>{order.city}</td><td>{order.products} × {order.quantity}</td><td>{order.trackingNumber || "À compléter"}</td><td>{money(order.saleAmount)}</td><td>{order.status}</td></tr>)}</tbody>
       </table>
       <footer><div><span>Remis par Maison Jiya</span></div><div><span>Reçu par {manifest.carrier}</span></div></footer>
     </section>
@@ -7489,7 +7490,6 @@ function EntryModal({ kind, carrierNames, products, suppliers, purchases, suppli
     const next = value === "Magasin physique" ? "Magasin physique" : "Livraison";
     setOrderFulfillment(next);
     if (next === "Magasin physique") {
-      if (!orderCity.trim()) setOrderCity("Casablanca");
       setSelectedOrderStatus("Livrée");
     } else if (selectedOrderStatus === "Livrée") {
       setSelectedOrderStatus("En attente");
@@ -7649,9 +7649,23 @@ function EntryModal({ kind, carrierNames, products, suppliers, purchases, suppli
                     {fulfillmentTypeOptions.map((type) => <option key={type}>{type}</option>)}
                   </select>
                 </label>
-                <Field label="Nom de la cliente *" name="customerName" autoComplete="name" required />
-                <Field label="Téléphone *" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="06 12 34 56 78" maxLength={18} required />
-                <label className="field"><span>{orderFulfillment === "Magasin physique" ? "Ville de la cliente *" : "Ville de livraison *"}</span><input name="city" autoComplete="address-level2" value={orderCity} onChange={(event) => setOrderCity(event.target.value)} required /></label>
+                {orderFulfillment === "Magasin physique" ? (
+                  <>
+                    <div className="order-carrier-safety-note store-sale-customer-note">
+                      <strong>Cliente facultative en magasin</strong>
+                      <small>Si tu ne demandes pas le nom ni le numéro, laisse les deux champs vides : la vente sera enregistrée comme « Client magasin (anonyme) ». Si tu veux enregistrer la cliente, renseigne le nom ET le téléphone.</small>
+                    </div>
+                    <Field label="Nom de la cliente (facultatif)" name="customerName" autoComplete="name" placeholder="Laisser vide si vente anonyme" />
+                    <Field label="Téléphone (facultatif)" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="Laisser vide si vente anonyme" maxLength={18} />
+                    <label className="field"><span>Ville (facultatif)</span><input name="city" autoComplete="address-level2" value={orderCity} onChange={(event) => setOrderCity(event.target.value)} placeholder="Non renseignée" /></label>
+                  </>
+                ) : (
+                  <>
+                    <Field label="Nom de la cliente *" name="customerName" autoComplete="name" required />
+                    <Field label="Téléphone *" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="06 12 34 56 78" maxLength={18} required />
+                    <label className="field"><span>Ville de livraison *</span><input name="city" autoComplete="address-level2" value={orderCity} onChange={(event) => setOrderCity(event.target.value)} required /></label>
+                  </>
+                )}
                 {orderFulfillment === "Livraison" ? <Field label="Adresse de livraison *" name="address" autoComplete="street-address" required /> : <input type="hidden" name="address" value="Magasin Maison Jiya" />}
                 {products.length ? (
                   <label className="field order-product-select">
@@ -7863,6 +7877,7 @@ function OrderModal({ order, history, carrierNames, ads, close, print, submit }:
   const [selectedStatus, setSelectedStatus] = useState(order.status);
   const [selectedFulfillment, setSelectedFulfillment] = useState<"Livraison" | "Magasin physique">(order.fulfillmentType === "Magasin physique" ? "Magasin physique" : "Livraison");
   const isStoreSale = selectedFulfillment === "Magasin physique";
+  const isAnonymousStoreCustomer = isStoreSale && order.phone === STORE_ANONYMOUS_PHONE;
   const currentCarrier = order.carrier && !["Non affecté", "Magasin physique"].includes(order.carrier) ? order.carrier : "";
 
   function changeFulfillment(value: string) {
@@ -7951,7 +7966,11 @@ function OrderModal({ order, history, carrierNames, ads, close, print, submit }:
                 <small>{order.paidAt ? `Encaissé le ${dateTimeLabel(order.paidAt)}` : "Jamais encaissé"}{order.refundedAt ? ` · Remboursé le ${dateTimeLabel(order.refundedAt)}` : ""}</small>
               </div>
             )}
-            <Field label={isStoreSale ? "Téléphone de la cliente *" : "Téléphone de livraison *"} name="phone" type="tel" inputMode="tel" defaultValue={order.phone || ""} autoComplete="tel" placeholder="06 12 34 56 78" maxLength={18} required />
+            {isStoreSale ? (
+              isAnonymousStoreCustomer
+                ? <div className="order-carrier-safety-note store-sale-customer-note"><strong>Client magasin (anonyme)</strong><small>Aucun nom ni numéro n’est requis pour cette vente sur place.</small></div>
+                : <Field label="Téléphone de la cliente (facultatif)" name="phone" type="tel" inputMode="tel" defaultValue={order.phone || ""} autoComplete="tel" placeholder="06 12 34 56 78" maxLength={18} />
+            ) : <Field label="Téléphone de livraison *" name="phone" type="tel" inputMode="tel" defaultValue={order.phone || ""} autoComplete="tel" placeholder="06 12 34 56 78" maxLength={18} required />}
             {isStoreSale ? <input type="hidden" name="address" value="Magasin Maison Jiya" /> : <Field label="Adresse de livraison *" name="address" defaultValue={order.address === "Magasin Maison Jiya" ? "" : order.address} autoComplete="street-address" required />}
             <Field label="Coût retour (MAD)" name="returnCost" type="number" inputMode="decimal" min="0" step="0.01" defaultValue={String(order.returnCost)} />
             {isStoreSale ? (
