@@ -81,3 +81,19 @@ test("le placeholder interne d'une vente anonyme n'apparait pas dans les exports
   assert.match(exportRoute, /filter\(\(customer\) => customer\.phone !== STORE_ANONYMOUS_PHONE\)/);
   assert.match(exportRoute, /row\.phone === STORE_ANONYMOUS_PHONE \? "" : row\.phone/);
 });
+
+
+test("la route multi-produits accepte aussi une vente magasin anonyme", async () => {
+  const route = await read("app/api/orders/multi/route.ts");
+  assert.match(route, /STORE_ANONYMOUS_PHONE/);
+  assert.match(route, /STORE_ANONYMOUS_NAME = "Client magasin \(anonyme\)"/);
+  assert.match(route, /anonymousStoreSale = isStoreSale && !providedCustomerName && !providedPhone/);
+  assert.match(route, /INSERT OR IGNORE INTO customers/);
+  assert.doesNotMatch(route, /if \(!phone\) return Response\.json\(\{ error: moroccanPhoneHelp \}/);
+});
+
+test("la route multi-produits garde le téléphone obligatoire pour une livraison", async () => {
+  const route = await read("app/api/orders/multi/route.ts");
+  assert.match(route, /if \(!isStoreSale && !providedPhone\)/);
+  assert.match(route, /Cliente, téléphone, ville et adresse sont obligatoires/);
+});

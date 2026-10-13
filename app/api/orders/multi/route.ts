@@ -23,6 +23,8 @@ type CapturedItem = {
 };
 
 const statuses = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
+const STORE_ANONYMOUS_PHONE = "__MAISON_JIYA_STORE_ANONYMOUS__";
+const STORE_ANONYMOUS_NAME = "Client magasin (anonyme)";
 const sources = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre", "Non renseignée"];
 const stockCommittedStatuses = new Set(["Confirmée", "Expédiée", "En livraison", "Livrée", "Retour"]);
 const returnReasons = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
@@ -122,12 +124,23 @@ export async function POST(request: Request) {
 
     const fulfillmentType = text(payload.fulfillmentType) === "Magasin physique" ? "Magasin physique" : "Livraison";
     const isStoreSale = fulfillmentType === "Magasin physique";
-    const customerName = text(payload.customerName).slice(0, 160);
-    const phone = normalizeMoroccanPhone(text(payload.phone));
-    const city = text(payload.city, isStoreSale ? "Casablanca" : "").slice(0, 120);
+    const providedCustomerName = text(payload.customerName).slice(0, 160);
+    const providedPhoneRaw = text(payload.phone);
+    const providedPhone = providedPhoneRaw ? normalizeMoroccanPhone(providedPhoneRaw) : null;
+
+    if (!isStoreSale && !providedPhone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
+    if (isStoreSale && providedPhoneRaw && !providedPhone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
+    if (isStoreSale && Boolean(providedCustomerName) !== Boolean(providedPhone)) {
+      return Response.json({ error: "En magasin, renseignez le nom ET le téléphone pour enregistrer la cliente, ou laissez les deux vides pour une vente anonyme." }, { status: 400 });
+    }
+
+    const anonymousStoreSale = isStoreSale && !providedCustomerName && !providedPhone;
+    const customerName = anonymousStoreSale ? STORE_ANONYMOUS_NAME : providedCustomerName;
+    const phone = anonymousStoreSale ? STORE_ANONYMOUS_PHONE : providedPhone!;
+    const city = isStoreSale ? (text(payload.city).slice(0, 120) || "Non renseignée") : text(payload.city).slice(0, 120);
     const address = isStoreSale ? "Magasin Maison Jiya" : text(payload.address).slice(0, 300);
-    if (!phone) return Response.json({ error: moroccanPhoneHelp }, { status: 400 });
-    if (!customerName || !city || (!isStoreSale && !address)) throw new Error("Cliente, téléphone, ville et adresse sont obligatoires.");
+
+    if (!isStoreSale && (!customerName || !city || !address)) throw new Error("Cliente, téléphone, ville et adresse sont obligatoires.");
 
     const statusCandidate = isStoreSale ? "Livrée" : text(payload.status, "En attente");
     const status = statuses.includes(statusCandidate) ? statusCandidate : "En attente";
@@ -156,7 +169,12 @@ export async function POST(request: Request) {
     const productLabel = packName ? `${packName} · ${itemSummary}` : itemSummary;
 
     let customer = await database.prepare("SELECT id FROM customers WHERE phone = ? LIMIT 1").bind(phone).first<{ id: number }>();
-    if (!customer) {
+    if (anonymousStoreSale) {
+      if (!customer) {
+        await database.prepare("INSERT OR IGNORE INTO customers (name, phone, city) VALUES (?, ?, ?)").bind(STORE_ANONYMOUS_NAME, STORE_ANONYMOUS_PHONE, "Non renseignée").run();
+        customer = await database.prepare("SELECT id FROM customers WHERE phone = ? LIMIT 1").bind(STORE_ANONYMOUS_PHONE).first<{ id: number }>();
+      }
+    } else if (!customer) {
       await database.prepare("INSERT INTO customers (name, phone, city) VALUES (?, ?, ?)").bind(customerName, phone, city).run();
       customer = await database.prepare("SELECT id FROM customers WHERE phone = ? LIMIT 1").bind(phone).first<{ id: number }>();
     } else {
