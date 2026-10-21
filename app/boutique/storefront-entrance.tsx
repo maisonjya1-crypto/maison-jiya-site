@@ -26,8 +26,8 @@ export default function StorefrontEntrance() {
       return () => window.clearTimeout(reducedTimer);
     }
 
-    const leaveTimer = window.setTimeout(() => setLeaving(true), 3000);
-    const hideTimer = window.setTimeout(() => setVisible(false), 3800);
+    const leaveTimer = window.setTimeout(() => setLeaving(true), 650);
+    const hideTimer = window.setTimeout(() => setVisible(false), 1050);
 
     return () => {
       window.clearTimeout(leaveTimer);
@@ -39,7 +39,7 @@ export default function StorefrontEntrance() {
 
   function skip() {
     setLeaving(true);
-    window.setTimeout(() => setVisible(false), 360);
+    window.setTimeout(() => setVisible(false), 300);
   }
 
   return (
