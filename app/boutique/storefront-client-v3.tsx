@@ -630,12 +630,12 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     {displayPromotions.length > 0 && <section className="storefront-v3-section storefront-v3-auto-promotions" id="promotions">
       <header className="storefront-v3-section-head"><div><small>{t.weeklyPromoKicker}</small><h2>{t.offers}</h2></div></header>
       <div className={`storefront-v3-auto-promotion-grid ${displayPromotions.length === 1 ? "single" : ""}`}>
-        {displayPromotions.map((promo, index) => {
+        {displayPromotions.map((promo) => {
           const ruleLabel = promotionRuleLabel(promo);
           return <article className={`storefront-v3-auto-promotion-card ${promo.imageUrl ? "has-image" : ""}`} key={promo.id}>
             <div className="storefront-v3-auto-promotion-media">
               {promo.imageUrl
-                ? <SafeImage src={promo.imageUrl} alt={promo.name || ruleLabel} priority={index === 0} fallback={<div className="storefront-v3-auto-promotion-fallback">{ruleLabel}</div>} />
+                ? <SafeImage src={promo.imageUrl} alt={promo.name || ruleLabel} fallback={<div className="storefront-v3-auto-promotion-fallback">{ruleLabel}</div>} />
                 : <div className="storefront-v3-auto-promotion-fallback"><small>{promo.badge || "OFFRE"}</small><strong>{ruleLabel}</strong></div>}
             </div>
             <div className="storefront-v3-auto-promotion-copy">
@@ -652,7 +652,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
 
     {weekly.length > 0 && <section className="storefront-v3-section" id="offres">
       <header className="storefront-v3-section-head"><div><small>{t.weeklyPromoKicker}</small><h2>{t.weeklyPromo}</h2></div></header>
-      <div className="storefront-v3-grid promo">{weekly.map((item, index) => <ProductCard key={`weekly-${item.kind}-${item.id}`} item={item} lang={lang} t={t} add={add} open={openItem} priority={index < 2} />)}</div>
+      <div className="storefront-v3-grid promo">{weekly.map((item) => <ProductCard key={`weekly-${item.kind}-${item.id}`} item={item} lang={lang} t={t} add={add} open={openItem} />)}</div>
     </section>}
 
     {bestSellers.length > 0 && <section className="storefront-v3-section storefront-v3-best">
