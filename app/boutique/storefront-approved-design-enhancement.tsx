@@ -83,13 +83,13 @@ function StoreImage({ src, alt, className = "", lazy = false }: { src: string; a
   return <img className={className} src={src} alt={alt} loading={lazy ? "lazy" : "eager"} decoding="async" />;
 }
 
-export default function StorefrontApprovedDesignEnhancement() {
+export default function StorefrontApprovedDesignEnhancement({ initialCatalog }: { initialCatalog: StorefrontCatalog | null }) {
   const [header, setHeader] = useState<HTMLElement | null>(null);
   const [hero, setHero] = useState<HTMLElement | null>(null);
   const [brandStrip, setBrandStrip] = useState<HTMLElement | null>(null);
   const [afterBrandHost, setAfterBrandHost] = useState<HTMLElement | null>(null);
   const [lang, setLang] = useState<Language>("fr");
-  const [catalog, setCatalog] = useState<StorefrontCatalog | null>(null);
+  const [catalog, setCatalog] = useState<StorefrontCatalog | null>(initialCatalog);
 
   useEffect(() => {
     const syncLanguage = () => setLang(documentLanguage());
@@ -129,13 +129,15 @@ export default function StorefrontApprovedDesignEnhancement() {
   }, []);
 
   useEffect(() => {
+    // Réutiliser les données déjà présentes dans le HTML : pas de second appel réseau au démarrage.
+    if (initialCatalog) return;
     let cancelled = false;
-    fetch(`/api/storefront/catalog?reference=${Date.now()}`, { cache: "no-store" })
+    fetch("/api/storefront/catalog", { cache: "no-store" })
       .then((response) => response.ok ? response.json() : null)
       .then((body) => { if (!cancelled && body) setCatalog(body as StorefrontCatalog); })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, []);
+  }, [initialCatalog]);
 
   const categoryCards = useMemo(() => {
     const products = catalog?.products || [];
