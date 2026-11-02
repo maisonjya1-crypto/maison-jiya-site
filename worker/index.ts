@@ -23,6 +23,10 @@ function withSecurityHeaders(response: Response, pathname: string) {
   const headers = new Headers(response.headers);
   headers.set("x-content-type-options", "nosniff");
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
+  headers.set("permissions-policy", "camera=(), microphone=(), geolocation=()");
+  if (pathname.startsWith("/boutique") && response.url.startsWith("https:")) {
+    headers.set("strict-transport-security", "max-age=31536000");
+  }
 
   const contentType = headers.get("content-type") || "";
   if (contentType.includes("text/html")) {
