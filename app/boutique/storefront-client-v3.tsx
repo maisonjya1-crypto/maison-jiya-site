@@ -206,13 +206,13 @@ function trackPurchaseOnce(orderRef: string, total: number, lines: Array<{ item:
   try { localStorage.setItem(storageKey, "1"); } catch { /* le tracking reste facultatif */ }
 }
 
-function SafeImage({ src, alt, fallback, priority = false }: { src: string; alt: string; fallback: ReactNode; priority?: boolean }) {
+function SafeImage({ src, alt, fallback, priority = false, width, height }: { src: string; alt: string; fallback: ReactNode; priority?: boolean; width?: number; height?: number }) {
   const [storedState, setStoredState] = useState<ImageState>({ src: "", attempt: 0, failed: false });
   const state = storedState.src === src ? storedState : { src, attempt: 0, failed: false };
   if (!src || state.failed) return <>{fallback}</>;
   const separator = src.includes("?") ? "&" : "?";
   const resolvedSrc = state.attempt ? `${src}${separator}retry=${state.attempt}` : src;
-  return <img src={resolvedSrc} alt={alt} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" onError={() => {
+  return <img src={resolvedSrc} alt={alt} width={width} height={height} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" onError={() => {
     if (state.attempt < 1) setStoredState({ src, attempt: 1, failed: false });
     else setStoredState({ src, attempt: state.attempt, failed: true });
   }} />;
@@ -222,7 +222,7 @@ function ProductCard({ item, lang, t, add, open, priority = false }: { item: Cat
   const fallback = <div className="storefront-v3-image-fallback"><b>{item.category.slice(0, 1).toUpperCase()}</b><small>{categoryCopy[lang][item.category] || item.category}</small></div>;
   return <article className={`storefront-v3-product ${!item.available ? "is-unavailable" : ""}`}>
     <button className="storefront-v3-product-media storefront-v3-product-open" type="button" onClick={() => open(item)} aria-label={`${t.viewProduct} : ${item.name}`}>
-      {item.images[0] ? <SafeImage src={item.images[0]} alt={item.name} fallback={fallback} priority={priority} /> : fallback}
+      {item.images[0] ? <SafeImage src={item.images[0]} alt={item.name} fallback={fallback} priority={priority} width={480} height={500} /> : fallback}
       {item.badge && <em>{item.badge}</em>}
       {item.images.length > 1 && <span className="storefront-v3-photo-count">{item.images.length} photos</span>}
       {!item.available && <i>{t.unavailable}</i>}
@@ -284,7 +284,7 @@ function ProductGalleryModal({ item, lang, t, add, close }: { item: CatalogItem;
         </div>
         {imageCount > 1 && <div className="storefront-v3-product-thumbnails" aria-label="Galerie photos">
           {images.map((image, index) => <button className={index === activeImage ? "active" : ""} type="button" key={image || index} onClick={() => setActiveImage(index)} aria-label={`Afficher la photo ${index + 1}`}>
-            {image ? <SafeImage src={image} alt={`${item.name} miniature ${index + 1}`} fallback={<span>{index + 1}</span>} /> : <span>{index + 1}</span>}
+            {image ? <SafeImage src={image} alt={`${item.name} miniature ${index + 1}`} fallback={<span>{index + 1}</span>} width={96} height={96} /> : <span>{index + 1}</span>}
           </button>)}
         </div>}
       </div>
@@ -578,7 +578,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     return <section className="storefront-v3-marketing-zone" data-placement={placement}>
       <div className={`storefront-v3-marketing-grid ${sections.length === 1 ? "single" : ""}`}>
         {sections.map((section) => <article className={`storefront-v3-marketing-card ${section.imageUrl ? "has-image" : ""}`} key={section.id}>
-          {section.imageUrl && <div className="storefront-v3-marketing-media"><SafeImage src={section.imageUrl} alt={section.title} fallback={<div className="storefront-v3-marketing-fallback">MJ</div>} /></div>}
+          {section.imageUrl && <div className="storefront-v3-marketing-media"><SafeImage src={section.imageUrl} alt={section.title} fallback={<div className="storefront-v3-marketing-fallback">MJ</div>} width={780} height={520} /></div>}
           <div className="storefront-v3-marketing-copy">
             <div>{section.badge && <span className="storefront-v3-marketing-badge">{section.badge}</span>}{section.eyebrow && <small>{section.eyebrow}</small>}</div>
             <h2>{section.title}</h2>
@@ -600,7 +600,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         <a href="#catalogue">{t.catalogue}</a>{(displayPromotions.length > 0 || offers.length > 0) && <a href={displayPromotions.length ? "#promotions" : "#offres"}>{t.offers}</a>}<a href="#commande">{t.howToOrder}</a>
       </nav>
       <a className="storefront-v3-brand" href="/boutique" aria-label={`${brand} ${t.officialStore}`}>
-        <SafeImage src={catalog?.logoUrl || "/maison-jiya-logo.jpeg"} alt={brand} priority fallback={<b>MJ</b>} />
+        <SafeImage src={catalog?.logoUrl || "/maison-jiya-logo.jpeg"} alt={brand} fallback={<b>MJ</b>} width={180} height={90} />
         <span><strong>{brand}</strong><small>{t.officialStore}</small></span>
       </a>
       <div className="storefront-v3-header-actions">
@@ -616,7 +616,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     </aside>}
 
     <section className={`storefront-v3-hero ${catalog?.heroImageUrl ? "has-image" : ""}`}>
-      {catalog?.heroImageUrl && <div className="storefront-v3-hero-media"><SafeImage src={catalog.heroImageUrl} alt={`${brand} collection`} priority fallback={<div className="storefront-v3-hero-fallback">MJ</div>} /></div>}
+      {catalog?.heroImageUrl && <div className="storefront-v3-hero-media"><SafeImage src={catalog.heroImageUrl} alt={`${brand} collection`} fallback={<div className="storefront-v3-hero-fallback">MJ</div>} width={1280} height={720} /></div>}
       <div className="storefront-v3-hero-copy">
         <span>{brand} · MAROC</span>
         <h1>{localized?.heroTitle || catalog?.heroTitle}</h1>
@@ -655,7 +655,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
           return <article className={`storefront-v3-auto-promotion-card ${promo.imageUrl ? "has-image" : ""}`} key={promo.id}>
             <div className="storefront-v3-auto-promotion-media">
               {promo.imageUrl
-                ? <SafeImage src={promo.imageUrl} alt={promo.name || ruleLabel} fallback={<div className="storefront-v3-auto-promotion-fallback">{ruleLabel}</div>} />
+                ? <SafeImage src={promo.imageUrl} alt={promo.name || ruleLabel} fallback={<div className="storefront-v3-auto-promotion-fallback">{ruleLabel}</div>} width={720} height={450} />
                 : <div className="storefront-v3-auto-promotion-fallback"><small>{promo.badge || "OFFRE"}</small><strong>{ruleLabel}</strong></div>}
             </div>
             <div className="storefront-v3-auto-promotion-copy">
@@ -685,7 +685,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       <div className="storefront-v3-collection-grid">{collectionCategories.map((item) => {
         const representative = products.find((product) => product.category === item);
         return <button type="button" key={item} onClick={() => { clearPromotionProducts(); setCategory(item); document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth" }); }}>
-          <div>{representative?.images[0] ? <SafeImage src={representative.images[0]} alt={item} fallback={<span>{item.slice(0, 1)}</span>} /> : <span>{item.slice(0, 1)}</span>}</div>
+          <div>{representative?.images[0] ? <SafeImage src={representative.images[0]} alt={item} fallback={<span>{item.slice(0, 1)}</span>} width={400} height={400} /> : <span>{item.slice(0, 1)}</span>}</div>
           <strong>{categoryCopy[lang][item] || item} →</strong>
         </button>;
       })}</div>
