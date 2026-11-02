@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { CatalogItem, StorefrontCatalog, StorefrontLanguage, StorefrontMarketingSection } from "./storefront-types";
-import { StorefrontReferenceAfterBrand } from "./storefront-approved-design-enhancement";
+import { StorefrontNativeHeader, StorefrontNativeHero, StorefrontNativeBrands, StorefrontReferenceAfterBrand } from "./storefront-approved-design-enhancement";
 import { calculateIndependentPromotions, promotionRuleLabel, type StorefrontPromotion } from "../../lib/storefront-promotions";
 
 type Cart = Record<string, number>;
@@ -607,6 +607,10 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         <div className="storefront-v3-language" role="group" aria-label="Language / اللغة"><button type="button" aria-pressed={lang === "fr"} aria-label="Français" className={lang === "fr" ? "active" : ""} onClick={() => setLang("fr")}>FR</button><button type="button" aria-pressed={lang === "ar"} aria-label="العربية" className={lang === "ar" ? "active" : ""} onClick={() => setLang("ar")}>ع</button><button type="button" aria-pressed={lang === "en"} aria-label="English" className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>EN</button></div>
         <button className="storefront-v3-cart-button" type="button" onClick={() => setCartOpen(true)} aria-label={`${t.cart} · ${itemCount} ${t.products}`}>♡ <span>{t.cart}</span><b aria-live="polite">{itemCount}</b></button>
       </div>
+      <StorefrontNativeHeader lang={lang} onLanguage={setLang} onSearch={() => {
+        document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        window.setTimeout(() => document.querySelector<HTMLInputElement>(".storefront-v3-tools input")?.focus(), 350);
+      }} onCart={() => setCartOpen(true)} />
     </header>
 
     {promotion?.enabled && (promotion.title || promotion.text) && <aside className="storefront-v3-promotion-bar" aria-label={promotion.title || promotion.badge}>
@@ -624,9 +628,10 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         <div><a href="#catalogue">{t.discover}</a>{waUrl && <a className="ghost" href={waUrl} target="_blank" rel="noreferrer">{t.whatsapp}</a>}</div>
         <ul><li>{t.cashOnDelivery}</li><li>{t.confirmation}</li><li>{t.moroccoDelivery}</li></ul>
       </div>
+      <StorefrontNativeHero lang={lang} />
     </section>
 
-    <div className="storefront-v3-brand-strip" aria-label="Maison Jiya collections"><div className="storefront-v3-brand-strip-track">{[...strip, ...strip].map((item, index) => <span key={`${item}-${index}`}>{item}</span>)}</div></div>
+    <div className="storefront-v3-brand-strip" aria-label="Maison Jiya collections"><div className="storefront-v3-brand-strip-track">{[...strip, ...strip].map((item, index) => <span key={`${item}-${index}`}>{item}</span>)}</div><StorefrontNativeBrands lang={lang} /></div>
 
     <StorefrontReferenceAfterBrand
       catalog={catalog}
