@@ -83,13 +83,11 @@ function StoreImage({ src, alt, className = "", lazy = false }: { src: string; a
   return <img className={className} src={src} alt={alt} loading={lazy ? "lazy" : "eager"} decoding="async" />;
 }
 
-export default function StorefrontApprovedDesignEnhancement({ initialCatalog }: { initialCatalog: StorefrontCatalog | null }) {
+export default function StorefrontApprovedDesignEnhancement() {
   const [header, setHeader] = useState<HTMLElement | null>(null);
   const [hero, setHero] = useState<HTMLElement | null>(null);
   const [brandStrip, setBrandStrip] = useState<HTMLElement | null>(null);
-  const [afterBrandHost, setAfterBrandHost] = useState<HTMLElement | null>(null);
   const [lang, setLang] = useState<Language>("fr");
-  const [catalog, setCatalog] = useState<StorefrontCatalog | null>(initialCatalog);
 
   useEffect(() => {
     const syncLanguage = () => setLang(documentLanguage());
@@ -98,60 +96,6 @@ export default function StorefrontApprovedDesignEnhancement({ initialCatalog }: 
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] });
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    let attempts = 0;
-    const timer = window.setInterval(() => {
-      attempts += 1;
-      const nextHeader = document.querySelector<HTMLElement>(".storefront-v3-header");
-      const nextHero = document.querySelector<HTMLElement>(".storefront-v3-hero");
-      const nextBrandStrip = document.querySelector<HTMLElement>(".storefront-v3-brand-strip");
-      if (nextHeader && nextHero && nextBrandStrip) {
-        setHeader(nextHeader);
-        setHero(nextHero);
-        setBrandStrip(nextBrandStrip);
-        let host = document.querySelector<HTMLElement>(".storefront-reference-after-brand");
-        if (!host) {
-          host = document.createElement("div");
-          host.className = "storefront-reference-after-brand";
-          nextBrandStrip.insertAdjacentElement("afterend", host);
-        }
-        setAfterBrandHost(host);
-        window.clearInterval(timer);
-      } else if (attempts >= 40) {
-        window.clearInterval(timer);
-      }
-    }, 50);
-    return () => {
-      window.clearInterval(timer);
-      document.querySelector(".storefront-reference-after-brand")?.remove();
-    };
-  }, []);
-
-  useEffect(() => {
-    // Réutiliser les données déjà présentes dans le HTML : pas de second appel réseau au démarrage.
-    if (initialCatalog) return;
-    let cancelled = false;
-    fetch("/api/storefront/catalog", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : null)
-      .then((body) => { if (!cancelled && body) setCatalog(body as StorefrontCatalog); })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [initialCatalog]);
-
-  const categoryCards = useMemo(() => {
-    const products = catalog?.products || [];
-    const watches = firstMatching(products, ["montre", "watch"]);
-    const jewelry = firstMatching(products, ["bijou", "jewel", "bracelet", "collier"]);
-    const wallets = firstMatching(products, ["portefeuille", "wallet", "porte monnaie", "porte-monnaie"]);
-    const packs = firstMatching(products, ["pack", "coffret"]);
-    return [
-      { key: "watches", label: ui[lang].watches, image: brandVisuals.watches, category: watches?.category || "Montres", target: "catalogue" },
-      { key: "jewelry", label: ui[lang].jewelry, image: brandVisuals.jewelry, category: jewelry?.category || "Bijoux", target: "catalogue" },
-      { key: "wallets", label: ui[lang].wallets, image: brandVisuals.wallets, category: wallets?.category || "Portefeuilles", target: "catalogue" },
-      { key: "packs", label: ui[lang].packs, image: brandVisuals.packs, category: packs?.category || "", target: packs ? "catalogue" : "offres" },
-    ];
-  }, [catalog, lang]);
 
   function switchLanguage(next: Language) {
     setLang(next);
@@ -173,36 +117,6 @@ export default function StorefrontApprovedDesignEnhancement({ initialCatalog }: 
   function goToCatalogue() {
     document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
-
-  function goToCategory(category: string, target: string) {
-    if (target === "offres") {
-      document.querySelector("#offres")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-    const select = document.querySelector(".storefront-v3-tools select") as unknown as SelectBridge | null;
-    if (select && category) {
-      const option = Array.from(select.options).find((entry) => entry.value === category || normalize(entry.value) === normalize(category));
-      if (option) {
-        select.value = option.value;
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-    }
-    goToCatalogue();
-  }
-
-  function openMarketingTarget(section: StorefrontMarketingSection) {
-    if (section.target === "offers") {
-      document.querySelector("#offres")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-    if (section.target === "catalogue") {
-      goToCatalogue();
-      return;
-    }
-    goToCategory(section.target, "catalogue");
-  }
-
-  const exactCategoryPromos = (catalog?.marketingSections || []).filter((section) => section.placement === "after_categories");
 
   const t = ui[lang];
 
@@ -250,7 +164,40 @@ export default function StorefrontApprovedDesignEnhancement({ initialCatalog }: 
       {[...referenceBrands, ...referenceBrands].map((brand, index) => <span key={`${brand}-${index}`}>{brand}</span>)}
     </div>, brandStrip)}
 
-    {afterBrandHost && createPortal(<>
+
+  </>;
+}
+
+// Rendu directement dans le HTML initial : le chargement JS n'ajoute plus une zone
+// entière au-dessus des offres, ce qui stabilise le CLS mobile et desktop.
+export function StorefrontReferenceAfterBrand({
+  catalog,
+  lang,
+  onCategory,
+  onMarketing,
+}: {
+  catalog: StorefrontCatalog | null;
+  lang: Language;
+  onCategory: (category: string, target: string) => void;
+  onMarketing: (section: StorefrontMarketingSection) => void;
+}) {
+  const categoryCards = useMemo(() => {
+    const products = catalog?.products || [];
+    const watches = firstMatching(products, ["montre", "watch"]);
+    const jewelry = firstMatching(products, ["bijou", "jewel", "bracelet", "collier"]);
+    const wallets = firstMatching(products, ["portefeuille", "wallet", "porte monnaie", "porte-monnaie"]);
+    const packs = firstMatching(products, ["pack", "coffret"]);
+    return [
+      { key: "watches", label: ui[lang].watches, image: brandVisuals.watches, category: watches?.category || "Montres", target: "catalogue" },
+      { key: "jewelry", label: ui[lang].jewelry, image: brandVisuals.jewelry, category: jewelry?.category || "Bijoux", target: "catalogue" },
+      { key: "wallets", label: ui[lang].wallets, image: brandVisuals.wallets, category: wallets?.category || "Portefeuilles", target: "catalogue" },
+      { key: "packs", label: ui[lang].packs, image: brandVisuals.packs, category: packs?.category || "", target: packs ? "catalogue" : "offres" },
+    ];
+  }, [catalog, lang]);
+
+  const exactCategoryPromos = (catalog?.marketingSections || []).filter((section) => section.placement === "after_categories");
+  const t = ui[lang];
+  return <div className="storefront-reference-after-brand">
       <section className="storefront-reference-services" aria-label={t.services}>
         <article><ServiceIcon kind="delivery" /><div><strong>{t.freeDelivery}</strong><span>{t.freeDeliverySub}</span></div></article>
         <article><ServiceIcon kind="payment" /><div><strong>{t.cod}</strong><span>{t.codSub}</span></div></article>
@@ -259,7 +206,7 @@ export default function StorefrontApprovedDesignEnhancement({ initialCatalog }: 
       </section>
       <section className="storefront-reference-categories">
         <header><h2>{t.categories}</h2><p>{t.categoriesSub}</p></header>
-        <div>{categoryCards.map((card) => <button key={card.key} type="button" onClick={() => goToCategory(card.category, card.target)}>
+        <div>{categoryCards.map((card) => <button key={card.key} type="button" onClick={() => onCategory(card.category, card.target)}>
           <span className="storefront-reference-category-media">
             <StoreImage src={card.image} alt={card.label} lazy />
             <em><b>{card.label}</b><small>{t.view}</small></em>
@@ -275,11 +222,11 @@ export default function StorefrontApprovedDesignEnhancement({ initialCatalog }: 
               <div>{section.badge && <span className="storefront-v3-marketing-badge">{section.badge}</span>}{section.eyebrow && <small>{section.eyebrow}</small>}</div>
               <h2>{section.title}</h2>
               {section.body && <p>{section.body}</p>}
-              <button type="button" onClick={() => openMarketingTarget(section)}>{section.ctaLabel || t.discover} →</button>
+              <button type="button" onClick={() => onMarketing(section)}>{section.ctaLabel || t.discover} →</button>
             </div>
           </article>)}
         </div>
       </section>}
-    </>, afterBrandHost)}
-  </>;
+
+  </div>;
 }
