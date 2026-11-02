@@ -9,6 +9,12 @@ test("les blocs services et catégories sont rendus par le storefront dès le HT
   const v3 = await read("app/boutique/storefront-client-v3.tsx");
   const enhancement = await read("app/boutique/storefront-approved-design-enhancement.tsx");
   assert.match(v3, /<StorefrontReferenceAfterBrand/);
+  assert.match(v3, /<StorefrontNativeHeader/);
+  assert.match(v3, /<StorefrontNativeHero lang=\{lang\} \/>/);
+  assert.match(v3, /<StorefrontNativeBrands lang=\{lang\} \/>/);
+  assert.match(enhancement, /export function StorefrontNativeHeader/);
+  assert.match(enhancement, /export function StorefrontNativeHero/);
+  assert.doesNotMatch(enhancement, /createPortal\(/);
   assert.match(v3, /catalog=\{catalog\}/);
   assert.match(v3, /onMarketing=\{openMarketingTarget\}/);
   assert.match(enhancement, /export function StorefrontReferenceAfterBrand/);
