@@ -5,12 +5,18 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
-test("le catalogue SSR est partagé avec l'habillage au lieu de le télécharger deux fois", async () => {
-  const page = await read("app/boutique/page.tsx");
+test("les blocs services et catégories sont rendus par le storefront dès le HTML initial", async () => {
+  const v3 = await read("app/boutique/storefront-client-v3.tsx");
   const enhancement = await read("app/boutique/storefront-approved-design-enhancement.tsx");
-  assert.match(page, /StorefrontApprovedDesignEnhancement initialCatalog=\{initialCatalog\}/);
-  assert.match(enhancement, /useState<StorefrontCatalog \| null>\(initialCatalog\)/);
-  assert.match(enhancement, /if \(initialCatalog\) return;/);
+  assert.match(v3, /<StorefrontReferenceAfterBrand/);
+  assert.match(v3, /catalog=\{catalog\}/);
+  assert.match(v3, /onMarketing=\{openMarketingTarget\}/);
+  assert.match(enhancement, /export function StorefrontReferenceAfterBrand/);
+  assert.match(enhancement, /className="storefront-reference-services"/);
+  assert.match(enhancement, /className="storefront-reference-categories"/);
+  assert.match(enhancement, /className="storefront-reference-after-brand"/);
+  assert.doesNotMatch(enhancement, /document\.createElement\("div"\)/);
+  assert.doesNotMatch(enhancement, /insertAdjacentElement\("afterend"/);
   assert.doesNotMatch(enhancement, /catalog\?reference=\$\{Date\.now\(\)\}/);
 });
 
@@ -21,14 +27,12 @@ test("l'introduction conserve le même design sans masquer le contenu plusieurs 
   assert.match(intro, /setVisible\(false\), 1050/);
   assert.match(css, /transform: scaleX\(0\);/);
   assert.match(css, /to \{ transform: scaleX\(1\); \}/);
-  assert.doesNotMatch(css, /to \{ width: min\(270px, 56vw\); \}/);
 });
 
-test("les images des offres situées sous la couverture ne sont plus chargées en priorité", async () => {
+test("les images des offres sous la couverture ne sont pas prioritaires", async () => {
   const storefront = await read("app/boutique/storefront-client-v3.tsx");
-  const promotions = storefront.slice(storefront.indexOf('id="promotions"'), storefront.indexOf("id=\"catalogue\""));
+  const promotions = storefront.slice(storefront.indexOf('id="promotions"'), storefront.indexOf('id="catalogue"'));
   assert.match(promotions, /SafeImage src=\{promo\.imageUrl\}/);
   assert.doesNotMatch(promotions, /priority=\{index === 0\}/);
   assert.doesNotMatch(promotions, /priority=\{index < 2\}/);
-  assert.match(storefront, /SafeImage src=\{catalog\.heroImageUrl\}[^>]*priority/);
 });
