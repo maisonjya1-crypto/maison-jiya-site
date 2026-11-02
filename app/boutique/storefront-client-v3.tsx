@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { CatalogItem, StorefrontCatalog, StorefrontLanguage, StorefrontMarketingSection } from "./storefront-types";
+import { StorefrontReferenceAfterBrand } from "./storefront-approved-design-enhancement";
 import { calculateIndependentPromotions, promotionRuleLabel, type StorefrontPromotion } from "../../lib/storefront-promotions";
 
 type Cart = Record<string, number>;
@@ -626,6 +627,25 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     </section>
 
     <div className="storefront-v3-brand-strip" aria-label="Maison Jiya collections"><div className="storefront-v3-brand-strip-track">{[...strip, ...strip].map((item, index) => <span key={`${item}-${index}`}>{item}</span>)}</div></div>
+
+    <StorefrontReferenceAfterBrand
+      catalog={catalog}
+      lang={lang}
+      onCategory={(referenceCategory, target) => {
+        if (target === "offres") {
+          document.querySelector("#offres")?.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
+        const matchingCategory = catalog?.categories.find((item) => item === referenceCategory || normalize(item) === normalize(referenceCategory));
+        if (matchingCategory) {
+          clearPromotionProducts();
+          setCategory(matchingCategory);
+          setVisibleCount(INITIAL_VISIBLE);
+        }
+        window.requestAnimationFrame(() => document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      }}
+      onMarketing={openMarketingTarget}
+    />
 
     {displayPromotions.length > 0 && <section className="storefront-v3-section storefront-v3-auto-promotions" id="promotions">
       <header className="storefront-v3-section-head"><div><small>{t.weeklyPromoKicker}</small><h2>{t.offers}</h2></div></header>
