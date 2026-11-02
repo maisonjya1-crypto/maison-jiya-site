@@ -9,6 +9,12 @@ type Cart = Record<string, number>;
 type FbqFunction = ((...args: unknown[]) => void) & { queue?: unknown[][]; loaded?: boolean; version?: string };
 type FbqWindow = Window & { fbq?: FbqFunction; _fbq?: FbqFunction; __maisonJiyaPixels?: Record<string, boolean> };
 type ImageState = { src: string; attempt: number; failed: boolean };
+type MetaConsent = "loading" | "unset" | "accepted" | "refused";
+const META_CONSENT_KEY = "maison-jiya-meta-consent-v1";
+function pixelConsentGranted() {
+  try { return typeof window !== "undefined" && window.localStorage.getItem(META_CONSENT_KEY) === "accepted"; }
+  catch { return false; }
+}
 
 type Copy = {
   officialStore: string;
@@ -161,12 +167,12 @@ function money(value: number, lang: StorefrontLanguage) {
 }
 
 function track(event: string, data?: Record<string, unknown>) {
-  if (typeof window === "undefined") return;
+  if (!pixelConsentGranted()) return;
   (window as FbqWindow).fbq?.("track", event, data || {});
 }
 
 function enableMetaPixel(pixelId: string) {
-  if (!pixelId || typeof window === "undefined") return false;
+  if (!pixelId || !pixelConsentGranted()) return false;
   const target = window as FbqWindow;
   target.__maisonJiyaPixels = target.__maisonJiyaPixels || {};
   if (target.__maisonJiyaPixels[pixelId]) return false;
@@ -319,6 +325,8 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const [confirmation, setConfirmation] = useState<{ orderRef: string; total: number } | null>(null);
   const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
   const [utm, setUtm] = useState({ source: "", medium: "", campaign: "" });
+  const [metaConsent, setMetaConsent] = useState<MetaConsent>("loading");
+  const [cookieSettingsOpen, setCookieSettingsOpen] = useState(false);
   const refreshInFlight = useRef(false);
   const lastRefreshAt = useRef(0);
   const t = copy[lang];
@@ -413,11 +421,33 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   }, [initialCatalog, refreshCatalog]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const value = localStorage.getItem(META_CONSENT_KEY);
+        setMetaConsent(value === "accepted" || value === "refused" ? value : "unset");
+      } catch {
+        setMetaConsent("unset");
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  function chooseMetaConsent(choice: "accepted" | "refused") {
+    const wasAccepted = pixelConsentGranted();
+    try { localStorage.setItem(META_CONSENT_KEY, choice); } catch { /* Aucun suivi si stockage indisponible. */ }
+    setMetaConsent(choice);
+    setCookieSettingsOpen(false);
+    // Après un refus, retirer entièrement les balises Pixel déjà installées requiert un rechargement.
+    if (wasAccepted && choice === "refused") window.location.reload();
+  }
+
+  useEffect(() => {
+    if (metaConsent !== "accepted") return;
     const pixelId = catalog?.metaPixelId || "";
     if (pixelId && enableMetaPixel(pixelId)) {
       track("ViewContent", { content_name: "Maison Jiya Boutique", content_type: "product_group" });
     }
-  }, [catalog?.metaPixelId]);
+  }, [catalog?.metaPixelId, metaConsent]);
 
   useEffect(() => {
     const refreshIfNeeded = () => {
@@ -517,6 +547,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           customerName: form.get("customerName"), phone: form.get("phone"), city: form.get("city"), address: form.get("address"), note: form.get("note"), website: form.get("website"),
+          privacyAcknowledged: form.get("privacyAcknowledged") === "yes",
           utmSource: utm.source, utmMedium: utm.medium, utmCampaign: utm.campaign,
           items: cartLines.map((line) => ({ kind: line.item.kind, id: line.item.id, quantity: line.quantity })),
         }),
@@ -541,7 +572,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const waDigits = (catalog?.contactWhatsapp || catalog?.whatsapp || "").replace(/\D/g, "").replace(/^0/, "212");
   const waMessage = lang === "ar" ? `مرحبًا ${brand}، لدي سؤال بخصوص المتجر.` : lang === "en" ? `Hello ${brand}, I have a question about your store.` : `Bonjour ${brand}, j’ai une question concernant votre boutique.`;
   const waUrl = waDigits ? `https://wa.me/${waDigits}?text=${encodeURIComponent(waMessage)}` : "";
-  const announcement = localized?.announcement || t.freeDelivery;
+  const announcement = localized?.announcement || t.moroccoDelivery;
   const strip = catalog?.brandStrip?.length ? catalog.brandStrip : [brand, "MONTRES", "BIJOUX", "PORTEFEUILLES", "PACKS"];
   const promotionTarget = displayPromotions.length ? "#promotions" : offers.length ? "#offres" : "#catalogue";
   const marketingSections = catalog?.marketingSections ?? [];
@@ -724,7 +755,25 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     {renderMarketingSections("before_contact")}
 
     <section className="storefront-v3-contact" id="contact"><div><small>{brand}</small><h2>{t.helpTitle}</h2><p>{t.helpText}</p></div>{waUrl && <a href={waUrl} target="_blank" rel="noreferrer">{t.whatsapp} →</a>}</section>
-    <footer className="storefront-v3-footer"><div><strong>{brand}</strong><small>{localized?.shippingNote || catalog?.shippingNote}</small></div><span>© {new Date().getFullYear()} {brand}</span></footer>
+    <footer className="storefront-v3-footer">
+      <div><strong>{brand}</strong><small>{localized?.shippingNote || catalog?.shippingNote}</small></div>
+      <nav className="mj-legal-links" aria-label="Informations boutique">
+        <a href="/boutique/mentions-legales">Mentions légales</a>
+        <a href="/boutique/conditions-vente">Conditions de vente</a>
+        <a href="/boutique/livraison-retours">Livraison et retours</a>
+        <a href="/boutique/confidentialite">Confidentialité</a>
+        {catalog?.metaPixelId && <button type="button" onClick={() => setCookieSettingsOpen(true)}>Cookies publicitaires</button>}
+      </nav>
+      <span>© {new Date().getFullYear()} {brand}</span>
+    </footer>
+    {catalog?.metaPixelId && (metaConsent === "unset" || cookieSettingsOpen) && <aside className="mj-meta-consent" role="dialog" aria-modal="false" aria-label="Préférences publicitaires">
+      <strong>Cookies publicitaires</strong>
+      <p>Avec votre accord, Maison Jiya utilise le Pixel Meta pour mesurer ses publicités Facebook et Instagram. Refuser ne bloque pas les achats. <a href="/boutique/confidentialite">En savoir plus</a>.</p>
+      <div>
+        <button className="mj-cookie-refuse" type="button" onClick={() => chooseMetaConsent("refused")}>Refuser</button>
+        <button className="mj-cookie-accept" type="button" onClick={() => chooseMetaConsent("accepted")}>Accepter</button>
+      </div>
+    </aside>}
     {waUrl && <a className="storefront-v3-wa" href={waUrl} target="_blank" rel="noreferrer" aria-label={t.whatsapp}>WA</a>}
 
     {selectedItem && <ProductGalleryModal key={itemKey(selectedItem)} item={selectedItem} lang={lang} t={t} add={add} close={() => setSelectedItem(null)} />}
@@ -756,6 +805,11 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
           <label><span>{t.address} *</span><textarea name="address" autoComplete="street-address" rows={3} minLength={5} maxLength={260} required /></label>
           <label><span>{t.note} ({t.optional})</span><textarea name="note" rows={2} maxLength={240} /></label>
           <label className="storefront-v3-honeypot" aria-hidden="true"><span>Website</span><input name="website" tabIndex={-1} autoComplete="off" /></label>
+          <label className="mj-checkout-privacy">
+            <input name="privacyAcknowledged" type="checkbox" required value="yes" />
+            <span>{lang === "ar" ? <>أوافق على استخدام بياناتي لتأكيد طلبي وتسليمه، وقد اطلعت على <a href="/boutique/confidentialite" target="_blank" rel="noopener noreferrer">سياسة الخصوصية</a>.</> : lang === "en" ? <>I agree to the use of my details to confirm and deliver my order, and I have read the <a href="/boutique/confidentialite" target="_blank" rel="noopener noreferrer">privacy policy</a>.</> : <>J'accepte l'utilisation de mes coordonnées pour confirmer et livrer ma commande, et j'ai pris connaissance de la <a href="/boutique/confidentialite" target="_blank" rel="noopener noreferrer">politique de confidentialité</a>.</>}</span>
+          </label>
+          <p className="mj-checkout-legal-link"><a href="/boutique/conditions-vente" target="_blank" rel="noopener noreferrer">Conditions de vente</a> · <a href="/boutique/livraison-retours" target="_blank" rel="noopener noreferrer">Livraison et retours</a></p>
           {submitError && <p className="storefront-v3-submit-error" role="alert">{submitError}</p>}
           <button className="storefront-v3-submit" disabled={submitting}>{submitting ? t.sending : t.confirmOrder}</button>
           <small className="storefront-v3-cod">{t.cashOnDelivery} · {t.confirmation}</small>
