@@ -28,7 +28,13 @@ assert.match(orderRoute, /status,[^]*'En attente'/);
 
 const publicPage = await readText("app/boutique/page.tsx");
 assert.match(publicPage, /StorefrontClientV3/);
-assert.match(publicPage, /StorefrontApprovedDesignEnhancement/);
+// La nouvelle couverture conserve les composants, mais ils sont montés dans le HTML initial.
+assert.match(publicPage, /StorefrontClientV3/);
+const nativeClient = await readText("app/boutique/storefront-client-v3.tsx");
+assert.match(nativeClient, /<StorefrontNativeHeader/);
+assert.match(nativeClient, /<StorefrontNativeHero/);
+assert.match(nativeClient, /<StorefrontNativeBrands/);
+assert.match(nativeClient, /<StorefrontReferenceAfterBrand/);
 assert.match(publicPage, /StorefrontCoverInteractions/);
 assert.match(publicPage, /storefront_manual_catalog_initialized_v1/);
 assert.match(publicPage, /maison-jiya-public-reference-native-v5/);

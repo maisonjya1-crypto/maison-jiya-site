@@ -19,7 +19,8 @@ test("la boutique charge l'animation d'entrée sans toucher au dashboard", () =>
 });
 
 test("l'intro reste courte et peut être passée", () => {
-  assert.match(intro, /3000/);
-  assert.match(intro, /3800/);
+  assert.match(intro, /setLeaving\(true\), 650/);
+  assert.match(intro, /setVisible\(false\), 1050/);
+  assert.doesNotMatch(intro, /setVisible\(false\), 3800/);
   assert.match(intro, />Passer<\/button>/);
 });

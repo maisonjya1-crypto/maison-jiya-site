@@ -19,8 +19,12 @@ test("saved storefront language and cart are restored before persistence starts"
 });
 
 test("the visible cover follows FR, Arabic and English language changes", () => {
-  assert.match(enhancement, /new MutationObserver\(syncLanguage\)/);
-  assert.match(enhancement, /attributeFilter: \["lang"\]/);
+  // Le header et la couverture utilisent désormais directement le même état langue que la boutique.
+  assert.match(storefront, /<StorefrontNativeHeader lang=\{lang\} onLanguage=\{setLang\}/);
+  assert.match(storefront, /<StorefrontNativeHero lang=\{lang\} \/>/);
+  assert.match(enhancement, /export function StorefrontNativeHero/);
+  assert.match(enhancement, /const t = ui\[lang\]/);
+  assert.match(storefront, /document\.documentElement\.lang = lang/);
   assert.match(interactions, /عرض الساعات الرجالية/);
   assert.match(interactions, /View men’s watches/);
   assert.match(interactions, /new MutationObserver\(syncLabels\)/);

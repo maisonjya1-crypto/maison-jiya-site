@@ -2,7 +2,6 @@ import { getRawDb } from "../../db";
 import { getPublicDb } from "../../db/public-db";
 import { ensureStorefrontCms } from "../../db/storefront-cms";
 import { loadStorefrontCatalogFast } from "../../db/storefront-public-fast";
-import StorefrontApprovedDesignEnhancement from "./storefront-approved-design-enhancement";
 import StorefrontCoverInteractions from "./storefront-cover-interactions";
 import StorefrontEntrance from "./storefront-entrance";
 import StorefrontClientV3 from "./storefront-client-v3";
@@ -33,7 +32,6 @@ export default async function BoutiquePage() {
   return <div className="storefront-approved-design storefront-reference-exact storefront-reference-clean" data-storefront-deployment={STOREFRONT_DEPLOYMENT_MARKER}>
     <StorefrontEntrance />
     <StorefrontClientV3 initialCatalog={initialCatalog} />
-    <StorefrontApprovedDesignEnhancement />
     <StorefrontMobileHeroProducts />
     <StorefrontCoverInteractions />
     <StorefrontWhatsappContactHotfix />

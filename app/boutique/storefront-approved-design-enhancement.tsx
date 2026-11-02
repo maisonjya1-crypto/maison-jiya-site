@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { useMemo } from "react";
 import type { CatalogItem, StorefrontCatalog, StorefrontMarketingSection } from "./storefront-types";
 
 type Language = "fr" | "ar" | "en";
-type SelectBridge = { options: ArrayLike<{ value: string }>; value: string; dispatchEvent: (event: Event) => boolean };
 type UiCopy = {
   catalogue: string; offers: string; contact: string; search: string; categories: string; categoriesSub: string;
   watches: string; jewelry: string; wallets: string; packs: string; view: string; discover: string;
@@ -61,12 +59,6 @@ function normalize(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
-function documentLanguage(): Language {
-  const value = document.documentElement.lang.toLowerCase();
-  if (value.startsWith("ar")) return "ar";
-  if (value.startsWith("en")) return "en";
-  return "fr";
-}
 
 function firstMatching(items: CatalogItem[], terms: string[]) {
   return items.find((item) => terms.some((term) => normalize(item.category).includes(term) || normalize(item.name).includes(term)));
@@ -83,148 +75,40 @@ function StoreImage({ src, alt, className = "", lazy = false }: { src: string; a
   return <img className={className} src={src} alt={alt} loading={lazy ? "lazy" : "eager"} decoding="async" />;
 }
 
-export default function StorefrontApprovedDesignEnhancement() {
-  const [header, setHeader] = useState<HTMLElement | null>(null);
-  const [hero, setHero] = useState<HTMLElement | null>(null);
-  const [brandStrip, setBrandStrip] = useState<HTMLElement | null>(null);
-  const [afterBrandHost, setAfterBrandHost] = useState<HTMLElement | null>(null);
-  const [lang, setLang] = useState<Language>("fr");
-  const [catalog, setCatalog] = useState<StorefrontCatalog | null>(null);
-
-  useEffect(() => {
-    const syncLanguage = () => setLang(documentLanguage());
-    syncLanguage();
-    const observer = new MutationObserver(syncLanguage);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] });
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    let attempts = 0;
-    const timer = window.setInterval(() => {
-      attempts += 1;
-      const nextHeader = document.querySelector<HTMLElement>(".storefront-v3-header");
-      const nextHero = document.querySelector<HTMLElement>(".storefront-v3-hero");
-      const nextBrandStrip = document.querySelector<HTMLElement>(".storefront-v3-brand-strip");
-      if (nextHeader && nextHero && nextBrandStrip) {
-        setHeader(nextHeader);
-        setHero(nextHero);
-        setBrandStrip(nextBrandStrip);
-        let host = document.querySelector<HTMLElement>(".storefront-reference-after-brand");
-        if (!host) {
-          host = document.createElement("div");
-          host.className = "storefront-reference-after-brand";
-          nextBrandStrip.insertAdjacentElement("afterend", host);
-        }
-        setAfterBrandHost(host);
-        window.clearInterval(timer);
-      } else if (attempts >= 40) {
-        window.clearInterval(timer);
-      }
-    }, 50);
-    return () => {
-      window.clearInterval(timer);
-      document.querySelector(".storefront-reference-after-brand")?.remove();
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`/api/storefront/catalog?reference=${Date.now()}`, { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : null)
-      .then((body) => { if (!cancelled && body) setCatalog(body as StorefrontCatalog); })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, []);
-
-  const categoryCards = useMemo(() => {
-    const products = catalog?.products || [];
-    const watches = firstMatching(products, ["montre", "watch"]);
-    const jewelry = firstMatching(products, ["bijou", "jewel", "bracelet", "collier"]);
-    const wallets = firstMatching(products, ["portefeuille", "wallet", "porte monnaie", "porte-monnaie"]);
-    const packs = firstMatching(products, ["pack", "coffret"]);
-    return [
-      { key: "watches", label: ui[lang].watches, image: brandVisuals.watches, category: watches?.category || "Montres", target: "catalogue" },
-      { key: "jewelry", label: ui[lang].jewelry, image: brandVisuals.jewelry, category: jewelry?.category || "Bijoux", target: "catalogue" },
-      { key: "wallets", label: ui[lang].wallets, image: brandVisuals.wallets, category: wallets?.category || "Portefeuilles", target: "catalogue" },
-      { key: "packs", label: ui[lang].packs, image: brandVisuals.packs, category: packs?.category || "", target: packs ? "catalogue" : "offres" },
-    ];
-  }, [catalog, lang]);
-
-  function switchLanguage(next: Language) {
-    setLang(next);
-    const wanted = next === "fr" ? "FR" : next === "ar" ? "ع" : "EN";
-    const button = Array.from(document.querySelectorAll<HTMLButtonElement>(".storefront-v3-language button"))
-      .find((candidate) => candidate.textContent?.trim() === wanted);
-    button?.click();
-  }
-
-  function focusSearch() {
-    document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    window.setTimeout(() => document.querySelector<HTMLInputElement>(".storefront-v3-tools input")?.focus(), 350);
-  }
-
-  function openCart() {
-    document.querySelector<HTMLButtonElement>(".storefront-v3-cart-button")?.click();
-  }
-
-  function goToCatalogue() {
-    document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
-  function goToCategory(category: string, target: string) {
-    if (target === "offres") {
-      document.querySelector("#offres")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-    const select = document.querySelector(".storefront-v3-tools select") as unknown as SelectBridge | null;
-    if (select && category) {
-      const option = Array.from(select.options).find((entry) => entry.value === category || normalize(entry.value) === normalize(category));
-      if (option) {
-        select.value = option.value;
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-    }
-    goToCatalogue();
-  }
-
-  function openMarketingTarget(section: StorefrontMarketingSection) {
-    if (section.target === "offers") {
-      document.querySelector("#offres")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-    if (section.target === "catalogue") {
-      goToCatalogue();
-      return;
-    }
-    goToCategory(section.target, "catalogue");
-  }
-
-  const exactCategoryPromos = (catalog?.marketingSections || []).filter((section) => section.placement === "after_categories");
-
+// Affichage SSR des éléments au-dessus de la ligne de flottaison : pas de portail ni de DOM ajouté après hydratation.
+export function StorefrontNativeHeader({ lang, onLanguage, onSearch, onCart }: {
+  lang: Language;
+  onLanguage: (lang: Language) => void;
+  onSearch: () => void;
+  onCart: () => void;
+}) {
   const t = ui[lang];
-
-  return <>
-    {header && createPortal(<div className="mj-native-header">
-      <button className="mj-native-search" type="button" onClick={focusSearch} aria-label={t.search}>
+  return <div className="mj-native-header">
+      <button className="mj-native-search" type="button" onClick={onSearch} aria-label={t.search}>
         <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="14" cy="14" r="8" /><path d="m20 20 7 7" /></svg><span>{t.search}</span>
       </button>
       <a className="mj-native-logo" href="/boutique" aria-label="Maison Jiya"><strong>JIYA</strong><em>Maison Jiya</em><small>L’HEURE DE BRILLER</small></a>
       <div className="mj-native-actions">
         <div className="mj-native-langs" aria-label="Language / اللغة">
-          <button className={lang === "fr" ? "active" : ""} onClick={() => switchLanguage("fr")}>FR</button>
-          <button className={lang === "ar" ? "active" : ""} onClick={() => switchLanguage("ar")}>ع</button>
-          <button className={lang === "en" ? "active" : ""} onClick={() => switchLanguage("en")}>EN</button>
+          <button className={lang === "fr" ? "active" : ""} onClick={() => onLanguage("fr")}>FR</button>
+          <button className={lang === "ar" ? "active" : ""} onClick={() => onLanguage("ar")}>ع</button>
+          <button className={lang === "en" ? "active" : ""} onClick={() => onLanguage("en")}>EN</button>
         </div>
         <a className="mj-native-account" href="#contact" aria-label={t.contact}>♙</a>
-        <button className="mj-native-cart" type="button" onClick={openCart} aria-label={t.cart}>▢</button>
+        <button className="mj-native-cart" type="button" onClick={onCart} aria-label={t.cart}>▢</button>
       </div>
       <nav className="mj-native-nav" aria-label={t.navigation}>
         <a href="#catalogue">{t.catalogue}</a><a href="#offres">{t.offers}</a><a href="#contact">{t.contact}</a>
       </nav>
-    </div>, header)}
+    </div>;
+}
 
-    {hero && createPortal(<section className="mj-native-hero" aria-label="Maison Jiya">
+export function StorefrontNativeHero({ lang }: { lang: Language }) {
+  const t = ui[lang];
+  function goToCatalogue() {
+    document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  return <section className="mj-native-hero" aria-label="Maison Jiya">
       <div className="mj-hero-stage">
         <div className="mj-hero-side mj-hero-men" aria-hidden="true">
           <div className="mj-hero-side-title"><span>{t.watches}</span><strong>{t.men}</strong></div>
@@ -242,13 +126,46 @@ export default function StorefrontApprovedDesignEnhancement() {
           <StoreImage src={brandVisuals.heroWomen} alt="" className="mj-hero-composition" />
         </div>
       </div>
-    </section>, hero)}
+    </section>;
+}
 
-    {brandStrip && createPortal(<div className="mj-native-brands" aria-label={t.brands}>
+export function StorefrontNativeBrands({ lang }: { lang: Language }) {
+  const t = ui[lang];
+  return <div className="mj-native-brands" aria-label={t.brands}>
       {[...referenceBrands, ...referenceBrands].map((brand, index) => <span key={`${brand}-${index}`}>{brand}</span>)}
-    </div>, brandStrip)}
+    </div>;
+}
 
-    {afterBrandHost && createPortal(<>
+// Rendu directement dans le HTML initial : le chargement JS n'ajoute plus une zone
+// entière au-dessus des offres, ce qui stabilise le CLS mobile et desktop.
+export function StorefrontReferenceAfterBrand({
+  catalog,
+  lang,
+  onCategory,
+  onMarketing,
+}: {
+  catalog: StorefrontCatalog | null;
+  lang: Language;
+  onCategory: (category: string, target: string) => void;
+  onMarketing: (section: StorefrontMarketingSection) => void;
+}) {
+  const categoryCards = useMemo(() => {
+    const products = catalog?.products || [];
+    const watches = firstMatching(products, ["montre", "watch"]);
+    const jewelry = firstMatching(products, ["bijou", "jewel", "bracelet", "collier"]);
+    const wallets = firstMatching(products, ["portefeuille", "wallet", "porte monnaie", "porte-monnaie"]);
+    const packs = firstMatching(products, ["pack", "coffret"]);
+    return [
+      { key: "watches", label: ui[lang].watches, image: brandVisuals.watches, category: watches?.category || "Montres", target: "catalogue" },
+      { key: "jewelry", label: ui[lang].jewelry, image: brandVisuals.jewelry, category: jewelry?.category || "Bijoux", target: "catalogue" },
+      { key: "wallets", label: ui[lang].wallets, image: brandVisuals.wallets, category: wallets?.category || "Portefeuilles", target: "catalogue" },
+      { key: "packs", label: ui[lang].packs, image: brandVisuals.packs, category: packs?.category || "", target: packs ? "catalogue" : "offres" },
+    ];
+  }, [catalog, lang]);
+
+  const exactCategoryPromos = (catalog?.marketingSections || []).filter((section) => section.placement === "after_categories");
+  const t = ui[lang];
+  return <div className="storefront-reference-after-brand">
       <section className="storefront-reference-services" aria-label={t.services}>
         <article><ServiceIcon kind="delivery" /><div><strong>{t.freeDelivery}</strong><span>{t.freeDeliverySub}</span></div></article>
         <article><ServiceIcon kind="payment" /><div><strong>{t.cod}</strong><span>{t.codSub}</span></div></article>
@@ -257,7 +174,7 @@ export default function StorefrontApprovedDesignEnhancement() {
       </section>
       <section className="storefront-reference-categories">
         <header><h2>{t.categories}</h2><p>{t.categoriesSub}</p></header>
-        <div>{categoryCards.map((card) => <button key={card.key} type="button" onClick={() => goToCategory(card.category, card.target)}>
+        <div>{categoryCards.map((card) => <button key={card.key} type="button" onClick={() => onCategory(card.category, card.target)}>
           <span className="storefront-reference-category-media">
             <StoreImage src={card.image} alt={card.label} lazy />
             <em><b>{card.label}</b><small>{t.view}</small></em>
@@ -273,11 +190,11 @@ export default function StorefrontApprovedDesignEnhancement() {
               <div>{section.badge && <span className="storefront-v3-marketing-badge">{section.badge}</span>}{section.eyebrow && <small>{section.eyebrow}</small>}</div>
               <h2>{section.title}</h2>
               {section.body && <p>{section.body}</p>}
-              <button type="button" onClick={() => openMarketingTarget(section)}>{section.ctaLabel || t.discover} →</button>
+              <button type="button" onClick={() => onMarketing(section)}>{section.ctaLabel || t.discover} →</button>
             </div>
           </article>)}
         </div>
       </section>}
-    </>, afterBrandHost)}
-  </>;
+
+  </div>;
 }
