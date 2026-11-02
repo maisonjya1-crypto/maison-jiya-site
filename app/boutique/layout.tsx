@@ -20,6 +20,8 @@ import "./storefront-whatsapp-contact-hotfix.css";
 import "./storefront-header-quick-actions.css";
 import "./storefront-entrance.css";
 import "./storefront-gallery-hotfix.css";
+import "./legal.css";
+import "./storefront-meta-compliance.css";
 
 export const metadata: Metadata = {
   title: "Maison Jiya — Boutique",

@@ -19,10 +19,14 @@ interface Env extends CloudflareEnv {
   };
 }
 
-function withSecurityHeaders(response: Response, pathname: string) {
+function withSecurityHeaders(response: Response, pathname: string, isHttps: boolean) {
   const headers = new Headers(response.headers);
   headers.set("x-content-type-options", "nosniff");
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
+  headers.set("permissions-policy", "camera=(), microphone=(), geolocation=()");
+  if (isHttps && pathname.startsWith("/boutique")) {
+    headers.set("strict-transport-security", "max-age=31536000");
+  }
 
   const contentType = headers.get("content-type") || "";
   if (contentType.includes("text/html")) {
@@ -58,7 +62,7 @@ const worker = {
           return result.response();
         },
       }, allowedWidths);
-      return withSecurityHeaders(response, url.pathname);
+      return withSecurityHeaders(response, url.pathname, url.protocol === "https:");
     }
 
     const response = await handler.fetch(request, env, ctx);
@@ -73,7 +77,7 @@ const worker = {
           .catch((error) => console.error("Maison Jiya background Google Sheets sync failed", error instanceof Error ? error.message : String(error))),
       );
     }
-    return withSecurityHeaders(response, url.pathname);
+    return withSecurityHeaders(response, url.pathname, url.protocol === "https:");
   },
   async scheduled(controller: ScheduledController, _env: Env, ctx: ExecutionContext) {
     if (controller.cron === "*/5 * * * *") {

@@ -76,15 +76,9 @@ assert.match(approved, /mj-native-hero/);
 assert.match(approved, /mj-native-brands/);
 assert.match(approved, /storefront-reference-services/);
 assert.match(approved, /storefront-reference-categories/);
-assert.match(approved, /ROLEX/);
-assert.match(approved, /OMEGA/);
-assert.match(approved, /CARTIER/);
-assert.match(approved, /ARMANI/);
-assert.match(approved, /BOSS/);
-assert.match(approved, /HERMÈS/);
-assert.match(approved, /MICHAEL KORS/);
-assert.match(approved, /FOSSIL/);
-assert.match(approved, /LACOSTE/);
+// Le bandeau ne doit pas laisser croire à une affiliation avec des marques tierces.
+assert.match(approved, /const referenceBrands = \["MAISON JIYA", "MONTRES"/);
+assert.doesNotMatch(approved, /const referenceBrands = \[.*ROLEX/);
 assert.match(approved, /Catalogue/);
 assert.match(approved, /الكتالوج/);
 assert.match(approved, /Catalog/);

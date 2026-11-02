@@ -1,0 +1,21 @@
+.mj-legal-page{min-height:100vh;background:#f9f8f6;color:#171512;font-family:Arial,Helvetica,sans-serif}
+.mj-legal-page *{box-sizing:border-box}
+.mj-legal-header{min-height:90px;background:#090909;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:22px max(22px,calc((100vw - 1100px)/2));gap:20px}
+.mj-legal-header a{color:#fff;text-decoration:none}
+.mj-legal-logo{font-family:Georgia,serif;font-size:28px;letter-spacing:.14em}
+.mj-legal-logo small{display:block;font:9px Arial,sans-serif;letter-spacing:.3em}
+.mj-legal-back{font-size:12px}
+.mj-legal-content{max-width:850px;margin:0 auto;padding:54px 22px 75px}
+.mj-legal-eyebrow{font-size:10px;letter-spacing:.16em;font-weight:700;color:#927046}
+.mj-legal-content h1{font:400 clamp(34px,6vw,54px)/1.16 Georgia,serif;margin:10px 0 20px}
+.mj-legal-intro{font-size:15px;color:#5b554f;line-height:1.7;padding-bottom:28px;border-bottom:1px solid #dedbd6}
+.mj-legal-content section{margin-top:32px}
+.mj-legal-content section h2{font:400 24px Georgia,serif;margin:0 0 12px}
+.mj-legal-content section p{font-size:14px;line-height:1.85;color:#3c3835}
+.mj-legal-page a{color:#80623b;text-underline-offset:3px}
+.mj-legal-content .mj-legal-contact{background:#111;color:#fff;border-radius:12px;padding:24px;margin-top:48px}
+.mj-legal-contact h2,.mj-legal-contact p,.mj-legal-contact a{color:#fff!important}
+.mj-legal-contact a{display:inline-block;margin-top:8px;font-size:13px}
+.mj-legal-footer{display:flex;justify-content:center;flex-wrap:wrap;gap:16px 26px;padding:30px 20px;background:#141414}
+.mj-legal-footer a{color:#e8e3d7;font-size:12px;text-decoration:none}
+@media(max-width:600px){.mj-legal-header{padding:18px 20px;min-height:78px}.mj-legal-content{padding:34px 18px 60px}.mj-legal-header .mj-legal-back{font-size:11px}}

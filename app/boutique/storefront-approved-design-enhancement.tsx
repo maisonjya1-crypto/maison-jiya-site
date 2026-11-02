@@ -19,31 +19,32 @@ const ui: Record<Language, UiCopy> = {
     categories: "NOS CATÉGORIES", categoriesSub: "Découvrez nos collections soigneusement sélectionnées",
     watches: "MONTRES", jewelry: "BIJOUX", wallets: "PORTEFEUILLES", packs: "PACKS", view: "Voir →", discover: "Découvrir la collection",
     men: "HOMME", women: "FEMME", heroLine1: "Montres, bijoux et portefeuilles sélectionnés avec soin.", heroLine2: "L’élégance à chaque instant.",
-    cart: "Panier", navigation: "Navigation de la boutique", brands: "Marques", services: "Services Maison Jiya",
-    freeDelivery: "Livraison gratuite", freeDeliverySub: "Partout au Maroc", cod: "Paiement à la livraison", codSub: "Vous payez à la réception",
-    customerService: "Service client", customerServiceSub: "À votre écoute 7j/7", satisfaction: "Satisfaction garantie", satisfactionSub: "Votre satisfaction d’abord",
+    cart: "Panier", navigation: "Navigation de la boutique", brands: "Univers Maison Jiya", services: "Services Maison Jiya",
+    freeDelivery: "Livraison au Maroc", freeDeliverySub: "Modalités confirmées", cod: "Paiement à la livraison", codSub: "Vous payez à la réception",
+    customerService: "Service client", customerServiceSub: "Écrivez-nous sur WhatsApp", satisfaction: "Suivi de commande", satisfactionSub: "Assistance après commande",
   },
   ar: {
     catalogue: "الكتالوج", offers: "العروض", contact: "تواصل معنا", search: "ابحث عن منتج…",
     categories: "فئاتنا", categoriesSub: "اكتشف مجموعاتنا المختارة بعناية",
     watches: "الساعات", jewelry: "المجوهرات", wallets: "المحافظ", packs: "الباقات", view: "عرض ←", discover: "اكتشف المجموعة",
     men: "رجالية", women: "نسائية", heroLine1: "ساعات ومجوهرات ومحافظ مختارة بعناية.", heroLine2: "أناقة في كل لحظة.",
-    cart: "السلة", navigation: "التنقل في المتجر", brands: "العلامات", services: "خدمات Maison Jiya",
-    freeDelivery: "توصيل مجاني", freeDeliverySub: "إلى جميع أنحاء المغرب", cod: "الدفع عند الاستلام", codSub: "تدفع عند الاستلام",
-    customerService: "خدمة الزبناء", customerServiceSub: "في خدمتك 7 أيام", satisfaction: "رضاكم أولويتنا", satisfactionSub: "خدمة موثوقة قبل كل شيء",
+    cart: "السلة", navigation: "التنقل في المتجر", brands: "مجموعات Maison Jiya", services: "خدمات Maison Jiya",
+    freeDelivery: "التوصيل في المغرب", freeDeliverySub: "التفاصيل عند التأكيد", cod: "الدفع عند الاستلام", codSub: "تدفع عند الاستلام",
+    customerService: "خدمة الزبناء", customerServiceSub: "تواصل معنا عبر واتساب", satisfaction: "تتبع الطلب", satisfactionSub: "مساعدة ما بعد الطلب",
   },
   en: {
     catalogue: "Catalog", offers: "Offers", contact: "Contact", search: "Search for a product…",
     categories: "OUR CATEGORIES", categoriesSub: "Discover our carefully selected collections",
     watches: "WATCHES", jewelry: "JEWELRY", wallets: "WALLETS", packs: "PACKS", view: "View →", discover: "Discover the collection",
     men: "MEN", women: "WOMEN", heroLine1: "Carefully selected watches, jewelry and wallets.", heroLine2: "Elegance for every moment.",
-    cart: "Cart", navigation: "Store navigation", brands: "Brands", services: "Maison Jiya services",
-    freeDelivery: "Free delivery", freeDeliverySub: "Across Morocco", cod: "Cash on delivery", codSub: "Pay when you receive it",
-    customerService: "Customer service", customerServiceSub: "Here for you seven days a week", satisfaction: "Your satisfaction matters", satisfactionSub: "Reliable service, every time",
+    cart: "Cart", navigation: "Store navigation", brands: "Maison Jiya collections", services: "Maison Jiya services",
+    freeDelivery: "Delivery in Morocco", freeDeliverySub: "Details confirmed", cod: "Cash on delivery", codSub: "Pay when you receive it",
+    customerService: "Customer service", customerServiceSub: "Contact via WhatsApp", satisfaction: "Order support", satisfactionSub: "Help after ordering",
   },
 };
 
-const referenceBrands = ["ROLEX", "OMEGA", "CARTIER", "ARMANI", "BOSS", "HERMÈS", "MICHAEL KORS", "FOSSIL", "LACOSTE"];
+// Pas de marques tierces dans le bandeau générique sans preuve d’autorisation / authenticité.
+const referenceBrands = ["MAISON JIYA", "MONTRES", "BIJOUX", "PORTEFEUILLES", "PACKS", "SÉLECTION", "STYLE", "NOUVEAUTÉS"];
 
 // Visuels propriétaires Maison Jiya : aucun logo de marque tierce dans les photos/illustrations.
 const brandVisuals = {
