@@ -12,8 +12,8 @@ export default function LegalPage({ title, introduction, children }: { title: st
       <p className="mj-legal-intro">{introduction}</p>
       {children}
       <section className="mj-legal-contact" aria-label="Contacter Maison Jiya">
-        <h2>Besoin d'une précision ?</h2>
-        <p>Pour une commande, une réclamation ou l'exercice de vos droits, contactez Maison Jiya via le lien WhatsApp disponible dans la boutique.</p>
+        <h2>Besoin d&apos;une précision ?</h2>
+        <p>Pour une commande, une réclamation ou l&apos;exercice de vos droits, contactez Maison Jiya via le lien WhatsApp disponible dans la boutique.</p>
         <a href="/boutique#contact">Contacter Maison Jiya →</a>
       </section>
     </div>
