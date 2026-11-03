@@ -646,7 +646,8 @@ const retrySafeMutationActions = new Set([
   "archiveProduct",
   "restoreProduct",
 ]);
-const orderStatusOptions = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
+const orderStatusOptions = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Retour reçu", "Annulée"];
+const isReturnStatus = (status: string) => status === "Retour" || status === "Retour reçu";
 const returnReasonOptions = ["Cliente injoignable", "Refus de la cliente", "Adresse incorrecte", "Cliente absente", "Produit endommagé", "Mauvais produit", "Autre"];
 const orderSourceOptions = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre"];
 const STORE_ANONYMOUS_PHONE = "__MAISON_JIYA_STORE_ANONYMOUS__";
@@ -656,6 +657,8 @@ const capitalMonthLabels = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin
 const capitalMonthShort = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
 const capitalChartColors = ["var(--forest)", "var(--terracotta)", "var(--gold)", "#557ea4", "#8b6f9f", "#c47c8d", "#b68658", "#77869b"];
 const exactOrderProfit = (order: Order) => {
+  // Article revenu en stock : seuls la livraison, les frais et le coût de retour sont perdus.
+  if (order.status === "Retour reçu") return -(order.shippingCost + order.fees + order.returnCost);
   if (order.status === "Retour" || order.paymentStatus === "Remboursé") {
     return -(order.productCost + order.shippingCost + order.fees + order.returnCost);
   }
@@ -1227,7 +1230,7 @@ export default function DashboardClient() {
       },
       {
         label: "Retours / annulations",
-        value: count(["Retour", "Annulée", "Retournée", "Refusée"]),
+        value: count(["Retour", "Retour reçu", "Annulée", "Retournée", "Refusée"]),
         tone: "red",
       },
     ];
@@ -3826,7 +3829,7 @@ function ShippingPage({ orders, history, settings, onEdit, onPrint, onDelete }: 
   const carrierComparison = carrierNames.map((carrier) => {
     const assigned = deliveryOrders.filter((order) => order.carrier.toLocaleLowerCase("fr") === carrier.toLocaleLowerCase("fr"));
     const delivered = assigned.filter((order) => order.status === "Livrée");
-    const returned = assigned.filter((order) => order.status === "Retour");
+    const returned = assigned.filter((order) => isReturnStatus(order.status));
     const completed = delivered.length + returned.length;
     const deliveryDays = delivered.map((order) => {
       const deliveredEntry = (historyByOrder.get(order.id) || []).find((entry) => entry.toStatus === "Livrée");
@@ -7757,7 +7760,7 @@ function EntryModal({ kind, carrierNames, products, suppliers, purchases, suppli
                     {(orderFulfillment === "Magasin physique" ? ["Livrée"] : orderStatusOptions).map((status) => <option key={status}>{status}</option>)}
                   </select>
                 </label>
-                {selectedOrderStatus === "Retour" && (
+                {isReturnStatus(selectedOrderStatus) && (
                   <>
                     <label className="field">
                       <span>Motif du retour *</span>
@@ -8002,10 +8005,10 @@ function OrderModal({ order, history, carrierNames, ads, close, print, submit }:
             <label className="field">
               <span>Statut de la commande</span>
               <select name="status" value={selectedStatus} onChange={(event) => setSelectedStatus(event.target.value)}>
-                {(isStoreSale ? ["Livrée", "Retour", "Annulée"] : orderStatusOptions).map((status) => <option key={status}>{status}</option>)}
+                {(isStoreSale ? ["Livrée", "Retour", "Retour reçu", "Annulée"] : orderStatusOptions).map((status) => <option key={status}>{status}</option>)}
               </select>
             </label>
-            {selectedStatus === "Retour" && (
+            {isReturnStatus(selectedStatus) && (
               <>
                 <label className="field">
                   <span>Motif du retour *</span>
@@ -8021,7 +8024,7 @@ function OrderModal({ order, history, carrierNames, ads, close, print, submit }:
               </>
             )}
             <Select label="Encaissement" name="paymentStatus" defaultValue={order.paymentStatus} options={["À encaisser", "Encaissé", "Non encaissé", "Remboursé"]} />
-            {(selectedStatus === "Retour" || selectedStatus === "Annulée") && (
+            {(isReturnStatus(selectedStatus) || selectedStatus === "Annulée") && (
               <div className="order-carrier-safety-note">
                 <strong>Encaissement protégé automatiquement</strong>
                 <small>Un retour ou une annulation ne peut pas rester « Encaissé ». S’il avait déjà été encaissé, Maison Jiya le passera en « Remboursé » ; sinon en « Non encaissé ».</small>
@@ -8158,7 +8161,7 @@ function PrintOrderSheet({ order }: { order: Order }) {
         <div><span>Quantité</span><strong>{order.quantity}</strong></div>
         <div><span>Source</span><strong>{order.source}</strong></div>
       </div>
-      {order.status === "Retour" && order.returnReason && (
+      {isReturnStatus(order.status) && order.returnReason && (
         <div className="print-slip-return">
           <span>Retour</span>
           <strong>{order.returnReason}</strong>

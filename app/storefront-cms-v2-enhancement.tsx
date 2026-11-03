@@ -960,7 +960,7 @@ function IdentityPanel({ data, save, uploadMany, removeMedia }: {
       <div className="storefront-cms-pixel-box">
         <div><span>Meta Pixel</span><h3>{data.settings.metaPixelId ? "Pixel configuré" : "Pixel non configuré"}</h3><p>{data.settings.metaPixelId ? "Le site déclenche PageView, ViewContent, AddToCart, InitiateCheckout et Purchase après une commande enregistrée." : "Ajoute l’identifiant de ton Pixel Meta pour activer le suivi de la boutique."}</p></div>
         <label><span>Meta Pixel ID (optionnel)</span><input name="metaPixelId" inputMode="numeric" defaultValue={data.settings.metaPixelId} placeholder="Ex. 123456789…" disabled={!data.canEdit} /></label>
-        <small>Purchase correspond à une commande COD enregistrée sur le site. L’encaissement réel reste géré séparément dans Maison Jiya.</small>
+        <small>Lead correspond à une commande COD envoyée sur le site (pas encore payée). Purchase est réservé aux commandes livrées et encaissées.</small>
       </div>
       <button className="primary-button" type="submit" disabled={!data.canEdit || saving}>{saving ? "Enregistrement…" : "Enregistrer identité, promo & tracking"}</button>
     </form>

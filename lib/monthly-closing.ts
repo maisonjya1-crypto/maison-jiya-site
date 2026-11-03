@@ -164,7 +164,12 @@ export function buildMonthlyFinancialSnapshot({
     delivered.reduce((sum, order) => sum + Number(order.saleAmount || 0), 0)
     - returned.reduce((sum, order) => sum + Number(order.saleAmount || 0), 0),
   );
-  const productCost = roundMoney(delivered.reduce((sum, order) => sum + Number(order.productCost || 0), 0));
+  // Un article livré puis revenu au magasin (« Retour reçu ») est de nouveau en stock :
+  // son coût d'achat est retiré du mois où le retour est enregistré.
+  const productCost = roundMoney(
+    delivered.reduce((sum, order) => sum + Number(order.productCost || 0), 0)
+    - returned.filter((order) => order.status === "Retour reçu").reduce((sum, order) => sum + Number(order.productCost || 0), 0),
+  );
   const shippingCost = roundMoney(delivered.reduce((sum, order) => sum + Number(order.shippingCost || 0), 0));
   const fees = roundMoney(delivered.reduce((sum, order) => sum + Number(order.fees || 0), 0));
   const returnCost = roundMoney(returned.reduce((sum, order) => sum + Number(order.returnCost || 0), 0));

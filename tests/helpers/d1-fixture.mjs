@@ -82,6 +82,7 @@ export async function fixture() {
   database.sqlite.exec(readFileSync(resolve(root, 'migrations/0009_advanced_inventory_sessions.sql'), 'utf8'));
   database.sqlite.exec(readFileSync(resolve(root, 'migrations/0010_carrier_settlement_reconciliation.sql'), 'utf8'));
   database.sqlite.exec(readFileSync(resolve(root, 'migrations/0011_monthly_financial_closings.sql'), 'utf8'));
+  database.sqlite.exec(readFileSync(resolve(root, 'migrations/0018_daily_backup_chunks.sql'), 'utf8'));
   await loadSource('db/google-sheets-sync.ts').ensureGoogleSheetsSyncSchema(database);
   database.sqlite.exec(`
     INSERT INTO customers (id, name, phone, city) VALUES (1, 'Client test', '0612345678', 'Casablanca');
@@ -91,4 +92,13 @@ export async function fixture() {
     INSERT INTO settings (key, value) VALUES ('security_backup_token_hash', 'test-hash'), ('backup_webhook_url', 'https://script.google.com/macros/s/test-only/exec');
   `);
   return database;
+}
+
+/** Dernière sauvegarde quotidienne, JSON recollé (ancien format en ligne ou nouveau format en morceaux). */
+export function latestBackup(database) {
+  const backup = database.sqlite.prepare("SELECT id, snapshot_json FROM daily_backups ORDER BY id DESC LIMIT 1").get();
+  if (!backup) return backup;
+  if (backup.snapshot_json) return backup;
+  const chunks = database.sqlite.prepare("SELECT data FROM daily_backup_chunks WHERE backup_id = ? ORDER BY chunk_index").all(backup.id);
+  return { id: backup.id, snapshot_json: chunks.map((chunk) => chunk.data).join("") };
 }

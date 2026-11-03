@@ -1,6 +1,11 @@
 import { ensureRecurringExpenseOccurrences } from "./recurring-expenses";
 
 type SnapshotValue = string | number | null;
+
+// Cloudflare D1 refuse toute valeur ou ligne de plus de 2 Mo. Une sauvegarde
+// est donc découpée en morceaux de 300 000 caractères (1,2 Mo maximum en UTF-8).
+const BACKUP_CHUNK_CHARS = 300_000;
+const CHUNKED_SNAPSHOT_MARKER = "";
 type SnapshotRow = Record<string, SnapshotValue>;
 
 export type BackupVerification = {
@@ -133,7 +138,7 @@ async function readOptionalRows(database: D1Database, table: string) {
 }
 
 async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
-  const [customers, orders, products, stockMovements, inventorySessions, inventoryCounts, suppliers, purchases, supplierInvoices, supplierPayments, recurringExpenses, expenses, ads, capital, dailyClosings, monthlyClosings, settings, orderStatusHistory, carrierEvents, carrierSettlements, carrierSettlementOrders, storefrontProducts, storefrontOffers, storefrontOfferItems, storefrontMedia] = await Promise.all([
+  const [customers, orders, products, stockMovements, inventorySessions, inventoryCounts, suppliers, purchases, supplierInvoices, supplierPayments, recurringExpenses, expenses, ads, capital, dailyClosings, monthlyClosings, settings, orderStatusHistory, carrierEvents, carrierSettlements, carrierSettlementOrders, storefrontProducts, storefrontOffers, storefrontOfferItems] = await Promise.all([
     readRows(database, TABLES.customers),
     readRows(database, TABLES.orders),
     readRows(database, TABLES.products),
@@ -158,8 +163,11 @@ async function buildSnapshot(database: D1Database): Promise<BusinessSnapshot> {
     readOptionalRows(database, TABLES.storefrontProducts),
     readOptionalRows(database, TABLES.storefrontOffers),
     readOptionalRows(database, TABLES.storefrontOfferItems),
-    readOptionalRows(database, TABLES.storefrontMedia),
   ]);
+  // Les photos de la boutique (base64) ne sont pas copiées dans la sauvegarde
+  // quotidienne : elles la rendraient trop lourde pour D1. Elles restent dans
+  // storefront_media et dans l'export complet (Paramètres → Sauvegardes).
+  const storefrontMedia = undefined;
   return {
     version: 1,
     createdAt: new Date().toISOString(),
@@ -200,7 +208,8 @@ function inspectSnapshot(raw: string, expectedRecordCount?: number) {
       throw new Error(`Table de sauvegarde invalide : ${tableKey}.`);
     }
   }
-  const storefrontKeys = ["storefrontProducts", "storefrontOffers", "storefrontOfferItems", "storefrontMedia"] as const;
+  // storefrontMedia est facultatif : les sauvegardes récentes n'embarquent plus les photos.
+  const storefrontKeys = ["storefrontProducts", "storefrontOffers", "storefrontOfferItems"] as const;
   const storefrontTableCount = storefrontKeys.filter((key) => snapshot.tables[key] !== undefined).length;
   if (storefrontTableCount !== 0 && storefrontTableCount !== storefrontKeys.length) {
     throw new Error("Sauvegarde boutique incomplète.");
@@ -243,7 +252,7 @@ export async function verifyLatestBackup(database: D1Database): Promise<BackupVe
     return result;
   }
   try {
-    const inspected = inspectSnapshot(row.snapshotJson, Number(row.recordCount));
+    const inspected = inspectSnapshot(await loadSnapshotJson(database, row.id, row.snapshotJson), Number(row.recordCount));
     const result: BackupVerification = {
       ok: true,
       backupId: row.id,
@@ -268,6 +277,27 @@ export async function verifyLatestBackup(database: D1Database): Promise<BackupVe
   }
 }
 
+function splitSnapshot(snapshotJson: string) {
+  const chunks: string[] = [];
+  for (let offset = 0; offset < snapshotJson.length; offset += BACKUP_CHUNK_CHARS) {
+    chunks.push(snapshotJson.slice(offset, offset + BACKUP_CHUNK_CHARS));
+  }
+  return chunks;
+}
+
+/**
+ * Relit le JSON d'une sauvegarde : directement dans daily_backups pour les
+ * anciennes sauvegardes, ou en recollant les morceaux de daily_backup_chunks.
+ */
+async function loadSnapshotJson(database: D1Database, backupId: number, inlineJson: string | null | undefined) {
+  if (inlineJson) return inlineJson;
+  const chunks = (await database.prepare(
+    "SELECT data FROM daily_backup_chunks WHERE backup_id = ? ORDER BY chunk_index",
+  ).bind(backupId).all<{ data: string }>()).results;
+  if (!chunks.length) throw new Error("Le contenu de cette sauvegarde est introuvable.");
+  return chunks.map((chunk) => chunk.data).join("");
+}
+
 export async function createDailyBackup(database: D1Database, reason = "Automatique", force = false) {
   const now = new Date();
   const timeSuffix = now.toISOString().slice(11, 19).replace(/:/g, "");
@@ -278,18 +308,29 @@ export async function createDailyBackup(database: D1Database, reason = "Automati
   const snapshot = await buildSnapshot(database);
   const snapshotJson = JSON.stringify(snapshot);
   const recordCount = countRecords(snapshot);
-  if (existing) {
-    await database.prepare("UPDATE daily_backups SET reason = ?, snapshot_json = ?, record_count = ?, created_at = ? WHERE id = ?")
-      .bind(reason, snapshotJson, recordCount, snapshot.createdAt, existing.id)
-      .run();
-  } else {
-    await database.prepare("INSERT INTO daily_backups (backup_date, reason, snapshot_json, record_count, created_at) VALUES (?, ?, ?, ?, ?)")
-      .bind(date, reason, snapshotJson, recordCount, snapshot.createdAt)
-      .run();
-  }
+  const chunks = splitSnapshot(snapshotJson);
+  const backupIdSql = "(SELECT id FROM daily_backups WHERE backup_date = ? LIMIT 1)";
+
+  // Une seule transaction : la ligne de sauvegarde et tous ses morceaux sont
+  // écrits ensemble, ou rien n'est écrit.
+  await database.batch([
+    existing
+      ? database.prepare("UPDATE daily_backups SET reason = ?, snapshot_json = ?, record_count = ?, created_at = ? WHERE id = ?")
+        .bind(reason, CHUNKED_SNAPSHOT_MARKER, recordCount, snapshot.createdAt, existing.id)
+      : database.prepare("INSERT INTO daily_backups (backup_date, reason, snapshot_json, record_count, created_at) VALUES (?, ?, ?, ?, ?)")
+        .bind(date, reason, CHUNKED_SNAPSHOT_MARKER, recordCount, snapshot.createdAt),
+    database.prepare(`DELETE FROM daily_backup_chunks WHERE backup_id = ${backupIdSql}`).bind(date),
+    ...chunks.map((data, index) => database.prepare(
+      `INSERT INTO daily_backup_chunks (backup_id, chunk_index, data) VALUES (${backupIdSql}, ?, ?)`,
+    ).bind(date, index, data)),
+  ]);
+
   const cutoff = new Date();
   cutoff.setUTCDate(cutoff.getUTCDate() - 90);
-  await database.prepare("DELETE FROM daily_backups WHERE created_at < ?").bind(cutoff.toISOString()).run();
+  await database.batch([
+    database.prepare("DELETE FROM daily_backups WHERE created_at < ?").bind(cutoff.toISOString()),
+    database.prepare("DELETE FROM daily_backup_chunks WHERE backup_id NOT IN (SELECT id FROM daily_backups)"),
+  ]);
   return existing?.id || null;
 }
 
@@ -351,10 +392,10 @@ function insertStatement(database: D1Database, tableKey: keyof BusinessSnapshot[
 }
 
 export async function restoreDailyBackup(database: D1Database, backupId: number) {
-  const [row] = (await database.prepare("SELECT snapshot_json FROM daily_backups WHERE id = ? LIMIT 1").bind(backupId).all<{ snapshot_json: string }>()).results;
+  const [row] = (await database.prepare("SELECT id, snapshot_json FROM daily_backups WHERE id = ? LIMIT 1").bind(backupId).all<{ id: number; snapshot_json: string }>()).results;
   if (!row) throw new Error("Sauvegarde introuvable.");
 
-  const { snapshot } = inspectSnapshot(row.snapshot_json);
+  const { snapshot } = inspectSnapshot(await loadSnapshotJson(database, row.id, row.snapshot_json));
   const hasRecurringExpensesTable = await tableExists(database, TABLES.recurringExpenses);
   const expenseColumnNames = await tableColumns(database, TABLES.expenses);
   const supportsRecurringExpenseLinks = expenseColumnNames.has("recurring_expense_id") && expenseColumnNames.has("recurring_period");
@@ -390,7 +431,8 @@ export async function restoreDailyBackup(database: D1Database, backupId: number)
   await database.batch([
     ...(restoreStorefront ? [
       database.prepare("DELETE FROM storefront_offer_items"),
-      database.prepare("DELETE FROM storefront_media"),
+      // Une sauvegarde sans photos conserve les photos actuelles de la boutique.
+      ...(snapshot.tables.storefrontMedia !== undefined ? [database.prepare("DELETE FROM storefront_media")] : []),
       database.prepare("DELETE FROM storefront_offers"),
       database.prepare("DELETE FROM storefront_product_settings"),
     ] : []),
@@ -450,14 +492,18 @@ export async function purgeExpiredTrash(database: D1Database) {
       AND NOT EXISTS (SELECT 1 FROM carrier_settlement_orders WHERE carrier_settlement_orders.order_id = orders.id)
   `).bind(cutoff.toISOString()).all<{ id: number }>()).results;
   if (expired.length) {
-    const ids = expired.map((order) => order.id);
-    const placeholders = ids.map(() => "?").join(", ");
-    await database.batch([
-      database.prepare(`UPDATE stock_movements SET order_id = NULL WHERE order_id IN (${placeholders})`).bind(...ids),
-      database.prepare(`DELETE FROM order_status_history WHERE order_id IN (${placeholders})`).bind(...ids),
-      database.prepare(`UPDATE carrier_events SET order_id = NULL WHERE order_id IN (${placeholders})`).bind(...ids),
-      database.prepare(`DELETE FROM orders WHERE id IN (${placeholders})`).bind(...ids),
-    ]);
+    const allIds = expired.map((order) => order.id);
+    // D1 limite une requête à 100 paramètres : on traite la corbeille par paquets de 90.
+    for (let index = 0; index < allIds.length; index += 90) {
+      const ids = allIds.slice(index, index + 90);
+      const placeholders = ids.map(() => "?").join(", ");
+      await database.batch([
+        database.prepare(`UPDATE stock_movements SET order_id = NULL WHERE order_id IN (${placeholders})`).bind(...ids),
+        database.prepare(`DELETE FROM order_status_history WHERE order_id IN (${placeholders})`).bind(...ids),
+        database.prepare(`UPDATE carrier_events SET order_id = NULL WHERE order_id IN (${placeholders})`).bind(...ids),
+        database.prepare(`DELETE FROM orders WHERE id IN (${placeholders})`).bind(...ids),
+      ]);
+    }
     await database.prepare("DELETE FROM customers WHERE NOT EXISTS (SELECT 1 FROM orders WHERE orders.customer_id = customers.id)").run();
   }
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { fixture, loadSource } from "./helpers/d1-fixture.mjs";
+import { fixture, loadSource, latestBackup } from "./helpers/d1-fixture.mjs";
 
 test("la migration transporteur interdit une même référence et une même commande deux fois", async t => {
   const db = await fixture();
@@ -102,7 +102,7 @@ test("la sauvegarde complète conserve un règlement transporteur et ses command
   `);
 
   await backups.createDailyBackup(db, "Règlement transporteur", true);
-  const backup = db.sqlite.prepare("SELECT id, snapshot_json FROM daily_backups ORDER BY id DESC LIMIT 1").get();
+  const backup = latestBackup(db);
   const snapshot = JSON.parse(backup.snapshot_json);
   assert.equal(snapshot.tables.carrierSettlements.some((row) => row.reference === "BACKUP-VIR"), true);
   assert.equal(snapshot.tables.carrierSettlementOrders.some((row) => row.settlement_id === 81 && row.order_id === 1), true);

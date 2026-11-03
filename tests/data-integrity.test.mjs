@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { drizzle } from 'drizzle-orm/d1';
-import { fixture, loadSource } from './helpers/d1-fixture.mjs';
+import { fixture, latestBackup, loadSource } from './helpers/d1-fixture.mjs';
 
 async function databaseFor(t) {
   const db = await fixture();
@@ -16,7 +16,9 @@ function businessRows(db) {
 async function saveBackup(db, change = () => {}) {
   const backups = loadSource('db/backups.ts');
   await backups.createDailyBackup(db, 'Test isolé');
-  const row = db.sqlite.prepare('SELECT id, snapshot_json FROM daily_backups').get();
+  // La sauvegarde est stockée en morceaux ; la version modifiée est réécrite au format
+  // « JSON en ligne », toujours accepté pour les anciennes sauvegardes.
+  const row = latestBackup(db);
   const snapshot = JSON.parse(row.snapshot_json);
   change(snapshot);
   db.sqlite.prepare('UPDATE daily_backups SET snapshot_json = ? WHERE id = ?').run(JSON.stringify(snapshot), row.id);

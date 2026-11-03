@@ -1,4 +1,5 @@
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { referenceWithPrefix } from "../../../lib/reference";
 import { getDb, getRawDb } from "../../../db";
 import { createDailyBackup, purgeExpiredTrash, resetBusinessValuesPreservingStock, restoreDailyBackup, verifyLatestBackup } from "../../../db/backups";
 import { restorePortableDataImport } from "../../../db/data-import";
@@ -58,7 +59,10 @@ type PurchaseOrderLineInput = {
   unitCost: number;
 };
 
-function integerIdList(value: unknown, label: string, max = 200) {
+// Cloudflare D1 refuse plus de 100 paramètres « ? » dans une requête (WHERE id IN (...)).
+const MAX_IDS_PER_QUERY = 90;
+
+function integerIdList(value: unknown, label: string, max = MAX_IDS_PER_QUERY) {
   if (typeof value !== "string" || !value.trim()) throw new Error(`Sélectionnez au moins un ${label}.`);
   let parsed: unknown;
   try {
@@ -119,7 +123,10 @@ function paidAtFromInput(value: unknown, fallbackIso = new Date().toISOString())
   return `${raw}T12:00:00.000Z`;
 }
 
-const orderStatuses = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
+// « Retour » = colis en retour (article pas encore revenu, stock toujours déduit).
+// « Retour reçu » = article revenu au magasin : le stock est réintégré automatiquement.
+const orderStatuses = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Retour reçu", "Annulée"];
+const isReturnStatus = (status: string) => status === "Retour" || status === "Retour reçu";
 const STORE_ANONYMOUS_PHONE = "__MAISON_JIYA_STORE_ANONYMOUS__";
 const STORE_ANONYMOUS_NAME = "Client magasin (anonyme)";
 const orderSources = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre", "Non renseignée"];
@@ -440,7 +447,13 @@ async function snapshot(access: AccessInfo) {
   await seedIfNeeded();
   const rawDatabase = await getRawDb();
   await ensureRecurringExpenseOccurrences(rawDatabase);
-  await createDailyBackup(rawDatabase);
+  try {
+    await createDailyBackup(rawDatabase);
+  } catch (backupError) {
+    // Une sauvegarde automatique ratée ne doit jamais empêcher d'ouvrir le logiciel.
+    // L'échec reste visible dans les journaux et dans le contrôle de sauvegarde de nuit.
+    console.error("Maison Jiya automatic daily backup failed", errorDetails(backupError));
+  }
   const db = await getDb();
   const orderSelection = { id: orders.id, orderRef: orders.orderRef, customerId: orders.customerId, productId: orders.productId, customerName: customers.name, phone: customers.phone, city: orders.city, address: orders.address, products: orders.products, quantity: orders.quantity, saleAmount: orders.saleAmount, productCost: orders.productCost, shippingCost: orders.shippingCost, adCost: orders.adCost, fees: orders.fees, returnCost: orders.returnCost, returnReason: orders.returnReason, returnNote: orders.returnNote, source: orders.source, campaign: orders.campaign, fulfillmentType: orders.fulfillmentType, status: orders.status, paymentStatus: orders.paymentStatus, carrier: orders.carrier, trackingNumber: orders.trackingNumber, carrierDispatchState: orders.carrierDispatchState, carrierAuthorizedAt: orders.carrierAuthorizedAt, carrierInvoiceCode: orders.carrierInvoiceCode, stockDeducted: orders.stockDeducted, paidAt: orders.paidAt, refundedAt: orders.refundedAt, deletedAt: orders.deletedAt, deletedByUserId: orders.deletedByUserId, createdAt: orders.createdAt, updatedAt: orders.updatedAt };
   const [orderRows, trashRows, customerRows, supplierRows, purchaseRows, invoiceRows, supplierPaymentRows, expenseRows, recurringExpenseRows, adRows, capitalRows, productRows, movementRows, inventoryRows, inventorySessionRows, carrierSettlementRows, carrierSettlementOrderRows, settingRows, memberRows, historyRows, auditRows, backupRows, closingRows, monthlyClosingRows] = await Promise.all([
@@ -807,7 +820,7 @@ export async function POST(request: Request) {
       for (const item of normalizedRows) {
         const { row, product, phone, quantity, status, city, address, selectedFulfillment, isStoreSale } = item;
         const customerName = textValue(row.customerName);
-        const orderRef = `MJ-I${Date.now().toString(36).slice(-4).toUpperCase()}${crypto.randomUUID().slice(0, 3).toUpperCase()}`;
+        const orderRef = referenceWithPrefix("MJ-I");
         const shouldDeduct = commitsStock(status);
         const saleAmount = moneyValue(row.saleAmount, product.salePrice * quantity);
         const shippingCost = isStoreSale ? 0 : moneyValue(row.shippingCost);
@@ -905,9 +918,9 @@ export async function POST(request: Request) {
       const [selectedProduct] = await db.select().from(products).where(and(eq(products.id, productId), isNull(products.archivedAt))).limit(1);
       if (!selectedProduct) return Response.json({ error: "Le produit sélectionné n’existe plus dans le catalogue." }, { status: 404 });
       const selectedStatus = isStoreSale ? "Livrée" : orderStatus(payload.status);
-      const selectedReturnReason = selectedStatus === "Retour" ? returnReason(payload.returnReason) : "";
-      const selectedReturnNote = selectedStatus === "Retour" ? textValue(payload.returnNote).slice(0, 240) : "";
-      if (selectedStatus === "Retour" && !selectedReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
+      const selectedReturnReason = isReturnStatus(selectedStatus) ? returnReason(payload.returnReason) : "";
+      const selectedReturnNote = isReturnStatus(selectedStatus) ? textValue(payload.returnNote).slice(0, 240) : "";
+      if (isReturnStatus(selectedStatus) && !selectedReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
       if (selectedReturnReason === "Autre" && !selectedReturnNote) return Response.json({ error: "Précisez le motif du retour." }, { status: 400 });
       const shouldDeductStock = commitsStock(selectedStatus);
       if (shouldDeductStock && quantity > selectedProduct.stockQuantity) {
@@ -924,7 +937,7 @@ export async function POST(request: Request) {
         : requestedCarrier && (!carrierNames.length || carrierNames.includes(requestedCarrier))
           ? requestedCarrier
           : carrierNames[0] || "Non affecté";
-      const orderRef = `MJ-${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
+      const orderRef = referenceWithPrefix("MJ-");
       const now = new Date().toISOString();
       const productLabel = `${selectedProduct.name} · ${selectedProduct.productCode}`;
       const saleAmount = moneyValue(payload.saleAmount, selectedProduct.salePrice * quantity);
@@ -981,7 +994,7 @@ export async function POST(request: Request) {
       if (switchingToStore && existingOrder.trackingNumber) return Response.json({ error: "Ce colis possède déjà un numéro de suivi. Il ne peut plus être transformé en vente magasin." }, { status: 409 });
       const requestedPaymentStatus = (switchingToStore ? "Encaissé" : paymentStatus(payload.paymentStatus, existingOrder.paymentStatus)) as OrderPaymentStatus;
       const nextStatus = switchingToStore ? "Livrée" : orderStatus(payload.status, existingOrder.status);
-      if (isStoreSale && !["Livrée", "Retour", "Annulée"].includes(nextStatus)) return Response.json({ error: "Une vente magasin peut être livrée, retournée ou annulée." }, { status: 400 });
+      if (isStoreSale && !["Livrée", "Retour", "Retour reçu", "Annulée"].includes(nextStatus)) return Response.json({ error: "Une vente magasin peut être livrée, retournée ou annulée." }, { status: 400 });
       const nextAddress = isStoreSale ? "Magasin Maison Jiya" : textValue(payload.address, existingOrder.address).slice(0, 300);
       const requestedPhoneRaw = textValue(payload.phone);
       const nextPhone = requestedPhoneRaw ? normalizeMoroccanPhone(requestedPhoneRaw) : null;
@@ -992,9 +1005,9 @@ export async function POST(request: Request) {
         const [duplicatePhone] = await db.select({ id: customers.id }).from(customers).where(eq(customers.phone, nextPhone)).limit(1);
         if (duplicatePhone && duplicatePhone.id !== existingOrder.customerId) return Response.json({ error: "Ce numéro appartient déjà à un autre client." }, { status: 409 });
       }
-      const nextReturnReason = nextStatus === "Retour" ? returnReason(payload.returnReason, existingOrder.returnReason) : existingOrder.returnReason;
-      const nextReturnNote = nextStatus === "Retour" ? textValue(payload.returnNote, existingOrder.returnNote).slice(0, 240) : existingOrder.returnNote;
-      if (nextStatus === "Retour" && !nextReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
+      const nextReturnReason = isReturnStatus(nextStatus) ? returnReason(payload.returnReason, existingOrder.returnReason) : existingOrder.returnReason;
+      const nextReturnNote = isReturnStatus(nextStatus) ? textValue(payload.returnNote, existingOrder.returnNote).slice(0, 240) : existingOrder.returnNote;
+      if (isReturnStatus(nextStatus) && !nextReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
       if (nextReturnReason === "Autre" && !nextReturnNote) return Response.json({ error: "Précisez le motif du retour." }, { status: 400 });
       const now = new Date().toISOString();
       const paymentState = normalizeOrderPaymentState({
@@ -1078,7 +1091,7 @@ export async function POST(request: Request) {
       const note = textValue(payload.note).slice(0, 500);
       let orderIds: number[];
       try {
-        orderIds = integerIdList(payload.orderIdsJson, "commande(s)", 200);
+        orderIds = integerIdList(payload.orderIdsJson, "commande(s)", MAX_IDS_PER_QUERY);
       } catch (error) {
         return Response.json({ error: error instanceof Error ? error.message : "Sélection de commandes invalide." }, { status: 400 });
       }
@@ -1271,7 +1284,7 @@ export async function POST(request: Request) {
       auditEntityLabel = existingOrder.orderRef;
     } else if (payload.action === "deleteOrdersPermanentlyBulk") {
       if (!access.isOwner) return Response.json({ error: "Seul le propriétaire principal peut supprimer définitivement des commandes." }, { status: 403 });
-      const ids = integerIdList(payload.ids, "commande", 200);
+      const ids = integerIdList(payload.ids, "commande", MAX_IDS_PER_QUERY);
       const database = await getRawDb();
       const placeholders = ids.map(() => "?").join(",");
       const selectedOrders = (await database.prepare(`
@@ -2616,7 +2629,7 @@ export async function POST(request: Request) {
       } catch (error) {
         return Response.json({ error: error instanceof Error ? error.message : "Motif d’écart invalide." }, { status: 400 });
       }
-      const countRef = `INV-${Date.now().toString(36).slice(-6).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
+      const countRef = referenceWithPrefix("INV-");
       const rawDatabase = await getRawDb();
       const unitCost = Number(product.purchasePrice || 0);
       const valueBefore = expectedSystemQuantity * unitCost;
@@ -3004,8 +3017,22 @@ export async function POST(request: Request) {
       "importPortableExport",
       "restoreBackup",
     ]);
+    // Une action sur une seule commande ne recalcule que cette commande.
+    // Le recalcul complet reste réservé aux opérations de masse et à la tâche de nuit.
+    const singleOrderAllocationActions = new Set(["addOrder", "updateOrder", "deleteOrder", "restoreOrder", "deleteOrderPermanently"]);
     if (allocationSensitiveActions.has(textValue(payload.action))) {
-      await reconcileOrderAllocations();
+      const singleOrderId = Number(auditEntityId);
+      try {
+        if (singleOrderAllocationActions.has(textValue(payload.action)) && Number.isInteger(singleOrderId) && singleOrderId > 0) {
+          await reconcileOrderAllocations(singleOrderId);
+        } else {
+          await reconcileOrderAllocations();
+        }
+      } catch (allocationError) {
+        // La modification est déjà enregistrée : on ne la présente pas comme un échec.
+        // La tâche de nuit recalculera les affectations.
+        console.error("Maison Jiya allocation reconciliation failed after committed mutation", errorDetails(allocationError));
+      }
     }
 
     const responseData = await snapshot(access);

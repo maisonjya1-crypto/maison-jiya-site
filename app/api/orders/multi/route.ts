@@ -1,4 +1,5 @@
 import { getAuthenticatedUser } from "../../../auth";
+import { referenceWithPrefix } from "../../../../lib/reference";
 import { getRawDb } from "../../../../db";
 import { moroccanPhoneHelp, normalizeMoroccanPhone } from "../../../../db/phone";
 import { ensurePlatformUpgrades } from "../../../../db/platform-upgrades";
@@ -22,7 +23,7 @@ type CapturedItem = {
   lineSaleAmount: number;
 };
 
-const statuses = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
+const statuses = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Retour reçu", "Annulée"];
 const STORE_ANONYMOUS_PHONE = "__MAISON_JIYA_STORE_ANONYMOUS__";
 const STORE_ANONYMOUS_NAME = "Client magasin (anonyme)";
 const sources = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre", "Non renseignée"];
@@ -144,9 +145,10 @@ export async function POST(request: Request) {
 
     const statusCandidate = isStoreSale ? "Livrée" : text(payload.status, "En attente");
     const status = statuses.includes(statusCandidate) ? statusCandidate : "En attente";
-    const returnReason = status === "Retour" && returnReasons.includes(text(payload.returnReason)) ? text(payload.returnReason) : "";
-    const returnNote = status === "Retour" ? text(payload.returnNote).slice(0, 240) : "";
-    if (status === "Retour" && !returnReason) throw new Error("Choisissez le motif du retour.");
+    const isReturn = status === "Retour" || status === "Retour reçu";
+    const returnReason = isReturn && returnReasons.includes(text(payload.returnReason)) ? text(payload.returnReason) : "";
+    const returnNote = isReturn ? text(payload.returnNote).slice(0, 240) : "";
+    if (isReturn && !returnReason) throw new Error("Choisissez le motif du retour.");
     if (returnReason === "Autre" && !returnNote) throw new Error("Précisez le motif du retour.");
 
     if (stockCommittedStatuses.has(status)) {
@@ -210,7 +212,7 @@ export async function POST(request: Request) {
     const dispatchState = isStoreSale ? "Non requis" : manualMode ? (manualCarrier ? "Enregistré manuellement" : "À renseigner") : "À autoriser";
     const now = new Date().toISOString();
     const paidAt = isStoreSale ? now : null;
-    const orderRef = `MJ-${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
+    const orderRef = referenceWithPrefix("MJ-");
 
     const columns = [
       "order_ref", "customer_id", "product_id", "city", "address", "products", "quantity", "sale_amount", "product_cost",
