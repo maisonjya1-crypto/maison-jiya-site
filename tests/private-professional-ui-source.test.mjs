@@ -17,13 +17,14 @@ test("le site privé charge la finition professionnelle sans toucher à la bouti
   assert.doesNotMatch(css, /\.boutique/);
 });
 
-test("la navigation privée est structurée en groupes métier", async () => {
+test("la navigation privée est structurée en 7 rubriques métier avec onglets", async () => {
   const dashboard = await read("app/dashboard-client.tsx");
-  assert.match(dashboard, /navigationGroups/);
-  assert.match(dashboard, /Opérations/);
-  assert.match(dashboard, /Pilotage/);
+  assert.match(dashboard, /menuGroups/);
+  assert.match(dashboard, /Au quotidien/);
+  assert.match(dashboard, /Gestion/);
   assert.match(dashboard, /Système/);
   assert.match(dashboard, /nav-group-label/);
+  assert.match(dashboard, /section-tabs/);
 });
 
 test("le bandeau supérieur utilise des actions contextuelles et retire le faux filtre", async () => {
@@ -41,4 +42,12 @@ test("la navigation groupée reste compatible mobile", async () => {
   const css = await read("app/private-pro.css");
   assert.match(css, /\.nav-group,\n  \.app-shell \.nav-group-items \{\n    display:contents !important/);
   assert.match(css, /\.nav-group-label \{\n    display:none !important/);
+});
+
+test("chaque page du logiciel reste accessible depuis une rubrique du menu", async () => {
+  const dashboard = await read("app/dashboard-client.tsx");
+  const pages = JSON.parse(dashboard.match(/const navigation = (\[[^\]]+\]);/)[1]);
+  const sectionsBlock = dashboard.slice(dashboard.indexOf("const menuSections = ["), dashboard.indexOf("const menuGroups = ["));
+  const grouped = [...sectionsBlock.matchAll(/pages: (\[[^\]]+\])/g)].flatMap((match) => JSON.parse(match[1]));
+  assert.deepEqual([...grouped].sort(), [...pages].sort(), "toutes les pages, une seule fois chacune");
 });

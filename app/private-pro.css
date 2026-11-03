@@ -1227,3 +1227,47 @@
     width: 100%;
   }
 }
+
+/* Onglets d'une rubrique (ex. Argent → Dépenses, Publicités, Trésorerie…). */
+.app-shell .section-tabs {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin: 0 0 18px;
+  padding: 5px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft, #f7f6f2);
+  scrollbar-width: none;
+}
+.app-shell .section-tabs::-webkit-scrollbar { display: none; }
+.app-shell .section-tab {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .16s ease, color .16s ease, border-color .16s ease;
+}
+.app-shell .section-tab:hover { color: var(--ink); background: #ffffffaa; }
+.app-shell .section-tab.active {
+  color: var(--ink);
+  border-color: var(--line);
+  background: var(--paper, #fff);
+  box-shadow: 0 4px 12px #0000000f;
+}
+.app-shell .nav-index { font-size: 9px; }
+@media (max-width: 720px) {
+  .app-shell .section-tabs { margin-bottom: 14px; }
+  .app-shell .section-tab { min-height: 40px; padding: 8px 13px; }
+}
