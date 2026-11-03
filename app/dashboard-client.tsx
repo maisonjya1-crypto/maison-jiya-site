@@ -580,11 +580,47 @@ const dateTimeLabel = (value: string) =>
   }).format(new Date(value));
 
 const navigation = ["Vue d’ensemble", "Commandes", "Produits", "Inventaire", "Réapprovisionnement", "Colis", "Règlements transporteurs", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs", "Dépenses", "Publicités", "Capital", "Trésorerie", "Clôture", "Rapports", "Assistant IA", "Mode entraînement", "Corbeille", "Paramètres"];
-const navigationGroups = [
-  { label: "Opérations", items: ["Vue d’ensemble", "Commandes", "Produits", "Inventaire", "Réapprovisionnement", "Colis", "Règlements transporteurs", "Clients", "Fournisseurs", "Achats", "Factures fournisseurs"] },
-  { label: "Pilotage", items: ["Dépenses", "Publicités", "Capital", "Trésorerie", "Clôture", "Rapports", "Assistant IA"] },
-  { label: "Système", items: ["Mode entraînement", "Corbeille", "Paramètres"] },
+// Menu simplifié : 7 rubriques au lieu de 21 pages. Chaque rubrique regroupe des
+// pages existantes, affichées en onglets. Les pages, les calculs et les liens
+// internes (setActive("Colis"), etc.) restent inchangés.
+const menuSections = [
+  { label: "Accueil", short: "⌂", pages: ["Vue d’ensemble"] },
+  { label: "Commandes", short: "CM", pages: ["Commandes", "Clients", "Corbeille"] },
+  { label: "Livraisons", short: "LV", pages: ["Colis", "Règlements transporteurs"] },
+  { label: "Stock", short: "ST", pages: ["Produits", "Inventaire", "Réapprovisionnement"] },
+  { label: "Fournisseurs", short: "FR", pages: ["Fournisseurs", "Achats", "Factures fournisseurs"] },
+  { label: "Argent", short: "MAD", pages: ["Dépenses", "Publicités", "Trésorerie", "Clôture", "Capital", "Rapports"] },
+  { label: "Réglages", short: "⚙", pages: ["Paramètres", "Assistant IA", "Mode entraînement"] },
 ];
+const menuGroups = [
+  { label: "Au quotidien", sections: ["Accueil", "Commandes", "Livraisons", "Stock"] },
+  { label: "Gestion", sections: ["Fournisseurs", "Argent"] },
+  { label: "Système", sections: ["Réglages"] },
+];
+const tabLabels: Record<string, string> = {
+  "Vue d’ensemble": "Vue d’ensemble",
+  Commandes: "Toutes les commandes",
+  Clients: "Clients",
+  Corbeille: "Corbeille",
+  Colis: "Suivi des colis",
+  "Règlements transporteurs": "Virements transporteurs",
+  Produits: "Produits",
+  Inventaire: "Inventaire",
+  Réapprovisionnement: "À recommander",
+  Fournisseurs: "Fournisseurs",
+  Achats: "Achats",
+  "Factures fournisseurs": "Factures",
+  Dépenses: "Dépenses",
+  Publicités: "Publicités",
+  Trésorerie: "Trésorerie",
+  Clôture: "Clôture",
+  Capital: "Capital",
+  Rapports: "Rapports",
+  Paramètres: "Paramètres",
+  "Assistant IA": "Assistant IA",
+  "Mode entraînement": "Mode entraînement",
+};
+const sectionOfPage = (page: string) => menuSections.find((section) => section.pages.includes(page)) || menuSections[0];
 const sectionDescriptions: Record<string, string> = {
   "Vue d’ensemble": "Synthèse de l’activité, de la trésorerie et des opérations.",
   Commandes: "Suivez les ventes, statuts, paiements et expéditions.",
@@ -1261,16 +1297,22 @@ export default function DashboardClient() {
           </div>
         </div>
         <nav aria-label="Navigation principale">
-          {navigationGroups.map((group) => (
+          {menuGroups.map((group) => (
             <div className="nav-group" key={group.label}>
               <span className="nav-group-label">{group.label}</span>
               <div className="nav-group-items">
-                {group.items.map((item) => {
-                  const index = navigation.indexOf(item);
+                {group.sections.map((label) => {
+                  const section = menuSections.find((entry) => entry.label === label)!;
+                  const isCurrent = section.pages.includes(active);
                   return (
-                    <button key={item} className={active === item ? "nav-item active" : "nav-item"} onClick={() => setActive(item)}>
-                      <span className="nav-index">{String(index + 1).padStart(2, "0")}</span>
-                      <span className="nav-label">{item}</span>
+                    <button
+                      key={section.label}
+                      className={isCurrent ? "nav-item active" : "nav-item"}
+                      onClick={() => setActive(isCurrent ? active : section.pages[0])}
+                      aria-current={isCurrent ? "page" : undefined}
+                    >
+                      <span className="nav-index">{section.short}</span>
+                      <span className="nav-label">{section.label}</span>
                     </button>
                   );
                 })}
@@ -1319,6 +1361,21 @@ export default function DashboardClient() {
             )}
           </div>
         </header>
+        {sectionOfPage(active).pages.length > 1 && (
+          <nav className="section-tabs" aria-label={`Rubrique ${sectionOfPage(active).label}`}>
+            {sectionOfPage(active).pages.map((page) => (
+              <button
+                key={page}
+                type="button"
+                className={page === active ? "section-tab active" : "section-tab"}
+                aria-current={page === active ? "page" : undefined}
+                onClick={() => setActive(page)}
+              >
+                {tabLabels[page] || page}
+              </button>
+            ))}
+          </nav>
+        )}
         {!loading && (
           <section className={`edit-access-strip ${data.access.canEdit ? "unlocked" : "locked"}`} aria-label="Session et droits d’accès">
             <div>
