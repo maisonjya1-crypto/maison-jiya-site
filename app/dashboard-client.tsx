@@ -1753,8 +1753,33 @@ function Page({
   if (active === "Paramètres") return <SettingsPage settings={data.settings} currentTheme={safeTheme(data.settings.theme)} accountName={data.settings.account_name || "Maison Jiya"} accountEmail={data.settings.account_email || ""} carriers={parseCarrierNames(data.settings)} backupConfigured={data.settings.backup_configured === "true"} backupBearerOnly={data.settings.backup_bearer_only === "true"} backupSheetUrl={data.settings.backup_sheet_url || ""} backupWebhookUrl={data.settings.backup_webhook_url || ""} backupWebhookConfigured={data.settings.backup_webhook_configured === "true"} backupHealthStatus={data.settings.backup_health_status || ""} backupHealthCheckedAt={data.settings.backup_health_checked_at || ""} backupHealthCreatedAt={data.settings.backup_health_backup_created_at || ""} backupHealthRecordCount={Number(data.settings.backup_health_record_count || 0)} backupHealthLastError={data.settings.backup_health_last_error || ""} googleSheetsSync={data.googleSheetsSync} senditApiConfigured={data.settings.sendit_api_configured === "true"} senditApiVerified={data.settings.sendit_api_verified === "true"} senditApiCheckedAt={data.settings.sendit_api_checked_at || ""} senditApiLastError={data.settings.sendit_api_last_error || ""} senditWebhookConfigured={data.settings.sendit_webhook_configured === "true"} senditWebhookVerifiedAt={data.settings.sendit_webhook_verified_at || ""} forceLogApiConfigured={data.settings.forcelog_api_configured === "true"} forceLogApiVerified={data.settings.forcelog_api_verified === "true"} forceLogApiCheckedAt={data.settings.forcelog_api_checked_at || ""} forceLogApiLastError={data.settings.forcelog_api_last_error || ""} carrierLastSyncAt={data.settings.carrier_last_sync_at || ""} access={data.access} members={data.members} auditLogs={data.auditLogs} backups={data.backups} products={data.products} submit={submit} />;
   const deliveryOrderCount = data.orders.filter((order) => order.fulfillmentType !== "Magasin physique").length;
   const total = Math.max(1, deliveryOrderCount);
+  const todayKey = businessDateKey(new Date());
+  const monthResult = periodProfit(data, `${todayKey.slice(0, 7)}-01`, todayKey);
+  const toConfirm = data.orders.filter((order) => order.status === "En attente");
+  const inTransit = data.orders.filter((order) => order.status === "Expédiée" || order.status === "En livraison");
+  const newToday = toConfirm.filter((order) => businessDateKey(order.createdAt) === todayKey).length;
   return (
     <>
+      <section className="today-grid" aria-label="L’essentiel aujourd’hui">
+        <button type="button" className={`today-card ${toConfirm.length ? "is-urgent" : ""}`} onClick={() => setActive("Commandes")}>
+          <span className="today-label">Commandes à confirmer</span>
+          <strong className="today-value">{toConfirm.length}</strong>
+          <small>{toConfirm.length ? `${newToday} nouvelle${newToday > 1 ? "s" : ""} aujourd’hui · appelez les clients` : "Rien à confirmer pour l’instant"}</small>
+          <span className="today-action">Ouvrir les commandes →</span>
+        </button>
+        <button type="button" className="today-card" onClick={() => setActive("Colis")}>
+          <span className="today-label">Colis en route</span>
+          <strong className="today-value">{inTransit.length}</strong>
+          <small>{inTransit.length ? "Expédiés ou en cours de livraison" : "Aucun colis en route"}</small>
+          <span className="today-action">Suivre les colis →</span>
+        </button>
+        <button type="button" className={`today-card ${monthResult.profit < 0 ? "is-negative" : "is-positive"}`} onClick={() => setActive("Rapports")}>
+          <span className="today-label">Bénéfice du mois</span>
+          <strong className="today-value">{money(monthResult.profit)}</strong>
+          <small>{monthResult.count} vente{monthResult.count > 1 ? "s" : ""} livrée{monthResult.count > 1 ? "s" : ""} · {money(monthResult.revenue)} de ventes · après pub et dépenses</small>
+          <span className="today-action">Voir le détail →</span>
+        </button>
+      </section>
       <section className="hero-grid">
         <article className="hero-card">
           <div className="hero-heading">
@@ -1763,11 +1788,6 @@ function Page({
               <h2>{money(metrics.cash)}</h2>
             </div>
             <span className="trend positive">À piloter</span>
-          </div>
-          <div className="sparkline">
-            {[31, 38, 34, 43, 49, 47, 55, 58, 64, 68, 72, 82].map((h, i) => (
-              <span key={i} style={{ height: `${h}%` }} />
-            ))}
           </div>
           <div className="hero-foot">
             <span>
@@ -6809,6 +6829,43 @@ function CashflowForecastPage({
   );
 }
 
+/**
+ * Bénéfice d'une période (dates métier Casablanca) : ventes livrées dans la période,
+ * moins les retours enregistrés dans la période, la publicité et les dépenses.
+ * Même calcul pour la page Rapports et pour l'Accueil.
+ */
+function periodProfit(data: Data, startKey: string, endKey: string) {
+  const inPeriod = (recognizedAt: string | null) => {
+    if (!recognizedAt) return false;
+    const key = businessDateKey(recognizedAt);
+    return key >= startKey && key <= endKey;
+  };
+  const completed = data.orders.filter((order) => Boolean(deliveryRecognitionDate(order, data.orderStatusHistory)));
+  const deliveredOrders = completed.filter((order) => inPeriod(deliveryRecognitionDate(order, data.orderStatusHistory)));
+  const returnedOrders = completed.filter((order) => inPeriod(returnRecognitionDate(order.id, data.orderStatusHistory)));
+  const periodOrders = [
+    ...deliveredOrders.map((order) => ({ ...order, status: "Livrée", returnCost: 0 })),
+    ...returnedOrders.map((order) => ({
+      ...order,
+      status: "Livrée",
+      saleAmount: -order.saleAmount,
+      productCost: 0,
+      shippingCost: 0,
+      fees: 0,
+    })),
+  ];
+  const periodAds = data.ads.filter((ad) => inPeriod(ad.performanceDate));
+  const periodExpenses = data.expenses.filter((expense) => inPeriod(expense.expenseDate));
+  const finance = calculateOperatingProfit(periodOrders, periodAds, periodExpenses);
+  return {
+    count: deliveredOrders.length,
+    revenue: finance.deliveredRevenue,
+    profit: finance.profit,
+    adSpend: finance.adSpend,
+    operatingExpenses: finance.operatingExpenses,
+  };
+}
+
 function ReportsPage({ data }: { data: Data }) {
   const allocationPolicy = allocationPolicyFromSettings(data.settings);
   const now = new Date();
@@ -6818,50 +6875,7 @@ function ReportsPage({ data }: { data: Data }) {
   const monthStartKey = `${monthKey}-01`;
   const completed = data.orders.filter((order) => Boolean(deliveryRecognitionDate(order, data.orderStatusHistory)));
   const collected = data.orders.filter((order) => order.paymentStatus === "Encaissé");
-  const deliveredBetween = (startKey: string, endKey: string) => completed.filter((order) => {
-    const recognizedAt = deliveryRecognitionDate(order, data.orderStatusHistory);
-    if (!recognizedAt) return false;
-    const key = businessDateKey(recognizedAt);
-    return key >= startKey && key <= endKey;
-  });
-  const returnedBetween = (startKey: string, endKey: string) => completed.filter((order) => {
-    const recognizedAt = returnRecognitionDate(order.id, data.orderStatusHistory);
-    if (!recognizedAt) return false;
-    const key = businessDateKey(recognizedAt);
-    return key >= startKey && key <= endKey;
-  });
-  const periodCard = (label: string, startKey: string, endKey: string) => {
-    const deliveredOrders = deliveredBetween(startKey, endKey);
-    const returnedOrders = returnedBetween(startKey, endKey);
-    const periodOrders = [
-      ...deliveredOrders.map((order) => ({ ...order, status: "Livrée", returnCost: 0 })),
-      ...returnedOrders.map((order) => ({
-        ...order,
-        status: "Livrée",
-        saleAmount: -order.saleAmount,
-        productCost: 0,
-        shippingCost: 0,
-        fees: 0,
-      })),
-    ];
-    const periodAds = data.ads.filter((ad) => {
-      const key = businessDateKey(ad.performanceDate);
-      return key >= startKey && key <= endKey;
-    });
-    const periodExpenses = data.expenses.filter((expense) => {
-      const key = businessDateKey(expense.expenseDate);
-      return key >= startKey && key <= endKey;
-    });
-    const finance = calculateOperatingProfit(periodOrders, periodAds, periodExpenses);
-    return {
-      label,
-      count: deliveredOrders.length,
-      revenue: finance.deliveredRevenue,
-      profit: finance.profit,
-      adSpend: finance.adSpend,
-      operatingExpenses: finance.operatingExpenses,
-    };
-  };
+  const periodCard = (label: string, startKey: string, endKey: string) => ({ label, ...periodProfit(data, startKey, endKey) });
   const periods = [
     periodCard("Aujourd’hui", today, today),
     periodCard("7 derniers jours", weekStartKey, today),
