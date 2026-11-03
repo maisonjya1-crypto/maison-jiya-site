@@ -1194,3 +1194,36 @@
     grid-column: 1 / -1;
   }
 }
+
+/* Paramètres → Sauvegardes : mise en page en colonne.
+   Le conteneur flex en ligne (prévu pour un texte + un bouton) écrasait les cartes,
+   les boutons d'export chevauchaient la carte Google Sheets et le bouton
+   « Restaurer » prenait toute la largeur des lignes d'historique. */
+.app-shell .continuity-panel .settings-disclosure-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 18px;
+}
+.app-shell .continuity-panel .sheets-backup-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+.app-shell .continuity-panel .backup-export-actions {
+  justify-content: flex-start;
+}
+.app-shell .continuity-panel .backup-export-actions > * {
+  width: auto;
+  flex: 0 0 auto;
+}
+.app-shell .continuity-panel .backup-history-row { align-items: center; }
+.app-shell .continuity-panel .backup-history-row > .secondary-button {
+  width: auto;
+  flex: 0 0 auto;
+}
+@media (max-width: 760px) {
+  .app-shell .continuity-panel .backup-history-row { align-items: flex-start; }
+  .app-shell .continuity-panel .backup-export-actions > *,
+  .app-shell .continuity-panel .backup-history-row > .secondary-button {
+    width: 100%;
+  }
+}
