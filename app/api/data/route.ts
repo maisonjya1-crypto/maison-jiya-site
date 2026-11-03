@@ -123,7 +123,10 @@ function paidAtFromInput(value: unknown, fallbackIso = new Date().toISOString())
   return `${raw}T12:00:00.000Z`;
 }
 
-const orderStatuses = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
+// « Retour » = colis en retour (article pas encore revenu, stock toujours déduit).
+// « Retour reçu » = article revenu au magasin : le stock est réintégré automatiquement.
+const orderStatuses = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Retour reçu", "Annulée"];
+const isReturnStatus = (status: string) => status === "Retour" || status === "Retour reçu";
 const STORE_ANONYMOUS_PHONE = "__MAISON_JIYA_STORE_ANONYMOUS__";
 const STORE_ANONYMOUS_NAME = "Client magasin (anonyme)";
 const orderSources = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre", "Non renseignée"];
@@ -915,9 +918,9 @@ export async function POST(request: Request) {
       const [selectedProduct] = await db.select().from(products).where(and(eq(products.id, productId), isNull(products.archivedAt))).limit(1);
       if (!selectedProduct) return Response.json({ error: "Le produit sélectionné n’existe plus dans le catalogue." }, { status: 404 });
       const selectedStatus = isStoreSale ? "Livrée" : orderStatus(payload.status);
-      const selectedReturnReason = selectedStatus === "Retour" ? returnReason(payload.returnReason) : "";
-      const selectedReturnNote = selectedStatus === "Retour" ? textValue(payload.returnNote).slice(0, 240) : "";
-      if (selectedStatus === "Retour" && !selectedReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
+      const selectedReturnReason = isReturnStatus(selectedStatus) ? returnReason(payload.returnReason) : "";
+      const selectedReturnNote = isReturnStatus(selectedStatus) ? textValue(payload.returnNote).slice(0, 240) : "";
+      if (isReturnStatus(selectedStatus) && !selectedReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
       if (selectedReturnReason === "Autre" && !selectedReturnNote) return Response.json({ error: "Précisez le motif du retour." }, { status: 400 });
       const shouldDeductStock = commitsStock(selectedStatus);
       if (shouldDeductStock && quantity > selectedProduct.stockQuantity) {
@@ -991,7 +994,7 @@ export async function POST(request: Request) {
       if (switchingToStore && existingOrder.trackingNumber) return Response.json({ error: "Ce colis possède déjà un numéro de suivi. Il ne peut plus être transformé en vente magasin." }, { status: 409 });
       const requestedPaymentStatus = (switchingToStore ? "Encaissé" : paymentStatus(payload.paymentStatus, existingOrder.paymentStatus)) as OrderPaymentStatus;
       const nextStatus = switchingToStore ? "Livrée" : orderStatus(payload.status, existingOrder.status);
-      if (isStoreSale && !["Livrée", "Retour", "Annulée"].includes(nextStatus)) return Response.json({ error: "Une vente magasin peut être livrée, retournée ou annulée." }, { status: 400 });
+      if (isStoreSale && !["Livrée", "Retour", "Retour reçu", "Annulée"].includes(nextStatus)) return Response.json({ error: "Une vente magasin peut être livrée, retournée ou annulée." }, { status: 400 });
       const nextAddress = isStoreSale ? "Magasin Maison Jiya" : textValue(payload.address, existingOrder.address).slice(0, 300);
       const requestedPhoneRaw = textValue(payload.phone);
       const nextPhone = requestedPhoneRaw ? normalizeMoroccanPhone(requestedPhoneRaw) : null;
@@ -1002,9 +1005,9 @@ export async function POST(request: Request) {
         const [duplicatePhone] = await db.select({ id: customers.id }).from(customers).where(eq(customers.phone, nextPhone)).limit(1);
         if (duplicatePhone && duplicatePhone.id !== existingOrder.customerId) return Response.json({ error: "Ce numéro appartient déjà à un autre client." }, { status: 409 });
       }
-      const nextReturnReason = nextStatus === "Retour" ? returnReason(payload.returnReason, existingOrder.returnReason) : existingOrder.returnReason;
-      const nextReturnNote = nextStatus === "Retour" ? textValue(payload.returnNote, existingOrder.returnNote).slice(0, 240) : existingOrder.returnNote;
-      if (nextStatus === "Retour" && !nextReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
+      const nextReturnReason = isReturnStatus(nextStatus) ? returnReason(payload.returnReason, existingOrder.returnReason) : existingOrder.returnReason;
+      const nextReturnNote = isReturnStatus(nextStatus) ? textValue(payload.returnNote, existingOrder.returnNote).slice(0, 240) : existingOrder.returnNote;
+      if (isReturnStatus(nextStatus) && !nextReturnReason) return Response.json({ error: "Choisissez le motif du retour." }, { status: 400 });
       if (nextReturnReason === "Autre" && !nextReturnNote) return Response.json({ error: "Précisez le motif du retour." }, { status: 400 });
       const now = new Date().toISOString();
       const paymentState = normalizeOrderPaymentState({

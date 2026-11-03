@@ -66,6 +66,16 @@ const MAX_PROVIDER_RESPONSE_BYTES = 256 * 1024;
 const CONNECTION_HEALTH_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const stockCommittedStatuses = new Set(["Confirmée", "Expédiée", "En livraison", "Livrée", "Retour"]);
 
+/**
+ * Un transporteur continue souvent d'annoncer « retour » après que l'équipe a
+ * réceptionné le colis. On ne revient jamais de « Retour reçu » à « Retour » :
+ * sinon le stock réintégré serait déduit une seconde fois.
+ */
+function protectReceivedReturn(currentStatus: string, nextStatus: string | null) {
+  if (currentStatus === "Retour reçu" && (nextStatus === "Retour" || nextStatus === null)) return "Retour reçu";
+  return nextStatus;
+}
+
 function asRecord(value: unknown): JsonRecord | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : null;
 }
@@ -522,11 +532,11 @@ async function updateTrackedOrder(input: {
   status: string | null;
 }) {
   const rawDb = await getRawDb();
-  const current = await rawDb.prepare("SELECT status, payment_status AS paymentStatus, shipping_cost AS shippingCost, paid_at AS paidAt, refunded_at AS refundedAt, carrier_invoice_code AS carrierInvoiceCode FROM orders WHERE id = ? AND deleted_at IS NULL")
-    .bind(input.orderId).first<{ paymentStatus: string; shippingCost: number; status: string; paidAt: string | null; refundedAt: string | null; carrierInvoiceCode: string }>();
+  const current = await rawDb.prepare("SELECT status, payment_status AS paymentStatus, shipping_cost AS shippingCost, paid_at AS paidAt, refunded_at AS refundedAt, carrier_invoice_code AS carrierInvoiceCode, product_id AS productId, quantity, stock_deducted AS stockDeducted FROM orders WHERE id = ? AND deleted_at IS NULL")
+    .bind(input.orderId).first<{ paymentStatus: string; shippingCost: number; status: string; paidAt: string | null; refundedAt: string | null; carrierInvoiceCode: string; productId: number | null; quantity: number; stockDeducted: number }>();
   if (!current) return false;
   const now = new Date().toISOString();
-  const nextStatus = input.status || current.status;
+  const nextStatus = protectReceivedReturn(current.status, input.status) || current.status;
   const requestedPaymentStatus = current.paymentStatus as OrderPaymentStatus;
   const paymentState = normalizeOrderPaymentState({
     status: nextStatus,
@@ -554,9 +564,32 @@ async function updateTrackedOrder(input: {
       : paymentState.paymentStatus === "Encaissé" && current.paymentStatus !== "Encaissé"
         ? "Encaissement transporteur"
         : "Suivi transporteur";
+  // Commandes à un seul produit : le stock suit le statut comme pour une modification
+  // manuelle (ex. colis annulé par le transporteur = article remis en stock).
+  // Les commandes multi-produits sont gérées par le trigger multi_order_status_stock_sync.
+  const shouldDeduct = Boolean(current.productId && !current.stockDeducted && stockCommittedStatuses.has(nextStatus));
+  const shouldRestore = Boolean(current.productId && current.stockDeducted && !stockCommittedStatuses.has(nextStatus));
+  if (shouldDeduct) {
+    const product = await rawDb.prepare("SELECT stock_quantity AS stockQuantity FROM products WHERE id = ?").bind(current.productId).first<{ stockQuantity: number }>();
+    if (!product || product.stockQuantity < current.quantity) return false;
+  }
+  const stockStatements = shouldDeduct
+    ? [
+      rawDb.prepare("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?").bind(current.quantity, current.productId),
+      rawDb.prepare("INSERT INTO stock_movements (product_id, order_id, movement_type, quantity, note, created_at) VALUES (?, ?, 'Commande', ?, ?, ?)")
+        .bind(current.productId, input.orderId, current.quantity, `Déduction automatique ${input.carrierName} · ${input.orderRef}`, now),
+    ]
+    : shouldRestore
+      ? [
+        rawDb.prepare("UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?").bind(current.quantity, current.productId),
+        rawDb.prepare("INSERT INTO stock_movements (product_id, order_id, movement_type, quantity, note, created_at) VALUES (?, ?, 'Réintégration', ?, ?, ?)")
+          .bind(current.productId, input.orderId, current.quantity, `Réintégration automatique ${input.carrierName} · ${input.orderRef}`, now),
+      ]
+      : [];
   const statements = [
-    rawDb.prepare("UPDATE orders SET status = ?, payment_status = ?, shipping_cost = ?, paid_at = ?, refunded_at = ?, carrier_invoice_code = ?, updated_at = ? WHERE id = ?")
-      .bind(nextStatus, paymentState.paymentStatus, fee, paymentState.paidAt, paymentState.refundedAt, invoiceCode, now, input.orderId),
+    rawDb.prepare("UPDATE orders SET status = ?, payment_status = ?, shipping_cost = ?, paid_at = ?, refunded_at = ?, carrier_invoice_code = ?, stock_deducted = ?, updated_at = ? WHERE id = ?")
+      .bind(nextStatus, paymentState.paymentStatus, fee, paymentState.paidAt, paymentState.refundedAt, invoiceCode, current.productId ? (stockCommittedStatuses.has(nextStatus) ? 1 : 0) : current.stockDeducted, now, input.orderId),
+    ...stockStatements,
     rawDb.prepare("INSERT INTO audit_logs (username, display_name, action, entity_type, entity_id, entity_label, created_at) VALUES (?, ?, ?, 'Commande', ?, ?, ?)")
       .bind(input.provider, `${input.carrierName} automatique`, paymentAction, String(input.orderId), `${input.orderRef} · ${input.externalStatus}`, now),
   ];
@@ -572,7 +605,7 @@ async function syncForceLog(apiKey: string) {
   const rawDb = await getRawDb();
   const tracked = (await rawDb.prepare(`SELECT id, order_ref AS orderRef, tracking_number AS trackingNumber
     FROM orders WHERE deleted_at IS NULL AND tracking_number <> '' AND lower(replace(carrier, ' ', '')) LIKE '%forcelog%'
-    AND (payment_status <> 'Encaissé' OR status NOT IN ('Livrée', 'Retour', 'Annulée')) ORDER BY updated_at DESC LIMIT 20`)
+    AND (payment_status <> 'Encaissé' OR status NOT IN ('Livrée', 'Retour', 'Retour reçu', 'Annulée')) ORDER BY updated_at DESC LIMIT 20`)
     .all<{ id: number; orderRef: string; trackingNumber: string }>()).results;
   let updated = 0;
   for (const order of tracked) {
@@ -713,7 +746,7 @@ export async function applySenditStatusUpdate(input: {
     await rawDb.prepare("UPDATE carrier_events SET error_message = 'Commande introuvable' WHERE payload_hash = ?").bind(input.payloadHash).run();
     return { duplicate: false, internalStatus: mapSenditStatus(input.newStatus), matched: false, updated: false };
   }
-  const nextStatus = mapSenditStatus(input.newStatus);
+  const nextStatus = protectReceivedReturn(order.status, mapSenditStatus(input.newStatus));
   if (!nextStatus) {
     await rawDb.prepare("UPDATE carrier_events SET order_id = ?, error_message = 'Statut Sendit non reconnu' WHERE payload_hash = ?").bind(order.id, input.payloadHash).run();
     return { duplicate: false, internalStatus: null, matched: true, updated: false };

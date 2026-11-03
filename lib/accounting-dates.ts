@@ -46,7 +46,8 @@ export function deliveryRecognitionDate(order: AccountingOrder, history: Account
 }
 
 export function returnRecognitionDate(orderId: number, history: AccountingStatusEvent[]) {
-  return latestStatusDate(orderId, "Retour", history);
+  // Un retour passé directement à « Retour reçu » (ex. retour en magasin) est daté à cette étape.
+  return latestStatusDate(orderId, "Retour", history) || latestStatusDate(orderId, "Retour reçu", history);
 }
 
 export function paymentRecognitionDate(order: AccountingOrder) {

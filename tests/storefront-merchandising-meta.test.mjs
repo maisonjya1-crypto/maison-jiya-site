@@ -42,14 +42,15 @@ test("la barre promotionnelle est pilotable sans modifier le stock", async () =>
   assert.match(client, /promotionTarget/);
 });
 
-test("le Meta Pixel suit le tunnel et Purchase une seule fois après création serveur de la commande", async () => {
+test("le Meta Pixel suit le tunnel et envoie Lead (pas Purchase) une seule fois après création serveur de la commande COD", async () => {
   const client = await readText("app/boutique/storefront-client-v3.tsx");
   assert.match(client, /"PageView"/);
   assert.match(client, /"ViewContent"/);
   assert.match(client, /"AddToCart"/);
   assert.match(client, /"InitiateCheckout"/);
-  assert.match(client, /track\("Purchase"/);
-  assert.match(client, /maison-jiya-meta-purchase:/);
+  assert.match(client, /track\("Lead"/);
+  assert.match(client, /maison-jiya-meta-lead:/);
+  assert.doesNotMatch(client, /track\("Purchase"/, "une commande COD non livrée n'est pas un achat");
   assert.match(client, /content_ids:/);
   assert.match(client, /contents:/);
   assert.match(client, /currency: "MAD"/);
@@ -59,13 +60,13 @@ test("le Meta Pixel suit le tunnel et Purchase une seule fois après création s
   const submitEnd = client.indexOf("const brand =", submitStart);
   const submitOrder = client.slice(submitStart, submitEnd);
   const responseCheck = submitOrder.indexOf("if (!response.ok) throw");
-  const purchaseCheck = submitOrder.indexOf("trackPurchaseOnce(orderRef");
-  assert.ok(responseCheck >= 0 && purchaseCheck > responseCheck, "Purchase doit être envoyé seulement après une réponse serveur réussie.");
+  const purchaseCheck = submitOrder.indexOf("trackLeadOnce(orderRef");
+  assert.ok(responseCheck >= 0 && purchaseCheck > responseCheck, "Lead doit être envoyé seulement après une réponse serveur réussie.");
 });
 
 test("le site privé explique clairement l'état et le sens du suivi Meta", async () => {
   const cms = await readText("app/storefront-cms-v2-enhancement.tsx");
   assert.match(cms, /Pixel configuré/);
   assert.match(cms, /Pixel non configuré/);
-  assert.match(cms, /Purchase correspond à une commande COD enregistrée/);
+  assert.match(cms, /Lead correspond à une commande COD envoyée/);
 });

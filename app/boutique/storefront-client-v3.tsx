@@ -166,9 +166,10 @@ function money(value: number, lang: StorefrontLanguage) {
   return `${Number(value).toLocaleString(lang === "ar" ? "ar-MA" : lang === "en" ? "en-MA" : "fr-MA", { maximumFractionDigits: 2 })} DH`;
 }
 
-function track(event: string, data?: Record<string, unknown>) {
+function track(event: string, data?: Record<string, unknown>, options?: { eventID?: string }) {
   if (!pixelConsentGranted()) return;
-  (window as FbqWindow).fbq?.("track", event, data || {});
+  if (options?.eventID) (window as FbqWindow).fbq?.("track", event, data || {}, options);
+  else (window as FbqWindow).fbq?.("track", event, data || {});
 }
 
 function enableMetaPixel(pixelId: string) {
@@ -194,13 +195,14 @@ function enableMetaPixel(pixelId: string) {
   return true;
 }
 
-function trackPurchaseOnce(orderRef: string, total: number, lines: Array<{ item: CatalogItem; quantity: number }>) {
+function trackLeadOnce(orderRef: string, total: number, lines: Array<{ item: CatalogItem; quantity: number }>) {
   if (!orderRef || typeof window === "undefined" || !(window as FbqWindow).fbq) return;
-  const storageKey = `maison-jiya-meta-purchase:${orderRef}`;
+  const storageKey = `maison-jiya-meta-lead:${orderRef}`;
   try {
     if (localStorage.getItem(storageKey)) return;
   } catch { /* le tracking reste facultatif */ }
-  track("Purchase", {
+  track("Lead", {
+    content_name: "Commande COD",
     value: total,
     currency: "MAD",
     content_type: "product",
@@ -208,7 +210,7 @@ function trackPurchaseOnce(orderRef: string, total: number, lines: Array<{ item:
     contents: lines.map((line) => ({ id: line.item.productCode, quantity: line.quantity, item_price: line.item.salePrice })),
     num_items: lines.reduce((sum, line) => sum + line.quantity, 0),
     order_id: orderRef,
-  });
+  }, { eventID: `lead-${orderRef}` });
   try { localStorage.setItem(storageKey, "1"); } catch { /* le tracking reste facultatif */ }
 }
 
@@ -556,11 +558,13 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       if (!response.ok) throw new Error(body.error || t.orderFailed);
       const orderRef = body.orderRef || "";
       const orderTotal = Number(body.total ?? total);
-      trackPurchaseOnce(orderRef, orderTotal, cartLines);
+      // Paiement à la livraison : une commande envoyée n'est pas encore un achat.
+      // Seul « Lead » est envoyé ici ; « Purchase » sera réservé aux commandes livrées
+      // (API Conversions côté serveur, à brancher).
+      trackLeadOnce(orderRef, orderTotal, cartLines);
       setConfirmation({ orderRef, total: orderTotal });
       setCart({});
       setCheckoutOpen(false);
-      track("Lead", { value: orderTotal, currency: "MAD", content_name: "Commande COD", order_id: orderRef });
     } catch (error) {
       setSubmitError(error instanceof Error && error.message ? error.message : t.orderFailed);
     } finally {

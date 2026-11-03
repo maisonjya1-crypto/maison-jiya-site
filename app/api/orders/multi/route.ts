@@ -23,7 +23,7 @@ type CapturedItem = {
   lineSaleAmount: number;
 };
 
-const statuses = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Annulée"];
+const statuses = ["En attente", "Confirmée", "Expédiée", "En livraison", "Livrée", "Retour", "Retour reçu", "Annulée"];
 const STORE_ANONYMOUS_PHONE = "__MAISON_JIYA_STORE_ANONYMOUS__";
 const STORE_ANONYMOUS_NAME = "Client magasin (anonyme)";
 const sources = ["WhatsApp", "Instagram", "Facebook", "TikTok", "Site web", "Magasin physique", "Autre", "Non renseignée"];
@@ -145,9 +145,10 @@ export async function POST(request: Request) {
 
     const statusCandidate = isStoreSale ? "Livrée" : text(payload.status, "En attente");
     const status = statuses.includes(statusCandidate) ? statusCandidate : "En attente";
-    const returnReason = status === "Retour" && returnReasons.includes(text(payload.returnReason)) ? text(payload.returnReason) : "";
-    const returnNote = status === "Retour" ? text(payload.returnNote).slice(0, 240) : "";
-    if (status === "Retour" && !returnReason) throw new Error("Choisissez le motif du retour.");
+    const isReturn = status === "Retour" || status === "Retour reçu";
+    const returnReason = isReturn && returnReasons.includes(text(payload.returnReason)) ? text(payload.returnReason) : "";
+    const returnNote = isReturn ? text(payload.returnNote).slice(0, 240) : "";
+    if (isReturn && !returnReason) throw new Error("Choisissez le motif du retour.");
     if (returnReason === "Autre" && !returnNote) throw new Error("Précisez le motif du retour.");
 
     if (stockCommittedStatuses.has(status)) {

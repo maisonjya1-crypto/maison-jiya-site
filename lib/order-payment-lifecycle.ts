@@ -16,7 +16,7 @@ export type NormalizedOrderPayment = {
   refundedAt: string | null;
 };
 
-const terminalWithoutSale = new Set(["Retour", "Annulée"]);
+const terminalWithoutSale = new Set(["Retour", "Retour reçu", "Annulée"]);
 
 export function normalizeOrderPaymentState(input: NormalizeOrderPaymentInput): NormalizedOrderPayment {
   const wasCollected = input.previousPaymentStatus === "Encaissé"

@@ -280,3 +280,70 @@ test("S2 — des fautes de saisie ne bloquent plus le client, mais le spam par t
   const otherCustomerSameIp = await route.POST(publicOrder({ phone: "0655443322" }));
   assert.equal(otherCustomerSameIp.status, 201, "un autre client sur la même IP opérateur peut commander");
 });
+
+// ——— C1 : « Retour reçu » remet l'article en stock et corrige le bénéfice ———
+
+test("C1 — commande multi-produits : Retour garde le stock déduit, Retour reçu le réintègre", async (t) => {
+  const db = await fixture();
+  t.after(() => db.sqlite.close());
+  db.sqlite.exec("UPDATE products SET stock_quantity = 5 WHERE id = 1");
+  db.sqlite.prepare(`INSERT INTO orders (order_ref, customer_id, product_id, city, address, products, quantity, sale_amount, product_cost, status, carrier, carrier_dispatch_state, items_json)
+    VALUES ('RET-MULTI', 1, NULL, 'Casablanca', 'Adresse', 'Produit test ×2', 2, 50, 20, 'En attente', 'Sendit', 'À renseigner', ?)`)
+    .run(JSON.stringify([{ productId: 1, productCode: "TEST-1", name: "Produit test", quantity: 2, unitCost: 10, catalogUnitPrice: 25, lineSaleAmount: 50 }]));
+  const stock = () => db.sqlite.prepare("SELECT stock_quantity AS n FROM products WHERE id = 1").get().n;
+  const setStatus = (status) => db.sqlite.prepare("UPDATE orders SET status = ? WHERE order_ref = 'RET-MULTI'").run(status);
+  setStatus("Confirmée");
+  assert.equal(stock(), 3);
+  setStatus("Retour");
+  assert.equal(stock(), 3, "colis en retour : l'article n'est pas encore revenu");
+  setStatus("Retour reçu");
+  assert.equal(stock(), 5, "article revenu au magasin : stock réintégré");
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM stock_movements WHERE movement_type = 'Réintégration' AND note LIKE '%RET-MULTI%'").get().n, 1);
+});
+
+test("C1 — un webhook transporteur « retour » ne fait pas revenir une commande Retour reçu en arrière", async (t) => {
+  const db = await fixture();
+  t.after(() => db.sqlite.close());
+  db.sqlite.exec(`
+    UPDATE products SET stock_quantity = 4 WHERE id = 1;
+    UPDATE orders SET status = 'Retour reçu', stock_deducted = 0, tracking_number = 'SEN-RET-1', payment_status = 'Non encaissé', return_reason = 'Refus de la cliente' WHERE id = 1;
+  `);
+  const carriers = loadSource("db/carriers.ts", {
+    "./index": { getDb: async () => ({}), getRawDb: async () => db },
+    "./schema": {},
+    "drizzle-orm": { and: () => null, eq: () => null, isNull: () => null },
+    "cloudflare:workers": { env: {} },
+  });
+  const result = await carriers.applySenditStatusUpdate({ code: "SEN-RET-1", event: "status", lastActionAt: "", message: "Colis retourné", newStatus: "RETURNED", payloadHash: "hash-ret-1", proofImage: "" });
+  assert.equal(result.updated, false);
+  const order = db.sqlite.prepare("SELECT status, stock_deducted FROM orders WHERE id = 1").get();
+  assert.equal(order.status, "Retour reçu");
+  assert.equal(order.stock_deducted, 0);
+  assert.equal(db.sqlite.prepare("SELECT stock_quantity AS n FROM products WHERE id = 1").get().n, 4);
+});
+
+test("C1 — Retour reçu : encaissement annulé, seul le coût de livraison reste une perte", () => {
+  const { normalizeOrderPaymentState } = loadSource("lib/order-payment-lifecycle.ts");
+  const payment = normalizeOrderPaymentState({ status: "Retour reçu", requestedPaymentStatus: "À encaisser", previousPaymentStatus: "À encaisser", paidAt: null, refundedAt: null, now: "2026-11-03T10:00:00.000Z" });
+  assert.equal(payment.paymentStatus, "Non encaissé");
+
+  const { calculateOperatingProfit } = loadSource("lib/finance.ts");
+  const order = { paymentStatus: "Non encaissé", saleAmount: 250, productCost: 100, shippingCost: 30, fees: 5, returnCost: 15 };
+  const inTransit = calculateOperatingProfit([{ ...order, status: "Retour" }], [], []);
+  const received = calculateOperatingProfit([{ ...order, status: "Retour reçu" }], [], []);
+  assert.equal(inTransit.profit, -150, "colis pas revenu : article + livraison + frais + retour");
+  assert.equal(received.profit, -50, "article revenu : livraison + frais + retour seulement");
+});
+
+test("C1 — clôture mensuelle : un article livré puis revenu au magasin n'est plus compté en coût d'achat", () => {
+  const { buildMonthlyFinancialSnapshot } = loadSource("lib/monthly-closing.ts");
+  const base = { id: 7, paymentStatus: "Remboursé", saleAmount: 250, productCost: 100, shippingCost: 0, fees: 0, returnCost: 0, paidAt: null, createdAt: "2026-10-02T10:00:00.000Z" };
+  const history = [
+    { orderId: 7, toStatus: "Livrée", changedAt: "2026-10-02T11:00:00.000Z" },
+    { orderId: 7, toStatus: "Retour reçu", changedAt: "2026-10-05T11:00:00.000Z" },
+  ];
+  const input = (status) => ({ monthKey: "2026-10", orders: [{ ...base, status }], history, expenses: [], ads: [], inventoryCounts: [], capital: [], carrierSettlements: [], stockValueStart: null, stockValueEnd: null, stockValueSource: "", cashEnd: 0, cashEndSource: "" });
+  const snapshot = buildMonthlyFinancialSnapshot(input("Retour reçu"));
+  assert.equal(snapshot.productCost, 0);
+  assert.equal(snapshot.deliveredRevenue, 0);
+});

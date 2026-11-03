@@ -76,12 +76,15 @@ export function calculateOperatingProfit(
   expenses: FinanceExpense[],
 ) {
   const delivered = orders.filter((order) => order.status === "Livrée");
+  // « Retour » : l'article n'est pas (encore) revenu, son coût reste une perte.
+  // « Retour reçu » : l'article est revenu en stock, seuls la livraison et les frais sont perdus.
   const returned = orders.filter((order) => order.status === "Retour");
+  const returnedReceived = orders.filter((order) => order.status === "Retour reçu");
   const deliveredRevenue = delivered.reduce((sum, order) => sum + amount(order.saleAmount), 0);
   const deliveredOrderCosts = [...delivered, ...returned].reduce(
     (sum, order) => sum + amount(order.productCost) + amount(order.shippingCost) + amount(order.fees),
     0,
-  );
+  ) + returnedReceived.reduce((sum, order) => sum + amount(order.shippingCost) + amount(order.fees), 0);
   const losses = orders.reduce((sum, order) => sum + amount(order.returnCost), 0);
   const adSpend = ads.reduce((sum, ad) => sum + amount(ad.spend), 0);
   const operatingExpenses = expenses.reduce((sum, expense) => sum + amount(expense.amount), 0);
