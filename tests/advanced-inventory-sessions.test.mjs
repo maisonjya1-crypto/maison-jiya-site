@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { fixture, loadSource } from "./helpers/d1-fixture.mjs";
+import { fixture, loadSource, latestBackup } from "./helpers/d1-fixture.mjs";
 
 test("la migration inventaire crée les sessions, la valorisation et l’unicité produit/session", async t => {
   const db = await fixture();
@@ -55,7 +55,7 @@ test("une sauvegarde complète conserve une session et ses comptages détaillés
   `);
 
   await backups.createDailyBackup(db, "Inventaire avancé", true);
-  const backup = db.sqlite.prepare("SELECT id, snapshot_json FROM daily_backups ORDER BY id DESC LIMIT 1").get();
+  const backup = latestBackup(db);
   const snapshot = JSON.parse(backup.snapshot_json);
   assert.equal(snapshot.tables.inventorySessions.length, 1);
   assert.equal(snapshot.tables.inventoryCounts.some((row) => row.reason === "Casse" && row.session_id === 50), true);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fixture, loadSource } from "./helpers/d1-fixture.mjs";
+import { fixture, loadSource, latestBackup } from "./helpers/d1-fixture.mjs";
 
 async function databaseFor(t) {
   const db = await fixture();
@@ -214,19 +214,22 @@ test("la sauvegarde de sécurité inclut aussi la configuration boutique et rest
   db.sqlite.prepare("UPDATE storefront_product_settings SET public_name = 'Avant import' WHERE product_id = 1").run();
 
   await backups.createDailyBackup(db, "Sécurité boutique", true);
-  const backup = db.sqlite.prepare("SELECT id, snapshot_json FROM daily_backups ORDER BY id DESC LIMIT 1").get();
+  const backup = latestBackup(db);
   const parsed = JSON.parse(backup.snapshot_json);
   assert.ok(Array.isArray(parsed.tables.storefrontProducts));
   assert.ok(Array.isArray(parsed.tables.storefrontOffers));
   assert.ok(Array.isArray(parsed.tables.storefrontOfferItems));
-  assert.ok(Array.isArray(parsed.tables.storefrontMedia));
+  // Les photos (base64) ne sont plus copiées dans la sauvegarde quotidienne (limite 2 Mo de D1).
+  assert.equal(parsed.tables.storefrontMedia, undefined);
+  db.sqlite.prepare("INSERT INTO storefront_media (owner_type, owner_id, kind, mime_type, data_base64, byte_size) VALUES ('product', 1, 'gallery', 'image/webp', 'UklGRg==', 4)").run();
 
   db.sqlite.prepare("UPDATE storefront_product_settings SET public_name = 'Après import' WHERE product_id = 1").run();
   await backups.restoreDailyBackup(db, backup.id);
   assert.equal(db.sqlite.prepare("SELECT public_name FROM storefront_product_settings WHERE product_id = 1").get().public_name, "Avant import");
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM storefront_media").get().n >= 1, true, "la restauration conserve les photos actuelles");
 
   await backups.createDailyBackup(db, "Ancienne copie simulée", true);
-  const legacy = db.sqlite.prepare("SELECT id, snapshot_json FROM daily_backups ORDER BY id DESC LIMIT 1").get();
+  const legacy = latestBackup(db);
   const legacySnapshot = JSON.parse(legacy.snapshot_json);
   delete legacySnapshot.tables.storefrontProducts;
   delete legacySnapshot.tables.storefrontOffers;

@@ -1,4 +1,5 @@
 import { getAuthenticatedUser } from "../../../auth";
+import { referenceWithPrefix } from "../../../../lib/reference";
 import { getRawDb } from "../../../../db";
 import { moroccanPhoneHelp, normalizeMoroccanPhone } from "../../../../db/phone";
 import { ensurePlatformUpgrades } from "../../../../db/platform-upgrades";
@@ -210,7 +211,7 @@ export async function POST(request: Request) {
     const dispatchState = isStoreSale ? "Non requis" : manualMode ? (manualCarrier ? "Enregistré manuellement" : "À renseigner") : "À autoriser";
     const now = new Date().toISOString();
     const paidAt = isStoreSale ? now : null;
-    const orderRef = `MJ-${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
+    const orderRef = referenceWithPrefix("MJ-");
 
     const columns = [
       "order_ref", "customer_id", "product_id", "city", "address", "products", "quantity", "sale_amount", "product_cost",

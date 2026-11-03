@@ -1,4 +1,5 @@
 import { getRawDb } from "../../../../db";
+import { referenceWithPrefix } from "../../../../lib/reference";
 import { normalizeMoroccanPhone } from "../../../../db/phone";
 import { ensurePlatformUpgrades } from "../../../../db/platform-upgrades";
 import { notifyNewOrder } from "../../../../db/push-notifications";
@@ -118,23 +119,19 @@ async function sha256(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
-async function enforceRateLimit(database: D1Database, request: Request) {
-  await database.prepare(`
-    CREATE TABLE IF NOT EXISTS storefront_rate_limits (
-      key_hash TEXT PRIMARY KEY NOT NULL,
-      window_started_at TEXT NOT NULL,
-      request_count INTEGER DEFAULT 0 NOT NULL,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
-    )
-  `).run();
-  const ip = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  const keyHash = await sha256(`order:${ip}`);
-  const now = Date.now();
+// Plusieurs clients mobiles peuvent partager la même adresse IP chez l'opérateur :
+// la limite par IP est donc large, et une limite par téléphone bloque le vrai spam.
+const RATE_WINDOW_MS = 15 * 60 * 1000;
+const MAX_VALID_ORDERS_PER_IP = 12;
+const MAX_VALID_ORDERS_PER_PHONE = 4;
+
+async function hitRateLimit(database: D1Database, key: string, limit: number, now: number) {
+  const keyHash = await sha256(key);
   const row = await database.prepare("SELECT window_started_at AS windowStartedAt, request_count AS requestCount FROM storefront_rate_limits WHERE key_hash = ? LIMIT 1")
     .bind(keyHash).first<{ windowStartedAt: string; requestCount: number }>();
   const startedAt = row?.windowStartedAt ? new Date(row.windowStartedAt).getTime() : 0;
-  const freshWindow = !startedAt || now - startedAt > 15 * 60 * 1000;
-  if (!freshWindow && Number(row?.requestCount || 0) >= 5) throw new Error("Trop de tentatives. Réessayez dans quelques minutes.");
+  const freshWindow = !startedAt || now - startedAt > RATE_WINDOW_MS;
+  if (!freshWindow && Number(row?.requestCount || 0) >= limit) return false;
   if (freshWindow) {
     await database.prepare(`
       INSERT INTO storefront_rate_limits (key_hash, window_started_at, request_count, updated_at)
@@ -144,6 +141,24 @@ async function enforceRateLimit(database: D1Database, request: Request) {
   } else {
     await database.prepare("UPDATE storefront_rate_limits SET request_count = request_count + 1, updated_at = CURRENT_TIMESTAMP WHERE key_hash = ?").bind(keyHash).run();
   }
+  return true;
+}
+
+/** Appelée seulement pour un formulaire valide : une faute de frappe ne bloque plus le client. */
+async function enforceRateLimit(database: D1Database, request: Request, phone: string) {
+  await database.prepare(`
+    CREATE TABLE IF NOT EXISTS storefront_rate_limits (
+      key_hash TEXT PRIMARY KEY NOT NULL,
+      window_started_at TEXT NOT NULL,
+      request_count INTEGER DEFAULT 0 NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+    )
+  `).run();
+  const ip = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const now = Date.now();
+  const allowed = await hitRateLimit(database, `order-phone:${phone}`, MAX_VALID_ORDERS_PER_PHONE, now)
+    && await hitRateLimit(database, `order:${ip}`, MAX_VALID_ORDERS_PER_IP, now);
+  if (!allowed) throw new Error("Trop de tentatives. Réessayez dans quelques minutes.");
 }
 
 function allocateSale(items: Array<{ product: ProductRow; quantity: number; weight: number }>, total: number): CapturedItem[] {
@@ -183,7 +198,6 @@ export async function POST(request: Request) {
     const database = await getRawDb();
     await ensurePlatformUpgrades(database);
     await ensureStorefrontCms(database);
-    await enforceRateLimit(database, request);
 
     const cart = parseItems(payload.items);
     const customerName = text(payload.customerName, 120);
@@ -198,6 +212,7 @@ export async function POST(request: Request) {
     if (!phone) throw new Error("Indiquez un numéro marocain valide.");
     if (!city) throw new Error("Indiquez votre ville.");
     if (!address || address.length < 5) throw new Error("Indiquez votre adresse de livraison.");
+    await enforceRateLimit(database, request, phone);
 
     const directIds = cart.filter((item) => item.kind === "product").map((item) => item.id);
     const offerIds = cart.filter((item) => item.kind === "offer").map((item) => item.id);
@@ -321,19 +336,22 @@ export async function POST(request: Request) {
     `).bind(phone, productLabel).first<{ orderRef: string }>();
     if (duplicate?.orderRef) return Response.json({ ok: true, orderRef: duplicate.orderRef, duplicate: true, total: saleAmount }, { headers: { "cache-control": "no-store" } });
 
-    let customer = await database.prepare("SELECT id FROM customers WHERE phone = ? LIMIT 1").bind(phone).first<{ id: number }>();
-    if (!customer) {
-      await database.prepare("INSERT INTO customers (name, phone, city) VALUES (?, ?, ?)").bind(customerName, phone, city).run();
-      customer = await database.prepare("SELECT id FROM customers WHERE phone = ? LIMIT 1").bind(phone).first<{ id: number }>();
-    } else await database.prepare("UPDATE customers SET name = ?, city = ? WHERE id = ?").bind(customerName, city, customer.id).run();
+    // Un client existant n'est jamais modifié depuis la boutique publique : n'importe qui
+    // connaissant un numéro pourrait sinon renommer la fiche et tout son historique.
+    // Le nom saisi s'il est différent et la ville restent visibles sur la commande.
+    await database.prepare("INSERT INTO customers (name, phone, city) VALUES (?, ?, ?) ON CONFLICT(phone) DO NOTHING").bind(customerName, phone, city).run();
+    const customer = await database.prepare("SELECT id, name FROM customers WHERE phone = ? LIMIT 1").bind(phone).first<{ id: number; name: string }>();
     if (!customer) throw new Error("Impossible d’enregistrer vos coordonnées.");
+    const differentName = customer.name.trim().toLocaleLowerCase("fr") !== customerName.toLocaleLowerCase("fr")
+      ? `Nom indiqué sur la boutique : ${customerName}.`
+      : "";
 
     const now = new Date().toISOString();
-    const orderRef = `MJ-W${Date.now().toString(36).slice(-5).toUpperCase()}${crypto.randomUUID().slice(0, 2).toUpperCase()}`;
+    const orderRef = referenceWithPrefix("MJ-W");
     const promoAttribution = promotion.applied ? `${promotion.code} -${promotion.discount} MAD` : "";
     const attribution = [promoAttribution, campaign, utmSource && `src:${utmSource}`, utmMedium && `med:${utmMedium}`].filter(Boolean).join(" · ").slice(0, 120);
     const promoNote = promotion.applied ? `Offre ${promotion.name} appliquée : -${promotion.discount} MAD.` : "";
-    const noteSuffix = [promoNote, note ? `Note client: ${note}` : ""].filter(Boolean).join(" ");
+    const noteSuffix = [differentName, promoNote, note ? `Note client: ${note}` : ""].filter(Boolean).join(" ");
     await database.batch([
       database.prepare(`
         INSERT INTO orders (
