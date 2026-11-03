@@ -1271,3 +1271,42 @@
   .app-shell .section-tabs { margin-bottom: 14px; }
   .app-shell .section-tab { min-height: 40px; padding: 8px 13px; }
 }
+
+/* Accueil : les 3 informations essentielles en premier. */
+.app-shell .today-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.app-shell .today-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-height: 150px;
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper, #fff);
+  color: var(--ink);
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 6px 18px #0000000a;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.app-shell .today-card:hover { transform: translateY(-2px); box-shadow: 0 10px 24px #00000014; }
+.app-shell .today-label { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.app-shell .today-value { font: 600 34px/1.1 Georgia, serif; color: var(--ink); }
+.app-shell .today-card small { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.app-shell .today-action { margin-top: auto; padding-top: 6px; color: var(--forest); font-size: 11px; font-weight: 700; }
+.app-shell .today-card.is-urgent { border-color: #e2a54a; background: linear-gradient(180deg, #fff8ec, var(--paper, #fff)); }
+.app-shell .today-card.is-urgent .today-value { color: #b46a06; }
+.app-shell .today-card.is-positive .today-value { color: #1f7a4d; }
+.app-shell .today-card.is-negative .today-value { color: var(--terracotta); }
+@media (max-width: 900px) {
+  .app-shell .today-grid { grid-template-columns: 1fr; gap: 10px; }
+  .app-shell .today-card { min-height: 0; padding: 16px 18px; }
+  .app-shell .today-value { font-size: 28px; }
+}

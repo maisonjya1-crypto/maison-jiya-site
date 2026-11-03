@@ -51,3 +51,14 @@ test("chaque page du logiciel reste accessible depuis une rubrique du menu", asy
   const grouped = [...sectionsBlock.matchAll(/pages: (\[[^\]]+\])/g)].flatMap((match) => JSON.parse(match[1]));
   assert.deepEqual([...grouped].sort(), [...pages].sort(), "toutes les pages, une seule fois chacune");
 });
+
+test("l'accueil montre d'abord commandes à confirmer, colis en route et bénéfice du mois", async () => {
+  const dashboard = await read("app/dashboard-client.tsx");
+  assert.match(dashboard, /className="today-grid"/);
+  assert.match(dashboard, /Commandes à confirmer/);
+  assert.match(dashboard, /Colis en route/);
+  assert.match(dashboard, /Bénéfice du mois/);
+  // Même calcul de bénéfice pour l'accueil et la page Rapports.
+  assert.equal((dashboard.match(/periodProfit\(data, /g) || []).length, 2);
+  assert.doesNotMatch(dashboard, /\[31, 38, 34, 43, 49/, "plus de courbe décorative inventée");
+});
