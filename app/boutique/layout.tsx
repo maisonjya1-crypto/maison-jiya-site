@@ -1,27 +1,6 @@
 import type { Metadata } from "next";
-import "./storefront.css";
-import "./storefront-cms-public.css";
-import "./storefront-contact.css";
-import "./storefront-fast.css";
-import "./storefront-reliability.css";
-import "./best-seller-vertical.css";
-import "./storefront-responsive.css";
-import "./storefront-v3.css";
-import "./storefront-approved-design.css";
-import "./storefront-reference-exact.css";
-import "./storefront-reference-clean.css";
-import "./storefront-final-hotfix.css";
-import "./storefront-approved-cover.css";
-import "./storefront-responsive-neutral.css";
-import "./storefront-responsive-neutral-hotfix.css";
-import "./storefront-mobile-hero-compact.css";
-import "./storefront-mobile-hero-products.css";
-import "./storefront-whatsapp-contact-hotfix.css";
-import "./storefront-header-quick-actions.css";
-import "./storefront-entrance.css";
-import "./storefront-gallery-hotfix.css";
+import "./storefront-modern.css";
 import "./legal.css";
-import "./storefront-meta-compliance.css";
 
 export const metadata: Metadata = {
   title: "Maison Jiya — Boutique",

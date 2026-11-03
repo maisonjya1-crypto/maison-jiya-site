@@ -28,74 +28,36 @@ assert.match(orderRoute, /status,[^]*'En attente'/);
 
 const publicPage = await readText("app/boutique/page.tsx");
 assert.match(publicPage, /StorefrontClientV3/);
-// La nouvelle couverture conserve les composants, mais ils sont montés dans le HTML initial.
-assert.match(publicPage, /StorefrontClientV3/);
-const nativeClient = await readText("app/boutique/storefront-client-v3.tsx");
-assert.match(nativeClient, /<StorefrontNativeHeader/);
-assert.match(nativeClient, /<StorefrontNativeHero/);
-assert.match(nativeClient, /<StorefrontNativeBrands/);
-assert.match(nativeClient, /<StorefrontReferenceAfterBrand/);
-assert.match(publicPage, /StorefrontCoverInteractions/);
 assert.match(publicPage, /storefront_manual_catalog_initialized_v1/);
-assert.match(publicPage, /maison-jiya-public-reference-native-v5/);
-assert.match(publicPage, /storefront-approved-design storefront-reference-exact storefront-reference-clean/);
-assert.doesNotMatch(publicPage, /BestSellerVerticalEnhancement/);
+assert.match(publicPage, /maison-jiya-modern-v6/);
+assert.match(publicPage, /mj-shop-root/);
 
 const publicLayout = await readText("app/boutique/layout.tsx");
-assert.match(publicLayout, /storefront-v3\.css/);
-assert.match(publicLayout, /storefront-approved-design\.css/);
-assert.match(publicLayout, /storefront-reference-exact\.css/);
-assert.match(publicLayout, /storefront-reference-clean\.css/);
+assert.match(publicLayout, /storefront-modern\.css/);
+assert.doesNotMatch(publicLayout, /storefront-reference-clean\.css/);
 
 const client = await readText("app/boutique/storefront-client-v3.tsx");
 assert.match(client, /type Copy/);
 assert.match(client, /fr:\s*\{/);
 assert.match(client, /ar:\s*\{/);
 assert.match(client, /en:\s*\{/);
-assert.match(client, /توصيل مجاني إلى جميع أنحاء المغرب/);
-assert.match(client, /Free delivery across Morocco/);
-assert.match(client, /storefront-v3-marquee-track/);
-assert.match(client, /storefront-v3-brand-strip-track/);
-assert.match(client, /Math\.min\(20/);
 assert.match(client, /document\.documentElement\.dir/);
 assert.match(client, /cash on delivery|Cash on delivery/i);
+for (const anchor of ["mj-header", "mj-hero", "mj-deal", "id=\"catalogue\"", "id=\"offres\"", "id=\"contact\"", "mj-cart-bar"]) {
+  assert.ok(client.includes(anchor), `ancre boutique manquante : ${anchor}`);
+}
+// Aucun compte à rebours inventé (Meta + loi marocaine sur la protection du consommateur).
+assert.doesNotMatch(client, /countdown|compte à rebours/i);
 
-const css = await readText("app/boutique/storefront-v3.css");
-assert.match(css, /@keyframes v3-marquee/);
-assert.match(css, /@keyframes v3-brandstrip/);
-assert.match(css, /@media\(max-width:720px\)/);
+const css = await readText("app/boutique/storefront-modern.css");
+assert.match(css, /--grenat:/);
+assert.match(css, /@media \(max-width: 860px\)/);
 assert.match(css, /100dvh/);
 assert.match(css, /safe-area-inset-bottom/);
-
-const approved = await readText("app/boutique/storefront-approved-design-enhancement.tsx");
-assert.match(approved, /#catalogue/);
-assert.match(approved, /#offres/);
-assert.match(approved, /#contact/);
-assert.match(approved, /mj-native-header/);
-assert.match(approved, /mj-native-hero/);
-assert.match(approved, /mj-native-brands/);
-assert.match(approved, /storefront-reference-services/);
-assert.match(approved, /storefront-reference-categories/);
-// Le bandeau ne doit pas laisser croire à une affiliation avec des marques tierces.
-assert.match(approved, /const referenceBrands = \["MAISON JIYA", "MONTRES"/);
-assert.doesNotMatch(approved, /const referenceBrands = \[.*ROLEX/);
-assert.match(approved, /Catalogue/);
-assert.match(approved, /الكتالوج/);
-assert.match(approved, /Catalog/);
-
-const cleanCss = await readText("app/boutique/storefront-reference-clean.css");
-assert.match(cleanCss, /storefront-reference-clean/);
-assert.match(cleanCss, /grid-template-areas:"search logo actions" "nav nav nav"/);
-assert.match(cleanCss, /mj-native-header/);
-assert.match(cleanCss, /mj-native-hero-products/);
-assert.match(cleanCss, /mj-native-brands/);
-assert.match(cleanCss, /storefront-v3-hero>\.storefront-v3-hero-media/);
-assert.match(cleanCss, /background:#fff!important/);
-assert.match(cleanCss, /@media\(max-width:680px\)/);
+assert.match(css, /prefers-reduced-motion/);
 
 const smoke = await readText("scripts/smoke-production.mjs");
-assert.match(smoke, /maison-jiya-public-reference-native-v5/);
-assert.match(smoke, /storefront-reference-clean/);
+assert.match(smoke, /maison-jiya-modern-v6/);
 assert.match(smoke, /REQUIRE_REFERENCE_BLACK_DESIGN/);
 
 const deployWorkflow = await readText(".github/workflows/deploy-cloudflare.yml");
@@ -112,4 +74,4 @@ assert.match(privateCss, /button\.danger/);
 assert.match(privateCss, /safe-area-inset-left/);
 assert.match(privateCss, /overflow-x:\s*auto/);
 
-console.log("Storefront V3 (catalogue manuel + quantités avant confirmation + FR/AR/EN + référence native v5 + marques fixes + interactions Homme/Femme + responsive privé/public): OK");
+console.log("Storefront V3 (catalogue manuel + FR/AR/EN + design moderne v6 + responsive privé/public): OK");

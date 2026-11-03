@@ -55,21 +55,6 @@ jobs:
       - name: Validate storefront V3
         run: node scripts/check-storefront-v3.mjs
 
-      - name: Validate storefront final hotfix
-        run: node scripts/check-storefront-final-hotfix.mjs
-
-      - name: Validate approved cover
-        run: node scripts/check-approved-cover.mjs
-
-      - name: Validate cover interactions and category photos
-        run: node scripts/check-cover-interactions.mjs
-
-      - name: Validate generated storefront assets
-        run: node scripts/check-storefront-generated-assets.mjs
-
-      - name: Validate storefront cover v5
-        run: node scripts/check-storefront-cover-v5.mjs
-
       - name: Run all source and rendered HTML tests
         run: node --test tests/*.test.mjs
 

@@ -33,8 +33,8 @@ test("les informations légales sont accessibles sans formulaire de connexion", 
   }
 });
 test("le site ne prétend pas représenter des marques tierces non vérifiées", async () => {
-  const enhancement = await read("app/boutique/storefront-approved-design-enhancement.tsx");
-  assert.match(enhancement, /const referenceBrands = \["MAISON JIYA"/);
-  assert.doesNotMatch(enhancement, /const referenceBrands = \[.*ROLEX/);
-  assert.doesNotMatch(enhancement, /Satisfaction garantie/);
+  const client = await read("app/boutique/storefront-client-v3.tsx");
+  assert.doesNotMatch(client, /ROLEX|Rolex|Cartier|Patek/, "aucune marque tierce écrite en dur dans la boutique");
+  assert.doesNotMatch(client, /Satisfaction garantie/);
+  assert.doesNotMatch(client, /officialStore\}/, "pas de mention « boutique officielle » affichée");
 });
