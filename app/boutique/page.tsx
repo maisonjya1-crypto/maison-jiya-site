@@ -2,17 +2,13 @@ import { getRawDb } from "../../db";
 import { getPublicDb } from "../../db/public-db";
 import { ensureStorefrontCms } from "../../db/storefront-cms";
 import { loadStorefrontCatalogFast } from "../../db/storefront-public-fast";
-import StorefrontCoverInteractions from "./storefront-cover-interactions";
-import StorefrontEntrance from "./storefront-entrance";
 import StorefrontClientV3 from "./storefront-client-v3";
-import StorefrontMobileHeroProducts from "./storefront-mobile-hero-products";
-import StorefrontWhatsappContactHotfix from "./storefront-whatsapp-contact-hotfix";
 import type { StorefrontCatalog } from "./storefront-types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const STOREFRONT_DEPLOYMENT_MARKER = "maison-jiya-public-reference-native-v5";
+const STOREFRONT_DEPLOYMENT_MARKER = "maison-jiya-modern-v6";
 
 async function ensureManualCatalogReady() {
   const database = await getRawDb();
@@ -29,11 +25,7 @@ export default async function BoutiquePage() {
   } catch (error) {
     console.error("Maison Jiya storefront preload failed", error);
   }
-  return <div className="storefront-approved-design storefront-reference-exact storefront-reference-clean" data-storefront-deployment={STOREFRONT_DEPLOYMENT_MARKER}>
-    <StorefrontEntrance />
+  return <div className="mj-shop-root" data-storefront-deployment={STOREFRONT_DEPLOYMENT_MARKER}>
     <StorefrontClientV3 initialCatalog={initialCatalog} />
-    <StorefrontMobileHeroProducts />
-    <StorefrontCoverInteractions />
-    <StorefrontWhatsappContactHotfix />
   </div>;
 }

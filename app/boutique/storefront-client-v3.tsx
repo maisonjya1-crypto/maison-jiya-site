@@ -2,7 +2,6 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { CatalogItem, StorefrontCatalog, StorefrontLanguage, StorefrontMarketingSection } from "./storefront-types";
-import { StorefrontNativeHeader, StorefrontNativeHero, StorefrontNativeBrands, StorefrontReferenceAfterBrand } from "./storefront-approved-design-enhancement";
 import { calculateIndependentPromotions, promotionRuleLabel, type StorefrontPromotion } from "../../lib/storefront-promotions";
 
 type Cart = Record<string, number>;
@@ -228,19 +227,18 @@ function SafeImage({ src, alt, fallback, priority = false, width, height }: { sr
 
 function ProductCard({ item, lang, t, add, open, priority = false }: { item: CatalogItem; lang: StorefrontLanguage; t: Copy; add: (item: CatalogItem) => void; open: (item: CatalogItem) => void; priority?: boolean }) {
   const fallback = <div className="storefront-v3-image-fallback"><b>{item.category.slice(0, 1).toUpperCase()}</b><small>{categoryCopy[lang][item.category] || item.category}</small></div>;
+  const discount = item.comparePrice > item.salePrice ? Math.round((1 - item.salePrice / item.comparePrice) * 100) : 0;
   return <article className={`storefront-v3-product ${!item.available ? "is-unavailable" : ""}`}>
     <button className="storefront-v3-product-media storefront-v3-product-open" type="button" onClick={() => open(item)} aria-label={`${t.viewProduct} : ${item.name}`}>
       {item.images[0] ? <SafeImage src={item.images[0]} alt={item.name} fallback={fallback} priority={priority} width={480} height={500} /> : fallback}
-      {item.badge && <em>{item.badge}</em>}
+      {discount > 0 ? <em className="is-discount">-{discount} %</em> : item.badge ? <em>{item.badge}</em> : null}
       {item.images.length > 1 && <span className="storefront-v3-photo-count">{item.images.length} photos</span>}
       {!item.available && <i>{t.unavailable}</i>}
     </button>
     <div className="storefront-v3-product-info">
-      <small>{item.productCode} · {categoryCopy[lang][item.category] || item.category}</small>
+      <small>{categoryCopy[lang][item.category] || item.category}</small>
       <h3><button className="storefront-v3-product-title-button" type="button" onClick={() => open(item)}>{item.name}</button></h3>
-      {item.description && <p>{item.description}</p>}
       <div className="storefront-v3-price"><strong>{money(item.salePrice, lang)}</strong>{item.comparePrice > item.salePrice && <del>{money(item.comparePrice, lang)}</del>}</div>
-      <button className="storefront-v3-view-product" type="button" onClick={() => open(item)}>{t.viewProduct}{item.images.length > 1 ? ` · ${item.images.length} photos` : ""}</button>
       <button className="storefront-v3-add-product" type="button" disabled={!item.available} onClick={() => add(item)}>{item.available ? t.addToCart : t.unavailable}</button>
     </div>
   </article>;
@@ -479,8 +477,6 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const bestSellers = products.filter((item) => isBestSeller(item.badge)).slice(0, 8);
   const promotedOffer = promotion?.offerId ? offers.find((item) => item.id === promotion.offerId) : undefined;
   const weeklyOffers = promotedOffer ? [promotedOffer, ...offers.filter((item) => item.id !== promotedOffer.id)] : offers;
-  const weekly = (weeklyOffers.length ? weeklyOffers : products).slice(0, 8);
-  const collectionCategories = (catalog?.categories || []).filter((item) => item !== "Packs & offres").slice(0, 6);
 
   const cartLines = useMemo(() => Object.entries(cart).map(([key, quantity]) => {
     const item = items.find((candidate) => itemKey(candidate) === key);
@@ -577,7 +573,6 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const waMessage = lang === "ar" ? `مرحبًا ${brand}، لدي سؤال بخصوص المتجر.` : lang === "en" ? `Hello ${brand}, I have a question about your store.` : `Bonjour ${brand}, j’ai une question concernant votre boutique.`;
   const waUrl = waDigits ? `https://wa.me/${waDigits}?text=${encodeURIComponent(waMessage)}` : "";
   const announcement = localized?.announcement || t.moroccoDelivery;
-  const strip = catalog?.brandStrip?.length ? catalog.brandStrip : [brand, "MONTRES", "BIJOUX", "PORTEFEUILLES", "PACKS"];
   const promotionTarget = displayPromotions.length ? "#promotions" : offers.length ? "#offres" : "#catalogue";
   const marketingSections = catalog?.marketingSections ?? [];
 
@@ -625,141 +620,126 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     </section>;
   }
 
-  return <main className="storefront-v3 storefront-shell" dir={lang === "ar" ? "rtl" : "ltr"}>
-    <div className="storefront-v3-marquee" aria-label={announcement}>
-      <div className="storefront-v3-marquee-track">{Array.from({ length: 10 }, (_, index) => <span key={index}>{announcement} ✦</span>)}</div>
-    </div>
+  const ui = {
+    fr: { heroCta: "Voir les modèles", dealCta: "Voir les produits concernés", packs: "Packs", packsText: "Plusieurs pièces, un prix réduit.", best: "Les plus demandés", catalogue: "Tous les modèles", all: "Tout", steps: "Commander en 3 étapes", cartBar: "Voir le panier", contactCta: "Écrire sur WhatsApp" },
+    ar: { heroCta: "شاهد الموديلات", dealCta: "المنتجات المشمولة", packs: "الباقات", packsText: "عدة قطع بسعر مخفض.", best: "الأكثر طلبًا", catalogue: "جميع الموديلات", all: "الكل", steps: "اطلب في 3 خطوات", cartBar: "عرض السلة", contactCta: "راسلنا على واتساب" },
+    en: { heroCta: "Shop the models", dealCta: "See eligible products", packs: "Packs", packsText: "Several pieces, one reduced price.", best: "Most wanted", catalogue: "All models", all: "All", steps: "Order in 3 steps", cartBar: "View cart", contactCta: "Message us on WhatsApp" },
+  }[lang];
+  const leadPromotion = displayPromotions[0];
+  const heroImages = (bestSellers.length ? bestSellers : products).filter((item) => item.images[0]).slice(0, 3);
+  const chipCategories = (catalog?.categories || []).filter((item) => items.some((entry) => entry.category === item));
+  const dealHeadline = (promo: StorefrontPromotion) => promo.ruleType === "buy_x_get_y_free"
+    ? `${Math.max(1, promo.buyQuantity)}+${Math.max(1, promo.freeQuantity)}`
+    : `-${Math.round(promo.percentValue)} %`;
 
-    <header className="storefront-v3-header">
-      <nav className="storefront-v3-nav-links">
-        <a href="#catalogue">{t.catalogue}</a>{(displayPromotions.length > 0 || offers.length > 0) && <a href={displayPromotions.length ? "#promotions" : "#offres"}>{t.offers}</a>}<a href="#commande">{t.howToOrder}</a>
-      </nav>
-      <a className="storefront-v3-brand" href="/boutique" aria-label={`${brand} ${t.officialStore}`}>
-        <SafeImage src={catalog?.logoUrl || "/maison-jiya-logo.jpeg"} alt={brand} fallback={<b>MJ</b>} width={180} height={90} />
-        <span><strong>{brand}</strong><small>{t.officialStore}</small></span>
+  return <main className="storefront-v3 storefront-shell mj-shop" dir={lang === "ar" ? "rtl" : "ltr"}>
+    <p className="mj-topbar">{announcement}</p>
+
+    <header className="storefront-v3-header mj-header">
+      <a className="storefront-v3-brand" href="/boutique" aria-label={brand}>
+        <SafeImage src={catalog?.logoUrl || "/maison-jiya-logo.jpeg"} alt="" fallback={<b>MJ</b>} width={88} height={88} />
+        <strong>{brand}</strong>
       </a>
+      <nav className="storefront-v3-nav-links" aria-label={t.catalogue}>
+        <a href="#catalogue">{t.catalogue}</a>
+        {(displayPromotions.length > 0 || offers.length > 0) && <a href={displayPromotions.length ? "#promotions" : "#offres"}>{t.offers}</a>}
+        <a href="#commande">{t.howToOrder}</a>
+      </nav>
       <div className="storefront-v3-header-actions">
         <div className="storefront-v3-language" role="group" aria-label="Language / اللغة"><button type="button" aria-pressed={lang === "fr"} aria-label="Français" className={lang === "fr" ? "active" : ""} onClick={() => setLang("fr")}>FR</button><button type="button" aria-pressed={lang === "ar"} aria-label="العربية" className={lang === "ar" ? "active" : ""} onClick={() => setLang("ar")}>ع</button><button type="button" aria-pressed={lang === "en"} aria-label="English" className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>EN</button></div>
-        <button className="storefront-v3-cart-button" type="button" onClick={() => setCartOpen(true)} aria-label={`${t.cart} · ${itemCount} ${t.products}`}>♡ <span>{t.cart}</span><b aria-live="polite">{itemCount}</b></button>
+        <button className="storefront-v3-cart-button" type="button" onClick={() => setCartOpen(true)} aria-label={`${t.cart} · ${itemCount} ${t.products}`}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12l-1 13H7L6 7Z" /><path d="M9 7a3 3 0 0 1 6 0" /></svg>
+          <span>{t.cart}</span>{itemCount > 0 && <b aria-live="polite">{itemCount}</b>}
+        </button>
       </div>
-      <StorefrontNativeHeader lang={lang} onLanguage={setLang} onSearch={() => {
-        document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" });
-        window.setTimeout(() => document.querySelector<HTMLInputElement>(".storefront-v3-tools input")?.focus(), 350);
-      }} onCart={() => setCartOpen(true)} />
     </header>
 
     {promotion?.enabled && (promotion.title || promotion.text) && <aside className="storefront-v3-promotion-bar" aria-label={promotion.title || promotion.badge}>
       <span>{promotion.badge || "OFFRE"}</span>
       <div><strong>{promotion.title}</strong>{promotion.text && <small>{promotion.text}</small>}</div>
-      <a href={promotionTarget}>{promotion.ctaLabel || t.offers} →</a>
+      <a href={promotionTarget}>{promotion.ctaLabel || t.offers}</a>
     </aside>}
 
-    <section className={`storefront-v3-hero ${catalog?.heroImageUrl ? "has-image" : ""}`}>
-      {catalog?.heroImageUrl && <div className="storefront-v3-hero-media"><SafeImage src={catalog.heroImageUrl} alt={`${brand} collection`} fallback={<div className="storefront-v3-hero-fallback">MJ</div>} width={1280} height={720} /></div>}
-      <div className="storefront-v3-hero-copy">
-        <span>{brand} · MAROC</span>
-        <h1>{localized?.heroTitle || catalog?.heroTitle}</h1>
-        <p>{localized?.heroText || catalog?.heroText}</p>
-        <div><a href="#catalogue">{t.discover}</a>{waUrl && <a className="ghost" href={waUrl} target="_blank" rel="noreferrer">{t.whatsapp}</a>}</div>
-        <ul><li>{t.cashOnDelivery}</li><li>{t.confirmation}</li><li>{t.moroccoDelivery}</li></ul>
+    <section className="mj-hero">
+      <div className="mj-hero-copy">
+        {leadPromotion && <a className="mj-hero-chip" href="#promotions">{promotionRuleLabel(leadPromotion)}</a>}
+        <h1>{localized?.heroTitle || catalog?.heroTitle || brand}</h1>
+        {(localized?.heroText || catalog?.heroText) && <p>{localized?.heroText || catalog?.heroText}</p>}
+        <div className="mj-hero-actions">
+          <a className="mj-button" href="#catalogue">{ui.heroCta}</a>
+          {waUrl && <a className="mj-button ghost" href={waUrl} target="_blank" rel="noreferrer">{t.whatsapp}</a>}
+        </div>
+        <ul className="mj-trust"><li>{t.cashOnDelivery}</li><li>{t.confirmation}</li><li>{t.moroccoDelivery}</li></ul>
       </div>
-      <StorefrontNativeHero lang={lang} />
+      {/* Les vraies photos produits vendent mieux qu'un visuel de marque : l'image
+          « couverture » du CMS ne sert que s'il n'y a encore aucune photo produit. */}
+      <div className={`mj-hero-visual count-${heroImages.length ? heroImages.length : 1}`}>
+        {!heroImages.length && catalog?.heroImageUrl
+          ? <SafeImage src={catalog.heroImageUrl} alt={`${brand} collection`} fallback={<div className="storefront-v3-hero-fallback">MJ</div>} priority width={1280} height={960} />
+          : heroImages.map((item, index) => <button type="button" key={itemKey(item)} onClick={() => openItem(item)} aria-label={`${t.viewProduct} : ${item.name}`}>
+            <SafeImage src={item.images[0]} alt={item.name} fallback={<span>{item.name.slice(0, 1)}</span>} priority={index === 0} width={640} height={800} />
+            <span className="mj-hero-tag">{money(item.salePrice, lang)}</span>
+          </button>)}
+      </div>
     </section>
 
-    <div className="storefront-v3-brand-strip" aria-label="Maison Jiya collections"><div className="storefront-v3-brand-strip-track">{[...strip, ...strip].map((item, index) => <span key={`${item}-${index}`}>{item}</span>)}</div><StorefrontNativeBrands lang={lang} /></div>
-
-    <StorefrontReferenceAfterBrand
-      catalog={catalog}
-      lang={lang}
-      onCategory={(referenceCategory, target) => {
-        if (target === "offres") {
-          document.querySelector("#offres")?.scrollIntoView({ behavior: "smooth", block: "start" });
-          return;
-        }
-        const matchingCategory = catalog?.categories.find((item) => item === referenceCategory || normalize(item) === normalize(referenceCategory));
-        if (matchingCategory) {
-          clearPromotionProducts();
-          setCategory(matchingCategory);
-          setVisibleCount(INITIAL_VISIBLE);
-        }
-        window.requestAnimationFrame(() => document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" }));
-      }}
-      onMarketing={openMarketingTarget}
-    />
-
-    {displayPromotions.length > 0 && <section className="storefront-v3-section storefront-v3-auto-promotions" id="promotions">
-      <header className="storefront-v3-section-head"><div><small>{t.weeklyPromoKicker}</small><h2>{t.offers}</h2></div></header>
-      <div className={`storefront-v3-auto-promotion-grid ${displayPromotions.length === 1 ? "single" : ""}`}>
-        {displayPromotions.map((promo) => {
-          const ruleLabel = promotionRuleLabel(promo);
-          return <article className={`storefront-v3-auto-promotion-card ${promo.imageUrl ? "has-image" : ""}`} key={promo.id}>
-            <div className="storefront-v3-auto-promotion-media">
-              {promo.imageUrl
-                ? <SafeImage src={promo.imageUrl} alt={promo.name || ruleLabel} fallback={<div className="storefront-v3-auto-promotion-fallback">{ruleLabel}</div>} width={720} height={450} />
-                : <div className="storefront-v3-auto-promotion-fallback"><small>{promo.badge || "OFFRE"}</small><strong>{ruleLabel}</strong></div>}
-            </div>
-            <div className="storefront-v3-auto-promotion-copy">
-              <div><span>{promo.badge || "OFFRE"}</span><small>{promo.eligibleCategories.map((item) => categoryCopy[lang][item] || item).join(" · ")}</small></div>
-              <h2>{ruleLabel}</h2>
-              {promo.name && promo.name !== ruleLabel && <strong>{promo.name}</strong>}
-              <p>{promo.description || (lang === "ar" ? "يُطبّق العرض تلقائيًا في السلة على المنتجات المؤهلة." : lang === "en" ? "The offer is applied automatically in the cart to eligible products." : "L’offre s’applique automatiquement dans le panier sur les produits éligibles.")}</p>
-              <button type="button" onClick={() => openPromotionProducts(promo)}>{promo.ctaLabel || t.promotionProducts} →</button>
-            </div>
-          </article>;
-        })}
+    {leadPromotion && <section className="mj-deal" id="promotions">
+      <strong className="mj-deal-figure">{dealHeadline(leadPromotion)}</strong>
+      <div className="mj-deal-copy">
+        <h2>{promotionRuleLabel(leadPromotion)}</h2>
+        <p>{leadPromotion.description || (lang === "ar" ? "يُطبّق العرض تلقائيًا في السلة على المنتجات المؤهلة." : lang === "en" ? "Applied automatically in the cart to eligible products." : "La remise s’applique toute seule dans le panier, sur les produits concernés.")}</p>
+        <button type="button" className="mj-button light" onClick={() => openPromotionProducts(leadPromotion)}>{leadPromotion.ctaLabel || ui.dealCta}</button>
       </div>
+      {leadPromotion.imageUrl && <div className="mj-deal-media"><SafeImage src={leadPromotion.imageUrl} alt={leadPromotion.name || promotionRuleLabel(leadPromotion)} fallback={null} width={720} height={540} /></div>}
+      {displayPromotions.length > 1 && <ul className="mj-deal-others">{displayPromotions.slice(1).map((promo) => <li key={promo.id}><button type="button" onClick={() => openPromotionProducts(promo)}>{promotionRuleLabel(promo)}</button></li>)}</ul>}
     </section>}
 
-    {weekly.length > 0 && <section className="storefront-v3-section" id="offres">
-      <header className="storefront-v3-section-head"><div><small>{t.weeklyPromoKicker}</small><h2>{t.weeklyPromo}</h2></div></header>
-      <div className="storefront-v3-grid promo">{weekly.map((item) => <ProductCard key={`weekly-${item.kind}-${item.id}`} item={item} lang={lang} t={t} add={add} open={openItem} />)}</div>
+    {offers.length > 0 && <section className="storefront-v3-section mj-section" id="offres">
+      <header className="mj-section-head"><h2>{ui.packs}</h2><p>{ui.packsText}</p></header>
+      <div className="storefront-v3-horizontal">{weeklyOffers.slice(0, 8).map((item) => <ProductCard key={`pack-${item.id}`} item={item} lang={lang} t={t} add={add} open={openItem} />)}</div>
     </section>}
 
-    {bestSellers.length > 0 && <section className="storefront-v3-section storefront-v3-best">
-      <header className="storefront-v3-section-head"><div><small>{t.bestSellersKicker}</small><h2>{t.bestSellers}</h2><p>{t.bestSellerText}</p></div></header>
+    {bestSellers.length > 0 && <section className="storefront-v3-section mj-section storefront-v3-best">
+      <header className="mj-section-head"><h2>{ui.best}</h2><p>{t.bestSellerText}</p></header>
       <div className="storefront-v3-horizontal">{bestSellers.map((item) => <ProductCard key={`best-${item.id}`} item={item} lang={lang} t={t} add={add} open={openItem} />)}</div>
-    </section>}
-
-    {collectionCategories.length > 0 && <section className="storefront-v3-section storefront-v3-collections">
-      <header className="storefront-v3-section-head"><div><small>{t.collectionsKicker}</small><h2>{t.collections}</h2></div></header>
-      <div className="storefront-v3-collection-grid">{collectionCategories.map((item) => {
-        const representative = products.find((product) => product.category === item);
-        return <button type="button" key={item} onClick={() => { clearPromotionProducts(); setCategory(item); document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth" }); }}>
-          <div>{representative?.images[0] ? <SafeImage src={representative.images[0]} alt={item} fallback={<span>{item.slice(0, 1)}</span>} width={400} height={400} /> : <span>{item.slice(0, 1)}</span>}</div>
-          <strong>{categoryCopy[lang][item] || item} →</strong>
-        </button>;
-      })}</div>
-    </section>}
-
-    {offers.length > 0 && <section className="storefront-v3-section storefront-v3-packs">
-      <header className="storefront-v3-section-head"><div><small>{t.packsKicker}</small><h2>{t.packs}</h2></div></header>
-      <div className="storefront-v3-grid packs">{offers.slice(0, 6).map((item) => <ProductCard key={`pack-${item.id}`} item={item} lang={lang} t={t} add={add} open={openItem} />)}</div>
     </section>}
 
     {renderMarketingSections("before_catalogue")}
 
-    <section className="storefront-v3-section storefront-v3-catalogue" id="catalogue">
-      <header className="storefront-v3-section-head"><div><small>{brand}</small><h2>{t.allProducts}</h2></div><strong>{filtered.length} {t.products}</strong></header>
+    <section className="storefront-v3-section mj-section storefront-v3-catalogue" id="catalogue">
+      <header className="mj-section-head"><h2>{ui.catalogue}</h2><p>{filtered.length} {t.products}</p></header>
+      <div className="mj-filters">
+        <div className="mj-chips" role="group" aria-label={t.category}>
+          {["Tous", ...chipCategories].map((item) => <button key={item} type="button" aria-pressed={category === item} className={category === item ? "active" : ""} onClick={() => { clearPromotionProducts(); setCategory(item); setVisibleCount(INITIAL_VISIBLE); }}>{item === "Tous" ? ui.all : categoryCopy[lang][item] || item}</button>)}
+        </div>
+        <label className="storefront-v3-tools mj-search"><span className="mj-visually-hidden">{t.search}</span><input type="search" value={query} onChange={(event) => { clearPromotionProducts(); setQuery(event.target.value); setVisibleCount(INITIAL_VISIBLE); }} placeholder={t.searchPlaceholder} /></label>
+      </div>
       {promotionCategoryFilter.length > 0 && <div className="storefront-v3-promotion-filter">
-        <span><strong>{promotionFilterName}</strong><small>{t.promotionProducts} · {promotionCategoryFilter.map((item) => categoryCopy[lang][item] || item).join(" · ")}</small></span>
+        <span><strong>{promotionFilterName}</strong><small>{promotionCategoryFilter.map((item) => categoryCopy[lang][item] || item).join(", ")}</small></span>
         <button type="button" onClick={clearPromotionProducts}>{t.clearPromotionFilter}</button>
       </div>}
-      <div className="storefront-v3-tools">
-        <label><span>{t.search}</span><input value={query} onChange={(event) => { clearPromotionProducts(); setQuery(event.target.value); setVisibleCount(INITIAL_VISIBLE); }} placeholder={t.searchPlaceholder} /></label>
-        <label><span>{t.category}</span><select value={category} onChange={(event) => { clearPromotionProducts(); setCategory(event.target.value); setVisibleCount(INITIAL_VISIBLE); }}><option value="Tous">{t.allCategories}</option>{catalog?.categories.map((item) => <option key={item} value={item}>{categoryCopy[lang][item] || item}</option>)}</select></label>
-      </div>
       {loading && <div className="storefront-v3-state">{t.loading}</div>}
       {error && <div className="storefront-v3-state error">{error}</div>}
       {!loading && !error && <div className="storefront-v3-grid catalogue">{visibleItems.map((item, index) => <ProductCard key={`${item.kind}-${item.id}`} item={item} lang={lang} t={t} add={add} open={openItem} priority={index < 2} />)}</div>}
-      {visibleCount < filtered.length && <button className="storefront-v3-more" type="button" onClick={() => setVisibleCount((value) => value + INITIAL_VISIBLE)}>{t.loadMore}</button>}
+      {visibleCount < filtered.length && <button className="storefront-v3-more mj-button ghost" type="button" onClick={() => setVisibleCount((value) => value + INITIAL_VISIBLE)}>{t.loadMore}</button>}
     </section>
 
-    <section className="storefront-v3-how" id="commande"><small>{brand}</small><h2>{t.whyOrder}</h2><div><article><b>01</b><strong>{t.step1}</strong><p>{t.step1Text}</p></article><article><b>02</b><strong>{t.step2}</strong><p>{t.step2Text}</p></article><article><b>03</b><strong>{t.step3}</strong><p>{t.step3Text}</p></article></div></section>
+    <section className="storefront-v3-how mj-steps" id="commande">
+      <h2>{ui.steps}</h2>
+      <ol>
+        <li><strong>{t.step1.replace(/^\d+\.\s*/, "")}</strong><p>{t.step1Text}</p></li>
+        <li><strong>{t.step2.replace(/^\d+\.\s*/, "")}</strong><p>{t.step2Text}</p></li>
+        <li><strong>{t.step3.replace(/^\d+\.\s*/, "")}</strong><p>{t.step3Text}</p></li>
+      </ol>
+    </section>
 
     {renderMarketingSections("before_contact")}
 
-    <section className="storefront-v3-contact" id="contact"><div><small>{brand}</small><h2>{t.helpTitle}</h2><p>{t.helpText}</p></div>{waUrl && <a href={waUrl} target="_blank" rel="noreferrer">{t.whatsapp} →</a>}</section>
-    <footer className="storefront-v3-footer">
+    <section className="storefront-v3-contact mj-contact" id="contact">
+      <div><h2>{t.helpTitle}</h2><p>{t.helpText}</p></div>
+      {waUrl && <a className="mj-button" href={waUrl} target="_blank" rel="noreferrer">{ui.contactCta}</a>}
+    </section>
+    <footer className="storefront-v3-footer mj-footer">
       <div><strong>{brand}</strong><small>{localized?.shippingNote || catalog?.shippingNote}</small></div>
       <nav className="mj-legal-links" aria-label="Informations boutique">
         <a href="/boutique/mentions-legales">Mentions légales</a>
@@ -778,7 +758,12 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         <button className="mj-cookie-accept" type="button" onClick={() => chooseMetaConsent("accepted")}>Accepter</button>
       </div>
     </aside>}
-    {waUrl && <a className="storefront-v3-wa" href={waUrl} target="_blank" rel="noreferrer" aria-label={t.whatsapp}>WA</a>}
+    {itemCount > 0 && !cartOpen && !checkoutOpen && <button type="button" className="mj-cart-bar" onClick={() => setCartOpen(true)}>
+      <span>{ui.cartBar} · {itemCount}</span><strong>{money(total, lang)}</strong>
+    </button>}
+    {waUrl && <a className="storefront-v3-wa" href={waUrl} target="_blank" rel="noreferrer" aria-label={t.whatsapp}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0-7.8 13.5L3 21l4.6-1.2A9 9 0 1 0 12 3Z" /></svg>
+    </a>}
 
     {selectedItem && <ProductGalleryModal key={itemKey(selectedItem)} item={selectedItem} lang={lang} t={t} add={add} close={() => setSelectedItem(null)} />}
 

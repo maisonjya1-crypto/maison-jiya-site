@@ -50,7 +50,7 @@ assert.doesNotMatch(rootLayout, /mobile-native\.css|private-ios\.css/);
 
 const boutiqueLayout = await readText("app/boutique/layout.tsx");
 assert.doesNotMatch(boutiqueLayout, /maison-jiya-gestion\.webmanifest/);
-assert.match(boutiqueLayout, /storefront-responsive\.css/);
+assert.match(boutiqueLayout, /storefront-modern\.css/);
 
 const worker = await readText("public/private-sw.js");
 assert.match(worker, /addEventListener\(["']push["']/);
@@ -103,14 +103,13 @@ assert.match(fluidCss, /safe-area-inset-bottom/);
 assert.match(fluidCss, /-webkit-overflow-scrolling:\s*touch/);
 assert.match(fluidCss, /modal-actions[\s\S]*flex-wrap:\s*wrap/);
 
-const storefrontResponsive = await readText("app/boutique/storefront-responsive.css");
+const storefrontResponsive = await readText("app/boutique/storefront-modern.css");
 assert.match(storefrontResponsive, /100dvh/);
 assert.match(storefrontResponsive, /safe-area-inset-bottom/);
 assert.match(storefrontResponsive, /pointer:\s*coarse/);
-assert.match(storefrontResponsive, /font-size:\s*16px\s*!important/);
-assert.match(storefrontResponsive, /storefront-product-grid[\s\S]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
-assert.match(storefrontResponsive, /max-width:\s*380px/);
-assert.match(storefrontResponsive, /storefront-overlay[\s\S]*touch-action:\s*pan-y/);
+assert.match(storefrontResponsive, /:is\(input, select, textarea\) \{ font-size: 16px; \}/);
+assert.match(storefrontResponsive, /storefront-v3-grid\.catalogue \{ grid-template-columns: repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+assert.match(storefrontResponsive, /storefront-v3-overlay \{ touch-action:\s*pan-y/);
 
 const androidActivity = await readText("android/app/src/main/java/maison/jiya/gestion/MainActivity.java");
 assert.match(androidActivity, /setUseWideViewPort\(false\)/);

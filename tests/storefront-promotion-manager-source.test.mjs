@@ -80,7 +80,8 @@ test("chaque promotion contrôle séparément son affichage public et son visuel
   assert.match(admin, /owner_type = 'promotion'/);
   assert.match(media, /"promotion"/);
   assert.match(publicLoader, /imageUrl: mediaByOwner\.get\(\`promotion:/);
-  assert.match(client, /storefront-v3-auto-promotion-card/);
+  assert.match(client, /className="mj-deal"/);
+  assert.match(client, /leadPromotion\.imageUrl/);
   assert.match(client, /promotionRuleLabel/);
   assert.match(client, /openPromotionProducts/);
 });
