@@ -128,27 +128,32 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
 .mj-trust li { display: flex; align-items: center; gap: 8px; }
 .mj-trust li::before { content: ""; width: 5px; height: 5px; transform: rotate(45deg); background: var(--gold); }
 
-/* Vitrine photos (blocs créés dans le logiciel) : image carrée, bouton posé sur la photo, titre dessous */
-.mj-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px 20px; }
-.mj-tiles.count-1 { grid-template-columns: minmax(0, 620px); }
+/* Vitrine photos (blocs créés dans le logiciel).
+   L'affiche garde son format d'origine (rien n'est coupé), le bouton est sous la photo
+   pour ne jamais cacher le texte de l'affiche. Un seul bloc = grande carte photo + texte côte à côte. */
+.mj-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: start; gap: 40px 24px; }
 .mj-tiles.count-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.mj-tile { display: grid; gap: 14px; min-width: 0; }
-.mj-tile-media { position: relative; display: block; width: 100%; aspect-ratio: 1; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--onyx-2); text-align: start; }
-.mj-tile-media img { width: 100%; height: 100%; object-fit: cover; transition: transform .7s ease; }
-.mj-tile-media:hover img { transform: scale(1.04); }
-.mj-tile-media::after { content: ""; position: absolute; inset: 55% 0 0; background: linear-gradient(transparent, #0e0c0cb3); pointer-events: none; }
-.mj-tile-media .storefront-v3-marketing-badge { position: absolute; z-index: 1; top: 14px; inset-inline-start: 14px; padding: 5px 10px; border-radius: 2px; background: var(--gold); color: var(--onyx); font: 600 12px/1.2 var(--body); font-style: normal; letter-spacing: .08em; text-transform: uppercase; }
-.mj-tile-cta { position: absolute; z-index: 1; bottom: 16px; inset-inline-end: 16px; display: inline-flex; align-items: center; min-height: 44px; padding: 0 20px; border-radius: var(--radius); background: var(--gold); color: var(--onyx); font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; transition: background .2s ease; }
-.mj-shop[dir="rtl"] .mj-tile-cta { letter-spacing: 0; font-size: 14px; }
-.mj-tile-media:hover .mj-tile-cta { background: var(--ivory); }
-.mj-tile-fallback { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; gap: 10px; padding: 28px; color: var(--ivory); text-align: center; background: radial-gradient(circle at 50% 40%, #2a2220, var(--onyx-2) 70%); }
-.mj-tile-fallback .mj-jy { height: 34%; color: var(--gold); }
-.mj-tile-fallback small { color: var(--gold); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; }
-.mj-tile-fallback strong { font: 400 clamp(28px, 3vw, 40px)/1.05 var(--display); }
-.mj-tile-fallback span { max-width: 30ch; color: var(--mist); font-size: 15px; }
-.mj-tile-caption { text-align: center; }
-.mj-tile-caption h3 { font-size: clamp(20px, 2vw, 26px); }
-.mj-tile-caption p { margin: 4px auto 0; max-width: 42ch; color: var(--mist); font-size: 14px; }
+.mj-tile { display: grid; gap: 18px; min-width: 0; }
+.mj-tile-media { position: relative; display: block; width: 100%; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--onyx-2); }
+.mj-tile-media img { width: 100%; height: auto; max-height: min(80vh, 760px); object-fit: contain; margin-inline: auto; transition: transform .7s ease; }
+.mj-tile-media:hover img { transform: scale(1.02); }
+.mj-tile-media .storefront-v3-marketing-badge, .mj-tile-caption .storefront-v3-marketing-badge { padding: 5px 10px; border-radius: 2px; background: var(--gold); color: var(--onyx); font: 600 12px/1.2 var(--body); font-style: normal; letter-spacing: .08em; text-transform: uppercase; }
+.mj-tile-media .storefront-v3-marketing-badge { position: absolute; z-index: 1; top: 14px; inset-inline-start: 14px; }
+.mj-tile-caption { display: grid; justify-items: center; gap: 10px; text-align: center; }
+.mj-tile-caption small { color: var(--gold); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; }
+.mj-tile-caption h3 { font-size: clamp(24px, 2.4vw, 32px); line-height: 1.1; }
+.mj-tile-caption p { margin: 0; max-width: 42ch; color: var(--mist); font-size: 15px; }
+.mj-tile-caption .mj-button { margin-top: 6px; }
+.mj-tile.no-image { padding: clamp(28px, 4vw, 48px); border: 1px solid var(--line); border-radius: var(--radius); background: radial-gradient(circle at 50% 0, #2a2220, var(--onyx-2) 70%); }
+.mj-tile-fallback { display: grid; place-items: center; aspect-ratio: 1; color: var(--gold); }
+.mj-tile-fallback .mj-jy { height: 30%; }
+@media (min-width: 861px) {
+  .mj-tiles.count-1 { grid-template-columns: 1fr; }
+  .mj-tiles.count-1 .mj-tile.has-image { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); align-items: center; gap: clamp(32px, 5vw, 72px); }
+  .mj-tiles.count-1 .mj-tile.has-image .mj-tile-media img { max-height: 640px; }
+  .mj-tiles.count-1 .mj-tile-caption { justify-items: start; text-align: start; }
+  .mj-tiles.count-1 .mj-tile-caption h3 { font-size: clamp(32px, 3.4vw, 48px); }
+}
 
 /* L'élément fort : la bande promo or rosé */
 .mj-deal {
@@ -371,7 +376,8 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
   .mj-hero-actions { justify-content: center; margin-top: 22px; }
   .mj-hero-actions .mj-button { flex: 1 1 140px; padding: 0 16px; }
   .mj-trust { justify-content: center; gap: 6px 16px; font-size: 12px; }
-  .mj-tiles, .mj-tiles.count-2 { grid-template-columns: 1fr; gap: 28px; }
+  .mj-tiles, .mj-tiles.count-2 { grid-template-columns: 1fr; gap: 44px; }
+  .mj-tile-caption .mj-button { width: 100%; }
   .mj-deal, .mj-deal:has(.mj-deal-media) { grid-template-columns: 1fr; margin: 44px 12px 0; text-align: center; justify-items: center; }
   .mj-deal-media { width: 100%; }
   .mj-deal-copy p { margin-inline: auto; }
