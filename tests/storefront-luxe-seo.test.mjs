@@ -84,7 +84,7 @@ test("les données structurées décrivent la boutique et ses vrais produits, sa
   const product = list.itemListElement[0].item;
   assert.equal(product.offers.priceCurrency, "MAD");
   assert.equal(product.offers.price, "250.00");
-  assert.deepEqual(product.image, ["https://maison-jiya-site.maisonjya1.workers.dev/api/storefront/media/1"]);
+  assert.deepEqual(product.image, ["https://maisonjiya.pages.dev/api/storefront/media/1"]);
   assert.doesNotMatch(json, /aggregateRating|"review"/);
   assert.match(page, /type="application\/ld\+json"/);
 });

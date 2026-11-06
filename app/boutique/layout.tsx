@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { PUBLIC_SITE_URL, STOREFRONT_URL } from "../../lib/site";
+import { GOOGLE_SITE_VERIFICATION, PUBLIC_SITE_URL, STOREFRONT_URL } from "../../lib/site";
 import "./storefront-modern.css";
 import "./legal.css";
 
@@ -34,6 +34,7 @@ export const metadata: Metadata = {
     images: [{ url: "/brand/og-maison-jiya.jpg", width: 1200, height: 630, alt: "Maison Jiya — L'heure de briller" }],
   },
   twitter: { card: "summary_large_image", title, description, images: ["/brand/og-maison-jiya.jpg"] },
+  ...(GOOGLE_SITE_VERIFICATION ? { verification: { google: GOOGLE_SITE_VERIFICATION } } : {}),
 };
 
 export const viewport: Viewport = {

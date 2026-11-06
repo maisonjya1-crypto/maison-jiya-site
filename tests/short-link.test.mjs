@@ -32,3 +32,9 @@ test("la liaison vise le Worker de production et le déploiement ne bloque jamai
   const shortSteps = wf.slice(wf.indexOf("Create short link project"));
   assert.equal((shortSteps.match(/continue-on-error: true/g) || []).length, 3);
 });
+
+test("maisonjiya.pages.dev est l'adresse officielle pour Google et les partages", () => {
+  const site = readFileSync(new URL("../lib/site.ts", import.meta.url), "utf8");
+  assert.match(site, /PUBLIC_SITE_URL = "https:\/\/maisonjiya\.pages\.dev"/);
+  assert.match(readFileSync(new URL("../app/boutique/layout.tsx", import.meta.url), "utf8"), /verification: \{ google: GOOGLE_SITE_VERIFICATION \}/);
+});
