@@ -54,3 +54,34 @@ jobs:
         env:
           REQUIRE_REFERENCE_BLACK_DESIGN: "1"
         run: node scripts/smoke-production.mjs
+
+      # Lien court gratuit maisonjiya.pages.dev (Cloudflare Pages + liaison vers le Worker).
+      # N'empêche jamais la mise en ligne principale : en cas d'échec, seule l'adresse courte manque.
+      - name: Create short link project (first time only)
+        continue-on-error: true
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages project create maisonjiya --production-branch main
+
+      - name: Deploy short link maisonjiya.pages.dev
+        id: short_link
+        continue-on-error: true
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: short-link
+          command: pages deploy --project-name maisonjiya --branch main --commit-dirty=true
+
+      - name: Verify short link
+        if: steps.short_link.outcome == 'success'
+        continue-on-error: true
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsSL https://maisonjiya.pages.dev/boutique | grep -q 'data-storefront-deployment="maison-jiya-luxe-v7"'; then echo "maisonjiya.pages.dev OK"; exit 0; fi
+            sleep 10
+          done
+          echo "maisonjiya.pages.dev ne répond pas encore"; exit 1
+
