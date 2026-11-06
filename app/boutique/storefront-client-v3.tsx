@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { JY_MARK } from "./brand-marks";
 import type { CatalogItem, StorefrontCatalog, StorefrontLanguage, StorefrontMarketingSection } from "./storefront-types";
 import { calculateIndependentPromotions, promotionRuleLabel, type StorefrontPromotion } from "../../lib/storefront-promotions";
 
@@ -211,6 +212,10 @@ function trackLeadOnce(orderRef: string, total: number, lines: Array<{ item: Cat
     order_id: orderRef,
   }, { eventID: `lead-${orderRef}` });
   try { localStorage.setItem(storageKey, "1"); } catch { /* le tracking reste facultatif */ }
+}
+
+function JyMark() {
+  return <svg className="mj-jy" viewBox={`0 0 ${JY_MARK.width} ${JY_MARK.height}`} aria-hidden="true" focusable="false"><path fillRule="evenodd" d={JY_MARK.d} /></svg>;
 }
 
 function SafeImage({ src, alt, fallback, priority = false, width, height }: { src: string; alt: string; fallback: ReactNode; priority?: boolean; width?: number; height?: number }) {
@@ -637,8 +642,8 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
 
     <header className="storefront-v3-header mj-header">
       <a className="storefront-v3-brand" href="/boutique" aria-label={brand}>
-        <SafeImage src={catalog?.logoUrl || "/maison-jiya-logo.jpeg"} alt="" fallback={<b>MJ</b>} width={88} height={88} />
-        <strong>{brand}</strong>
+        <JyMark />
+        <span className="mj-wordmark"><strong>{brand}</strong><small>L&apos;heure de briller</small></span>
       </a>
       <nav className="storefront-v3-nav-links" aria-label={t.catalogue}>
         <a href="#catalogue">{t.catalogue}</a>
@@ -673,13 +678,19 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       </div>
       {/* Les vraies photos produits vendent mieux qu'un visuel de marque : l'image
           « couverture » du CMS ne sert que s'il n'y a encore aucune photo produit. */}
-      <div className={`mj-hero-visual count-${heroImages.length ? heroImages.length : 1}`}>
-        {!heroImages.length && catalog?.heroImageUrl
-          ? <SafeImage src={catalog.heroImageUrl} alt={`${brand} collection`} fallback={<div className="storefront-v3-hero-fallback">MJ</div>} priority width={1280} height={960} />
-          : heroImages.map((item, index) => <button type="button" key={itemKey(item)} onClick={() => openItem(item)} aria-label={`${t.viewProduct} : ${item.name}`}>
-            <SafeImage src={item.images[0]} alt={item.name} fallback={<span>{item.name.slice(0, 1)}</span>} priority={index === 0} width={640} height={800} />
-            <span className="mj-hero-tag">{money(item.salePrice, lang)}</span>
-          </button>)}
+      {/* Le cadran : la pièce phare au centre d'un cadran de montre, deux autres pièces en satellites
+          (le même mouvement que l'animation d'ouverture). */}
+      <div className={`mj-hero-visual mj-dial count-${heroImages.length}`}>
+        <span className="mj-dial-ring" aria-hidden="true" />
+        {heroImages[0]
+          ? <button type="button" className="mj-dial-face" onClick={() => openItem(heroImages[0])} aria-label={`${t.viewProduct} : ${heroImages[0].name}`}>
+            <SafeImage src={heroImages[0].images[0]} alt={heroImages[0].name} fallback={<JyMark />} priority width={640} height={640} />
+            <span className="mj-hero-tag">{money(heroImages[0].salePrice, lang)}</span>
+          </button>
+          : <div className="mj-dial-face is-brand">{catalog?.heroImageUrl ? <SafeImage src={catalog.heroImageUrl} alt={`${brand} collection`} fallback={<JyMark />} priority width={640} height={640} /> : <JyMark />}</div>}
+        {heroImages.slice(1).map((item, index) => <button type="button" key={itemKey(item)} className={`mj-dial-satellite s${index + 1}`} onClick={() => openItem(item)} aria-label={`${t.viewProduct} : ${item.name}`}>
+          <SafeImage src={item.images[0]} alt={item.name} fallback={<span>{item.name.slice(0, 1)}</span>} width={320} height={320} />
+        </button>)}
       </div>
     </section>
 
@@ -740,7 +751,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       {waUrl && <a className="mj-button" href={waUrl} target="_blank" rel="noreferrer">{ui.contactCta}</a>}
     </section>
     <footer className="storefront-v3-footer mj-footer">
-      <div><strong>{brand}</strong><small>{localized?.shippingNote || catalog?.shippingNote}</small></div>
+      <div><img className="mj-footer-logo" src="/brand/maison-jiya-logo.svg" alt={brand} width={682} height={522} loading="lazy" /><small>{localized?.shippingNote || catalog?.shippingNote}</small></div>
       <nav className="mj-legal-links" aria-label="Informations boutique">
         <a href="/boutique/mentions-legales">Mentions légales</a>
         <a href="/boutique/conditions-vente">Conditions de vente</a>

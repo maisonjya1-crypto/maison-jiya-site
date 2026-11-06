@@ -29,7 +29,9 @@ assert.match(orderRoute, /status,[^]*'En attente'/);
 const publicPage = await readText("app/boutique/page.tsx");
 assert.match(publicPage, /StorefrontClientV3/);
 assert.match(publicPage, /storefront_manual_catalog_initialized_v1/);
-assert.match(publicPage, /maison-jiya-modern-v6/);
+assert.match(publicPage, /maison-jiya-luxe-v7/);
+assert.match(publicPage, /<BrandIntro \/>/);
+assert.match(publicPage, /application\/ld\+json/);
 assert.match(publicPage, /mj-shop-root/);
 
 const publicLayout = await readText("app/boutique/layout.tsx");
@@ -50,14 +52,15 @@ for (const anchor of ["mj-header", "mj-hero", "mj-deal", "id=\"catalogue\"", "id
 assert.doesNotMatch(client, /countdown|compte à rebours/i);
 
 const css = await readText("app/boutique/storefront-modern.css");
-assert.match(css, /--grenat:/);
+assert.match(css, /--onyx:/);
+assert.match(css, /--gold:/);
 assert.match(css, /@media \(max-width: 860px\)/);
 assert.match(css, /100dvh/);
 assert.match(css, /safe-area-inset-bottom/);
 assert.match(css, /prefers-reduced-motion/);
 
 const smoke = await readText("scripts/smoke-production.mjs");
-assert.match(smoke, /maison-jiya-modern-v6/);
+assert.match(smoke, /maison-jiya-luxe-v7/);
 assert.match(smoke, /REQUIRE_REFERENCE_BLACK_DESIGN/);
 
 const deployWorkflow = await readText(".github/workflows/deploy-cloudflare.yml");
@@ -74,4 +77,4 @@ assert.match(privateCss, /button\.danger/);
 assert.match(privateCss, /safe-area-inset-left/);
 assert.match(privateCss, /overflow-x:\s*auto/);
 
-console.log("Storefront V3 (catalogue manuel + FR/AR/EN + design moderne v6 + responsive privé/public): OK");
+console.log("Storefront V3 (catalogue manuel + FR/AR/EN + thème onyx & or rosé v7 + responsive privé/public): OK");

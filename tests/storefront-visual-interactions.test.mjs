@@ -51,7 +51,7 @@ test("le responsive protège panier checkout galerie et largeur mobile", () => {
 });
 
 test("le focus clavier reste visible", () => {
-  assert.match(hotfix, /:is\(a, button, input, select, textarea\):focus-visible \{ outline: 3px solid var\(--grenat\); outline-offset: 2px; \}/);
+  assert.match(hotfix, /:is\(a, button, input, select, textarea\):focus-visible \{ outline: 2px solid var\(--gold\); outline-offset: 3px; \}/);
   assert.match(hotfix, /prefers-reduced-motion: reduce/);
 });
 

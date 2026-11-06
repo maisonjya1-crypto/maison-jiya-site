@@ -1,6 +1,6 @@
 const base = (process.env.MAISON_JIYA_PRODUCTION_URL || "https://maison-jiya-site.maisonjya1.workers.dev").replace(/\/$/, "");
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const requiredStorefrontMarker = "maison-jiya-modern-v6";
+const requiredStorefrontMarker = "maison-jiya-luxe-v7";
 
 async function fetchWithRetry(path, options = {}) {
   let lastError;
@@ -76,6 +76,12 @@ if (process.env.REQUIRE_REFERENCE_BLACK_DESIGN === "1" && !boutiqueHtml.includes
   throw new Error(`La production sert encore une ancienne boutique : marqueur ${requiredStorefrontMarker} absent.`);
 }
 
+const robotsResponse = await fetchWithRetry("/robots.txt");
+const robotsText = await robotsResponse.text();
+if (!/Sitemap:\s*https?:\/\/\S+\/sitemap\.xml/.test(robotsText) || !/Disallow: \/api\//.test(robotsText)) throw new Error("robots.txt absent ou incomplet.");
+const sitemapResponse = await fetchWithRetry("/sitemap.xml");
+if (!(await sitemapResponse.text()).includes("/boutique</loc>")) throw new Error("sitemap.xml ne référence pas la boutique.");
+
 const catalogResponse = await fetchWithRetry("/api/storefront/catalog");
 const catalog = await catalogResponse.json();
 if (!catalog || typeof catalog !== "object") throw new Error("Le catalogue public n'est pas un objet JSON valide.");
@@ -100,4 +106,4 @@ if (imagePath?.startsWith("/api/storefront/media/")) {
   if (bytes.byteLength < 100) throw new Error("Le média public est vide ou corrompu.");
 }
 
-console.log(`Smoke production OK · téléchargement Android 2.5 OK · ${catalog.products.length} produit(s) · ${catalog.offers.length} offre(s) · média ${imagePath ? "OK" : "non requis"}${process.env.REQUIRE_REFERENCE_BLACK_DESIGN === "1" ? " · design moderne v6 confirmé" : ""}`);
+console.log(`Smoke production OK · téléchargement Android 2.5 OK · ${catalog.products.length} produit(s) · ${catalog.offers.length} offre(s) · média ${imagePath ? "OK" : "non requis"}${process.env.REQUIRE_REFERENCE_BLACK_DESIGN === "1" ? " · thème luxe v7 confirmé" : ""}`);
