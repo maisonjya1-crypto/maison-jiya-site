@@ -1,4 +1,4 @@
-import { heroCopy } from "../../../../lib/storefront-copy";
+import { aboutCopy, heroCopy } from "../../../../lib/storefront-copy";
 import { getAuthenticatedUser } from "../../../auth";
 import { getRawDb } from "../../../../db";
 import { normalizeMoroccanPhone } from "../../../../db/phone";
@@ -87,7 +87,9 @@ async function snapshot(database: D1Database) {
       'storefront_hero_text', 'storefront_shipping_note', 'storefront_meta_pixel_id',
       'storefront_contact_whatsapp', 'whatsapp_numbers',
       'storefront_promo_enabled', 'storefront_promo_badge', 'storefront_promo_title',
-      'storefront_promo_text', 'storefront_promo_cta_label', 'storefront_promo_offer_id'
+      'storefront_promo_text', 'storefront_promo_cta_label', 'storefront_promo_offer_id',
+      'storefront_about_title', 'storefront_about_text', 'storefront_about_title_ar',
+      'storefront_about_text_ar', 'storefront_about_title_en', 'storefront_about_text_en'
     )
   `).all<{ key: string; value: string }>()).results;
   const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
@@ -149,6 +151,12 @@ async function snapshot(database: D1Database) {
       announcement: settings.storefront_announcement || "Paiement à la livraison partout au Maroc",
       heroTitle: heroCopy(settings.storefront_hero_title, "fr", "title"),
       heroText: heroCopy(settings.storefront_hero_text, "fr", "text"),
+      aboutTitle: aboutCopy(settings.storefront_about_title, "fr", "title"),
+      aboutText: aboutCopy(settings.storefront_about_text, "fr", "text"),
+      aboutTitleAr: settings.storefront_about_title_ar || "",
+      aboutTextAr: settings.storefront_about_text_ar || "",
+      aboutTitleEn: settings.storefront_about_title_en || "",
+      aboutTextEn: settings.storefront_about_text_en || "",
       shippingNote: settings.storefront_shipping_note || "Les éventuels frais de livraison sont confirmés par notre équipe.",
       metaPixelId: settings.storefront_meta_pixel_id || "",
       promoEnabled: settings.storefront_promo_enabled === "1",
@@ -235,6 +243,12 @@ export async function POST(request: Request) {
         ["storefront_hero_title", text(payload.heroTitle, 180)],
         ["storefront_hero_text", text(payload.heroText, 420)],
         ["storefront_shipping_note", text(payload.shippingNote, 220)],
+        ["storefront_about_title", text(payload.aboutTitle, 120)],
+        ["storefront_about_text", text(payload.aboutText, 1600)],
+        ["storefront_about_title_ar", text(payload.aboutTitleAr, 120)],
+        ["storefront_about_text_ar", text(payload.aboutTextAr, 1600)],
+        ["storefront_about_title_en", text(payload.aboutTitleEn, 120)],
+        ["storefront_about_text_en", text(payload.aboutTextEn, 1600)],
         ["storefront_meta_pixel_id", text(payload.metaPixelId, 40).replace(/[^0-9]/g, "")],
         ["storefront_promo_enabled", boolean(payload.promoEnabled, false) ? "1" : "0"],
         ["storefront_promo_badge", text(payload.promoBadge, 50)],

@@ -1,9 +1,9 @@
 /* Maison Jiya — boutique publique, thème « Onyx & or rosé » (v7).
    Une seule feuille de style pour toute la boutique.
    Inspiration : l'écrin d'un horloger-joaillier. Fond onyx, texte ivoire, or rosé repris
-   de la signature « Maison Jiya » du logo, typographie Didone comme les lettres JIYA,
+   de la signature « Maison Jiya » du logo, typographie Noto Serif Display (charte graphique Maison Jiya),
    capitales espacées comme « L'HEURE DE BRILLER ». Le cadran de montre est le motif signature. */
-@import url("https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;0,6..96,600;1,6..96,400&family=Jost:wght@400;500;600&family=Amiri:wght@400;700&family=Tajawal:wght@400;500;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+Display:ital,wght@0,400;0,500;0,600;1,400&family=Jost:wght@400;500;600&family=Amiri:wght@400;700&family=Tajawal:wght@400;500;700&display=swap");
 
 :where(.mj-shop-root, .mj-shop) {
   --onyx: #0e0c0c;
@@ -17,7 +17,7 @@
   --pearl: #ece6de;
   --ok: #7cc9a0;
   --radius: 3px;
-  --display: "Bodoni Moda", "Didot", "Bodoni 72", Georgia, serif;
+  --display: "Noto Serif Display", "Didot", "Bodoni 72", Georgia, serif; /* police des titres de la charte graphique */
   --body: "Jost", "Futura", system-ui, -apple-system, "Segoe UI", sans-serif;
   --gutter: clamp(16px, 4vw, 56px);
 }
@@ -224,6 +224,21 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
 /* Blocs du logiciel placés plus bas dans la page : même vitrine, espacement de section */
 .mj-shop .storefront-v3-marketing-zone { padding: clamp(56px, 8vw, 104px) var(--gutter) 0; }
 
+/* À propos de nous : l'icône JY dans son cadran, le texte de la maison, trois valeurs de la charte */
+.mj-about { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); align-items: center; gap: clamp(32px, 6vw, 96px); max-width: 1180px; margin: clamp(64px, 9vw, 120px) auto 0; padding: 0 var(--gutter); }
+.mj-about-mark { position: relative; display: grid; place-items: center; width: min(100%, 360px); aspect-ratio: 1; margin-inline: auto; color: var(--ivory); }
+.mj-about-mark::before { content: ""; position: absolute; inset: 8%; border-radius: 50%; background: radial-gradient(circle, #2a2220, var(--onyx-2) 70%); }
+.mj-about-mark > .mj-jy { position: relative; height: 42%; }
+.mj-about-copy { display: grid; gap: 16px; max-width: 38rem; }
+.mj-about-copy > small { color: var(--gold); font-size: 11px; font-weight: 500; letter-spacing: .18em; text-transform: uppercase; }
+.mj-shop[dir="rtl"] .mj-about-copy > small { letter-spacing: 0; font-size: 14px; }
+.mj-about-copy h2 { font-size: clamp(32px, 3.6vw, 52px); line-height: 1.05; }
+.mj-about-copy > p { margin: 0; color: var(--mist); font-size: 17px; line-height: 1.75; }
+.mj-about-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 14px 0 0; padding: 22px 0 0; border-top: 1px solid var(--line); list-style: none; }
+.mj-about-values li { display: grid; gap: 4px; }
+.mj-about-values strong { font: 400 20px/1.2 var(--display); color: var(--ivory); }
+.mj-about-values span { color: var(--mist); font-size: 14px; }
+
 /* Comment commander : vraie séquence, donc numérotée (chiffres Didone or rosé) */
 .mj-steps { margin: clamp(64px, 9vw, 120px) var(--gutter) 0; padding: clamp(32px, 5vw, 56px) 0; border-block: 1px solid var(--line); }
 .mj-steps h2 { font-size: clamp(30px, 3.4vw, 46px); }
@@ -388,6 +403,11 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
   .mj-shop .storefront-v3-add-product { min-height: 40px; font-size: 11px; letter-spacing: .1em; }
   .mj-search { flex: 1 1 100%; }
   .mj-steps ol { grid-template-columns: 1fr; gap: 22px; }
+  .mj-about { grid-template-columns: 1fr; text-align: center; }
+  .mj-about-mark { width: min(56vw, 220px); }
+  .mj-about-copy { margin-inline: auto; justify-items: center; }
+  .mj-about-copy > p { font-size: 16px; }
+  .mj-about-values { grid-template-columns: 1fr; text-align: center; }
   .mj-contact { flex-direction: column; align-items: flex-start; }
   .mj-contact.mj-contact .mj-button { width: 100%; }
   .mj-shop .storefront-v3-product-dialog { grid-template-columns: 1fr; }

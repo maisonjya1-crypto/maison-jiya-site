@@ -36,7 +36,7 @@ test("l'en-tête utilise l'icône JY et le pied de page le logo JIYA", () => {
 
 test("le thème onyx et or rosé définit ses couleurs une seule fois", () => {
   for (const token of ["--onyx: #0e0c0c", "--ivory: #f3ede4", "--gold: #cfa995", "--pearl: #ece6de"]) assert.ok(css.includes(token), token);
-  assert.match(css, /family=Bodoni\+Moda/);
+  assert.match(css, /family=Noto\+Serif\+Display/);
   assert.match(css, /\.mj-shop\[dir="rtl"\] \{ --display: "Amiri"/);
   assert.match(css, /\.mj-dial-ring \{/);
 });
@@ -113,4 +113,24 @@ test("les anciens textes d'accueil trop longs sont remplacés, les textes person
   assert.equal(heroCopy("", "ar", "text"), HERO_DEFAULTS.ar.text);
   assert.equal(heroCopy("Nouvelle collection", "fr", "title"), "Nouvelle collection");
   assert.ok(HERO_DEFAULTS.fr.title.length <= 40);
+});
+
+test("« À propos de nous » se modifie dans le logiciel en FR/AR/EN et s'affiche sur la boutique", () => {
+  const cms = read("app/storefront-cms-v2-enhancement.tsx");
+  const admin = read("app/api/storefront/admin/route.ts");
+  const loader = read("db/storefront-public-fast.ts");
+  assert.match(cms, /<legend>À propos de nous<\/legend>/);
+  for (const field of ["aboutTitle", "aboutText", "aboutTitleAr", "aboutTextAr", "aboutTitleEn", "aboutTextEn"]) {
+    assert.ok(cms.includes(`name="${field}"`), field);
+    assert.ok(cms.includes(`${field}: form.get("${field}")`), field);
+  }
+  assert.match(admin, /\["storefront_about_text", text\(payload\.aboutText, 1600\)\]/);
+  assert.match(admin, /'storefront_about_title', 'storefront_about_text'/);
+  assert.match(loader, /aboutText: aboutCopy\(settings\.storefront_about_text_ar, "ar", "text"\)/);
+  assert.match(client, /id="a-propos"/);
+  assert.match(client, /aboutText\.split\(\/\\n\\s\*\\n\/\)/);
+  assert.match(client, /<a href="#a-propos">\{ui\.about\}<\/a>/);
+  const { aboutCopy, ABOUT_DEFAULTS } = loadSource("lib/storefront-copy.ts");
+  assert.equal(aboutCopy("", "fr", "title"), ABOUT_DEFAULTS.fr.title);
+  assert.equal(aboutCopy("Notre histoire", "fr", "title"), "Notre histoire");
 });
