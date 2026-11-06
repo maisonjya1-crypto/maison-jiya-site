@@ -65,6 +65,11 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages project create maisonjiya --production-branch main
 
+      # Le build du Worker laisse une redirection de config (.wrangler/deploy/config.json → dist/server)
+      # que wrangler suivrait aussi pour Pages : on la retire, le Worker est déjà en ligne.
+      - name: Prepare short link deploy
+        run: rm -f .wrangler/deploy/config.json
+
       - name: Deploy short link maisonjiya.pages.dev
         id: short_link
         continue-on-error: true
@@ -73,7 +78,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: short-link
-          command: pages deploy --project-name maisonjiya --branch main --commit-dirty=true
+          command: pages deploy public --project-name maisonjiya --branch main --commit-dirty=true
 
       - name: Verify short link
         if: steps.short_link.outcome == 'success'

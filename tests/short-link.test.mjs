@@ -26,7 +26,8 @@ test("la liaison vise le Worker de production et le déploiement ne bloque jamai
   assert.match(toml, /name = "maisonjiya"/);
   assert.match(toml, /service = "maison-jiya-site"/);
   const wf = readFileSync(new URL("../.github/workflows/deploy-cloudflare.yml", import.meta.url), "utf8");
-  assert.match(wf, /pages deploy --project-name maisonjiya/);
+  assert.match(wf, /pages deploy public --project-name maisonjiya/);
+  assert.match(wf, /rm -f \.wrangler\/deploy\/config\.json/);
   const shortSteps = wf.slice(wf.indexOf("Create short link project"));
   assert.equal((shortSteps.match(/continue-on-error: true/g) || []).length, 3);
 });
