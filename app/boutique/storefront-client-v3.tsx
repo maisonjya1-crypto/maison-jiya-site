@@ -617,14 +617,17 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       {heading && <header className="mj-section-head"><h2>{heading}</h2></header>}
       <div className={`storefront-v3-marketing-grid mj-tiles count-${Math.min(sections.length, 3)}`}>
         {sections.map((section) => <article className={`storefront-v3-marketing-card mj-tile ${section.imageUrl ? "has-image" : "no-image"}`} key={section.id}>
-          <button type="button" className="mj-tile-media" onClick={() => openMarketingTarget(section)} aria-label={`${section.title} — ${section.ctaLabel || t.discover}`}>
-            {section.imageUrl
-              ? <SafeImage src={section.imageUrl} alt={section.title} fallback={<span className="mj-tile-fallback"><JyMark /></span>} width={720} height={720} />
-              : <span className="mj-tile-fallback">{section.eyebrow && <small>{section.eyebrow}</small>}<strong>{section.title}</strong>{section.body && <span>{section.body}</span>}</span>}
+          {/* L'affiche est montrée entière (jamais rognée) : elle contient souvent du texte. */}
+          {section.imageUrl && <button type="button" className="mj-tile-media" onClick={() => openMarketingTarget(section)} aria-label={`${section.title} — ${section.ctaLabel || t.discover}`}>
+            <SafeImage src={section.imageUrl} alt={section.title} fallback={<span className="mj-tile-fallback"><JyMark /></span>} width={1080} height={1080} />
+          </button>}
+          <div className="mj-tile-caption">
+            {section.eyebrow && <small>{section.eyebrow}</small>}
             {section.badge && <em className="storefront-v3-marketing-badge">{section.badge}</em>}
-            <span className="mj-tile-cta">{section.ctaLabel || t.discover}</span>
-          </button>
-          {section.imageUrl && <div className="mj-tile-caption"><h3>{section.title}</h3>{section.body && <p>{section.body}</p>}</div>}
+            <h3>{section.title}</h3>
+            {section.body && <p>{section.body}</p>}
+            <button type="button" className="mj-button" onClick={() => openMarketingTarget(section)}>{section.ctaLabel || t.discover}</button>
+          </div>
         </article>)}
       </div>
     </section>;

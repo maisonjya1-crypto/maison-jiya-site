@@ -96,7 +96,8 @@ test("l'accueil montre le logo JIYA dans son cadran et la vitrine photos du logi
   const showcase = client.indexOf('renderMarketingSections("after_categories")');
   const deal = client.indexOf('<section className="mj-deal" id="promotions">');
   assert.ok(hero > 0 && hero < showcase && showcase < deal, "ordre : accueil, vitrine, promo");
-  assert.match(client, /className="mj-tile-cta"/);
+  assert.match(client, /<div className="mj-tile-caption">/);
+  assert.match(css, /\.mj-tile-media img \{[^}]*height: auto;[^}]*object-fit: contain/);
   assert.match(read("public/brand/maison-jiya-emblem.svg"), /prefers-reduced-motion: reduce/);
 });
 
