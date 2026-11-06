@@ -22,9 +22,10 @@ test("la racine redirige vers la boutique et le logiciel n'est jamais servi", as
 });
 
 test("la liaison vise le Worker de production et le déploiement ne bloque jamais la mise en ligne principale", () => {
-  const toml = readFileSync(new URL("../short-link/wrangler.toml", import.meta.url), "utf8");
-  assert.match(toml, /name = "maisonjiya"/);
-  assert.match(toml, /service = "maison-jiya-site"/);
+  const config = JSON.parse(readFileSync(new URL("../short-link/wrangler.json", import.meta.url), "utf8"));
+  assert.equal(config.name, "maisonjiya");
+  assert.equal(config.pages_build_output_dir, "public");
+  assert.deepEqual(config.services, [{ binding: "SHOP", service: "maison-jiya-site" }]);
   const wf = readFileSync(new URL("../.github/workflows/deploy-cloudflare.yml", import.meta.url), "utf8");
   assert.match(wf, /pages deploy public --project-name maisonjiya/);
   assert.match(wf, /rm -f \.wrangler\/deploy\/config\.json/);
