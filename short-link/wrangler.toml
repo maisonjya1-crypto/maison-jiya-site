@@ -1,0 +1,10 @@
+# Lien court gratuit : https://maisonjiya.pages.dev
+# Projet Cloudflare Pages qui sert la boutique publique en passant par le Worker
+# « maison-jiya-site » (liaison de service : pas de copie, pas de second hébergement payant).
+name = "maisonjiya"
+compatibility_date = "2026-10-01"
+pages_build_output_dir = "public"
+
+[[services]]
+binding = "SHOP"
+service = "maison-jiya-site"
