@@ -1,1 +1,1 @@
-{ "version": 1, "include": ["/*"], "exclude": ["/google*.html"] }
+{ "version": 1, "include": ["/*"], "exclude": [] }

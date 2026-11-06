@@ -15,8 +15,15 @@ export function isPublicPath(pathname) {
   return !pathname.startsWith("/api/") && /\/[^/]+\.(?:js|css|png|jpe?g|webp|avif|svg|ico|woff2?|txt|json)$/i.test(pathname);
 }
 
+// Fichier de validation Google Search Console, servi directement en 200
+// (Pages redirige sinon les « .html » vers une adresse sans extension, ce que Google refuse).
+const GOOGLE_VERIFICATION_FILE = "googleace68d1c59d11801.html";
+
 export async function onRequest({ request, env }) {
   const url = new URL(request.url);
+  if (url.pathname === `/${GOOGLE_VERIFICATION_FILE}` || url.pathname === `/${GOOGLE_VERIFICATION_FILE.replace(/\.html$/, "")}`) {
+    return new Response(`google-site-verification: ${GOOGLE_VERIFICATION_FILE}`, { headers: { "content-type": "text/html; charset=utf-8" } });
+  }
   if (url.pathname === "/" || url.pathname === "") return Response.redirect(`${url.origin}/boutique${url.search}`, 301);
   if (!isPublicPath(url.pathname)) return Response.redirect(`${url.origin}/boutique`, 302);
   // La liaison de service garde l'adresse IP réelle du client (limites anti-abus des commandes)

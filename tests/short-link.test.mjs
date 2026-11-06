@@ -39,9 +39,9 @@ test("maisonjiya.pages.dev est l'adresse officielle pour Google et les partages"
   assert.match(readFileSync(new URL("../app/boutique/layout.tsx", import.meta.url), "utf8"), /verification: \{ google: GOOGLE_SITE_VERIFICATION \}/);
 });
 
-test("le fichier de validation Google Search Console est servi tel quel par Pages", () => {
-  const file = readFileSync(new URL("../short-link/public/googleace68d1c59d11801.html", import.meta.url), "utf8");
-  assert.equal(file, "google-site-verification: googleace68d1c59d11801.html");
-  const routes = JSON.parse(readFileSync(new URL("../short-link/public/_routes.json", import.meta.url), "utf8"));
-  assert.deepEqual(routes.exclude, ["/google*.html"]);
+test("le fichier de validation Google Search Console est servi en 200, sans redirection", async () => {
+  const env = { SHOP: { fetch: async () => new Response("shop") } };
+  const res = await onRequest({ request: new Request("https://maisonjiya.pages.dev/googleace68d1c59d11801.html"), env });
+  assert.equal(res.status, 200);
+  assert.equal(await res.text(), "google-site-verification: googleace68d1c59d11801.html");
 });
