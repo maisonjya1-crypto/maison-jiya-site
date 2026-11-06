@@ -7,6 +7,7 @@ import { syncMetaAds } from "../db/meta";
 import { reconcileOrderAllocations } from "../db/allocations";
 import { processGoogleSheetsSyncQueue } from "../db/google-sheets-sync";
 import { getRawDb } from "../db";
+import { seoFileResponse } from "../lib/seo-files";
 
 interface Env extends CloudflareEnv {
   ASSETS: Fetcher;
@@ -52,6 +53,9 @@ function withSecurityHeaders(response: Response, pathname: string, isHttps: bool
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    const seoFile = seoFileResponse(url.pathname);
+    if (seoFile) return withSecurityHeaders(seoFile, url.pathname, url.protocol === "https:");
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];

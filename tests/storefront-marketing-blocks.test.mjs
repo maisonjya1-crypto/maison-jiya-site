@@ -21,7 +21,7 @@ test("le CMS permet plusieurs blocs promo avec image, cible, placement et ordre"
   assert.match(source, /saveMarketingSection/);
   assert.match(source, /deleteMarketingSection/);
   assert.match(source, /uploadMany\("marketing"/);
-  assert.match(source, /Après les catégories/);
+  assert.match(source, /En haut — vitrine photos sous l’accueil/);
   assert.match(source, /Avant le catalogue/);
   assert.match(source, /Avant le bloc contact/);
   assert.match(source, /Packs & offres/);
@@ -53,6 +53,7 @@ test("le catalogue public expose et affiche les blocs aux trois emplacements", a
   assert.match(loader, /imageUrl: mediaByOwner\.get/);
   assert.match(loader, /marketing:/);
   assert.match(types, /export type StorefrontMarketingSection/);
+  assert.match(client, /renderMarketingSections\("after_categories"\)/);
   assert.match(client, /renderMarketingSections\("before_catalogue"\)/);
   assert.match(client, /renderMarketingSections\("before_contact"\)/);
   assert.match(client, /openMarketingTarget/);

@@ -2,13 +2,15 @@ import { getRawDb } from "../../db";
 import { getPublicDb } from "../../db/public-db";
 import { ensureStorefrontCms } from "../../db/storefront-cms";
 import { loadStorefrontCatalogFast } from "../../db/storefront-public-fast";
+import { storefrontStructuredData } from "../../lib/storefront-structured-data";
+import BrandIntro from "./brand-intro";
 import StorefrontClientV3 from "./storefront-client-v3";
 import type { StorefrontCatalog } from "./storefront-types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const STOREFRONT_DEPLOYMENT_MARKER = "maison-jiya-modern-v6";
+const STOREFRONT_DEPLOYMENT_MARKER = "maison-jiya-luxe-v7";
 
 async function ensureManualCatalogReady() {
   const database = await getRawDb();
@@ -26,6 +28,8 @@ export default async function BoutiquePage() {
     console.error("Maison Jiya storefront preload failed", error);
   }
   return <div className="mj-shop-root" data-storefront-deployment={STOREFRONT_DEPLOYMENT_MARKER}>
+    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: storefrontStructuredData(initialCatalog) }} />
+    <BrandIntro />
     <StorefrontClientV3 initialCatalog={initialCatalog} />
   </div>;
 }

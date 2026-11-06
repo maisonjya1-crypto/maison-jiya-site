@@ -1210,7 +1210,7 @@ function MarketingPanel({ data, save, uploadMany, removeMedia }: {
       <div>
         <span>Blocs promo / marketing</span>
         <h2>Crée autant de mises en avant que tu veux</h2>
-        <p>Remise, offre flash, livraison offerte, 1+1=3, pack spécial… Chaque bloc a son image, son texte, son bouton, sa position et son ordre.</p>
+        <p>Remise, offre flash, 1+1=3, pack spécial, nouvelle collection… Chaque bloc a son image, son titre, son bouton, sa position et son ordre. Les blocs « En haut » s’affichent en vitrine photos juste sous l’accueil de la boutique.</p>
       </div>
       <strong>{data.marketingSections.filter((section) => section.isActive).length} actif(s)</strong>
     </div>
@@ -1282,7 +1282,7 @@ function MarketingEditor({ section, canEdit, save, uploadMany, removeMedia, isNe
         <label><span>Badge</span><input name="badge" defaultValue={section.badge} placeholder="-20 %, FLASH, CADEAU…" disabled={!canEdit} /></label>
         <label><span>Texte du bouton</span><input name="ctaLabel" defaultValue={section.ctaLabel} placeholder="Profiter de l’offre" disabled={!canEdit} /></label>
         <label><span>Le bouton mène vers</span><select name="target" defaultValue={section.target} disabled={!canEdit}><option value="offers">Packs & offres</option><option value="catalogue">Tout le catalogue</option><option value="Montres">Montres</option><option value="Bijoux">Bijoux</option><option value="Portefeuilles">Portefeuilles</option></select></label>
-        <label><span>Emplacement sur le site</span><select name="placement" defaultValue={section.placement} disabled={!canEdit}><option value="after_categories">Après les catégories</option><option value="before_catalogue">Avant le catalogue</option><option value="before_contact">Avant le bloc contact</option></select></label>
+        <label><span>Emplacement sur le site</span><select name="placement" defaultValue={section.placement} disabled={!canEdit}><option value="after_categories">En haut — vitrine photos sous l’accueil</option><option value="before_catalogue">Avant le catalogue</option><option value="before_contact">Avant le bloc contact</option></select></label>
         <label><span>Ordre</span><input name="sortOrder" type="number" defaultValue={section.sortOrder} disabled={!canEdit} /></label>
         <label className="storefront-cms-visible"><input name="isActive" type="checkbox" defaultChecked={section.isActive} disabled={!canEdit} /><span>Afficher ce bloc sur la boutique</span></label>
       </div>
@@ -1297,7 +1297,7 @@ function MarketingEditor({ section, canEdit, save, uploadMany, removeMedia, isNe
         </div>
         <section>
           <strong>Visuel du bloc</strong>
-          <small>Une seule image. Un nouveau fichier remplace automatiquement l’ancien.</small>
+          <small>Une seule image, carrée de préférence (1080 × 1080). Un nouveau fichier remplace automatiquement l’ancien.</small>
           {canEdit && <label className="storefront-cms-upload">＋ {image ? "Remplacer l’image" : "Ajouter une image"}<input type="file" accept="image/*" onChange={(event) => { const files = event.currentTarget.files; void uploadMany("marketing", section.id, "gallery", files, 1); event.currentTarget.value = ""; }} /></label>}
           {canEdit && image && <button className="danger-text-button" type="button" onClick={() => void removeMedia(image.id)}>Supprimer l’image</button>}
         </section>
