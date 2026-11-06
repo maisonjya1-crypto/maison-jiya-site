@@ -657,7 +657,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       <div className="storefront-v3-header-actions">
         <div className="storefront-v3-language" role="group" aria-label="Language / اللغة"><button type="button" aria-pressed={lang === "fr"} aria-label="Français" className={lang === "fr" ? "active" : ""} onClick={() => setLang("fr")}>FR</button><button type="button" aria-pressed={lang === "ar"} aria-label="العربية" className={lang === "ar" ? "active" : ""} onClick={() => setLang("ar")}>ع</button><button type="button" aria-pressed={lang === "en"} aria-label="English" className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>EN</button></div>
         <button className="storefront-v3-cart-button" type="button" onClick={() => setCartOpen(true)} aria-label={`${t.cart} · ${itemCount} ${t.products}`}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12l-1 13H7L6 7Z" /><path d="M9 7a3 3 0 0 1 6 0" /></svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 4h2.2l2.5 10.4a1 1 0 0 0 1 .8h9.1a1 1 0 0 0 1-.8L20.5 7.5H5.6" /><circle cx="9.5" cy="19" r="1.5" /><circle cx="17" cy="19" r="1.5" /></svg>
           <span>{t.cart}</span>{itemCount > 0 && <b aria-live="polite">{itemCount}</b>}
         </button>
       </div>

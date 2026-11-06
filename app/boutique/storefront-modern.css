@@ -89,7 +89,7 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
   height: 42px; padding: 0 16px; border: 1px solid var(--gold); border-radius: var(--radius);
   background: transparent; color: var(--gold); font-size: 12px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase;
 }
-.mj-shop .storefront-v3-cart-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
+.mj-shop .storefront-v3-cart-button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .mj-shop .storefront-v3-cart-button b { min-width: 21px; height: 21px; padding: 0 6px; border-radius: 999px; background: var(--gold); color: var(--onyx); font-size: 11px; line-height: 21px; text-align: center; letter-spacing: 0; }
 
 /* Bandeau promo configurable */
