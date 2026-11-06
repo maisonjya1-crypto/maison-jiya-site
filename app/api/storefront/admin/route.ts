@@ -1,3 +1,4 @@
+import { heroCopy } from "../../../../lib/storefront-copy";
 import { getAuthenticatedUser } from "../../../auth";
 import { getRawDb } from "../../../../db";
 import { normalizeMoroccanPhone } from "../../../../db/phone";
@@ -146,8 +147,8 @@ async function snapshot(database: D1Database) {
     settings: {
       brandName: settings.storefront_brand_name || "Maison Jiya",
       announcement: settings.storefront_announcement || "Paiement à la livraison partout au Maroc",
-      heroTitle: settings.storefront_hero_title || "Les pièces que vous aimez, simplement livrées chez vous.",
-      heroText: settings.storefront_hero_text || "Choisissez vos articles, validez votre commande en ligne et payez à la livraison. Notre équipe vous contacte ensuite pour confirmer.",
+      heroTitle: heroCopy(settings.storefront_hero_title, "fr", "title"),
+      heroText: heroCopy(settings.storefront_hero_text, "fr", "text"),
       shippingNote: settings.storefront_shipping_note || "Les éventuels frais de livraison sont confirmés par notre équipe.",
       metaPixelId: settings.storefront_meta_pixel_id || "",
       promoEnabled: settings.storefront_promo_enabled === "1",

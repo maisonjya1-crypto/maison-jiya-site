@@ -99,53 +99,61 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
 .mj-shop .storefront-v3-promotion-bar small { color: var(--mist); }
 .mj-shop .storefront-v3-promotion-bar a { color: var(--gold); font-weight: 500; }
 
-/* Haut de page : texte + cadran */
+/* Haut de page : le logo dans son cadran + un titre court */
 .mj-hero {
-  position: relative;
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: clamp(28px, 6vw, 96px);
-  padding: clamp(36px, 7vw, 96px) var(--gutter) clamp(44px, 7vw, 96px);
-  background: radial-gradient(circle at 75% 45%, #241d1c 0, transparent 55%);
+  display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); align-items: center; gap: clamp(28px, 6vw, 88px);
+  max-width: 1240px; margin-inline: auto;
+  padding: clamp(32px, 6vw, 80px) var(--gutter) clamp(28px, 5vw, 64px);
 }
-.mj-hero-chip { display: inline-flex; margin-bottom: 22px; padding: 8px 14px; border: 1px solid var(--gold); border-radius: 2px; color: var(--gold); font-size: 12px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; text-decoration: none; }
-.mj-hero h1 { max-width: 14ch; font-size: clamp(44px, 6.4vw, 92px); line-height: .98; }
-.mj-hero-copy > p { max-width: 44ch; margin: 22px 0 0; color: var(--mist); font-size: 18px; font-weight: 400; }
-.mj-hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
-.mj-trust { display: flex; flex-wrap: wrap; gap: 10px 26px; margin: 34px 0 0; padding: 22px 0 0; border-top: 1px solid var(--line); list-style: none; color: var(--mist); font-size: 14px; }
-.mj-trust li { display: flex; align-items: center; gap: 9px; }
-.mj-trust li::before { content: ""; width: 6px; height: 6px; transform: rotate(45deg); background: var(--gold); }
-
-/* Le cadran : bague de 60 index comme une lunette de montre */
-.mj-dial { position: relative; width: min(100%, 560px); aspect-ratio: 1; margin-inline: auto; }
+.mj-hero-emblem { position: relative; display: grid; place-items: center; width: min(100%, 440px); aspect-ratio: 1; margin-inline: auto; }
+.mj-hero-emblem::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle, #2a2220 0, #1a1514 55%, transparent 72%); }
+.mj-hero-emblem::after { content: ""; position: absolute; inset: 6%; border: 1px solid var(--line); border-radius: 50%; }
+.mj-hero-emblem img { position: relative; width: 58%; height: auto; }
 .mj-dial-ring {
   position: absolute; inset: 0; border-radius: 50%;
   background:
     repeating-conic-gradient(from -0.6deg, var(--gold) 0 1.2deg, transparent 1.2deg 30deg),
     repeating-conic-gradient(from -0.25deg, #cfa99599 0 .5deg, transparent .5deg 6deg);
-  -webkit-mask: radial-gradient(circle closest-side, transparent 0 calc(100% - 16px), #000 calc(100% - 16px) calc(100% - 1px), transparent 100%);
-          mask: radial-gradient(circle closest-side, transparent 0 calc(100% - 16px), #000 calc(100% - 16px) calc(100% - 1px), transparent 100%);
+  -webkit-mask: radial-gradient(circle closest-side, transparent 0 calc(100% - 14px), #000 calc(100% - 14px) calc(100% - 1px), transparent 100%);
+          mask: radial-gradient(circle closest-side, transparent 0 calc(100% - 14px), #000 calc(100% - 14px) calc(100% - 1px), transparent 100%);
   animation: mj-bezel 120s linear infinite;
 }
-.mj-dial::before { content: ""; position: absolute; inset: 0; border: 1px solid var(--line); border-radius: 50%; }
-.mj-dial-face {
-  position: absolute; inset: 9%; display: grid; place-items: center; padding: 0;
-  border: 1px solid #cfa99566; border-radius: 50%; overflow: hidden; background: var(--pearl); color: var(--onyx);
-  box-shadow: 0 30px 80px #0009, inset 0 0 0 10px var(--onyx);
-}
-.mj-dial-face img { width: 100%; height: 100%; object-fit: cover; transition: transform .6s ease; }
-.mj-dial-face:hover img { transform: scale(1.04); }
-.mj-dial-face.is-brand { background: var(--onyx-2); color: var(--ivory); }
-.mj-dial-face.is-brand > .mj-jy { height: 46%; }
-.mj-hero-tag { position: absolute; bottom: 12%; left: 50%; transform: translateX(-50%); padding: 8px 16px; border-radius: 2px; background: var(--onyx); color: var(--gold); font: 500 17px/1 var(--display); white-space: nowrap; }
-.mj-dial-satellite { position: absolute; width: 27%; aspect-ratio: 1; padding: 0; border: 1px solid var(--gold); border-radius: 50%; overflow: hidden; background: var(--pearl); box-shadow: 0 14px 36px #000a, 0 0 0 6px var(--onyx); }
-.mj-dial-satellite img { width: 100%; height: 100%; object-fit: cover; }
-.mj-dial-satellite.s1 { top: -1%; inset-inline-end: -2%; }
-.mj-dial-satellite.s2 { bottom: 0; inset-inline-start: -3%; width: 23%; }
 @keyframes mj-bezel { to { transform: rotate(360deg); } }
+.mj-hero-copy { max-width: 34rem; }
+.mj-hero-chip { display: inline-flex; margin-bottom: 18px; padding: 7px 12px; border: 1px solid var(--gold); border-radius: 2px; color: var(--gold); font-size: 11px; font-weight: 500; letter-spacing: .16em; text-transform: uppercase; text-decoration: none; }
+.mj-hero h1 { max-width: 16ch; font-size: clamp(34px, 3.8vw, 56px); line-height: 1.04; }
+.mj-hero-copy > p { max-width: 40ch; margin: 16px 0 0; color: var(--mist); font-size: 17px; }
+.mj-hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+.mj-trust { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 28px 0 0; padding: 18px 0 0; border-top: 1px solid var(--line); list-style: none; color: var(--mist); font-size: 13px; }
+.mj-trust li { display: flex; align-items: center; gap: 8px; }
+.mj-trust li::before { content: ""; width: 5px; height: 5px; transform: rotate(45deg); background: var(--gold); }
+
+/* Vitrine photos (blocs créés dans le logiciel) : image carrée, bouton posé sur la photo, titre dessous */
+.mj-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px 20px; }
+.mj-tiles.count-1 { grid-template-columns: minmax(0, 620px); }
+.mj-tiles.count-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mj-tile { display: grid; gap: 14px; min-width: 0; }
+.mj-tile-media { position: relative; display: block; width: 100%; aspect-ratio: 1; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--onyx-2); text-align: start; }
+.mj-tile-media img { width: 100%; height: 100%; object-fit: cover; transition: transform .7s ease; }
+.mj-tile-media:hover img { transform: scale(1.04); }
+.mj-tile-media::after { content: ""; position: absolute; inset: 55% 0 0; background: linear-gradient(transparent, #0e0c0cb3); pointer-events: none; }
+.mj-tile-media .storefront-v3-marketing-badge { position: absolute; z-index: 1; top: 14px; inset-inline-start: 14px; padding: 5px 10px; border-radius: 2px; background: var(--gold); color: var(--onyx); font: 600 12px/1.2 var(--body); font-style: normal; letter-spacing: .08em; text-transform: uppercase; }
+.mj-tile-cta { position: absolute; z-index: 1; bottom: 16px; inset-inline-end: 16px; display: inline-flex; align-items: center; min-height: 44px; padding: 0 20px; border-radius: var(--radius); background: var(--gold); color: var(--onyx); font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; transition: background .2s ease; }
+.mj-shop[dir="rtl"] .mj-tile-cta { letter-spacing: 0; font-size: 14px; }
+.mj-tile-media:hover .mj-tile-cta { background: var(--ivory); }
+.mj-tile-fallback { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; gap: 10px; padding: 28px; color: var(--ivory); text-align: center; background: radial-gradient(circle at 50% 40%, #2a2220, var(--onyx-2) 70%); }
+.mj-tile-fallback .mj-jy { height: 34%; color: var(--gold); }
+.mj-tile-fallback small { color: var(--gold); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; }
+.mj-tile-fallback strong { font: 400 clamp(28px, 3vw, 40px)/1.05 var(--display); }
+.mj-tile-fallback span { max-width: 30ch; color: var(--mist); font-size: 15px; }
+.mj-tile-caption { text-align: center; }
+.mj-tile-caption h3 { font-size: clamp(20px, 2vw, 26px); }
+.mj-tile-caption p { margin: 4px auto 0; max-width: 42ch; color: var(--mist); font-size: 14px; }
 
 /* L'élément fort : la bande promo or rosé */
 .mj-deal {
   display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: clamp(20px, 5vw, 72px);
-  margin: 0 var(--gutter); padding: clamp(30px, 5vw, 60px);
+  margin: clamp(40px, 6vw, 80px) var(--gutter) 0; padding: clamp(30px, 5vw, 60px);
   border-radius: var(--radius); background: linear-gradient(120deg, var(--gold), #e2c3b2 55%, var(--gold-deep)); color: var(--onyx); overflow: hidden;
 }
 .mj-deal:has(.mj-deal-media) { grid-template-columns: auto minmax(0, 1fr) minmax(0, .8fr); }
@@ -208,18 +216,8 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
 .mj-shop .storefront-v3-state.error { color: var(--gold); }
 .mj-shop .storefront-v3-more { display: flex; margin: 40px auto 0; }
 
-/* Marketing (CMS) */
+/* Blocs du logiciel placés plus bas dans la page : même vitrine, espacement de section */
 .mj-shop .storefront-v3-marketing-zone { padding: clamp(56px, 8vw, 104px) var(--gutter) 0; }
-.mj-shop .storefront-v3-marketing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
-.mj-shop .storefront-v3-marketing-card { display: grid; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--onyx-2); }
-.mj-shop .storefront-v3-marketing-card.has-image { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.mj-shop .storefront-v3-marketing-media img { width: 100%; height: 100%; object-fit: cover; }
-.mj-shop .storefront-v3-marketing-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 32px; }
-.mj-shop .storefront-v3-marketing-copy > div { display: flex; gap: 8px; align-items: center; color: var(--mist); }
-.mj-shop .storefront-v3-marketing-badge { padding: 4px 10px; border-radius: 2px; background: var(--gold); color: var(--onyx); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
-.mj-shop .storefront-v3-marketing-copy h2 { font-size: 32px; }
-.mj-shop .storefront-v3-marketing-copy p { margin: 0; color: var(--mist); }
-.mj-shop .storefront-v3-marketing-copy button { margin-top: 8px; padding: 14px 22px; border: 1px solid var(--gold); border-radius: var(--radius); background: transparent; color: var(--gold); font-size: 12px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; }
 
 /* Comment commander : vraie séquence, donc numérotée (chiffres Didone or rosé) */
 .mj-steps { margin: clamp(64px, 9vw, 120px) var(--gutter) 0; padding: clamp(32px, 5vw, 56px) 0; border-block: 1px solid var(--line); }
@@ -252,7 +250,9 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
   box-shadow: 0 16px 40px #000a; font-size: 13px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
 }
 .mj-cart-bar strong { font: 500 19px/1 var(--display); letter-spacing: 0; text-transform: none; }
-.mj-shop .storefront-v3-wa { position: fixed; z-index: 34; inset-inline-end: 18px; bottom: calc(86px + env(safe-area-inset-bottom, 0px)); display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%; background: #25d366; color: #fff; box-shadow: 0 10px 26px #0008; }
+/* Bulle WhatsApp : dans le coin, au-dessus de la barre panier seulement quand elle est affichée */
+.mj-shop .storefront-v3-wa { position: fixed; z-index: 34; inset-inline-end: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: #25d366; color: #fff; box-shadow: 0 10px 26px #0008, 0 0 0 3px var(--onyx); transition: bottom .25s ease; }
+.mj-shop .storefront-v3-wa.above-cart { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
 .mj-shop .storefront-v3-wa svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
 
 /* Bandeau cookies */
@@ -363,12 +363,16 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
   .mj-wordmark small { font-size: 11px; }
   .mj-shop .storefront-v3-cart-button { padding: 0 12px; }
   .mj-shop .storefront-v3-cart-button span { display: none; }
-  .mj-hero { grid-template-columns: 1fr; padding-top: 28px; background: radial-gradient(circle at 50% 22%, #241d1c 0, transparent 60%); }
-  .mj-hero-visual { order: -1; width: min(86%, 400px); }
-  .mj-hero h1 { font-size: clamp(38px, 11vw, 54px); }
-  .mj-hero-copy > p { font-size: 16px; }
-  .mj-hero-actions .mj-button { flex: 1 1 auto; padding: 0 18px; }
-  .mj-deal, .mj-deal:has(.mj-deal-media) { grid-template-columns: 1fr; margin: 0 12px; text-align: center; justify-items: center; }
+  .mj-hero { grid-template-columns: 1fr; gap: 22px; padding-top: 22px; text-align: center; }
+  .mj-hero-emblem { width: min(68vw, 280px); }
+  .mj-hero-copy { margin-inline: auto; }
+  .mj-hero h1 { margin-inline: auto; font-size: clamp(28px, 8vw, 36px); }
+  .mj-hero-copy > p { margin-inline: auto; font-size: 15px; }
+  .mj-hero-actions { justify-content: center; margin-top: 22px; }
+  .mj-hero-actions .mj-button { flex: 1 1 140px; padding: 0 16px; }
+  .mj-trust { justify-content: center; gap: 6px 16px; font-size: 12px; }
+  .mj-tiles, .mj-tiles.count-2 { grid-template-columns: 1fr; gap: 28px; }
+  .mj-deal, .mj-deal:has(.mj-deal-media) { grid-template-columns: 1fr; margin: 44px 12px 0; text-align: center; justify-items: center; }
   .mj-deal-media { width: 100%; }
   .mj-deal-copy p { margin-inline: auto; }
   .mj-section-head { flex-direction: column; align-items: flex-start; gap: 6px; }
@@ -383,7 +387,6 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
   .mj-shop .storefront-v3-product-dialog { grid-template-columns: 1fr; }
   .mj-shop .storefront-v3-product-dialog-info { padding: 8px 20px 24px; }
   .mj-shop .storefront-v3-form-row { grid-template-columns: 1fr; }
-  .mj-shop .storefront-v3-marketing-card.has-image { grid-template-columns: 1fr; }
 }
 @media (max-width: 380px) {
   .mj-wordmark small { display: none; }

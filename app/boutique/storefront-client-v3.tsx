@@ -607,19 +607,24 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     document.querySelector(selector)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  // Vitrine photos : chaque bloc créé dans le logiciel (Boutique → Blocs promo) devient une
+  // tuile image + titre + bouton. « En haut » = juste sous l'accueil.
   function renderMarketingSections(placement: StorefrontMarketingSection["placement"]) {
     const sections = marketingSections.filter((section) => section.placement === placement);
     if (!sections.length) return null;
-    return <section className="storefront-v3-marketing-zone" data-placement={placement}>
-      <div className={`storefront-v3-marketing-grid ${sections.length === 1 ? "single" : ""}`}>
-        {sections.map((section) => <article className={`storefront-v3-marketing-card ${section.imageUrl ? "has-image" : ""}`} key={section.id}>
-          {section.imageUrl && <div className="storefront-v3-marketing-media"><SafeImage src={section.imageUrl} alt={section.title} fallback={<div className="storefront-v3-marketing-fallback">MJ</div>} width={780} height={520} /></div>}
-          <div className="storefront-v3-marketing-copy">
-            <div>{section.badge && <span className="storefront-v3-marketing-badge">{section.badge}</span>}{section.eyebrow && <small>{section.eyebrow}</small>}</div>
-            <h2>{section.title}</h2>
-            {section.body && <p>{section.body}</p>}
-            <button type="button" onClick={() => openMarketingTarget(section)}>{section.ctaLabel || t.discover} →</button>
-          </div>
+    const heading = placement === "after_categories" ? (lang === "ar" ? "مختارات" : lang === "en" ? "Featured" : "À la une") : "";
+    return <section className="storefront-v3-marketing-zone mj-section" data-placement={placement}>
+      {heading && <header className="mj-section-head"><h2>{heading}</h2></header>}
+      <div className={`storefront-v3-marketing-grid mj-tiles count-${Math.min(sections.length, 3)}`}>
+        {sections.map((section) => <article className={`storefront-v3-marketing-card mj-tile ${section.imageUrl ? "has-image" : "no-image"}`} key={section.id}>
+          <button type="button" className="mj-tile-media" onClick={() => openMarketingTarget(section)} aria-label={`${section.title} — ${section.ctaLabel || t.discover}`}>
+            {section.imageUrl
+              ? <SafeImage src={section.imageUrl} alt={section.title} fallback={<span className="mj-tile-fallback"><JyMark /></span>} width={720} height={720} />
+              : <span className="mj-tile-fallback">{section.eyebrow && <small>{section.eyebrow}</small>}<strong>{section.title}</strong>{section.body && <span>{section.body}</span>}</span>}
+            {section.badge && <em className="storefront-v3-marketing-badge">{section.badge}</em>}
+            <span className="mj-tile-cta">{section.ctaLabel || t.discover}</span>
+          </button>
+          {section.imageUrl && <div className="mj-tile-caption"><h3>{section.title}</h3>{section.body && <p>{section.body}</p>}</div>}
         </article>)}
       </div>
     </section>;
@@ -631,7 +636,6 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     en: { heroCta: "Shop the models", dealCta: "See eligible products", packs: "Packs", packsText: "Several pieces, one reduced price.", best: "Most wanted", catalogue: "All models", all: "All", steps: "Order in 3 steps", cartBar: "View cart", contactCta: "Message us on WhatsApp" },
   }[lang];
   const leadPromotion = displayPromotions[0];
-  const heroImages = (bestSellers.length ? bestSellers : products).filter((item) => item.images[0]).slice(0, 3);
   const chipCategories = (catalog?.categories || []).filter((item) => items.some((entry) => entry.category === item));
   const dealHeadline = (promo: StorefrontPromotion) => promo.ruleType === "buy_x_get_y_free"
     ? `${Math.max(1, promo.buyQuantity)}+${Math.max(1, promo.freeQuantity)}`
@@ -665,7 +669,12 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       <a href={promotionTarget}>{promotion.ctaLabel || t.offers}</a>
     </aside>}
 
+    {/* Accueil : le logo JIYA dans son cadran (même image que l'ouverture), puis un titre court. */}
     <section className="mj-hero">
+      <div className="mj-hero-emblem" aria-hidden="true">
+        <span className="mj-dial-ring" />
+        <img src="/brand/maison-jiya-emblem.svg" alt="" width={682} height={522} fetchPriority="high" decoding="async" />
+      </div>
       <div className="mj-hero-copy">
         {leadPromotion && <a className="mj-hero-chip" href="#promotions">{promotionRuleLabel(leadPromotion)}</a>}
         <h1>{localized?.heroTitle || catalog?.heroTitle || brand}</h1>
@@ -676,23 +685,9 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         </div>
         <ul className="mj-trust"><li>{t.cashOnDelivery}</li><li>{t.confirmation}</li><li>{t.moroccoDelivery}</li></ul>
       </div>
-      {/* Les vraies photos produits vendent mieux qu'un visuel de marque : l'image
-          « couverture » du CMS ne sert que s'il n'y a encore aucune photo produit. */}
-      {/* Le cadran : la pièce phare au centre d'un cadran de montre, deux autres pièces en satellites
-          (le même mouvement que l'animation d'ouverture). */}
-      <div className={`mj-hero-visual mj-dial count-${heroImages.length}`}>
-        <span className="mj-dial-ring" aria-hidden="true" />
-        {heroImages[0]
-          ? <button type="button" className="mj-dial-face" onClick={() => openItem(heroImages[0])} aria-label={`${t.viewProduct} : ${heroImages[0].name}`}>
-            <SafeImage src={heroImages[0].images[0]} alt={heroImages[0].name} fallback={<JyMark />} priority width={640} height={640} />
-            <span className="mj-hero-tag">{money(heroImages[0].salePrice, lang)}</span>
-          </button>
-          : <div className="mj-dial-face is-brand">{catalog?.heroImageUrl ? <SafeImage src={catalog.heroImageUrl} alt={`${brand} collection`} fallback={<JyMark />} priority width={640} height={640} /> : <JyMark />}</div>}
-        {heroImages.slice(1).map((item, index) => <button type="button" key={itemKey(item)} className={`mj-dial-satellite s${index + 1}`} onClick={() => openItem(item)} aria-label={`${t.viewProduct} : ${item.name}`}>
-          <SafeImage src={item.images[0]} alt={item.name} fallback={<span>{item.name.slice(0, 1)}</span>} width={320} height={320} />
-        </button>)}
-      </div>
     </section>
+
+    {renderMarketingSections("after_categories")}
 
     {leadPromotion && <section className="mj-deal" id="promotions">
       <strong className="mj-deal-figure">{dealHeadline(leadPromotion)}</strong>
@@ -772,7 +767,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     {itemCount > 0 && !cartOpen && !checkoutOpen && <button type="button" className="mj-cart-bar" onClick={() => setCartOpen(true)}>
       <span>{ui.cartBar} · {itemCount}</span><strong>{money(total, lang)}</strong>
     </button>}
-    {waUrl && <a className="storefront-v3-wa" href={waUrl} target="_blank" rel="noreferrer" aria-label={t.whatsapp}>
+    {waUrl && <a className={`storefront-v3-wa ${itemCount > 0 && !cartOpen && !checkoutOpen ? "above-cart" : ""}`} href={waUrl} target="_blank" rel="noreferrer" aria-label={t.whatsapp}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0-7.8 13.5L3 21l4.6-1.2A9 9 0 1 0 12 3Z" /></svg>
     </a>}
 

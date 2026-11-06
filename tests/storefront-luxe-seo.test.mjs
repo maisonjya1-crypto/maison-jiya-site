@@ -88,3 +88,28 @@ test("les données structurées décrivent la boutique et ses vrais produits, sa
   assert.doesNotMatch(json, /aggregateRating|"review"/);
   assert.match(page, /type="application\/ld\+json"/);
 });
+
+test("l'accueil montre le logo JIYA dans son cadran et la vitrine photos du logiciel juste dessous", () => {
+  assert.match(client, /src="\/brand\/maison-jiya-emblem\.svg"/);
+  assert.doesNotMatch(client, /mj-dial-satellite/);
+  const hero = client.indexOf('<section className="mj-hero">');
+  const showcase = client.indexOf('renderMarketingSections("after_categories")');
+  const deal = client.indexOf('<section className="mj-deal" id="promotions">');
+  assert.ok(hero > 0 && hero < showcase && showcase < deal, "ordre : accueil, vitrine, promo");
+  assert.match(client, /className="mj-tile-cta"/);
+  assert.match(read("public/brand/maison-jiya-emblem.svg"), /prefers-reduced-motion: reduce/);
+});
+
+test("la bulle WhatsApp reste dans le coin et ne monte que si la barre panier est affichée", () => {
+  assert.match(css, /\.storefront-v3-wa \{[^}]*bottom: calc\(18px \+ env\(safe-area-inset-bottom, 0px\)\)/);
+  assert.match(css, /\.storefront-v3-wa\.above-cart \{ bottom: calc\(88px/);
+  assert.match(client, /storefront-v3-wa \$\{itemCount > 0 && !cartOpen && !checkoutOpen \? "above-cart" : ""\}/);
+});
+
+test("les anciens textes d'accueil trop longs sont remplacés, les textes personnalisés sont gardés", () => {
+  const { heroCopy, HERO_DEFAULTS } = loadSource("lib/storefront-copy.ts");
+  assert.equal(heroCopy("Les pièces que vous aimez, simplement livrées chez vous.", "fr", "title"), HERO_DEFAULTS.fr.title);
+  assert.equal(heroCopy("", "ar", "text"), HERO_DEFAULTS.ar.text);
+  assert.equal(heroCopy("Nouvelle collection", "fr", "title"), "Nouvelle collection");
+  assert.ok(HERO_DEFAULTS.fr.title.length <= 40);
+});
