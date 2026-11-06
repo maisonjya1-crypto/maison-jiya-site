@@ -23,6 +23,8 @@ export type StorefrontLocaleCopy = {
   heroTitle: string;
   heroText: string;
   shippingNote: string;
+  aboutTitle?: string;
+  aboutText?: string;
 };
 
 export type StorefrontPromotionBanner = {

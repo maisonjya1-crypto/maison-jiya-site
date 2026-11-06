@@ -1,4 +1,4 @@
-import { heroCopy } from "../lib/storefront-copy";
+import { aboutCopy, heroCopy } from "../lib/storefront-copy";
 import type { StorefrontCatalog } from "../app/boutique/storefront-types";
 import { normalizeMoroccanPhone } from "./phone";
 import { normalizeEligibleCategories, type StorefrontPromotion } from "../lib/storefront-promotions";
@@ -144,7 +144,9 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
         'storefront_announcement_ar', 'storefront_announcement_en',
         'storefront_hero_title_ar', 'storefront_hero_title_en',
         'storefront_hero_text_ar', 'storefront_hero_text_en',
-        'storefront_shipping_note_ar', 'storefront_shipping_note_en'
+        'storefront_shipping_note_ar', 'storefront_shipping_note_en',
+        'storefront_about_title', 'storefront_about_text', 'storefront_about_title_ar',
+        'storefront_about_text_ar', 'storefront_about_title_en', 'storefront_about_text_en'
       )
     `),
   ]);
@@ -355,17 +357,21 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     contactWhatsapp,
     brandStrip: brandStrip(settings.storefront_brand_strip),
     localized: {
-      fr: { announcement, heroTitle, heroText, shippingNote },
+      fr: { announcement, heroTitle, heroText, shippingNote, aboutTitle: aboutCopy(settings.storefront_about_title, "fr", "title"), aboutText: aboutCopy(settings.storefront_about_text, "fr", "text") },
       ar: {
         announcement: settings.storefront_announcement_ar?.trim() || "توصيل مجاني إلى جميع أنحاء المغرب",
         heroTitle: heroCopy(settings.storefront_hero_title_ar, "ar", "title"),
         heroText: heroCopy(settings.storefront_hero_text_ar, "ar", "text"),
+        aboutTitle: aboutCopy(settings.storefront_about_title_ar, "ar", "title"),
+        aboutText: aboutCopy(settings.storefront_about_text_ar, "ar", "text"),
         shippingNote: settings.storefront_shipping_note_ar?.trim() || "توصيل مجاني إلى جميع أنحاء المغرب. يؤكد فريقنا كل طلب قبل التجهيز.",
       },
       en: {
         announcement: settings.storefront_announcement_en?.trim() || "Free delivery across Morocco",
         heroTitle: heroCopy(settings.storefront_hero_title_en, "en", "title"),
         heroText: heroCopy(settings.storefront_hero_text_en, "en", "text"),
+        aboutTitle: aboutCopy(settings.storefront_about_title_en, "en", "title"),
+        aboutText: aboutCopy(settings.storefront_about_text_en, "en", "text"),
         shippingNote: settings.storefront_shipping_note_en?.trim() || "Free delivery across Morocco. Our team confirms every order before preparation.",
       },
     },

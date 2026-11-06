@@ -20,3 +20,24 @@ export function heroCopy(stored: string | null | undefined, lang: Lang, field: "
   if (!value || value === LEGACY_DEFAULTS[lang][field]) return HERO_DEFAULTS[lang][field];
   return value;
 }
+
+// « À propos de nous » : texte par défaut dans le ton de la charte (doux, élégant, phrases brèves).
+// À personnaliser dans le logiciel → Boutique → Identité → À propos de nous.
+export const ABOUT_DEFAULTS: Record<Lang, { title: string; text: string }> = {
+  fr: {
+    title: "Le détail qui fait tout.",
+    text: "Maison Jiya, c'est l'envie de rendre l'élégance simple et accessible. Nous choisissons des montres, des bijoux et des portefeuilles pour leur allure et leur finition : des pièces qui accompagnent un rendez-vous, un cadeau, un instant qui compte.\n\nNotre équipe confirme chaque commande par téléphone avant l'envoi. Nous livrons partout au Maroc et vous payez à la réception.",
+  },
+  ar: {
+    title: "التفاصيل تصنع الفرق.",
+    text: "ميزون جيا هي رغبة في جعل الأناقة بسيطة وفي متناول الجميع. نختار الساعات والمجوهرات والمحافظ لجمالها وجودة تشطيبها: قطع ترافق موعدًا، هدية، أو لحظة مهمة.\n\nيؤكد فريقنا كل طلب عبر الهاتف قبل الإرسال. نوصل إلى جميع أنحاء المغرب والدفع عند الاستلام.",
+  },
+  en: {
+    title: "The detail that makes it.",
+    text: "Maison Jiya is about making elegance simple and within reach. We choose watches, jewellery and wallets for their look and finish: pieces for a date, a gift, a moment that matters.\n\nOur team confirms every order by phone before shipping. We deliver across Morocco and you pay on delivery.",
+  },
+};
+
+export function aboutCopy(stored: string | null | undefined, lang: Lang, field: "title" | "text") {
+  return stored?.trim() || ABOUT_DEFAULTS[lang][field];
+}

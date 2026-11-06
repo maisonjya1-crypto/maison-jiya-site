@@ -90,6 +90,12 @@ type CmsSettings = {
   heroTitle: string;
   heroText: string;
   shippingNote: string;
+  aboutTitle: string;
+  aboutText: string;
+  aboutTitleAr: string;
+  aboutTextAr: string;
+  aboutTitleEn: string;
+  aboutTextEn: string;
   metaPixelId: string;
   promoEnabled: boolean;
   promoBadge: string;
@@ -128,6 +134,12 @@ const emptyData: CmsData = {
     heroTitle: "",
     heroText: "",
     shippingNote: "",
+    aboutTitle: "",
+    aboutText: "",
+    aboutTitleAr: "",
+    aboutTextAr: "",
+    aboutTitleEn: "",
+    aboutTextEn: "",
     metaPixelId: "",
     promoEnabled: false,
     promoBadge: "OFFRE",
@@ -897,6 +909,12 @@ function IdentityPanel({ data, save, uploadMany, removeMedia }: {
         heroTitle: form.get("heroTitle"),
         heroText: form.get("heroText"),
         shippingNote: form.get("shippingNote"),
+        aboutTitle: form.get("aboutTitle"),
+        aboutText: form.get("aboutText"),
+        aboutTitleAr: form.get("aboutTitleAr"),
+        aboutTextAr: form.get("aboutTextAr"),
+        aboutTitleEn: form.get("aboutTitleEn"),
+        aboutTextEn: form.get("aboutTextEn"),
         metaPixelId: form.get("metaPixelId"),
         promoEnabled: form.get("promoEnabled") === "on",
         promoBadge: form.get("promoBadge"),
@@ -922,6 +940,21 @@ function IdentityPanel({ data, save, uploadMany, removeMedia }: {
       <label><span>Grand titre d’accueil</span><input name="heroTitle" defaultValue={data.settings.heroTitle} disabled={!data.canEdit} /></label>
       <label><span>Texte d’accueil</span><textarea name="heroText" rows={4} defaultValue={data.settings.heroText} disabled={!data.canEdit} /></label>
       <label><span>Message sur la livraison</span><input name="shippingNote" defaultValue={data.settings.shippingNote} disabled={!data.canEdit} /></label>
+
+      <fieldset className="storefront-cms-about">
+        <legend>À propos de nous</legend>
+        <p>Affiché sur la boutique dans la section « À propos ». Raconte ton histoire : qui tu es, depuis quand, ce que tu choisis et pourquoi. Laisse une ligne vide pour changer de paragraphe.</p>
+        <label><span>Titre</span><input name="aboutTitle" maxLength={120} defaultValue={data.settings.aboutTitle} disabled={!data.canEdit} placeholder="Le détail qui fait tout." /></label>
+        <label><span>Texte</span><textarea name="aboutText" rows={7} maxLength={1600} defaultValue={data.settings.aboutText} disabled={!data.canEdit} /></label>
+        <details>
+          <summary>Version arabe et anglaise (optionnel)</summary>
+          <small>Si une case reste vide, le site affiche un texte de présentation standard dans cette langue.</small>
+          <label><span>Titre en arabe</span><input name="aboutTitleAr" dir="rtl" maxLength={120} defaultValue={data.settings.aboutTitleAr} disabled={!data.canEdit} /></label>
+          <label><span>Texte en arabe</span><textarea name="aboutTextAr" dir="rtl" rows={5} maxLength={1600} defaultValue={data.settings.aboutTextAr} disabled={!data.canEdit} /></label>
+          <label><span>Titre en anglais</span><input name="aboutTitleEn" maxLength={120} defaultValue={data.settings.aboutTitleEn} disabled={!data.canEdit} /></label>
+          <label><span>Texte en anglais</span><textarea name="aboutTextEn" rows={5} maxLength={1600} defaultValue={data.settings.aboutTextEn} disabled={!data.canEdit} /></label>
+        </details>
+      </fieldset>
 
       <div className="storefront-cms-contact-box">
         <div><span>Contact public</span><h3>WhatsApp Business</h3><p>Ce numéro apparaît automatiquement dans la boutique et dans le bloc Contact.</p></div>

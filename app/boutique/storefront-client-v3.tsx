@@ -634,10 +634,12 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   }
 
   const ui = {
-    fr: { heroCta: "Voir les modèles", dealCta: "Voir les produits concernés", packs: "Packs", packsText: "Plusieurs pièces, un prix réduit.", best: "Les plus demandés", catalogue: "Tous les modèles", all: "Tout", steps: "Commander en 3 étapes", cartBar: "Voir le panier", contactCta: "Écrire sur WhatsApp" },
-    ar: { heroCta: "شاهد الموديلات", dealCta: "المنتجات المشمولة", packs: "الباقات", packsText: "عدة قطع بسعر مخفض.", best: "الأكثر طلبًا", catalogue: "جميع الموديلات", all: "الكل", steps: "اطلب في 3 خطوات", cartBar: "عرض السلة", contactCta: "راسلنا على واتساب" },
-    en: { heroCta: "Shop the models", dealCta: "See eligible products", packs: "Packs", packsText: "Several pieces, one reduced price.", best: "Most wanted", catalogue: "All models", all: "All", steps: "Order in 3 steps", cartBar: "View cart", contactCta: "Message us on WhatsApp" },
+    fr: { heroCta: "Voir les modèles", dealCta: "Voir les produits concernés", packs: "Packs", packsText: "Plusieurs pièces, un prix réduit.", best: "Les plus demandés", catalogue: "Tous les modèles", all: "Tout", steps: "Commander en 3 étapes", cartBar: "Voir le panier", contactCta: "Écrire sur WhatsApp", about: "À propos de nous", values: [["Raffinement", "Des pièces choisies pour leur allure."], ["Détail", "Une finition regardée de près."], ["Confiance", "Confirmé par téléphone, payé à la réception."]] as [string, string][] },
+    ar: { heroCta: "شاهد الموديلات", dealCta: "المنتجات المشمولة", packs: "الباقات", packsText: "عدة قطع بسعر مخفض.", best: "الأكثر طلبًا", catalogue: "جميع الموديلات", all: "الكل", steps: "اطلب في 3 خطوات", cartBar: "عرض السلة", contactCta: "راسلنا على واتساب", about: "من نحن", values: [["الرقي", "قطع مختارة لجمال مظهرها."], ["التفاصيل", "تشطيب نراقبه عن قرب."], ["الثقة", "تأكيد بالهاتف والدفع عند الاستلام."]] as [string, string][] },
+    en: { heroCta: "Shop the models", dealCta: "See eligible products", packs: "Packs", packsText: "Several pieces, one reduced price.", best: "Most wanted", catalogue: "All models", all: "All", steps: "Order in 3 steps", cartBar: "View cart", contactCta: "Message us on WhatsApp", about: "About us", values: [["Refinement", "Pieces chosen for their look."], ["Detail", "A finish checked up close."], ["Trust", "Confirmed by phone, paid on delivery."]] as [string, string][] },
   }[lang];
+  const aboutTitle = localized?.aboutTitle || "";
+  const aboutText = localized?.aboutText || "";
   const leadPromotion = displayPromotions[0];
   const chipCategories = (catalog?.categories || []).filter((item) => items.some((entry) => entry.category === item));
   const dealHeadline = (promo: StorefrontPromotion) => promo.ruleType === "buy_x_get_y_free"
@@ -656,6 +658,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         <a href="#catalogue">{t.catalogue}</a>
         {(displayPromotions.length > 0 || offers.length > 0) && <a href={displayPromotions.length ? "#promotions" : "#offres"}>{t.offers}</a>}
         <a href="#commande">{t.howToOrder}</a>
+        {aboutText && <a href="#a-propos">{ui.about}</a>}
       </nav>
       <div className="storefront-v3-header-actions">
         <div className="storefront-v3-language" role="group" aria-label="Language / اللغة"><button type="button" aria-pressed={lang === "fr"} aria-label="Français" className={lang === "fr" ? "active" : ""} onClick={() => setLang("fr")}>FR</button><button type="button" aria-pressed={lang === "ar"} aria-label="العربية" className={lang === "ar" ? "active" : ""} onClick={() => setLang("ar")}>ع</button><button type="button" aria-pressed={lang === "en"} aria-label="English" className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>EN</button></div>
@@ -733,6 +736,17 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       {visibleCount < filtered.length && <button className="storefront-v3-more mj-button ghost" type="button" onClick={() => setVisibleCount((value) => value + INITIAL_VISIBLE)}>{t.loadMore}</button>}
     </section>
 
+    {/* À propos de nous : texte modifiable dans le logiciel (Boutique → Identité). */}
+    {aboutText && <section className="mj-about" id="a-propos">
+      <div className="mj-about-mark" aria-hidden="true"><span className="mj-dial-ring" /><JyMark /></div>
+      <div className="mj-about-copy">
+        <small>{ui.about}</small>
+        <h2>{aboutTitle}</h2>
+        {aboutText.split(/\n\s*\n/).map((paragraph, index) => <p key={index}>{paragraph.trim()}</p>)}
+        <ul className="mj-about-values">{ui.values.map(([title, text]) => <li key={title}><strong>{title}</strong><span>{text}</span></li>)}</ul>
+      </div>
+    </section>}
+
     <section className="storefront-v3-how mj-steps" id="commande">
       <h2>{ui.steps}</h2>
       <ol>
@@ -751,6 +765,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     <footer className="storefront-v3-footer mj-footer">
       <div><img className="mj-footer-logo" src="/brand/maison-jiya-logo.svg" alt={brand} width={682} height={522} loading="lazy" /><small>{localized?.shippingNote || catalog?.shippingNote}</small></div>
       <nav className="mj-legal-links" aria-label="Informations boutique">
+        {aboutText && <a href="#a-propos">{ui.about}</a>}
         <a href="/boutique/mentions-legales">Mentions légales</a>
         <a href="/boutique/conditions-vente">Conditions de vente</a>
         <a href="/boutique/livraison-retours">Livraison et retours</a>
