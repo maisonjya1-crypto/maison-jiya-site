@@ -84,6 +84,7 @@ jobs:
         if: steps.short_link.outcome == 'success'
         continue-on-error: true
         run: |
+          curl -fsS https://maisonjiya.pages.dev/googleace68d1c59d11801.html | grep -q "google-site-verification" && echo "Fichier Google OK" || echo "Fichier Google absent"
           for i in 1 2 3 4 5 6; do
             if curl -fsSL https://maisonjiya.pages.dev/boutique | grep -q 'data-storefront-deployment="maison-jiya-luxe-v7"'; then echo "maisonjiya.pages.dev OK"; exit 0; fi
             sleep 10
