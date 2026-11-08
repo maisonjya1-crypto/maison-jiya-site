@@ -50,7 +50,7 @@ test("Google : titre, description, image de partage, favicon et adresse canoniqu
   assert.match(layout, /index: true/);
 });
 
-test("robots.txt ouvre la boutique et ferme l'API privée", () => {
+test("robots.txt ouvre la boutique et ferme l'API privée", async () => {
   const { robotsTxt, sitemapXml, seoFileResponse } = loadSource("lib/seo-files.ts");
   const robots = robotsTxt();
   assert.match(robots, /Allow: \/api\/storefront\/media\//);
@@ -60,9 +60,11 @@ test("robots.txt ouvre la boutique et ferme l'API privée", () => {
   const sitemap = sitemapXml(new Date("2026-11-06T10:00:00Z"));
   assert.match(sitemap, /<loc>https:\/\/[^<]+\/boutique<\/loc><lastmod>2026-11-06<\/lastmod>/);
   assert.match(sitemap, /\/boutique\/conditions-vente<\/loc>/);
-  assert.equal(seoFileResponse("/robots.txt").headers.get("content-type"), "text/plain; charset=utf-8");
-  assert.equal(seoFileResponse("/boutique"), null);
-  assert.match(read("worker/index.ts"), /const seoFile = seoFileResponse\(url\.pathname\);/);
+  assert.equal((await seoFileResponse("/robots.txt")).headers.get("content-type"), "text/plain; charset=utf-8");
+  assert.equal(await seoFileResponse("/boutique"), null);
+  const withProducts = await (await seoFileResponse("/sitemap.xml", async () => ["/boutique/produit/montre-acier-12"])).text();
+  assert.match(withProducts, /\/boutique\/produit\/montre-acier-12<\/loc>/);
+  assert.match(read("worker/index.ts"), /const seoFile = await seoFileResponse\(url\.pathname, async \(\) => \{/);
 });
 
 test("les données structurées décrivent la boutique et ses vrais produits, sans avis inventés", () => {
@@ -129,7 +131,7 @@ test("« À propos de nous » se modifie dans le logiciel en FR/AR/EN et s'affic
   assert.match(loader, /aboutText: aboutCopy\(settings\.storefront_about_text_ar, "ar", "text"\)/);
   assert.match(client, /id="a-propos"/);
   assert.match(client, /aboutText\.split\(\/\\n\\s\*\\n\/\)/);
-  assert.match(client, /<a href="#a-propos">\{ui\.about\}<\/a>/);
+  assert.match(client, /<a href=\{`\$\{home\}#a-propos`\}>\{ui\.about\}<\/a>/);
   const { aboutCopy, ABOUT_DEFAULTS } = loadSource("lib/storefront-copy.ts");
   assert.equal(aboutCopy("", "fr", "title"), ABOUT_DEFAULTS.fr.title);
   assert.equal(aboutCopy("Notre histoire", "fr", "title"), "Notre histoire");

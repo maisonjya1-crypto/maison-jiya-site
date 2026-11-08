@@ -8,6 +8,8 @@ import { reconcileOrderAllocations } from "../db/allocations";
 import { processGoogleSheetsSyncQueue } from "../db/google-sheets-sync";
 import { getRawDb } from "../db";
 import { seoFileResponse } from "../lib/seo-files";
+import { productPath } from "../lib/product-slug";
+import { loadStorefrontCatalogFast } from "../db/storefront-public-fast";
 
 interface Env extends CloudflareEnv {
   ASSETS: Fetcher;
@@ -54,7 +56,10 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    const seoFile = seoFileResponse(url.pathname);
+    const seoFile = await seoFileResponse(url.pathname, async () => {
+      const catalog = await loadStorefrontCatalogFast(await getRawDb());
+      return [...catalog.offers, ...catalog.products].map(productPath);
+    });
     if (seoFile) return withSecurityHeaders(seoFile, url.pathname, url.protocol === "https:");
 
     if (url.pathname === "/_vinext/image") {
