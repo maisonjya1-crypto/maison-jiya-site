@@ -1370,7 +1370,7 @@ function ReviewEditor({ review, products, canEdit, save, uploadMany, removeMedia
       <div>
         <span>{isNew ? "＋ Nouvel avis" : "★".repeat(review.rating)}</span>
         <strong>{isNew ? "Ajouter un avis client" : `${review.customerName}${review.city ? ` · ${review.city}` : ""}`}</strong>
-        <small>{isNew ? "Prénom + ville + note + message réel." : `${review.source}${productName ? ` · ${productName.publicName || productName.internalName}` : ""} · ${review.body.slice(0, 70)}${review.body.length > 70 ? "…" : ""}`}</small>
+        <small>{isNew ? "Prénom + note + message recopié ou capture WhatsApp." : `${review.source}${productName ? ` · ${productName.publicName || productName.internalName}` : ""} · ${review.body ? `${review.body.slice(0, 70)}${review.body.length > 70 ? "…" : ""}` : image ? "Capture" : "⚠ Ni texte ni capture : invisible sur le site"}`}</small>
       </div>
       {!isNew && <span className={review.isVisible ? "storefront-cms-offer-active" : "storefront-cms-offer-off"}>{review.isVisible ? "En ligne" : "Masqué"}</span>}
       <b>⌄</b>
@@ -1387,7 +1387,7 @@ function ReviewEditor({ review, products, canEdit, save, uploadMany, removeMedia
         <label><span>Ordre</span><input name="sortOrder" type="number" defaultValue={review.sortOrder} disabled={!canEdit} /></label>
         <label className="storefront-cms-visible"><input name="isVisible" type="checkbox" defaultChecked={review.isVisible} disabled={!canEdit} /><span>Afficher cet avis sur la boutique</span></label>
       </div>
-      <label><span>Message du client (recopié tel quel)</span><textarea name="body" rows={3} defaultValue={review.body} required minLength={5} maxLength={700} placeholder="Ex. Reçu aujourd’hui, la montre est encore plus belle en vrai. Merci !" disabled={!canEdit} /></label>
+      <label><span>Message du client (facultatif si tu ajoutes une capture)</span><textarea name="body" rows={3} defaultValue={review.body} maxLength={700} placeholder="Ex. Reçu aujourd’hui, la montre est encore plus belle en vrai. Merci !" disabled={!canEdit} /></label>
 
       {!isNew ? <div className="storefront-cms-marketing-image">
         <div>
@@ -1397,12 +1397,12 @@ function ReviewEditor({ review, products, canEdit, save, uploadMany, removeMedia
           </> : <span>Photo du client</span>}
         </div>
         <section>
-          <strong>Photo envoyée par le client (optionnel)</strong>
-          <small>Par exemple le colis reçu ou le produit porté, avec son accord.</small>
+          <strong>Capture WhatsApp ou photo du client</strong>
+          <small>Avant d’envoyer : masque le numéro, la photo de profil et le nom de famille (outil crayon ou flou du téléphone). Avec l’accord du client.</small>
           {canEdit && <label className="storefront-cms-upload">＋ {image ? "Remplacer la photo" : "Ajouter une photo"}<input type="file" accept="image/*" onChange={(event) => { const files = event.currentTarget.files; void uploadMany("review", review.id, "gallery", files, 1); event.currentTarget.value = ""; }} /></label>}
           {canEdit && image && <button className="danger-text-button" type="button" onClick={() => void removeMedia(image.id)}>Supprimer la photo</button>}
         </section>
-      </div> : <div className="storefront-cms-public-category-note">Enregistre d’abord l’avis. Ensuite tu pourras ajouter la photo du client.</div>}
+      </div> : <div className="storefront-cms-public-category-note">Enregistre d’abord l’avis (le texte peut rester vide). Ensuite tu pourras ajouter la capture WhatsApp. Un avis sans texte ni capture n’apparaît pas sur le site.</div>}
 
       <div className="storefront-cms-save-row">
         {!isNew && canEdit ? <button className="danger-text-button" type="button" onClick={() => void removeReview()}>Supprimer l’avis</button> : <small>Seuls les avis cochés « Afficher » apparaissent sur la boutique.</small>}
