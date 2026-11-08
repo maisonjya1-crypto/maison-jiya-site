@@ -178,10 +178,10 @@ export async function ensureStorefrontCms(database: D1Database) {
 
   const defaults = [
     ["storefront_brand_name", "Maison Jiya"],
-    ["storefront_announcement", "Livraison gratuite partout au Maroc"],
+    ["storefront_announcement", "Livraison partout au Maroc · paiement à la livraison"],
     ["storefront_hero_title", "Les pièces que vous aimez, simplement livrées chez vous."],
     ["storefront_hero_text", "Choisissez vos articles, validez votre commande en ligne et payez à la livraison. Notre équipe vous contacte ensuite pour confirmer."],
-    ["storefront_shipping_note", "Livraison gratuite partout au Maroc. Notre équipe confirme chaque commande avant préparation."],
+    ["storefront_shipping_note", "Livraison partout au Maroc. Les frais de livraison vous sont confirmés par notre équipe avant l’envoi."],
     ["storefront_meta_pixel_id", ""],
     ["storefront_promo_enabled", "0"],
     ["storefront_promo_badge", "OFFRE"],
@@ -191,14 +191,14 @@ export async function ensureStorefrontCms(database: D1Database) {
     ["storefront_promo_offer_id", ""],
     ["storefront_contact_whatsapp", ""],
     ["storefront_brand_strip", "MAISON JIYA|MONTRES|BIJOUX|PORTEFEUILLES|PACKS"],
-    ["storefront_announcement_ar", "توصيل مجاني إلى جميع أنحاء المغرب"],
-    ["storefront_announcement_en", "Free delivery across Morocco"],
+    ["storefront_announcement_ar", "التوصيل إلى جميع أنحاء المغرب · الدفع عند الاستلام"],
+    ["storefront_announcement_en", "Delivery across Morocco · pay on delivery"],
     ["storefront_hero_title_ar", "قطع أنيقة تحبها، تصل إليك بكل بساطة."],
     ["storefront_hero_title_en", "Pieces you love, delivered simply to your door."],
     ["storefront_hero_text_ar", "اختر منتجاتك وأرسل طلبك عبر الموقع. سيتواصل معك فريقنا لتأكيد الطلب قبل التجهيز، والدفع عند الاستلام."],
     ["storefront_hero_text_en", "Choose your items and place your order online. Our team will contact you to confirm it before preparation, with cash on delivery."],
-    ["storefront_shipping_note_ar", "توصيل مجاني إلى جميع أنحاء المغرب. يؤكد فريقنا كل طلب قبل التجهيز."],
-    ["storefront_shipping_note_en", "Free delivery across Morocco. Our team confirms every order before preparation."],
+    ["storefront_shipping_note_ar", "التوصيل إلى جميع أنحاء المغرب. يؤكد لك فريقنا مصاريف التوصيل قبل الإرسال."],
+    ["storefront_shipping_note_en", "Delivery across Morocco. Our team confirms the delivery fee before shipping."],
   ];
   await database.batch(defaults.map(([key, value]) => database.prepare(`
     INSERT INTO settings (key, value, updated_at)

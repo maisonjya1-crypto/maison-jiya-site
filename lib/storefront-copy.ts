@@ -41,3 +41,19 @@ export const ABOUT_DEFAULTS: Record<Lang, { title: string; text: string }> = {
 export function aboutCopy(stored: string | null | undefined, lang: Lang, field: "title" | "text") {
   return stored?.trim() || ABOUT_DEFAULTS[lang][field];
 }
+
+// Livraison : partout au Maroc, PAS gratuite. Tout ancien texte annonçant la gratuité
+// (valeur par défaut ou saisie) est remplacé par ces textes, dans les 3 langues.
+export const DELIVERY_DEFAULTS: Record<Lang, { announcement: string; shippingNote: string }> = {
+  fr: { announcement: "Livraison partout au Maroc · paiement à la livraison", shippingNote: "Livraison partout au Maroc. Les frais de livraison vous sont confirmés par notre équipe avant l’envoi." },
+  ar: { announcement: "التوصيل إلى جميع أنحاء المغرب · الدفع عند الاستلام", shippingNote: "التوصيل إلى جميع أنحاء المغرب. يؤكد لك فريقنا مصاريف التوصيل قبل الإرسال." },
+  en: { announcement: "Delivery across Morocco · pay on delivery", shippingNote: "Delivery across Morocco. Our team confirms the delivery fee before shipping." },
+};
+
+const FREE_DELIVERY_CLAIM = /gratuit|مجان|free\s+(?:delivery|shipping)/i;
+
+export function deliveryCopy(stored: string | null | undefined, lang: Lang, field: "announcement" | "shippingNote") {
+  const value = stored?.trim() || "";
+  if (!value || FREE_DELIVERY_CLAIM.test(value)) return DELIVERY_DEFAULTS[lang][field];
+  return value;
+}

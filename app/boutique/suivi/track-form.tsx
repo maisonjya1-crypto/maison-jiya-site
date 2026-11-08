@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { TRACKING_STEPS, type TrackingStage } from "../../../lib/order-tracking";
 
-type Result = { orderRef: string; stage: TrackingStage; city: string; quantity: number; total: number; carrier: string; trackingNumber: string; createdAt: string; updatedAt: string };
+type Result = { orderRef: string; stage: TrackingStage; city: string; quantity: number; total: number; carrier: string; trackingNumber: string; trackingUrl?: string; createdAt: string; updatedAt: string };
 
 const LABELS: Record<TrackingStage, { title: string; text: string }> = {
   received: { title: "Commande reçue", text: "Notre équipe va vous appeler pour confirmer votre commande." },
@@ -71,7 +71,7 @@ export default function TrackForm() {
         <div><dt>Dernière mise à jour</dt><dd>{date(result.updatedAt)}</dd></div>
         <div><dt>Ville</dt><dd>{result.city}</dd></div>
         <div><dt>Montant à payer à la livraison</dt><dd>{result.total.toLocaleString("fr-MA")} DH</dd></div>
-        {result.carrier && <div><dt>Livreur</dt><dd>{result.carrier}{result.trackingNumber ? ` · n° ${result.trackingNumber}` : ""}</dd></div>}
+        {result.carrier && <div><dt>Livreur</dt><dd>{result.carrier}{result.trackingNumber ? ` · n° ${result.trackingNumber}` : ""}{result.trackingUrl && <> · <a href={result.trackingUrl} target="_blank" rel="noopener noreferrer">suivre chez {result.carrier}</a></>}</dd></div>}
       </dl>
     </section>}
   </div>;

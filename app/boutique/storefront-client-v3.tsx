@@ -101,7 +101,7 @@ const copy: Record<StorefrontLanguage, Copy> = {
     continueShopping: "Continuer mes achats", quantity: "Quantité", remove: "Supprimer", orderTitle: "Finaliser la commande", orderSubtitle: "Aucun paiement en ligne. Notre équipe vous contacte pour confirmer.", fullName: "Nom complet", phone: "Téléphone", city: "Ville", address: "Adresse de livraison",
     note: "Note", optional: "facultatif", confirmOrder: "Envoyer ma commande", sending: "Envoi…", orderSuccess: "Commande reçue", orderSuccessText: "Merci. Notre équipe vous contactera pour confirmer la disponibilité et votre commande avant préparation.", orderRef: "Référence", close: "Fermer", orderFailed: "Impossible d’enregistrer la commande. Vérifiez vos informations puis réessayez.",
     whyOrder: "COMMENT COMMANDER", step1: "1. Choisissez", step1Text: "Ajoutez les modèles et quantités qui vous plaisent, même si vous en souhaitez plusieurs.", step2: "2. Envoyez", step2Text: "Renseignez vos coordonnées et envoyez votre commande sans paiement en ligne.", step3: "3. Confirmez", step3Text: "Notre équipe vous contacte pour confirmer la disponibilité avant préparation et livraison.",
-    helpTitle: "Besoin d’aide ?", helpText: "Écrivez-nous sur WhatsApp pour une question sur un modèle, un pack ou votre commande.", freeDelivery: "Livraison gratuite partout au Maroc",
+    helpTitle: "Besoin d’aide ?", helpText: "Écrivez-nous sur WhatsApp pour une question sur un modèle, un pack ou votre commande.", freeDelivery: "Livraison partout au Maroc",
   },
   ar: {
     officialStore: "المتجر الرسمي", catalogue: "الكتالوج", offers: "العروض", howToOrder: "كيفية الطلب", contact: "تواصل معنا", cart: "السلة",
@@ -113,7 +113,7 @@ const copy: Record<StorefrontLanguage, Copy> = {
     continueShopping: "متابعة التسوق", quantity: "الكمية", remove: "حذف", orderTitle: "إتمام الطلب", orderSubtitle: "لا يوجد دفع إلكتروني. سيتواصل معك فريقنا لتأكيد الطلب.", fullName: "الاسم الكامل", phone: "رقم الهاتف", city: "المدينة", address: "عنوان التوصيل",
     note: "ملاحظة", optional: "اختياري", confirmOrder: "إرسال الطلب", sending: "جارٍ الإرسال…", orderSuccess: "تم استلام طلبك", orderSuccessText: "شكرًا لك. سيتواصل معك فريقنا لتأكيد توفر المنتجات والطلب قبل التجهيز.", orderRef: "رقم الطلب", close: "إغلاق", orderFailed: "تعذر تسجيل الطلب. تحقق من معلوماتك ثم حاول مرة أخرى.",
     whyOrder: "كيفية الطلب", step1: "1. اختر", step1Text: "أضف الموديلات والكميات التي تريدها، حتى إذا كنت ترغب في أكثر من قطعة.", step2: "2. أرسل الطلب", step2Text: "أدخل معلوماتك وأرسل الطلب من دون أي دفع إلكتروني.", step3: "3. التأكيد", step3Text: "سيتواصل معك فريقنا لتأكيد التوفر قبل تجهيز الطلب والتوصيل.",
-    helpTitle: "تحتاج إلى مساعدة؟", helpText: "راسلنا على واتساب لأي سؤال حول موديل أو باقة أو طلبك.", freeDelivery: "توصيل مجاني إلى جميع أنحاء المغرب",
+    helpTitle: "تحتاج إلى مساعدة؟", helpText: "راسلنا على واتساب لأي سؤال حول موديل أو باقة أو طلبك.", freeDelivery: "التوصيل إلى جميع أنحاء المغرب",
   },
   en: {
     officialStore: "Official store", catalogue: "Catalog", offers: "Offers", howToOrder: "How to order", contact: "Contact", cart: "Cart",
@@ -125,7 +125,7 @@ const copy: Record<StorefrontLanguage, Copy> = {
     continueShopping: "Continue shopping", quantity: "Quantity", remove: "Remove", orderTitle: "Complete your order", orderSubtitle: "No online payment. Our team will contact you to confirm the order.", fullName: "Full name", phone: "Phone", city: "City", address: "Delivery address",
     note: "Note", optional: "optional", confirmOrder: "Place my order", sending: "Sending…", orderSuccess: "Order received", orderSuccessText: "Thank you. Our team will contact you to confirm availability and your order before preparation.", orderRef: "Reference", close: "Close", orderFailed: "We could not register your order. Check your details and try again.",
     whyOrder: "HOW TO ORDER", step1: "1. Choose", step1Text: "Add the models and quantities you want, even when you need several pieces.", step2: "2. Send", step2Text: "Enter your details and place your order without any online payment.", step3: "3. Confirm", step3Text: "Our team contacts you to confirm availability before preparation and delivery.",
-    helpTitle: "Need help?", helpText: "Message us on WhatsApp with any question about a model, pack or your order.", freeDelivery: "Free delivery across Morocco",
+    helpTitle: "Need help?", helpText: "Message us on WhatsApp with any question about a model, pack or your order.", freeDelivery: "Delivery across Morocco",
   },
 };
 
