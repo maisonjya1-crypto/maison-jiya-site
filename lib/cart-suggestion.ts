@@ -48,3 +48,33 @@ export function pickCartSuggestion<T extends SuggestionItem>(
   const pick = rank(candidates.filter((item) => !cartCategories.has(normalizePromotionCategory(item.category))))[0] || rank(candidates)[0];
   return pick ? { item: pick, reason: "complete" } : null;
 }
+
+// Jauge vers la promo : combien d'articles éligibles le client a, combien il en faut.
+export function promotionProgress(lines: SuggestionLine[], promotions: StorefrontPromotion[], promotionApplied: boolean) {
+  if (promotionApplied || !lines.length) return null;
+  const rules = promotions.filter((rule) => rule.isActive).sort((a, b) => a.priority - b.priority || a.id - b.id);
+  for (const rule of rules) {
+    const categories = new Set(normalizeEligibleCategories(rule.eligibleCategories));
+    const eligible = (category: string) => !categories.size || categories.has(normalizePromotionCategory(category));
+    const have = lines.filter((line) => line.kind === "product" && line.unitPrice > 0 && eligible(line.category)).reduce((sum, line) => sum + line.quantity, 0);
+    const need = unitsNeeded(rule);
+    if (have >= 1 && have < need) return { promotion: rule, have, need, missing: need - have };
+  }
+  return null;
+}
+
+// « Souvent achetés ensemble » : jusqu'à deux articles disponibles d'autres catégories
+// (ceux qui déclenchent une promo active passent en premier).
+export function frequentlyBoughtWith<T extends SuggestionItem>(current: T, items: T[], promotions: StorefrontPromotion[], max = 2): T[] {
+  const currentCategory = normalizePromotionCategory(current.category);
+  const promoCategories = new Set(promotions.filter((rule) => rule.isActive).flatMap((rule) => normalizeEligibleCategories(rule.eligibleCategories)));
+  const pool = items.filter((item) => item.available && item.kind === "product" && item.salePrice > 0 && keyOf(item) !== keyOf(current));
+  const score = (item: T) => (normalizePromotionCategory(item.category) !== currentCategory ? 4 : 0) + (promoCategories.has(normalizePromotionCategory(item.category)) ? 2 : 0) + (isBest(item.badge) ? 1 : 0);
+  const picked: T[] = [];
+  for (const item of pool.slice().sort((a, b) => score(b) - score(a) || a.salePrice - b.salePrice)) {
+    if (picked.some((entry) => normalizePromotionCategory(entry.category) === normalizePromotionCategory(item.category))) continue;
+    picked.push(item);
+    if (picked.length >= max) break;
+  }
+  return picked;
+}

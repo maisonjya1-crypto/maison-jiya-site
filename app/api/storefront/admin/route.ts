@@ -1,4 +1,5 @@
 import { aboutCopy, deliveryCopy, heroCopy } from "../../../../lib/storefront-copy";
+import { giftBoxFromSettings, normalizeAudience } from "../../../../lib/storefront-extras";
 import { getAuthenticatedUser } from "../../../auth";
 import { getRawDb } from "../../../../db";
 import { normalizeMoroccanPhone } from "../../../../db/phone";
@@ -89,7 +90,9 @@ async function snapshot(database: D1Database) {
       'storefront_promo_enabled', 'storefront_promo_badge', 'storefront_promo_title',
       'storefront_promo_text', 'storefront_promo_cta_label', 'storefront_promo_offer_id',
       'storefront_about_title', 'storefront_about_text', 'storefront_about_title_ar',
-      'storefront_about_text_ar', 'storefront_about_title_en', 'storefront_about_text_en'
+      'storefront_about_text_ar', 'storefront_about_title_en', 'storefront_about_text_en',
+      'storefront_giftbox_enabled', 'storefront_giftbox_label', 'storefront_giftbox_price',
+      'storefront_giftbox_cost', 'storefront_giftbox_text'
     )
   `).all<{ key: string; value: string }>()).results;
   const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
@@ -144,6 +147,9 @@ async function snapshot(database: D1Database) {
 
   // Table créée par migrations/0019_storefront_reviews.sql ; liste vide si la migration n'est pas encore passée.
   type ReviewRow = { id: number; customerName: string; city: string; rating: number; body: string; productId: number | null; source: string; reviewDate: string | null; isVisible: number; sortOrder: number; createdAt: string };
+  // Gamme Homme/Femme/Unisexe (migrations/0020) : lue à part pour ne jamais bloquer le logiciel.
+  const audiences = new Map<number, string>((await database.prepare("SELECT product_id AS productId, audience FROM storefront_product_settings")
+    .all<{ productId: number; audience: string }>().then((result) => result.results || []).catch(() => [])).map((row) => [row.productId, row.audience || ""]));
   const reviews: ReviewRow[] = await database.prepare(`
     SELECT id, customer_name AS customerName, city, rating, body, product_id AS productId, source,
            review_date AS reviewDate, is_visible AS isVisible, sort_order AS sortOrder, created_at AS createdAt
@@ -166,6 +172,11 @@ async function snapshot(database: D1Database) {
       aboutTextAr: settings.storefront_about_text_ar || "",
       aboutTitleEn: settings.storefront_about_title_en || "",
       aboutTextEn: settings.storefront_about_text_en || "",
+      giftBoxEnabled: settings.storefront_giftbox_enabled === "1",
+      giftBoxLabel: giftBoxFromSettings(settings).label,
+      giftBoxPrice: Number(settings.storefront_giftbox_price) || 0,
+      giftBoxCost: Number(settings.storefront_giftbox_cost) || 0,
+      giftBoxText: giftBoxFromSettings(settings).text,
       shippingNote: deliveryCopy(settings.storefront_shipping_note, "fr", "shippingNote"),
       metaPixelId: settings.storefront_meta_pixel_id || "",
       promoEnabled: settings.storefront_promo_enabled === "1",
@@ -180,6 +191,7 @@ async function snapshot(database: D1Database) {
     },
     products: products.map((product) => ({
       ...product,
+      audience: audiences.get(product.productId) || "",
       isVisible: Boolean(product.isVisible),
       media: media.filter((item) => item.ownerType === "product" && item.ownerId === product.productId),
     })),
@@ -263,6 +275,11 @@ export async function POST(request: Request) {
         ["storefront_about_text_ar", text(payload.aboutTextAr, 1600)],
         ["storefront_about_title_en", text(payload.aboutTitleEn, 120)],
         ["storefront_about_text_en", text(payload.aboutTextEn, 1600)],
+        ["storefront_giftbox_enabled", boolean(payload.giftBoxEnabled, false) ? "1" : "0"],
+        ["storefront_giftbox_label", text(payload.giftBoxLabel, 60)],
+        ["storefront_giftbox_price", String(Math.min(2000, money(payload.giftBoxPrice)))],
+        ["storefront_giftbox_cost", String(Math.min(2000, money(payload.giftBoxCost)))],
+        ["storefront_giftbox_text", text(payload.giftBoxText, 160)],
         ["storefront_meta_pixel_id", text(payload.metaPixelId, 40).replace(/[^0-9]/g, "")],
         ["storefront_promo_enabled", boolean(payload.promoEnabled, false) ? "1" : "0"],
         ["storefront_promo_badge", text(payload.promoBadge, 50)],
@@ -307,6 +324,7 @@ export async function POST(request: Request) {
         text(payload.description, 600),
         integer(payload.sortOrder),
       ).run();
+      await database.prepare("UPDATE storefront_product_settings SET audience = ? WHERE product_id = ?").bind(normalizeAudience(payload.audience), productId).run();
     } else if (action === "savePromotion") {
       const promotionId = integer(payload.promotionId);
       const name = text(payload.name, 140);

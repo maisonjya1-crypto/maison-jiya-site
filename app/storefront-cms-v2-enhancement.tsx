@@ -34,6 +34,7 @@ type CmsProduct = {
   badge: string;
   description: string;
   sortOrder: number;
+  audience?: string;
   media: Media[];
 };
 
@@ -96,6 +97,11 @@ type CmsSettings = {
   aboutTextAr: string;
   aboutTitleEn: string;
   aboutTextEn: string;
+  giftBoxEnabled?: boolean;
+  giftBoxLabel?: string;
+  giftBoxPrice?: number;
+  giftBoxCost?: number;
+  giftBoxText?: string;
   metaPixelId: string;
   promoEnabled: boolean;
   promoBadge: string;
@@ -932,6 +938,11 @@ function IdentityPanel({ data, save, uploadMany, removeMedia }: {
         aboutTextAr: form.get("aboutTextAr"),
         aboutTitleEn: form.get("aboutTitleEn"),
         aboutTextEn: form.get("aboutTextEn"),
+        giftBoxEnabled: form.get("giftBoxEnabled") === "on",
+        giftBoxLabel: form.get("giftBoxLabel"),
+        giftBoxPrice: form.get("giftBoxPrice"),
+        giftBoxCost: form.get("giftBoxCost"),
+        giftBoxText: form.get("giftBoxText"),
         metaPixelId: form.get("metaPixelId"),
         promoEnabled: form.get("promoEnabled") === "on",
         promoBadge: form.get("promoBadge"),
@@ -957,6 +968,16 @@ function IdentityPanel({ data, save, uploadMany, removeMedia }: {
       <label><span>Grand titre d’accueil</span><input name="heroTitle" defaultValue={data.settings.heroTitle} disabled={!data.canEdit} /></label>
       <label><span>Texte d’accueil</span><textarea name="heroText" rows={4} defaultValue={data.settings.heroText} disabled={!data.canEdit} /></label>
       <label><span>Message sur la livraison</span><input name="shippingNote" defaultValue={data.settings.shippingNote} disabled={!data.canEdit} /></label>
+
+      <fieldset className="storefront-cms-about">
+        <legend>Option coffret cadeau</legend>
+        <p>Dans le panier, le client peut cocher « Ajouter un coffret » : un coffret par article (un pack compte pour un article). Le prix s’ajoute au total de la commande, et le coût est compté dans ta marge. La mention apparaît sur la commande pour la préparation.</p>
+        <label className="storefront-cms-visible"><input name="giftBoxEnabled" type="checkbox" defaultChecked={Boolean(data.settings.giftBoxEnabled)} disabled={!data.canEdit} /><span>Proposer le coffret dans le panier</span></label>
+        <label><span>Nom de l’option</span><input name="giftBoxLabel" maxLength={60} defaultValue={data.settings.giftBoxLabel || "Coffret premium"} disabled={!data.canEdit} /></label>
+        <label><span>Prix pour le client (MAD par article)</span><input name="giftBoxPrice" type="number" min="0" step="1" defaultValue={data.settings.giftBoxPrice || ""} placeholder="Ex. 30" disabled={!data.canEdit} /></label>
+        <label><span>Ton coût d’achat (MAD par coffret)</span><input name="giftBoxCost" type="number" min="0" step="1" defaultValue={data.settings.giftBoxCost || ""} placeholder="Ex. 8" disabled={!data.canEdit} /></label>
+        <label><span>Petite phrase</span><input name="giftBoxText" maxLength={160} defaultValue={data.settings.giftBoxText || ""} placeholder="Coffret rigide élégant, idéal pour offrir." disabled={!data.canEdit} /></label>
+      </fieldset>
 
       <fieldset className="storefront-cms-about">
         <legend>À propos de nous</legend>
@@ -1199,6 +1220,7 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia, reorde
         badge: form.get("badge"),
         description: form.get("description"),
         sortOrder: form.get("sortOrder"),
+        audience: form.get("audience"),
       });
     } finally {
       setSaving(false);
@@ -1226,6 +1248,7 @@ function ProductEditor({ product, canEdit, save, uploadMany, removeMedia, reorde
         <label><span>Prix public (MAD)</span><input name="publicPrice" type="number" min="0" step="1" defaultValue={product.publicPrice} disabled={!canEdit} /></label>
         <label><span>Disponibilité publique</span><select name="availabilityMode" defaultValue={product.availabilityMode} disabled={!canEdit}><option value="auto">Disponible à la commande</option><option value="available">Disponible à la commande même avec stock 0</option><option value="out_of_stock">Forcer « Rupture »</option></select></label>
         <label><span>Badge</span><input name="badge" defaultValue={product.badge} placeholder="Nouveau, Best-seller…" disabled={!canEdit} /></label>
+        <label><span>Gamme</span><select name="audience" defaultValue={product.audience || ""} disabled={!canEdit}><option value="">Non classé</option><option value="homme">Homme</option><option value="femme">Femme</option><option value="unisexe">Unisexe (Homme et Femme)</option></select></label>
         <label><span>Ordre d’affichage</span><input name="sortOrder" type="number" defaultValue={product.sortOrder} disabled={!canEdit} /></label>
         <label className="storefront-cms-visible"><input name="isVisible" type="checkbox" defaultChecked={product.isVisible} disabled={!canEdit} /><span>Afficher ce produit sur le site public</span></label>
       </div>

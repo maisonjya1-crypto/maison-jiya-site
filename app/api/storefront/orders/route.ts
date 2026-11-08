@@ -4,6 +4,7 @@ import { normalizeMoroccanPhone } from "../../../../db/phone";
 import { ensurePlatformUpgrades } from "../../../../db/platform-upgrades";
 import { notifyNewOrder } from "../../../../db/push-notifications";
 import { ensureStorefrontCms, getStorefrontPromotions } from "../../../../db/storefront-cms";
+import { giftBoxFromSettings, giftBoxTotal } from "../../../../lib/storefront-extras";
 import { calculateIndependentPromotions, normalizeEligibleCategories, type StorefrontPromotion } from "../../../../lib/storefront-promotions";
 
 type RequestedCartItem = { kind: "product" | "offer"; id: number; quantity: number };
@@ -317,14 +318,24 @@ export async function POST(request: Request) {
     saleAmount = promotion.total;
     if (saleAmount <= 0) throw new Error("Le montant de la commande est invalide.");
 
+    // Option coffret : prix et coût relus dans les réglages (jamais ceux envoyés par le navigateur),
+    // un coffret par article du panier, ajouté après la promo (le coffret n'est jamais remisé).
+    const giftBoxSettings = Object.fromEntries(((await database.prepare(`
+      SELECT key, value FROM settings WHERE key IN ('storefront_giftbox_enabled', 'storefront_giftbox_label', 'storefront_giftbox_price', 'storefront_giftbox_cost', 'storefront_giftbox_text')
+    `).all<{ key: string; value: string }>()).results || []).map((row) => [row.key, row.value]));
+    const giftBox = giftBoxFromSettings(giftBoxSettings);
+    const giftBoxLine = giftBoxTotal(giftBox, cart.reduce((sum, item) => sum + item.quantity, 0), payload.giftBox === true);
+    saleAmount = Math.round((saleAmount + giftBoxLine.amount) * 100) / 100;
+
     // Important : une commande publique reste "En attente" et n'est jamais refusée
     // parce que le stock actuel est inférieur à la quantité demandée. Le stock réel
     // n'est contrôlé/déduit qu'au moment où l'équipe confirme la commande au client.
     const lines = [...expanded.values()];
     const capturedItems = allocateSale(lines, saleAmount);
     const totalQuantity = capturedItems.reduce((sum, item) => sum + item.quantity, 0);
-    const productCost = capturedItems.reduce((sum, item) => sum + item.unitCost * item.quantity, 0);
-    const productLabel = `${labels.join(" + ")}${promotion.applied ? ` · OFFRE ${promotion.name}` : ""}`.slice(0, 600);
+    const productCost = capturedItems.reduce((sum, item) => sum + item.unitCost * item.quantity, 0) + giftBox.cost * giftBoxLine.count;
+    const giftBoxLabel = giftBoxLine.count ? ` + ${giftBox.label} ×${giftBoxLine.count}` : "";
+    const productLabel = `${labels.join(" + ")}${giftBoxLabel}${promotion.applied ? ` · OFFRE ${promotion.name}` : ""}`.slice(0, 600);
     const onlyOffer = cart.length === 1 && cart[0].kind === "offer" ? offers.find((offer) => offer.id === cart[0].id)?.name || "" : "";
 
     const duplicate = await database.prepare(`
@@ -351,7 +362,8 @@ export async function POST(request: Request) {
     const promoAttribution = promotion.applied ? `${promotion.code} -${promotion.discount} MAD` : "";
     const attribution = [promoAttribution, campaign, utmSource && `src:${utmSource}`, utmMedium && `med:${utmMedium}`].filter(Boolean).join(" · ").slice(0, 120);
     const promoNote = promotion.applied ? `Offre ${promotion.name} appliquée : -${promotion.discount} MAD.` : "";
-    const noteSuffix = [differentName, promoNote, note ? `Note client: ${note}` : ""].filter(Boolean).join(" ");
+    const giftBoxNote = giftBoxLine.count ? `Option ${giftBox.label} ×${giftBoxLine.count} : +${giftBoxLine.amount} MAD.` : "";
+    const noteSuffix = [differentName, promoNote, giftBoxNote, note ? `Note client: ${note}` : ""].filter(Boolean).join(" ");
     await database.batch([
       database.prepare(`
         INSERT INTO orders (
