@@ -49,6 +49,18 @@ export type StorefrontMarketingSection = {
 };
 
 
+export type StorefrontReview = {
+  id: number;
+  name: string;
+  city: string;
+  rating: number;
+  body: string;
+  productId: number | null;
+  source: string;
+  date: string;
+  imageUrl: string;
+};
+
 export type StorefrontCatalog = {
   brand: string;
   announcement: string;
@@ -58,6 +70,7 @@ export type StorefrontCatalog = {
   metaPixelId: string;
   promotionBanner?: StorefrontPromotionBanner;
   marketingSections?: StorefrontMarketingSection[];
+  reviews?: StorefrontReview[];
   logoUrl: string;
   heroImageUrl: string;
   whatsapp: string;

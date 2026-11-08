@@ -108,18 +108,33 @@ type CmsSettings = {
   contactUsesDefault: boolean;
 };
 
+type CmsReview = {
+  id: number;
+  customerName: string;
+  city: string;
+  rating: number;
+  body: string;
+  productId: number | null;
+  source: string;
+  reviewDate: string | null;
+  isVisible: boolean;
+  sortOrder: number;
+  media: Media[];
+};
+
 type CmsData = {
   settings: CmsSettings;
   products: CmsProduct[];
   offers: CmsOffer[];
   promotions: CmsPromotion[];
   marketingSections: CmsMarketingSection[];
+  reviews?: CmsReview[];
   brandMedia: Media[];
   canEdit: boolean;
 };
 
 type PortalTarget = Element | DocumentFragment;
-type UploadOwner = "brand" | "product" | "offer" | "marketing" | "promotion";
+type UploadOwner = "brand" | "product" | "offer" | "marketing" | "promotion" | "review";
 type UploadKind = "logo" | "hero" | "gallery";
 type UploadMany = (ownerType: UploadOwner, ownerId: number, kind: UploadKind, files: FileList | null, maxFiles?: number) => Promise<void>;
 type ReorderMedia = (ownerType: "product" | "offer", ownerId: number, orderedIds: number[]) => Promise<void>;
@@ -349,7 +364,7 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [tab, setTab] = useState<"identity" | "products" | "offers" | "marketing">("identity");
+  const [tab, setTab] = useState<"identity" | "products" | "offers" | "marketing" | "reviews">("identity");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Toutes");
   const [productLimit, setProductLimit] = useState(16);
@@ -807,7 +822,7 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
   }, [category, data.products, query]);
   const visibleProducts = filteredProducts.slice(0, productLimit);
 
-  function switchTab(next: "identity" | "products" | "offers" | "marketing") {
+  function switchTab(next: "identity" | "products" | "offers" | "marketing" | "reviews") {
     if (next === tab) return;
     setTab(next);
     setNotice("");
@@ -838,6 +853,7 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
       <button type="button" className={tab === "products" ? "active" : ""} aria-pressed={tab === "products"} onClick={() => switchTab("products")}>Catalogue public <b>{data.products.length}</b></button>
       <button type="button" className={tab === "offers" ? "active" : ""} aria-pressed={tab === "offers"} onClick={() => switchTab("offers")}>Packs & offres <b>{data.offers.length}</b></button>
       <button type="button" className={tab === "marketing" ? "active" : ""} aria-pressed={tab === "marketing"} onClick={() => switchTab("marketing")}>Blocs promo <b>{data.marketingSections.length}</b></button>
+      <button type="button" className={tab === "reviews" ? "active" : ""} aria-pressed={tab === "reviews"} onClick={() => switchTab("reviews")}>Avis clients <b>{(data.reviews || []).length}</b></button>
     </nav>
 
     {notice && <div className="storefront-cms-notice success">✓ {notice}</div>}
@@ -881,6 +897,7 @@ function StorefrontCmsPage({ close, workspaceLeft }: { close: () => void; worksp
       </div>}
       {tab === "offers" && <OffersPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} reorderMedia={reorderMedia} retryMedia={retryMedia} discardFailedMedia={discardFailedMedia} />}
       {tab === "marketing" && <MarketingPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />}
+      {tab === "reviews" && <ReviewsPanel data={data} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />}
     </>}
   </section>;
 }
@@ -1253,6 +1270,123 @@ function MarketingPanel({ data, save, uploadMany, removeMedia }: {
       {!data.marketingSections.length && <div className="storefront-cms-no-media">Aucun bloc marketing créé pour le moment.</div>}
     </div>
   </div>;
+}
+
+function ReviewsPanel({ data, save, uploadMany, removeMedia }: {
+  data: CmsData;
+  save: (payload: Record<string, unknown>) => Promise<void>;
+  uploadMany: UploadMany;
+  removeMedia: (id: number) => Promise<void>;
+}) {
+  const reviews = data.reviews || [];
+  const blank: CmsReview = { id: 0, customerName: "", city: "", rating: 5, body: "", productId: null, source: "WhatsApp", reviewDate: new Date().toISOString().slice(0, 10), isVisible: true, sortOrder: 0, media: [] };
+  return <div className="storefront-cms-marketing storefront-cms-reviews">
+    <div className="storefront-cms-offer-intro">
+      <div>
+        <span>Avis clients vérifiés</span>
+        <h2>Les vrais retours de tes clients, sur la boutique</h2>
+        <p>Recopie un message reçu (WhatsApp, Instagram, appel…) avec l’accord du client. Mets son prénom et l’initiale du nom (ex. « Salma B. »). Tu peux ajouter la photo qu’il t’a envoyée. N’invente jamais d’avis : Meta et Google sanctionnent les faux avis.</p>
+      </div>
+      <strong>{reviews.filter((review) => review.isVisible).length} en ligne</strong>
+    </div>
+    <ReviewEditor review={blank} products={data.products} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} isNew />
+    <div className="storefront-cms-marketing-list">
+      {reviews.map((review) => <ReviewEditor key={`${review.id}-${review.customerName}-${review.media.length}`} review={review} products={data.products} canEdit={data.canEdit} save={save} uploadMany={uploadMany} removeMedia={removeMedia} />)}
+      {!reviews.length && <div className="storefront-cms-no-media">Aucun avis pour le moment.</div>}
+    </div>
+  </div>;
+}
+
+function ReviewEditor({ review, products, canEdit, save, uploadMany, removeMedia, isNew = false }: {
+  review: CmsReview;
+  products: CmsProduct[];
+  canEdit: boolean;
+  save: (payload: Record<string, unknown>) => Promise<void>;
+  uploadMany: UploadMany;
+  removeMedia: (id: number) => Promise<void>;
+  isNew?: boolean;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(isNew);
+  const image = review.media[0];
+  const productName = products.find((product) => product.productId === review.productId);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canEdit || saving) return;
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    setSaving(true);
+    try {
+      await save({
+        action: "saveReview",
+        reviewId: review.id,
+        customerName: form.get("customerName"),
+        city: form.get("city"),
+        rating: form.get("rating"),
+        body: form.get("body"),
+        productId: form.get("productId"),
+        source: form.get("source"),
+        reviewDate: form.get("reviewDate"),
+        sortOrder: form.get("sortOrder"),
+        isVisible: form.get("isVisible") === "on",
+      });
+      if (isNew) formElement.reset();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeReview() {
+    if (!review.id || !window.confirm(`Supprimer l’avis de ${review.customerName} ?`)) return;
+    await save({ action: "deleteReview", reviewId: review.id });
+  }
+
+  return <details className={`storefront-cms-offer-card storefront-cms-marketing-card ${isNew ? "new" : ""}`} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary>
+      <div>
+        <span>{isNew ? "＋ Nouvel avis" : "★".repeat(review.rating)}</span>
+        <strong>{isNew ? "Ajouter un avis client" : `${review.customerName}${review.city ? ` · ${review.city}` : ""}`}</strong>
+        <small>{isNew ? "Prénom + ville + note + message réel." : `${review.source}${productName ? ` · ${productName.publicName || productName.internalName}` : ""} · ${review.body.slice(0, 70)}${review.body.length > 70 ? "…" : ""}`}</small>
+      </div>
+      {!isNew && <span className={review.isVisible ? "storefront-cms-offer-active" : "storefront-cms-offer-off"}>{review.isVisible ? "En ligne" : "Masqué"}</span>}
+      <b>⌄</b>
+    </summary>
+
+    {open && <form onSubmit={(event) => void submit(event)}>
+      <div className="storefront-cms-product-editgrid">
+        <label><span>Prénom du client</span><input name="customerName" defaultValue={review.customerName} placeholder="Ex. Salma B." required maxLength={60} disabled={!canEdit} /></label>
+        <label><span>Ville</span><input name="city" defaultValue={review.city} placeholder="Ex. Casablanca" maxLength={60} disabled={!canEdit} /></label>
+        <label><span>Note</span><select name="rating" defaultValue={String(review.rating)} disabled={!canEdit}>{[5, 4, 3, 2, 1].map((value) => <option key={value} value={value}>{"★".repeat(value)} ({value}/5)</option>)}</select></label>
+        <label><span>Reçu par</span><select name="source" defaultValue={review.source} disabled={!canEdit}>{["WhatsApp", "Instagram", "Facebook", "TikTok", "Téléphone", "En personne", "Autre"].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label><span>Date du message</span><input name="reviewDate" type="date" defaultValue={review.reviewDate || ""} disabled={!canEdit} /></label>
+        <label><span>Produit concerné (optionnel)</span><select name="productId" defaultValue={review.productId ? String(review.productId) : ""} disabled={!canEdit}><option value="">Avis général sur la boutique</option>{products.filter((product) => product.isVisible).map((product) => <option key={product.productId} value={product.productId}>{product.publicName || product.internalName}</option>)}</select></label>
+        <label><span>Ordre</span><input name="sortOrder" type="number" defaultValue={review.sortOrder} disabled={!canEdit} /></label>
+        <label className="storefront-cms-visible"><input name="isVisible" type="checkbox" defaultChecked={review.isVisible} disabled={!canEdit} /><span>Afficher cet avis sur la boutique</span></label>
+      </div>
+      <label><span>Message du client (recopié tel quel)</span><textarea name="body" rows={3} defaultValue={review.body} required minLength={5} maxLength={700} placeholder="Ex. Reçu aujourd’hui, la montre est encore plus belle en vrai. Merci !" disabled={!canEdit} /></label>
+
+      {!isNew ? <div className="storefront-cms-marketing-image">
+        <div>
+          {image ? <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={mediaUrl(image.id)} alt="" loading="lazy" decoding="async" />
+          </> : <span>Photo du client</span>}
+        </div>
+        <section>
+          <strong>Photo envoyée par le client (optionnel)</strong>
+          <small>Par exemple le colis reçu ou le produit porté, avec son accord.</small>
+          {canEdit && <label className="storefront-cms-upload">＋ {image ? "Remplacer la photo" : "Ajouter une photo"}<input type="file" accept="image/*" onChange={(event) => { const files = event.currentTarget.files; void uploadMany("review", review.id, "gallery", files, 1); event.currentTarget.value = ""; }} /></label>}
+          {canEdit && image && <button className="danger-text-button" type="button" onClick={() => void removeMedia(image.id)}>Supprimer la photo</button>}
+        </section>
+      </div> : <div className="storefront-cms-public-category-note">Enregistre d’abord l’avis. Ensuite tu pourras ajouter la photo du client.</div>}
+
+      <div className="storefront-cms-save-row">
+        {!isNew && canEdit ? <button className="danger-text-button" type="button" onClick={() => void removeReview()}>Supprimer l’avis</button> : <small>Seuls les avis cochés « Afficher » apparaissent sur la boutique.</small>}
+        <button className="primary-button" type="submit" disabled={!canEdit || saving}>{saving ? "Enregistrement…" : isNew ? "Ajouter l’avis" : "Enregistrer l’avis"}</button>
+      </div>
+    </form>}
+  </details>;
 }
 
 function MarketingEditor({ section, canEdit, save, uploadMany, removeMedia, isNew = false }: {

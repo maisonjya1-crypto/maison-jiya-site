@@ -224,6 +224,20 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
 /* Blocs du logiciel placés plus bas dans la page : même vitrine, espacement de section */
 .mj-shop .storefront-v3-marketing-zone { padding: clamp(56px, 8vw, 104px) var(--gutter) 0; }
 
+/* Avis clients */
+.mj-review-list { grid-auto-columns: minmax(260px, 1fr); }
+@media (min-width: 1100px) { .mj-shop .mj-review-list { grid-auto-columns: calc((100% - 40px) / 3); } }
+.mj-review { display: flex; flex-direction: column; gap: 14px; margin: 0; padding: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--onyx-2); }
+.mj-review-stars { color: var(--gold); font-size: 16px; letter-spacing: .12em; }
+.mj-review-stars span { color: var(--line); }
+.mj-review blockquote { flex: 1; margin: 0; font: italic 400 18px/1.55 var(--display); color: var(--ivory); }
+.mj-shop[dir="rtl"] .mj-review blockquote { font-style: normal; }
+.mj-review img { width: 96px; height: 96px; object-fit: cover; border-radius: 2px; }
+.mj-review figcaption { display: grid; gap: 4px; padding-top: 14px; border-top: 1px solid var(--line); }
+.mj-review figcaption strong { font-size: 14px; font-weight: 500; }
+.mj-review figcaption small { color: var(--mist); font-size: 12px; }
+.mj-review figcaption a { color: var(--gold); font-size: 13px; }
+
 /* À propos de nous : l'icône JY dans son cadran, le texte de la maison, trois valeurs de la charte */
 .mj-about { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); align-items: center; gap: clamp(32px, 6vw, 96px); max-width: 1180px; margin: clamp(64px, 9vw, 120px) auto 0; padding: 0 var(--gutter); }
 .mj-about-mark { position: relative; display: grid; place-items: center; width: min(100%, 360px); aspect-ratio: 1; margin-inline: auto; color: var(--ivory); }

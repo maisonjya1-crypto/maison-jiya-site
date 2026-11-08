@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type Reac
 import { JY_MARK } from "./brand-marks";
 import { productPath } from "../../lib/product-slug";
 import { pickCartSuggestion } from "../../lib/cart-suggestion";
-import type { CatalogItem, StorefrontCatalog, StorefrontLanguage, StorefrontMarketingSection } from "./storefront-types";
+import type { CatalogItem, StorefrontCatalog, StorefrontReview, StorefrontLanguage, StorefrontMarketingSection } from "./storefront-types";
 import { calculateIndependentPromotions, promotionRuleLabel, type StorefrontPromotion } from "../../lib/storefront-promotions";
 
 type Cart = Record<string, number>;
@@ -250,6 +250,27 @@ function ProductCard({ item, lang, t, add, open, priority = false }: { item: Cat
       <button className="storefront-v3-add-product" type="button" disabled={!item.available} onClick={() => add(item)}>{item.available ? t.addToCart : t.unavailable}</button>
     </div>
   </article>;
+}
+
+const reviewCopy = {
+  fr: { title: "Ils nous font confiance", text: "Messages reçus de nos clients, publiés avec leur accord.", via: "Reçu sur", product: "À propos de" },
+  ar: { title: "يثقون بنا", text: "رسائل توصلنا بها من زبائننا، منشورة بموافقتهم.", via: "عبر", product: "بخصوص" },
+  en: { title: "They trust us", text: "Messages from our customers, published with their consent.", via: "Received on", product: "About" },
+};
+
+function ReviewCard({ review, lang, product }: { review: StorefrontReview; lang: StorefrontLanguage; product?: CatalogItem }) {
+  const c = reviewCopy[lang];
+  const when = review.date ? new Date(`${review.date}T12:00:00Z`).toLocaleDateString(lang === "ar" ? "ar-MA" : lang === "en" ? "en-GB" : "fr-MA", { day: "numeric", month: "short", year: "numeric" }) : "";
+  return <figure className="mj-review">
+    <div className="mj-review-stars" role="img" aria-label={`${review.rating}/5`}>{"★".repeat(review.rating)}<span>{"★".repeat(5 - review.rating)}</span></div>
+    <blockquote>{review.body}</blockquote>
+    {review.imageUrl && <SafeImage src={review.imageUrl} alt="" fallback={null} width={320} height={320} />}
+    <figcaption>
+      <strong>{review.name}{review.city ? ` · ${review.city}` : ""}</strong>
+      <small>{[review.source && `${c.via} ${review.source}`, when].filter(Boolean).join(" · ")}</small>
+      {product && <a href={productPath(product)}>{c.product} : {product.name}</a>}
+    </figcaption>
+  </figure>;
 }
 
 function ProductGalleryModal({ item, lang, t, add, close }: { item: CatalogItem; lang: StorefrontLanguage; t: Copy; add: (item: CatalogItem) => void; close: () => void }) {
@@ -690,6 +711,15 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
   const relatedItems = pageItem
     ? [...items.filter((item) => item.category === pageItem.category && itemKey(item) !== itemKey(pageItem)), ...items.filter((item) => item.category !== pageItem.category)].filter((item) => item.available).slice(0, 8)
     : [];
+  const reviews = catalog?.reviews ?? [];
+  const productsById = new Map(products.map((item) => [item.id, item]));
+  const pageReviews = pageItem
+    ? [...reviews.filter((review) => pageItem.kind === "product" && review.productId === pageItem.id), ...reviews.filter((review) => !review.productId)].slice(0, 6)
+    : [];
+  const renderReviews = (list: StorefrontReview[]) => list.length > 0 && <section className="storefront-v3-section mj-section mj-reviews" id="avis">
+    <header className="mj-section-head"><h2>{reviewCopy[lang].title}</h2><p>{reviewCopy[lang].text}</p></header>
+    <div className="storefront-v3-horizontal mj-review-list">{list.map((review) => <ReviewCard key={review.id} review={review} lang={lang} product={!isProductPage && review.productId ? productsById.get(review.productId) : undefined} />)}</div>
+  </section>;
   const dealHeadline = (promo: StorefrontPromotion) => promo.ruleType === "buy_x_get_y_free"
     ? `${Math.max(1, promo.buyQuantity)}+${Math.max(1, promo.freeQuantity)}`
     : `-${Math.round(promo.percentValue)} %`;
@@ -741,6 +771,7 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
         <header className="mj-section-head"><h2>{pageCopy[lang].related}</h2></header>
         <div className="storefront-v3-horizontal">{relatedItems.map((item) => <ProductCard key={`related-${itemKey(item)}`} item={item} lang={lang} t={t} add={add} open={openItem} />)}</div>
       </section>}
+      {renderReviews(pageReviews)}
     </>}
 
     {!isProductPage && <>
@@ -804,6 +835,9 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
       {!loading && !error && <div className="storefront-v3-grid catalogue">{visibleItems.map((item, index) => <ProductCard key={`${item.kind}-${item.id}`} item={item} lang={lang} t={t} add={add} open={openItem} priority={index < 2} />)}</div>}
       {visibleCount < filtered.length && <button className="storefront-v3-more mj-button ghost" type="button" onClick={() => setVisibleCount((value) => value + INITIAL_VISIBLE)}>{t.loadMore}</button>}
     </section>
+
+    {/* Avis clients : uniquement de vrais messages saisis dans le logiciel (Boutique → Avis clients). */}
+    {renderReviews(reviews.slice(0, 12))}
 
     {/* À propos de nous : texte modifiable dans le logiciel (Boutique → Identité). */}
     {aboutText && <section className="mj-about" id="a-propos">
