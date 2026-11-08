@@ -142,6 +142,15 @@ async function snapshot(database: D1Database) {
     ORDER BY placement, sort_order, id DESC
   `).all<StorefrontMarketingSectionRow>()).results;
 
+  // Table créée par migrations/0019_storefront_reviews.sql ; liste vide si la migration n'est pas encore passée.
+  type ReviewRow = { id: number; customerName: string; city: string; rating: number; body: string; productId: number | null; source: string; reviewDate: string | null; isVisible: number; sortOrder: number; createdAt: string };
+  const reviews: ReviewRow[] = await database.prepare(`
+    SELECT id, customer_name AS customerName, city, rating, body, product_id AS productId, source,
+           review_date AS reviewDate, is_visible AS isVisible, sort_order AS sortOrder, created_at AS createdAt
+    FROM storefront_reviews
+    ORDER BY sort_order, COALESCE(review_date, created_at) DESC, id DESC
+  `).all<ReviewRow>().then((result) => result.results || []).catch(() => []);
+
   const media = await getStorefrontMedia(database);
   const allowedProductIds = new Set(products.map((product) => product.productId));
 
@@ -191,6 +200,11 @@ async function snapshot(database: D1Database) {
       ...section,
       isActive: Boolean(section.isActive),
       media: media.filter((item) => item.ownerType === "marketing" && item.ownerId === section.id),
+    })),
+    reviews: reviews.map((review) => ({
+      ...review,
+      isVisible: Boolean(review.isVisible),
+      media: media.filter((item) => item.ownerType === "review" && item.ownerId === review.id),
     })),
     brandMedia: media.filter((item) => item.ownerType === "brand" && item.ownerId === 0),
   };
@@ -485,6 +499,41 @@ export async function POST(request: Request) {
       await database.batch([
         database.prepare("DELETE FROM storefront_media WHERE owner_type = 'marketing' AND owner_id = ?").bind(sectionId),
         database.prepare("DELETE FROM storefront_marketing_sections WHERE id = ?").bind(sectionId),
+      ]);
+    } else if (action === "saveReview") {
+      // Uniquement de vrais avis : nom tel qu'accepté par le client, source et date réelles.
+      const reviewId = integer(payload.reviewId);
+      const customerName = text(payload.customerName, 60);
+      const body = text(payload.body, 700);
+      if (!customerName) throw new Error("Indiquez le prénom du client (ex. Salma B.).");
+      if (body.length < 5) throw new Error("Recopiez le message du client.");
+      const rating = Math.max(1, Math.min(5, integer(payload.rating) || 5));
+      const sources = new Set(["WhatsApp", "Instagram", "Facebook", "TikTok", "Téléphone", "En personne", "Autre"]);
+      const source = sources.has(text(payload.source, 30)) ? text(payload.source, 30) : "Autre";
+      const reviewDate = /^\d{4}-\d{2}-\d{2}$/.test(text(payload.reviewDate, 10)) ? text(payload.reviewDate, 10) : null;
+      const productId = integer(payload.productId) > 0 ? integer(payload.productId) : null;
+      const values = [customerName, text(payload.city, 60), rating, body, productId, source, reviewDate, boolean(payload.isVisible, true) ? 1 : 0, integer(payload.sortOrder)];
+      if (reviewId > 0) {
+        const exists = await database.prepare("SELECT id FROM storefront_reviews WHERE id = ? LIMIT 1").bind(reviewId).first<{ id: number }>();
+        if (!exists) throw new Error("Cet avis n’existe plus.");
+        await database.prepare(`
+          UPDATE storefront_reviews
+          SET customer_name = ?, city = ?, rating = ?, body = ?, product_id = ?, source = ?, review_date = ?,
+              is_visible = ?, sort_order = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(...values, reviewId).run();
+      } else {
+        await database.prepare(`
+          INSERT INTO storefront_reviews (customer_name, city, rating, body, product_id, source, review_date, is_visible, sort_order, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).bind(...values).run();
+      }
+    } else if (action === "deleteReview") {
+      const reviewId = integer(payload.reviewId);
+      if (reviewId <= 0) throw new Error("Avis invalide.");
+      await database.batch([
+        database.prepare("DELETE FROM storefront_media WHERE owner_type = 'review' AND owner_id = ?").bind(reviewId),
+        database.prepare("DELETE FROM storefront_reviews WHERE id = ?").bind(reviewId),
       ]);
     } else {
       return Response.json({ error: "Action inconnue." }, { status: 400 });

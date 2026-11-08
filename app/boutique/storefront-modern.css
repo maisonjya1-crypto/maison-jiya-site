@@ -224,6 +224,20 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
 /* Blocs du logiciel placés plus bas dans la page : même vitrine, espacement de section */
 .mj-shop .storefront-v3-marketing-zone { padding: clamp(56px, 8vw, 104px) var(--gutter) 0; }
 
+/* Avis clients */
+.mj-review-list { grid-auto-columns: minmax(260px, 1fr); }
+@media (min-width: 1100px) { .mj-shop .mj-review-list { grid-auto-columns: calc((100% - 40px) / 3); } }
+.mj-review { display: flex; flex-direction: column; gap: 14px; margin: 0; padding: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--onyx-2); }
+.mj-review-stars { color: var(--gold); font-size: 16px; letter-spacing: .12em; }
+.mj-review-stars span { color: var(--line); }
+.mj-review blockquote { flex: 1; margin: 0; font: italic 400 18px/1.55 var(--display); color: var(--ivory); }
+.mj-shop[dir="rtl"] .mj-review blockquote { font-style: normal; }
+.mj-review img { width: 96px; height: 96px; object-fit: cover; border-radius: 2px; }
+.mj-review figcaption { display: grid; gap: 4px; padding-top: 14px; border-top: 1px solid var(--line); }
+.mj-review figcaption strong { font-size: 14px; font-weight: 500; }
+.mj-review figcaption small { color: var(--mist); font-size: 12px; }
+.mj-review figcaption a { color: var(--gold); font-size: 13px; }
+
 /* À propos de nous : l'icône JY dans son cadran, le texte de la maison, trois valeurs de la charte */
 .mj-about { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); align-items: center; gap: clamp(32px, 6vw, 96px); max-width: 1180px; margin: clamp(64px, 9vw, 120px) auto 0; padding: 0 var(--gutter); }
 .mj-about-mark { position: relative; display: grid; place-items: center; width: min(100%, 360px); aspect-ratio: 1; margin-inline: auto; color: var(--ivory); }
@@ -302,6 +316,16 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
 .mj-shop .storefront-v3-qty { display: flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: var(--radius); padding: 3px; }
 .mj-shop .storefront-v3-qty button { width: 32px; height: 32px; border: 0; border-radius: 2px; background: var(--onyx-3); font-weight: 600; }
 .mj-shop .storefront-v3-qty span { min-width: 24px; text-align: center; font-weight: 600; }
+.mj-cart-suggestion { display: grid; gap: 10px; margin: 12px 0 4px; padding: 12px; border: 1px solid var(--gold); border-radius: var(--radius); background: #cfa9950f; }
+.mj-cart-suggestion p { margin: 0; color: var(--gold); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.mj-shop[dir="rtl"] .mj-cart-suggestion p { letter-spacing: 0; font-size: 14px; }
+.mj-cart-suggestion > div { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.mj-cart-suggestion-media { display: block; width: 56px; height: 56px; overflow: hidden; border-radius: 2px; background: var(--pearl); }
+.mj-cart-suggestion-media img { width: 100%; height: 100%; object-fit: cover; }
+.mj-cart-suggestion span { display: grid; min-width: 0; }
+.mj-cart-suggestion strong { overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.mj-cart-suggestion small { color: var(--mist); }
+.mj-cart-suggestion button { min-height: 38px; padding: 0 14px; border: 1px solid var(--gold); border-radius: var(--radius); background: var(--gold); color: var(--onyx); font-size: 12px; font-weight: 600; }
 .mj-shop .storefront-v3-remove { justify-self: start; padding: 0; border: 0; background: none; color: var(--mist); font-size: 13px; text-decoration: underline; }
 .mj-shop .storefront-v3-empty { padding: 40px 0; color: var(--mist); text-align: center; }
 .mj-shop .storefront-v3-drawer > footer { display: grid; gap: 12px; padding: 20px 24px 24px; border-top: 1px solid var(--line); }
@@ -362,6 +386,24 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
 .mj-shop .storefront-v3-product-availability.available { border: 1px solid #7cc9a066; color: var(--ok); }
 .mj-shop .storefront-v3-product-availability.unavailable { border: 1px solid var(--line); color: var(--mist); }
 .mj-shop .storefront-v3-product-dialog-add { margin-top: auto; }
+
+/* Page produit : même fiche que la fenêtre rapide, posée dans la page */
+.mj-breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 1180px; margin: 0 auto; padding: 18px var(--gutter) 0; color: var(--mist); font-size: 13px; }
+.mj-breadcrumb a { color: var(--mist); text-decoration: none; }
+.mj-breadcrumb a:hover { color: var(--gold); }
+.mj-breadcrumb [aria-current] { overflow: hidden; color: var(--ivory); text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
+.mj-shop .mj-product-page { max-width: 1180px; max-height: none; margin: 18px auto 0; overflow: visible; border: 0; background: transparent; width: auto; padding: 0 var(--gutter); gap: clamp(20px, 4vw, 56px); }
+.mj-shop .mj-product-page .storefront-v3-product-gallery { padding: 0; }
+.mj-shop .mj-product-page .storefront-v3-product-dialog-info { padding: 12px 0 0; }
+.mj-shop .mj-product-page h1 { font-size: clamp(30px, 3.4vw, 46px); line-height: 1.05; text-transform: capitalize; }
+.mj-shop .mj-product-page .storefront-v3-product-dialog-add { margin-top: 10px; }
+.mj-shop .mj-product-page .storefront-v3-product-dialog-info { align-self: start; }
+.mj-product-reassure { margin: 0; color: var(--mist); font-size: 13px; }
+.mj-product-links { display: flex; flex-wrap: wrap; gap: 18px; }
+.mj-product-links a, .mj-product-links button { padding: 0; border: 0; background: none; color: var(--gold); font-size: 14px; font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+.mj-product-missing { display: grid; justify-items: center; gap: 14px; max-width: 640px; margin: 0 auto; padding: clamp(48px, 8vw, 96px) var(--gutter) 0; text-align: center; }
+.mj-product-missing h1 { font-size: clamp(28px, 3vw, 40px); }
+.mj-product-missing p { margin: 0; color: var(--mist); }
 
 .mj-shop .storefront-v3-success { display: grid; justify-items: center; gap: 14px; width: min(440px, 100%); padding: 36px 28px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--onyx-2); text-align: center; }
 .mj-shop .storefront-v3-success > span { display: grid; place-items: center; width: 64px; height: 64px; border: 1px solid var(--gold); border-radius: 50%; color: var(--gold); font-size: 28px; }

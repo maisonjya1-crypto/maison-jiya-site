@@ -2,7 +2,9 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { JY_MARK } from "./brand-marks";
-import type { CatalogItem, StorefrontCatalog, StorefrontLanguage, StorefrontMarketingSection } from "./storefront-types";
+import { productPath } from "../../lib/product-slug";
+import { pickCartSuggestion } from "../../lib/cart-suggestion";
+import type { CatalogItem, StorefrontCatalog, StorefrontReview, StorefrontLanguage, StorefrontMarketingSection } from "./storefront-types";
 import { calculateIndependentPromotions, promotionRuleLabel, type StorefrontPromotion } from "../../lib/storefront-promotions";
 
 type Cart = Record<string, number>;
@@ -242,14 +244,62 @@ function ProductCard({ item, lang, t, add, open, priority = false }: { item: Cat
     </button>
     <div className="storefront-v3-product-info">
       <small>{categoryCopy[lang][item.category] || item.category}</small>
-      <h3><button className="storefront-v3-product-title-button" type="button" onClick={() => open(item)}>{item.name}</button></h3>
+      {/* Vrai lien vers la page du produit (Google, partage), ouvert en fenêtre rapide au clic simple. */}
+      <h3><a className="storefront-v3-product-title-button" href={productPath(item)} onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return; event.preventDefault(); open(item); }}>{item.name}</a></h3>
       <div className="storefront-v3-price"><strong>{money(item.salePrice, lang)}</strong>{item.comparePrice > item.salePrice && <del>{money(item.comparePrice, lang)}</del>}</div>
       <button className="storefront-v3-add-product" type="button" disabled={!item.available} onClick={() => add(item)}>{item.available ? t.addToCart : t.unavailable}</button>
     </div>
   </article>;
 }
 
+const reviewCopy = {
+  fr: { title: "Ils nous font confiance", text: "Messages reçus de nos clients, publiés avec leur accord.", via: "Reçu sur", product: "À propos de" },
+  ar: { title: "يثقون بنا", text: "رسائل توصلنا بها من زبائننا، منشورة بموافقتهم.", via: "عبر", product: "بخصوص" },
+  en: { title: "They trust us", text: "Messages from our customers, published with their consent.", via: "Received on", product: "About" },
+};
+
+function ReviewCard({ review, lang, product }: { review: StorefrontReview; lang: StorefrontLanguage; product?: CatalogItem }) {
+  const c = reviewCopy[lang];
+  const when = review.date ? new Date(`${review.date}T12:00:00Z`).toLocaleDateString(lang === "ar" ? "ar-MA" : lang === "en" ? "en-GB" : "fr-MA", { day: "numeric", month: "short", year: "numeric" }) : "";
+  return <figure className="mj-review">
+    <div className="mj-review-stars" role="img" aria-label={`${review.rating}/5`}>{"★".repeat(review.rating)}<span>{"★".repeat(5 - review.rating)}</span></div>
+    <blockquote>{review.body}</blockquote>
+    {review.imageUrl && <SafeImage src={review.imageUrl} alt="" fallback={null} width={320} height={320} />}
+    <figcaption>
+      <strong>{review.name}{review.city ? ` · ${review.city}` : ""}</strong>
+      <small>{[review.source && `${c.via} ${review.source}`, when].filter(Boolean).join(" · ")}</small>
+      {product && <a href={productPath(product)}>{c.product} : {product.name}</a>}
+    </figcaption>
+  </figure>;
+}
+
 function ProductGalleryModal({ item, lang, t, add, close }: { item: CatalogItem; lang: StorefrontLanguage; t: Copy; add: (item: CatalogItem) => void; close: () => void }) {
+  return <div className="storefront-v3-overlay product-gallery" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+    <section className="storefront-v3-product-dialog" role="dialog" aria-modal="true" aria-label={item.name}>
+      <button className="storefront-v3-product-dialog-close" type="button" onClick={close} aria-label={t.close}>×</button>
+      <ProductDetail item={item} lang={lang} t={t} add={add} variant="dialog" />
+    </section>
+  </div>;
+}
+
+const pageCopy = {
+  fr: { pageLink: "Voir la page du produit", share: "Partager", copied: "Lien copié", back: "Boutique", related: "Vous aimerez aussi", missing: "Cet article n’est plus disponible", missingText: "Il a peut-être été retiré de la boutique. Découvrez les autres modèles.", seeAll: "Voir tous les modèles", delivery: "Livraison partout au Maroc · paiement à la réception · confirmation par téléphone" },
+  ar: { pageLink: "صفحة المنتج", share: "مشاركة", copied: "تم نسخ الرابط", back: "المتجر", related: "قد يعجبك أيضًا", missing: "هذا المنتج لم يعد متوفرًا", missingText: "ربما تمت إزالته من المتجر. اكتشف الموديلات الأخرى.", seeAll: "جميع الموديلات", delivery: "توصيل لجميع أنحاء المغرب · الدفع عند الاستلام · تأكيد بالهاتف" },
+  en: { pageLink: "Open product page", share: "Share", copied: "Link copied", back: "Shop", related: "You may also like", missing: "This item is no longer available", missingText: "It may have been removed from the shop. Discover the other models.", seeAll: "See all models", delivery: "Delivery across Morocco · pay on delivery · phone confirmation" },
+};
+
+function ProductDetail({ item, lang, t, add, variant }: { item: CatalogItem; lang: StorefrontLanguage; t: Copy; add: (item: CatalogItem) => void; variant: "dialog" | "page" }) {
+  const p = pageCopy[lang];
+  const [shareState, setShareState] = useState<"" | "copied">("");
+  async function share() {
+    const url = `${window.location.origin}${productPath(item)}`;
+    try {
+      if (navigator.share) { await navigator.share({ title: item.name, url }); return; }
+      await navigator.clipboard.writeText(url);
+      setShareState("copied");
+      window.setTimeout(() => setShareState(""), 2200);
+    } catch { /* partage annulé */ }
+  }
   const [activeImage, setActiveImage] = useState(0);
   const touchStart = useRef<number | null>(null);
   const images = item.images.length ? item.images : [""];
@@ -267,11 +317,9 @@ function ProductGalleryModal({ item, lang, t, add, close }: { item: CatalogItem;
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [close, imageCount, move]);
+  }, [imageCount, move]);
 
-  return <div className="storefront-v3-overlay product-gallery" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
-    <section className="storefront-v3-product-dialog" role="dialog" aria-modal="true" aria-label={item.name}>
-      <button className="storefront-v3-product-dialog-close" type="button" onClick={close} aria-label={t.close}>×</button>
+  return <>
       <div className="storefront-v3-product-gallery">
         <div
           className="storefront-v3-product-gallery-main"
@@ -286,7 +334,7 @@ function ProductGalleryModal({ item, lang, t, add, close }: { item: CatalogItem;
             move(distance < 0 ? 1 : -1);
           }}
         >
-          {images[activeImage] ? <SafeImage src={images[activeImage]} alt={`${item.name} · ${activeImage + 1}`} fallback={fallback} priority /> : fallback}
+          {images[activeImage] ? <SafeImage src={images[activeImage]} alt={`${item.name} · ${activeImage + 1}`} fallback={fallback} priority width={900} height={900} /> : fallback}
           {imageCount > 1 && <>
             <button className="storefront-v3-gallery-arrow previous" type="button" onClick={() => move(-1)} aria-label="Photo précédente">‹</button>
             <button className="storefront-v3-gallery-arrow next" type="button" onClick={() => move(1)} aria-label="Photo suivante">›</button>
@@ -301,17 +349,21 @@ function ProductGalleryModal({ item, lang, t, add, close }: { item: CatalogItem;
       </div>
       <div className="storefront-v3-product-dialog-info">
         <small>{item.productCode} · {categoryCopy[lang][item.category] || item.category}</small>
-        <h2>{item.name}</h2>
+        {variant === "page" ? <h1>{item.name}</h1> : <h2>{item.name}</h2>}
         {item.description && <p>{item.description}</p>}
         <div className="storefront-v3-product-dialog-price"><strong>{money(item.salePrice, lang)}</strong>{item.comparePrice > item.salePrice && <del>{money(item.comparePrice, lang)}</del>}</div>
         <span className={`storefront-v3-product-availability ${item.available ? "available" : "unavailable"}`}>{item.availability}</span>
         <button className="storefront-v3-product-dialog-add" type="button" disabled={!item.available} onClick={() => add(item)}>{item.available ? t.addToCart : t.unavailable}</button>
+        {variant === "page" && <p className="mj-product-reassure">{p.delivery}</p>}
+        <div className="mj-product-links">
+          {variant === "dialog" && <a href={productPath(item)}>{p.pageLink}</a>}
+          <button type="button" onClick={() => void share()}>{shareState === "copied" ? p.copied : p.share}</button>
+        </div>
       </div>
-    </section>
-  </div>;
+  </>;
 }
 
-export default function StorefrontClientV3({ initialCatalog }: { initialCatalog: StorefrontCatalog | null }) {
+export default function StorefrontClientV3({ initialCatalog, productKey }: { initialCatalog: StorefrontCatalog | null; productKey?: string }) {
   const [catalog, setCatalog] = useState<StorefrontCatalog | null>(initialCatalog);
   const [loading, setLoading] = useState(!initialCatalog);
   const [error, setError] = useState("");
@@ -449,10 +501,11 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   useEffect(() => {
     if (metaConsent !== "accepted") return;
     const pixelId = catalog?.metaPixelId || "";
-    if (pixelId && enableMetaPixel(pixelId)) {
+    // Sur une page produit, la mesure du produit est faite plus bas (une fois le produit trouvé).
+    if (pixelId && enableMetaPixel(pixelId) && !productKey) {
       track("ViewContent", { content_name: "Maison Jiya Boutique", content_type: "product_group" });
     }
-  }, [catalog?.metaPixelId, metaConsent]);
+  }, [catalog?.metaPixelId, metaConsent, productKey]);
 
   useEffect(() => {
     const refreshIfNeeded = () => {
@@ -503,6 +556,13 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   );
   const subtotal = cartPricing.subtotal;
   const total = cartPricing.total;
+  const cartSuggestion = pickCartSuggestion(
+    items,
+    cartLines.map((line) => line.key),
+    cartLines.map((line) => ({ kind: line.item.kind, category: line.item.category, quantity: line.quantity, unitPrice: line.item.salePrice })),
+    activePromotions,
+    cartPricing.applied,
+  );
   const primaryPromotion = activePromotions.slice().sort((left, right) => left.priority - right.priority || left.id - right.id)[0];
 
   function add(item: CatalogItem) {
@@ -642,6 +702,31 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
   const aboutText = localized?.aboutText || "";
   const leadPromotion = displayPromotions[0];
   const chipCategories = (catalog?.categories || []).filter((item) => items.some((entry) => entry.category === item));
+  // Page produit (/boutique/produit/...) : mêmes en-tête, panier et commande que la boutique.
+  const isProductPage = Boolean(productKey);
+  const pageItem = isProductPage && productKey !== "missing" ? items.find((item) => itemKey(item) === productKey) || null : null;
+  const home = isProductPage ? "/boutique" : "";
+  const pageTrack = pageItem ? { code: pageItem.productCode, name: pageItem.name, kind: pageItem.kind, price: pageItem.salePrice } : null;
+  const pageTrackKey = pageTrack ? `${pageTrack.kind}:${pageTrack.code}` : "";
+  const pixelId = catalog?.metaPixelId || "";
+  useEffect(() => {
+    if (metaConsent !== "accepted" || !pageTrack || !pixelId || !enableMetaPixel(pixelId)) return;
+    track("ViewContent", { content_ids: [pageTrack.code], content_name: pageTrack.name, content_type: pageTrack.kind, value: pageTrack.price, currency: "MAD" });
+    // Une seule mesure par produit affiché (le catalogue se rafraîchit sans changer de produit).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metaConsent, pixelId, pageTrackKey]);
+  const relatedItems = pageItem
+    ? [...items.filter((item) => item.category === pageItem.category && itemKey(item) !== itemKey(pageItem)), ...items.filter((item) => item.category !== pageItem.category)].filter((item) => item.available).slice(0, 8)
+    : [];
+  const reviews = catalog?.reviews ?? [];
+  const productsById = new Map(products.map((item) => [item.id, item]));
+  const pageReviews = pageItem
+    ? [...reviews.filter((review) => pageItem.kind === "product" && review.productId === pageItem.id), ...reviews.filter((review) => !review.productId)].slice(0, 6)
+    : [];
+  const renderReviews = (list: StorefrontReview[]) => list.length > 0 && <section className="storefront-v3-section mj-section mj-reviews" id="avis">
+    <header className="mj-section-head"><h2>{reviewCopy[lang].title}</h2><p>{reviewCopy[lang].text}</p></header>
+    <div className="storefront-v3-horizontal mj-review-list">{list.map((review) => <ReviewCard key={review.id} review={review} lang={lang} product={!isProductPage && review.productId ? productsById.get(review.productId) : undefined} />)}</div>
+  </section>;
   const dealHeadline = (promo: StorefrontPromotion) => promo.ruleType === "buy_x_get_y_free"
     ? `${Math.max(1, promo.buyQuantity)}+${Math.max(1, promo.freeQuantity)}`
     : `-${Math.round(promo.percentValue)} %`;
@@ -655,10 +740,10 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         <span className="mj-wordmark"><strong>{brand}</strong><small>L&apos;heure de briller</small></span>
       </a>
       <nav className="storefront-v3-nav-links" aria-label={t.catalogue}>
-        <a href="#catalogue">{t.catalogue}</a>
-        {(displayPromotions.length > 0 || offers.length > 0) && <a href={displayPromotions.length ? "#promotions" : "#offres"}>{t.offers}</a>}
+        <a href={`${home}#catalogue`}>{t.catalogue}</a>
+        {(displayPromotions.length > 0 || offers.length > 0) && <a href={`${home}${displayPromotions.length ? "#promotions" : "#offres"}`}>{t.offers}</a>}
         <a href="#commande">{t.howToOrder}</a>
-        {aboutText && <a href="#a-propos">{ui.about}</a>}
+        {aboutText && <a href={`${home}#a-propos`}>{ui.about}</a>}
       </nav>
       <div className="storefront-v3-header-actions">
         <div className="storefront-v3-language" role="group" aria-label="Language / اللغة"><button type="button" aria-pressed={lang === "fr"} aria-label="Français" className={lang === "fr" ? "active" : ""} onClick={() => setLang("fr")}>FR</button><button type="button" aria-pressed={lang === "ar"} aria-label="العربية" className={lang === "ar" ? "active" : ""} onClick={() => setLang("ar")}>ع</button><button type="button" aria-pressed={lang === "en"} aria-label="English" className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>EN</button></div>
@@ -672,9 +757,31 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     {promotion?.enabled && (promotion.title || promotion.text) && <aside className="storefront-v3-promotion-bar" aria-label={promotion.title || promotion.badge}>
       <span>{promotion.badge || "OFFRE"}</span>
       <div><strong>{promotion.title}</strong>{promotion.text && <small>{promotion.text}</small>}</div>
-      <a href={promotionTarget}>{promotion.ctaLabel || t.offers}</a>
+      <a href={`${home}${promotionTarget}`}>{promotion.ctaLabel || t.offers}</a>
     </aside>}
 
+    {isProductPage && <>
+      <nav className="mj-breadcrumb" aria-label="Fil d’Ariane">
+        <a href="/boutique">{pageCopy[lang].back}</a>
+        {pageItem && <><span aria-hidden="true">/</span><a href={`/boutique#catalogue`}>{categoryCopy[lang][pageItem.category] || pageItem.category}</a><span aria-hidden="true">/</span><span aria-current="page">{pageItem.name}</span></>}
+      </nav>
+      {pageItem
+        ? <section className="mj-product-page storefront-v3-product-dialog" aria-label={pageItem.name}>
+          <ProductDetail key={itemKey(pageItem)} item={pageItem} lang={lang} t={t} add={add} variant="page" />
+        </section>
+        : <section className="mj-product-missing">
+          <h1>{pageCopy[lang].missing}</h1>
+          <p>{pageCopy[lang].missingText}</p>
+          <a className="mj-button" href="/boutique#catalogue">{pageCopy[lang].seeAll}</a>
+        </section>}
+      {relatedItems.length > 0 && <section className="storefront-v3-section mj-section">
+        <header className="mj-section-head"><h2>{pageCopy[lang].related}</h2></header>
+        <div className="storefront-v3-horizontal">{relatedItems.map((item) => <ProductCard key={`related-${itemKey(item)}`} item={item} lang={lang} t={t} add={add} open={openItem} />)}</div>
+      </section>}
+      {renderReviews(pageReviews)}
+    </>}
+
+    {!isProductPage && <>
     {/* Accueil : le logo JIYA dans son cadran (même image que l'ouverture), puis un titre court. */}
     <section className="mj-hero">
       <div className="mj-hero-emblem" aria-hidden="true">
@@ -736,6 +843,9 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       {visibleCount < filtered.length && <button className="storefront-v3-more mj-button ghost" type="button" onClick={() => setVisibleCount((value) => value + INITIAL_VISIBLE)}>{t.loadMore}</button>}
     </section>
 
+    {/* Avis clients : uniquement de vrais messages saisis dans le logiciel (Boutique → Avis clients). */}
+    {renderReviews(reviews.slice(0, 12))}
+
     {/* À propos de nous : texte modifiable dans le logiciel (Boutique → Identité). */}
     {aboutText && <section className="mj-about" id="a-propos">
       <div className="mj-about-mark" aria-hidden="true"><span className="mj-dial-ring" /><JyMark /></div>
@@ -746,6 +856,7 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
         <ul className="mj-about-values">{ui.values.map(([title, text]) => <li key={title}><strong>{title}</strong><span>{text}</span></li>)}</ul>
       </div>
     </section>}
+    </>}
 
     <section className="storefront-v3-how mj-steps" id="commande">
       <h2>{ui.steps}</h2>
@@ -765,7 +876,8 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     <footer className="storefront-v3-footer mj-footer">
       <div><img className="mj-footer-logo" src="/brand/maison-jiya-logo.svg" alt={brand} width={682} height={522} loading="lazy" /><small>{localized?.shippingNote || catalog?.shippingNote}</small></div>
       <nav className="mj-legal-links" aria-label="Informations boutique">
-        {aboutText && <a href="#a-propos">{ui.about}</a>}
+        {aboutText && <a href={`${home}#a-propos`}>{ui.about}</a>}
+        <a href="/boutique/suivi">{lang === "ar" ? "تتبع طلبي" : lang === "en" ? "Track my order" : "Suivre ma commande"}</a>
         <a href="/boutique/mentions-legales">Mentions légales</a>
         <a href="/boutique/conditions-vente">Conditions de vente</a>
         <a href="/boutique/livraison-retours">Livraison et retours</a>
@@ -794,7 +906,18 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
     {cartOpen && <div className="storefront-v3-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setCartOpen(false); }}>
       <aside className="storefront-v3-drawer" role="dialog" aria-modal="true" aria-label={t.yourCart}>
         <header><div><small>{brand}</small><h2>{t.yourCart}</h2></div><button type="button" onClick={() => setCartOpen(false)} aria-label={t.close}>×</button></header>
-        <div className="storefront-v3-cart-lines">{cartLines.length ? cartLines.map((line) => <article key={line.key}><div><strong>{line.item.name}</strong><small>{money(line.item.salePrice, lang)}</small>{cartPricing.applied && (cartPricing.discountedUnits[line.key] || 0) > 0 && <small className="storefront-v3-promo-line">{cartPricing.name} · {cartPricing.discountedUnits[line.key]} article(s)</small>}</div><div className="storefront-v3-qty"><button type="button" aria-label={`${t.quantity} − · ${line.item.name}`} onClick={() => updateQuantity(line.key, line.quantity - 1)}>−</button><span aria-live="polite">{line.quantity}</span><button type="button" aria-label={`${t.quantity} + · ${line.item.name}`} onClick={() => updateQuantity(line.key, line.quantity + 1)}>+</button></div><button className="storefront-v3-remove" type="button" onClick={() => updateQuantity(line.key, 0)}>{t.remove}</button></article>) : <p className="storefront-v3-empty">{t.emptyCart}</p>}</div>
+        <div className="storefront-v3-cart-lines">{cartSuggestion && <aside className="mj-cart-suggestion" aria-label={lang === "ar" ? "اقتراح" : lang === "en" ? "Suggestion" : "Suggestion"}>
+          <p>{cartSuggestion.reason === "promo"
+            ? (lang === "ar" ? `أضف قطعة أخرى: ${promotionRuleLabel(cartSuggestion.promotion!)}` : lang === "en" ? `Add one more piece: ${promotionRuleLabel(cartSuggestion.promotion!)}` : `Ajoutez un article : ${promotionRuleLabel(cartSuggestion.promotion!)}`)
+            : (lang === "ar" ? "لإكمال إطلالتك" : lang === "en" ? "Complete the look" : "Pour compléter")}</p>
+          <div>
+            <a href={productPath(cartSuggestion.item)} className="mj-cart-suggestion-media" onClick={(event) => { event.preventDefault(); setCartOpen(false); openItem(cartSuggestion.item); }}>
+              {cartSuggestion.item.images[0] ? <SafeImage src={cartSuggestion.item.images[0]} alt={cartSuggestion.item.name} fallback={<span />} width={96} height={96} /> : <span />}
+            </a>
+            <span><strong>{cartSuggestion.item.name}</strong><small>{money(cartSuggestion.item.salePrice, lang)}</small></span>
+            <button type="button" onClick={() => add(cartSuggestion.item)}>{lang === "ar" ? "أضف" : lang === "en" ? "Add" : "Ajouter"}</button>
+          </div>
+        </aside>}{cartLines.length ? cartLines.map((line) => <article key={line.key}><div><strong>{line.item.name}</strong><small>{money(line.item.salePrice, lang)}</small>{cartPricing.applied && (cartPricing.discountedUnits[line.key] || 0) > 0 && <small className="storefront-v3-promo-line">{cartPricing.name} · {cartPricing.discountedUnits[line.key]} article(s)</small>}</div><div className="storefront-v3-qty"><button type="button" aria-label={`${t.quantity} − · ${line.item.name}`} onClick={() => updateQuantity(line.key, line.quantity - 1)}>−</button><span aria-live="polite">{line.quantity}</span><button type="button" aria-label={`${t.quantity} + · ${line.item.name}`} onClick={() => updateQuantity(line.key, line.quantity + 1)}>+</button></div><button className="storefront-v3-remove" type="button" onClick={() => updateQuantity(line.key, 0)}>{t.remove}</button></article>) : <p className="storefront-v3-empty">{t.emptyCart}</p>}</div>
         <footer>
           {cartLines.length > 0 && <div className="storefront-v3-cart-subtotal"><span>{t.subtotal}</span><strong>{money(subtotal, lang)}</strong></div>}
           {cartLines.length > 0 && (cartPricing.applied
@@ -830,6 +953,6 @@ export default function StorefrontClientV3({ initialCatalog }: { initialCatalog:
       </section>
     </div>}
 
-    {confirmation && <div className="storefront-v3-overlay"><section className="storefront-v3-success" role="dialog" aria-modal="true" aria-label={t.orderSuccess}><span>✓</span><h2>{t.orderSuccess}</h2><p>{t.orderSuccessText}</p><div><small>{t.orderRef}</small><strong>{confirmation.orderRef}</strong><small>{t.total}</small><strong>{money(confirmation.total, lang)}</strong></div>{waUrl && <a href={waUrl} target="_blank" rel="noreferrer">{t.whatsapp}</a>}<button type="button" onClick={() => setConfirmation(null)}>{t.close}</button></section></div>}
+    {confirmation && <div className="storefront-v3-overlay"><section className="storefront-v3-success" role="dialog" aria-modal="true" aria-label={t.orderSuccess}><span>✓</span><h2>{t.orderSuccess}</h2><p>{t.orderSuccessText}</p><div><small>{t.orderRef}</small><strong>{confirmation.orderRef}</strong><small>{t.total}</small><strong>{money(confirmation.total, lang)}</strong></div><a href={`/boutique/suivi?ref=${encodeURIComponent(confirmation.orderRef)}`}>{lang === "ar" ? "تتبع طلبي" : lang === "en" ? "Track my order" : "Suivre ma commande"}</a>{waUrl && <a href={waUrl} target="_blank" rel="noreferrer">{t.whatsapp}</a>}<button type="button" onClick={() => setConfirmation(null)}>{t.close}</button></section></div>}
   </main>;
 }

@@ -157,6 +157,20 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
   const media = rows<MediaRow>(result[3]);
   const marketingRows = rows<PublicMarketingRow>(result[4]);
   const settingsRows = rows<SettingRow>(result[5]);
+  // Avis clients : chargés à part pour qu'une base pas encore migrée n'empêche jamais la boutique de s'afficher.
+  let reviewRows: Array<{ id: number; name: string; city: string; rating: number; body: string; productId: number | null; source: string; reviewDate: string | null; createdAt: string }> = [];
+  try {
+    reviewRows = (await database.prepare(`
+      SELECT id, customer_name AS name, city, rating, body, product_id AS productId, source,
+             review_date AS reviewDate, created_at AS createdAt
+      FROM storefront_reviews
+      WHERE is_visible = 1
+      ORDER BY sort_order, COALESCE(review_date, created_at) DESC, id DESC
+      LIMIT 60
+    `).all<(typeof reviewRows)[number]>()).results || [];
+  } catch {
+    reviewRows = [];
+  }
   let promotionRows: PublicPromotionRow[] = [];
   try {
     promotionRows = (await database.prepare(`
@@ -342,6 +356,23 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     }];
   });
 
+  const reviews = reviewRows.flatMap((review) => {
+    const name = review.name?.trim() || "";
+    const body = review.body?.trim() || "";
+    if (!name || !body) return [];
+    return [{
+      id: review.id,
+      name,
+      city: review.city?.trim() || "",
+      rating: Math.max(1, Math.min(5, Math.round(Number(review.rating) || 5))),
+      body,
+      productId: review.productId ? Number(review.productId) : null,
+      source: review.source?.trim() || "",
+      date: (review.reviewDate || review.createdAt || "").slice(0, 10),
+      imageUrl: mediaByOwner.get(`review:${review.id}`)?.[0] || "",
+    }];
+  });
+
   return {
     brand,
     announcement,
@@ -351,6 +382,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     metaPixelId: settings.storefront_meta_pixel_id?.trim() || "",
     promotionBanner,
     marketingSections,
+    reviews,
     logoUrl,
     heroImageUrl,
     whatsapp: contactWhatsapp,
