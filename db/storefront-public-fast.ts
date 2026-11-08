@@ -1,4 +1,4 @@
-import { aboutCopy, heroCopy } from "../lib/storefront-copy";
+import { aboutCopy, deliveryCopy, heroCopy } from "../lib/storefront-copy";
 import type { StorefrontCatalog } from "../app/boutique/storefront-types";
 import { normalizeMoroccanPhone } from "./phone";
 import { normalizeEligibleCategories, type StorefrontPromotion } from "../lib/storefront-promotions";
@@ -323,10 +323,10 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
   ]));
 
   const brand = settings.storefront_brand_name?.trim() || settings.account_name?.trim() || "Maison Jiya";
-  const announcement = settings.storefront_announcement?.trim() || "Livraison gratuite partout au Maroc";
+  const announcement = deliveryCopy(settings.storefront_announcement, "fr", "announcement");
   const heroTitle = heroCopy(settings.storefront_hero_title, "fr", "title");
   const heroText = heroCopy(settings.storefront_hero_text, "fr", "text");
-  const shippingNote = settings.storefront_shipping_note?.trim() || "Livraison gratuite partout au Maroc. Notre équipe confirme chaque commande avant préparation.";
+  const shippingNote = deliveryCopy(settings.storefront_shipping_note, "fr", "shippingNote");
   const configuredPromoOfferId = Math.max(0, Number(settings.storefront_promo_offer_id) || 0);
   const promoOfferId = publicOffers.some((offer) => offer.id === configuredPromoOfferId) ? configuredPromoOfferId : null;
   const promotionBanner = {
@@ -391,20 +391,20 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     localized: {
       fr: { announcement, heroTitle, heroText, shippingNote, aboutTitle: aboutCopy(settings.storefront_about_title, "fr", "title"), aboutText: aboutCopy(settings.storefront_about_text, "fr", "text") },
       ar: {
-        announcement: settings.storefront_announcement_ar?.trim() || "توصيل مجاني إلى جميع أنحاء المغرب",
+        announcement: deliveryCopy(settings.storefront_announcement_ar, "ar", "announcement"),
         heroTitle: heroCopy(settings.storefront_hero_title_ar, "ar", "title"),
         heroText: heroCopy(settings.storefront_hero_text_ar, "ar", "text"),
         aboutTitle: aboutCopy(settings.storefront_about_title_ar, "ar", "title"),
         aboutText: aboutCopy(settings.storefront_about_text_ar, "ar", "text"),
-        shippingNote: settings.storefront_shipping_note_ar?.trim() || "توصيل مجاني إلى جميع أنحاء المغرب. يؤكد فريقنا كل طلب قبل التجهيز.",
+        shippingNote: deliveryCopy(settings.storefront_shipping_note_ar, "ar", "shippingNote"),
       },
       en: {
-        announcement: settings.storefront_announcement_en?.trim() || "Free delivery across Morocco",
+        announcement: deliveryCopy(settings.storefront_announcement_en, "en", "announcement"),
         heroTitle: heroCopy(settings.storefront_hero_title_en, "en", "title"),
         heroText: heroCopy(settings.storefront_hero_text_en, "en", "text"),
         aboutTitle: aboutCopy(settings.storefront_about_title_en, "en", "title"),
         aboutText: aboutCopy(settings.storefront_about_text_en, "en", "text"),
-        shippingNote: settings.storefront_shipping_note_en?.trim() || "Free delivery across Morocco. Our team confirms every order before preparation.",
+        shippingNote: deliveryCopy(settings.storefront_shipping_note_en, "en", "shippingNote"),
       },
     },
     products: publicProducts,

@@ -1,4 +1,4 @@
-import { aboutCopy, heroCopy } from "../../../../lib/storefront-copy";
+import { aboutCopy, deliveryCopy, heroCopy } from "../../../../lib/storefront-copy";
 import { getAuthenticatedUser } from "../../../auth";
 import { getRawDb } from "../../../../db";
 import { normalizeMoroccanPhone } from "../../../../db/phone";
@@ -157,7 +157,7 @@ async function snapshot(database: D1Database) {
   return {
     settings: {
       brandName: settings.storefront_brand_name || "Maison Jiya",
-      announcement: settings.storefront_announcement || "Paiement à la livraison partout au Maroc",
+      announcement: deliveryCopy(settings.storefront_announcement, "fr", "announcement"),
       heroTitle: heroCopy(settings.storefront_hero_title, "fr", "title"),
       heroText: heroCopy(settings.storefront_hero_text, "fr", "text"),
       aboutTitle: aboutCopy(settings.storefront_about_title, "fr", "title"),
@@ -166,7 +166,7 @@ async function snapshot(database: D1Database) {
       aboutTextAr: settings.storefront_about_text_ar || "",
       aboutTitleEn: settings.storefront_about_title_en || "",
       aboutTextEn: settings.storefront_about_text_en || "",
-      shippingNote: settings.storefront_shipping_note || "Les éventuels frais de livraison sont confirmés par notre équipe.",
+      shippingNote: deliveryCopy(settings.storefront_shipping_note, "fr", "shippingNote"),
       metaPixelId: settings.storefront_meta_pixel_id || "",
       promoEnabled: settings.storefront_promo_enabled === "1",
       promoBadge: settings.storefront_promo_badge || "",

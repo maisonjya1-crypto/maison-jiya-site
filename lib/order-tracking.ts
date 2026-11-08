@@ -18,6 +18,11 @@ export function trackingStage(status: string): TrackingStage {
 
 export const TRACKING_STEPS: TrackingStage[] = ["received", "confirmed", "shipped", "out_for_delivery", "delivered"];
 
+// Page publique de suivi du transporteur, quand elle existe.
+export function carrierTrackingUrl(carrier: string) {
+  return /force\s*log/i.test(carrier || "") ? "https://forcelog.ma/suivi-de-colis/" : "";
+}
+
 export function normalizeOrderRef(value: unknown) {
   return String(value ?? "").trim().toUpperCase().replace(/\s+/g, "").slice(0, 40);
 }

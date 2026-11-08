@@ -1,6 +1,6 @@
 import { getRawDb } from "../../../../db";
 import { normalizeMoroccanPhone } from "../../../../db/phone";
-import { normalizeOrderRef, trackingStage } from "../../../../lib/order-tracking";
+import { carrierTrackingUrl, normalizeOrderRef, trackingStage } from "../../../../lib/order-tracking";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +80,7 @@ export async function POST(request: Request) {
       total: Number(order.saleAmount) || 0,
       carrier,
       trackingNumber: carrier ? order.trackingNumber || "" : "",
+      trackingUrl: carrier && order.trackingNumber ? carrierTrackingUrl(carrier) : "",
       createdAt: order.createdAt,
       updatedAt: order.updatedAt || order.createdAt,
     }, { headers: { "cache-control": "no-store" } });
