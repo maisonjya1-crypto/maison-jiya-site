@@ -3,7 +3,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { JY_MARK } from "./brand-marks";
 import { productPath } from "../../lib/product-slug";
-import { pickCartSuggestion } from "../../lib/cart-suggestion";
+import { frequentlyBoughtWith, pickCartSuggestion, promotionProgress } from "../../lib/cart-suggestion";
+import { giftBoxTotal, matchesAudience, normalizeAudience, type Audience } from "../../lib/storefront-extras";
 import type { CatalogItem, StorefrontCatalog, StorefrontReview, StorefrontLanguage, StorefrontMarketingSection } from "./storefront-types";
 import { calculateIndependentPromotions, promotionRuleLabel, type StorefrontPromotion } from "../../lib/storefront-promotions";
 
@@ -384,6 +385,9 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
   const [utm, setUtm] = useState({ source: "", medium: "", campaign: "" });
   const [metaConsent, setMetaConsent] = useState<MetaConsent>("loading");
   const [cookieSettingsOpen, setCookieSettingsOpen] = useState(false);
+  const [audience, setAudience] = useState<Audience>("");
+  const [giftBoxChosen, setGiftBoxChosen] = useState(false);
+  const [bundleSkipped, setBundleSkipped] = useState<string[]>([]);
   const refreshInFlight = useRef(false);
   const lastRefreshAt = useRef(0);
   const t = copy[lang];
@@ -420,6 +424,9 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
       setPreferencesLoaded(true);
       const params = new URLSearchParams(window.location.search);
       setUtm({ source: params.get("utm_source") || "", medium: params.get("utm_medium") || "", campaign: params.get("utm_campaign") || "" });
+      // Lien direct vers une gamme : /boutique?gamme=homme#catalogue
+      const gamme = normalizeAudience(params.get("gamme"));
+      if (gamme && gamme !== "unisexe") setAudience(gamme);
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -527,10 +534,11 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
     return items.filter((item) => {
       if (promotionCategoryFilter.length && (item.kind !== "product" || !promotionCategoryFilter.includes(item.category))) return false;
       if (category !== "Tous" && item.category !== category) return false;
+      if (audience && (item.kind !== "product" || !matchesAudience(item.audience, audience))) return false;
       if (!clean) return true;
       return normalize(`${item.name} ${item.productCode} ${item.category} ${item.description}`).includes(clean);
     });
-  }, [category, items, promotionCategoryFilter, query]);
+  }, [audience, category, items, promotionCategoryFilter, query]);
   const visibleItems = filtered.slice(0, visibleCount);
   const bestSellers = products.filter((item) => isBestSeller(item.badge)).slice(0, 8);
   const promotedOffer = promotion?.offerId ? offers.find((item) => item.id === promotion.offerId) : undefined;
@@ -555,7 +563,15 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
     activePromotions,
   );
   const subtotal = cartPricing.subtotal;
-  const total = cartPricing.total;
+  // Option coffret : un coffret par article, ajouté après la promo (recalculé par le serveur).
+  const giftBox = catalog?.giftBox;
+  const giftBoxLine = giftBox ? giftBoxTotal(giftBox, itemCount, giftBoxChosen) : { count: 0, amount: 0 };
+  const total = Math.round((cartPricing.total + giftBoxLine.amount) * 100) / 100;
+  const promoProgress = promotionProgress(
+    cartLines.map((line) => ({ kind: line.item.kind, category: line.item.category, quantity: line.quantity, unitPrice: line.item.salePrice })),
+    activePromotions,
+    cartPricing.applied,
+  );
   const cartSuggestion = pickCartSuggestion(
     items,
     cartLines.map((line) => line.key),
@@ -612,6 +628,7 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
           customerName: form.get("customerName"), phone: form.get("phone"), city: form.get("city"), address: form.get("address"), note: form.get("note"), website: form.get("website"),
           privacyAcknowledged: form.get("privacyAcknowledged") === "yes",
           utmSource: utm.source, utmMedium: utm.medium, utmCampaign: utm.campaign,
+          giftBox: giftBoxLine.count > 0,
           items: cartLines.map((line) => ({ kind: line.item.kind, id: line.item.id, quantity: line.quantity })),
         }),
       });
@@ -715,6 +732,29 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
     // Une seule mesure par produit affiché (le catalogue se rafraîchit sans changer de produit).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metaConsent, pixelId, pageTrackKey]);
+  const hasAudience = products.some((item) => item.audience);
+  const audienceCopy = { fr: { all: "Tous", homme: "Homme", femme: "Femme", forHim: "Pour lui", forHer: "Pour elle", see: "Voir la sélection" }, ar: { all: "الكل", homme: "رجال", femme: "نساء", forHim: "له", forHer: "لها", see: "شاهد التشكيلة" }, en: { all: "All", homme: "Men", femme: "Women", forHim: "For him", forHer: "For her", see: "See the selection" } }[lang];
+  function chooseAudience(next: Audience) {
+    clearPromotionProducts();
+    setAudience(next);
+    setCategory("Tous");
+    setVisibleCount(INITIAL_VISIBLE);
+    window.requestAnimationFrame(() => document.querySelector("#catalogue")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+  const genderTiles = (["homme", "femme"] as const).map((key) => ({ key, item: products.find((item) => item.available && matchesAudience(item.audience, key) && item.images[0]) })).filter((tile) => tile.item);
+  const bundleItems = pageItem && pageItem.kind === "product" ? frequentlyBoughtWith(pageItem, items, activePromotions) : [];
+  const bundleSelected = pageItem ? [pageItem, ...bundleItems.filter((item) => !bundleSkipped.includes(itemKey(item)))] : [];
+  const bundlePricing = calculateIndependentPromotions(bundleSelected.map((item) => ({ key: itemKey(item), kind: item.kind, unitPrice: item.salePrice, quantity: 1, category: item.category })), activePromotions);
+  function addBundle() {
+    if (!pageItem) return;
+    setCart((current) => {
+      const next = { ...current };
+      for (const item of bundleSelected) if (item.available) next[itemKey(item)] = Math.min(20, (next[itemKey(item)] || 0) + 1);
+      return next;
+    });
+    setCartOpen(true);
+    track("AddToCart", { content_ids: bundleSelected.map((item) => item.productCode), content_type: "product", value: bundlePricing.total, currency: "MAD" });
+  }
   const relatedItems = pageItem
     ? [...items.filter((item) => item.category === pageItem.category && itemKey(item) !== itemKey(pageItem)), ...items.filter((item) => item.category !== pageItem.category)].filter((item) => item.available).slice(0, 8)
     : [];
@@ -741,6 +781,7 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
       </a>
       <nav className="storefront-v3-nav-links" aria-label={t.catalogue}>
         <a href={`${home}#catalogue`}>{t.catalogue}</a>
+        {hasAudience && (["homme", "femme"] as const).map((key) => <a key={key} href={`/boutique?gamme=${key}#catalogue`} onClick={(event) => { if (isProductPage) return; event.preventDefault(); chooseAudience(key); }}>{audienceCopy[key]}</a>)}
         {(displayPromotions.length > 0 || offers.length > 0) && <a href={`${home}${displayPromotions.length ? "#promotions" : "#offres"}`}>{t.offers}</a>}
         <a href="#commande">{t.howToOrder}</a>
         {aboutText && <a href={`${home}#a-propos`}>{ui.about}</a>}
@@ -774,6 +815,29 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
           <p>{pageCopy[lang].missingText}</p>
           <a className="mj-button" href="/boutique#catalogue">{pageCopy[lang].seeAll}</a>
         </section>}
+      {pageItem && bundleItems.length > 0 && <section className="mj-section mj-bundle">
+        <header className="mj-section-head"><h2>{lang === "ar" ? "غالبًا ما تُشترى معًا" : lang === "en" ? "Frequently bought together" : "Souvent achetés ensemble"}</h2></header>
+        <div className="mj-bundle-box">
+          <ul>
+            {[pageItem, ...bundleItems].map((item, index) => {
+              const key = itemKey(item);
+              const checked = index === 0 || !bundleSkipped.includes(key);
+              return <li key={key}>
+                <label>
+                  <input type="checkbox" checked={checked} disabled={index === 0} onChange={(event) => setBundleSkipped((current) => event.target.checked ? current.filter((entry) => entry !== key) : [...current, key])} />
+                  <span className="mj-bundle-media">{item.images[0] ? <SafeImage src={item.images[0]} alt="" fallback={<span />} width={120} height={120} /> : <span />}</span>
+                  <span className="mj-bundle-name"><strong>{index === 0 ? (lang === "ar" ? "هذا المنتج: " : lang === "en" ? "This item: " : "Cet article : ") : ""}{item.name}</strong><small>{money(item.salePrice, lang)}</small></span>
+                </label>
+              </li>;
+            })}
+          </ul>
+          <div className="mj-bundle-total">
+            {bundlePricing.applied && <small>{bundlePricing.name} · −{money(bundlePricing.discount, lang)}</small>}
+            <span>{lang === "ar" ? "المجموع" : lang === "en" ? "Total" : "Total"} <strong>{money(bundlePricing.total, lang)}</strong>{bundlePricing.applied && <del>{money(bundlePricing.subtotal, lang)}</del>}</span>
+            <button type="button" className="mj-button" disabled={!pageItem.available} onClick={addBundle}>{lang === "ar" ? `أضف ${bundleSelected.length} إلى السلة` : lang === "en" ? `Add ${bundleSelected.length} to cart` : `Ajouter les ${bundleSelected.length} au panier`}</button>
+          </div>
+        </div>
+      </section>}
       {relatedItems.length > 0 && <section className="storefront-v3-section mj-section">
         <header className="mj-section-head"><h2>{pageCopy[lang].related}</h2></header>
         <div className="storefront-v3-horizontal">{relatedItems.map((item) => <ProductCard key={`related-${itemKey(item)}`} item={item} lang={lang} t={t} add={add} open={openItem} />)}</div>
@@ -799,6 +863,13 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
         <ul className="mj-trust"><li>{t.cashOnDelivery}</li><li>{t.confirmation}</li><li>{t.moroccoDelivery}</li></ul>
       </div>
     </section>
+
+    {genderTiles.length === 2 && <section className="mj-gender" aria-label="Gammes">
+      {genderTiles.map(({ key, item }) => <a key={key} className="mj-gender-tile" href={`/boutique?gamme=${key}#catalogue`} onClick={(event) => { event.preventDefault(); chooseAudience(key); }}>
+        <SafeImage src={item!.images[0]} alt="" fallback={<span />} width={640} height={640} />
+        <span><strong>{key === "homme" ? audienceCopy.forHim : audienceCopy.forHer}</strong><small>{audienceCopy.see}</small></span>
+      </a>)}
+    </section>}
 
     {renderMarketingSections("after_categories")}
 
@@ -828,6 +899,9 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
     <section className="storefront-v3-section mj-section storefront-v3-catalogue" id="catalogue">
       <header className="mj-section-head"><h2>{ui.catalogue}</h2><p>{filtered.length} {t.products}</p></header>
       <div className="mj-filters">
+        {hasAudience && <div className="mj-chips mj-audience-chips" role="group" aria-label="Gamme">
+          {(["", "homme", "femme"] as Audience[]).map((key) => <button key={key || "all"} type="button" aria-pressed={audience === key} className={audience === key ? "active" : ""} onClick={() => { setAudience(key); setVisibleCount(INITIAL_VISIBLE); }}>{key ? audienceCopy[key as "homme" | "femme"] : audienceCopy.all}</button>)}
+        </div>}
         <div className="mj-chips" role="group" aria-label={t.category}>
           {["Tous", ...chipCategories].map((item) => <button key={item} type="button" aria-pressed={category === item} className={category === item ? "active" : ""} onClick={() => { clearPromotionProducts(); setCategory(item); setVisibleCount(INITIAL_VISIBLE); }}>{item === "Tous" ? ui.all : categoryCopy[lang][item] || item}</button>)}
         </div>
@@ -906,6 +980,10 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
     {cartOpen && <div className="storefront-v3-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setCartOpen(false); }}>
       <aside className="storefront-v3-drawer" role="dialog" aria-modal="true" aria-label={t.yourCart}>
         <header><div><small>{brand}</small><h2>{t.yourCart}</h2></div><button type="button" onClick={() => setCartOpen(false)} aria-label={t.close}>×</button></header>
+        {promoProgress && <div className="mj-promo-progress" role="status">
+          <p>{lang === "ar" ? `أضف ${promoProgress.missing} قطعة للاستفادة من: ${promotionRuleLabel(promoProgress.promotion)}` : lang === "en" ? `Add ${promoProgress.missing} more item${promoProgress.missing > 1 ? "s" : ""} to get: ${promotionRuleLabel(promoProgress.promotion)}` : `Plus que ${promoProgress.missing} article${promoProgress.missing > 1 ? "s" : ""} pour profiter de : ${promotionRuleLabel(promoProgress.promotion)}`}</p>
+          <span><i style={{ width: `${Math.round((promoProgress.have / promoProgress.need) * 100)}%` }} /></span>
+        </div>}
         <div className="storefront-v3-cart-lines">{cartSuggestion && <aside className="mj-cart-suggestion" aria-label={lang === "ar" ? "اقتراح" : lang === "en" ? "Suggestion" : "Suggestion"}>
           <p>{cartSuggestion.reason === "promo"
             ? (lang === "ar" ? `أضف قطعة أخرى: ${promotionRuleLabel(cartSuggestion.promotion!)}` : lang === "en" ? `Add one more piece: ${promotionRuleLabel(cartSuggestion.promotion!)}` : `Ajoutez un article : ${promotionRuleLabel(cartSuggestion.promotion!)}`)
@@ -925,6 +1003,11 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
             : activePromotions.length > 0
               ? <p className="storefront-v3-cart-promo-hint"><strong>{primaryPromotion?.name}</strong><br />{primaryPromotion?.description || t.promoHint}</p>
               : null)}
+          {giftBox?.enabled && cartLines.length > 0 && <label className="mj-giftbox-option">
+            <input type="checkbox" checked={giftBoxChosen} onChange={(event) => setGiftBoxChosen(event.target.checked)} />
+            <span><strong>{giftBox.label} · +{money(giftBox.price, lang)}{itemCount > 1 ? (lang === "ar" ? " للقطعة" : lang === "en" ? " each" : " / article") : ""}</strong><small>{giftBox.text}</small></span>
+          </label>}
+          {giftBoxLine.count > 0 && <div className="storefront-v3-cart-subtotal"><span>{giftBox?.label} ×{giftBoxLine.count}</span><strong>+{money(giftBoxLine.amount, lang)}</strong></div>}
           <div className="storefront-v3-cart-total"><span>{t.total}</span><strong>{money(total, lang)}</strong></div>
           <small>{localized?.shippingNote || catalog?.shippingNote}</small><button type="button" disabled={!cartLines.length} onClick={beginCheckout}>{t.checkout}</button><button className="ghost" type="button" onClick={() => setCartOpen(false)}>{t.continueShopping}</button>
         </footer>

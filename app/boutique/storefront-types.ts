@@ -16,6 +16,7 @@ export type CatalogItem = {
   available: boolean;
   lowStock: boolean;
   images: string[];
+  audience?: string;
 };
 
 export type StorefrontLocaleCopy = {
@@ -71,6 +72,7 @@ export type StorefrontCatalog = {
   promotionBanner?: StorefrontPromotionBanner;
   marketingSections?: StorefrontMarketingSection[];
   reviews?: StorefrontReview[];
+  giftBox?: { enabled: boolean; label: string; price: number; text: string };
   logoUrl: string;
   heroImageUrl: string;
   whatsapp: string;

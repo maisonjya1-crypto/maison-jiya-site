@@ -1,4 +1,5 @@
 import { aboutCopy, deliveryCopy, heroCopy } from "../lib/storefront-copy";
+import { giftBoxFromSettings, normalizeAudience } from "../lib/storefront-extras";
 import type { StorefrontCatalog } from "../app/boutique/storefront-types";
 import { normalizeMoroccanPhone } from "./phone";
 import { normalizeEligibleCategories, type StorefrontPromotion } from "../lib/storefront-promotions";
@@ -146,7 +147,9 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
         'storefront_hero_text_ar', 'storefront_hero_text_en',
         'storefront_shipping_note_ar', 'storefront_shipping_note_en',
         'storefront_about_title', 'storefront_about_text', 'storefront_about_title_ar',
-        'storefront_about_text_ar', 'storefront_about_title_en', 'storefront_about_text_en'
+        'storefront_about_text_ar', 'storefront_about_title_en', 'storefront_about_text_en',
+        'storefront_giftbox_enabled', 'storefront_giftbox_label', 'storefront_giftbox_price',
+        'storefront_giftbox_cost', 'storefront_giftbox_text'
       )
     `),
   ]);
@@ -245,6 +248,15 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
   const businessWhatsapp = defaultWhatsApp(settings.whatsapp_numbers);
   const contactWhatsapp = normalizeMoroccanPhone(settings.storefront_contact_whatsapp || "") || businessWhatsapp;
 
+  // Gamme Homme/Femme/Unisexe (migrations/0020), lue à part : sans elle la boutique s'affiche quand même.
+  let audienceRows: Array<{ productId: number; audience: string }> = [];
+  try {
+    audienceRows = (await database.prepare("SELECT product_id AS productId, audience FROM storefront_product_settings WHERE audience <> ''").all<{ productId: number; audience: string }>()).results || [];
+  } catch {
+    audienceRows = [];
+  }
+  const audienceByProduct = new Map(audienceRows.map((row) => [Number(row.productId), normalizeAudience(row.audience)]));
+
   const publicProducts = products.flatMap((product) => {
     const available = product.availabilityMode !== "out_of_stock";
     const images = (mediaByOwner.get(`product:${product.id}`) || []).slice(0, 6);
@@ -266,6 +278,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       available,
       lowStock: false,
       images,
+      audience: audienceByProduct.get(product.id) || "",
     }];
   });
 
@@ -383,6 +396,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
     promotionBanner,
     marketingSections,
     reviews,
+    giftBox: (() => { const box = giftBoxFromSettings(settings); return { enabled: box.enabled, label: box.label, price: box.price, text: box.text }; })(),
     logoUrl,
     heroImageUrl,
     whatsapp: contactWhatsapp,
