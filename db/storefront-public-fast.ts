@@ -372,7 +372,9 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
   const reviews = reviewRows.flatMap((review) => {
     const name = review.name?.trim() || "";
     const body = review.body?.trim() || "";
-    if (!name || !body) return [];
+    const imageUrl = mediaByOwner.get(`review:${review.id}`)?.[0] || "";
+    // Un avis s'affiche s'il a un texte OU une capture (avis WhatsApp en image).
+    if (!name || (!body && !imageUrl)) return [];
     return [{
       id: review.id,
       name,
@@ -382,7 +384,7 @@ export async function loadStorefrontCatalogFast(database: D1Database): Promise<S
       productId: review.productId ? Number(review.productId) : null,
       source: review.source?.trim() || "",
       date: (review.reviewDate || review.createdAt || "").slice(0, 10),
-      imageUrl: mediaByOwner.get(`review:${review.id}`)?.[0] || "",
+      imageUrl,
     }];
   });
 

@@ -18,6 +18,7 @@ test("le logiciel crée, modifie, masque et supprime un avis, avec une photo uni
   assert.match(admin, /action === "saveReview"/);
   assert.match(admin, /action === "deleteReview"/);
   assert.match(admin, /Indiquez le prénom du client/);
+  assert.match(admin, /Le texte est facultatif/);
   assert.match(admin, /Math\.max\(1, Math\.min\(5, integer\(payload\.rating\) \|\| 5\)\)/);
   const media = read("app/api/storefront/admin/media/route.ts");
   assert.match(media, /"promotion", "review"\]\.includes\(ownerType\)/);
@@ -33,10 +34,14 @@ test("la boutique n'affiche que les avis visibles et ne casse pas si la table ma
   const loader = read("db/storefront-public-fast.ts");
   assert.match(loader, /FROM storefront_reviews\s+WHERE is_visible = 1/);
   assert.match(loader, /\} catch \{\n    reviewRows = \[\];/);
+  assert.match(loader, /if \(!name \|\| \(!body && !imageUrl\)\) return \[\];/);
   const client = read("app/boutique/storefront-client-v3.tsx");
   assert.match(client, /\{renderReviews\(reviews\.slice\(0, 12\)\)\}/);
   assert.match(client, /\{renderReviews\(pageReviews\)\}/);
   assert.match(client, /publiés avec leur accord/);
+  assert.match(client, /className=\{`mj-review-shot \$\{review\.body \? "" : "is-main"\}`\}/);
+  assert.match(client, /\{zoomImage && <div className="storefront-v3-overlay mj-zoom"/);
+  assert.match(read("app/storefront-cms-v2-enhancement.tsx"), /masque le numéro, la photo de profil et le nom de famille/);
   // Aucune note moyenne inventée dans les données Google.
   assert.doesNotMatch(read("lib/storefront-structured-data.ts"), /aggregateRating/);
 });

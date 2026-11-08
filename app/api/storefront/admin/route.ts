@@ -524,7 +524,8 @@ export async function POST(request: Request) {
       const customerName = text(payload.customerName, 60);
       const body = text(payload.body, 700);
       if (!customerName) throw new Error("Indiquez le prénom du client (ex. Salma B.).");
-      if (body.length < 5) throw new Error("Recopiez le message du client.");
+      // Le texte est facultatif : un avis peut être une capture WhatsApp ajoutée juste après.
+      if (body && body.length < 3) throw new Error("Le message est trop court.");
       const rating = Math.max(1, Math.min(5, integer(payload.rating) || 5));
       const sources = new Set(["WhatsApp", "Instagram", "Facebook", "TikTok", "Téléphone", "En personne", "Autre"]);
       const source = sources.has(text(payload.source, 30)) ? text(payload.source, 30) : "Autre";

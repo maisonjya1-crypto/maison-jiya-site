@@ -259,13 +259,16 @@ const reviewCopy = {
   en: { title: "They trust us", text: "Messages from our customers, published with their consent.", via: "Received on", product: "About" },
 };
 
-function ReviewCard({ review, lang, product }: { review: StorefrontReview; lang: StorefrontLanguage; product?: CatalogItem }) {
+function ReviewCard({ review, lang, product, zoom }: { review: StorefrontReview; lang: StorefrontLanguage; product?: CatalogItem; zoom: (src: string) => void }) {
   const c = reviewCopy[lang];
   const when = review.date ? new Date(`${review.date}T12:00:00Z`).toLocaleDateString(lang === "ar" ? "ar-MA" : lang === "en" ? "en-GB" : "fr-MA", { day: "numeric", month: "short", year: "numeric" }) : "";
   return <figure className="mj-review">
     <div className="mj-review-stars" role="img" aria-label={`${review.rating}/5`}>{"★".repeat(review.rating)}<span>{"★".repeat(5 - review.rating)}</span></div>
-    <blockquote>{review.body}</blockquote>
-    {review.imageUrl && <SafeImage src={review.imageUrl} alt="" fallback={null} width={320} height={320} />}
+    {review.body && <blockquote>{review.body}</blockquote>}
+    {/* Capture WhatsApp ou photo : affichée en grand, agrandissable en plein écran. */}
+    {review.imageUrl && <button type="button" className={`mj-review-shot ${review.body ? "" : "is-main"}`} onClick={() => zoom(review.imageUrl)} aria-label={lang === "ar" ? "تكبير الصورة" : lang === "en" ? "Enlarge" : "Agrandir la capture"}>
+      <SafeImage src={review.imageUrl} alt={`${review.name} — ${lang === "ar" ? "رسالة" : lang === "en" ? "message" : "message"}`} fallback={null} width={540} height={960} />
+    </button>}
     <figcaption>
       <strong>{review.name}{review.city ? ` · ${review.city}` : ""}</strong>
       <small>{[review.source && `${c.via} ${review.source}`, when].filter(Boolean).join(" · ")}</small>
@@ -388,6 +391,13 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
   const [audience, setAudience] = useState<Audience>("");
   const [giftBoxChosen, setGiftBoxChosen] = useState(false);
   const [bundleSkipped, setBundleSkipped] = useState<string[]>([]);
+  const [zoomImage, setZoomImage] = useState("");
+  useEffect(() => {
+    if (!zoomImage) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setZoomImage(""); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [zoomImage]);
   const refreshInFlight = useRef(false);
   const lastRefreshAt = useRef(0);
   const t = copy[lang];
@@ -765,7 +775,7 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
     : [];
   const renderReviews = (list: StorefrontReview[]) => list.length > 0 && <section className="storefront-v3-section mj-section mj-reviews" id="avis">
     <header className="mj-section-head"><h2>{reviewCopy[lang].title}</h2><p>{reviewCopy[lang].text}</p></header>
-    <div className="storefront-v3-horizontal mj-review-list">{list.map((review) => <ReviewCard key={review.id} review={review} lang={lang} product={!isProductPage && review.productId ? productsById.get(review.productId) : undefined} />)}</div>
+    <div className="storefront-v3-horizontal mj-review-list">{list.map((review) => <ReviewCard key={review.id} review={review} lang={lang} zoom={setZoomImage} product={!isProductPage && review.productId ? productsById.get(review.productId) : undefined} />)}</div>
   </section>;
   const dealHeadline = (promo: StorefrontPromotion) => promo.ruleType === "buy_x_get_y_free"
     ? `${Math.max(1, promo.buyQuantity)}+${Math.max(1, promo.freeQuantity)}`
@@ -974,6 +984,11 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
     {waUrl && <a className={`storefront-v3-wa ${itemCount > 0 && !cartOpen && !checkoutOpen ? "above-cart" : ""}`} href={waUrl} target="_blank" rel="noreferrer" aria-label={t.whatsapp}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0-7.8 13.5L3 21l4.6-1.2A9 9 0 1 0 12 3Z" /></svg>
     </a>}
+
+    {zoomImage && <div className="storefront-v3-overlay mj-zoom" role="dialog" aria-modal="true" onClick={() => setZoomImage("")}>
+      <button type="button" className="storefront-v3-product-dialog-close" onClick={() => setZoomImage("")} aria-label={t.close}>×</button>
+      <SafeImage src={zoomImage} alt="" fallback={null} width={1080} height={1920} />
+    </div>}
 
     {selectedItem && <ProductGalleryModal key={itemKey(selectedItem)} item={selectedItem} lang={lang} t={t} add={add} close={() => setSelectedItem(null)} />}
 
