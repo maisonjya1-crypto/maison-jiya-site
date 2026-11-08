@@ -172,24 +172,6 @@ export async function ensureStorefrontCms(database: D1Database) {
     `),
     database.prepare("CREATE INDEX IF NOT EXISTS storefront_media_owner_idx ON storefront_media (owner_type, owner_id, sort_order, id)"),
     database.prepare("CREATE INDEX IF NOT EXISTS storefront_offer_items_offer_idx ON storefront_offer_items (offer_id)"),
-    // Même définition que migrations/0019_storefront_reviews.sql.
-    database.prepare(`
-      CREATE TABLE IF NOT EXISTS storefront_reviews (
-        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-        customer_name TEXT NOT NULL,
-        city TEXT DEFAULT '' NOT NULL,
-        rating INTEGER DEFAULT 5 NOT NULL CHECK (rating BETWEEN 1 AND 5),
-        body TEXT NOT NULL,
-        product_id INTEGER,
-        source TEXT DEFAULT 'WhatsApp' NOT NULL,
-        review_date TEXT,
-        is_visible INTEGER DEFAULT 1 NOT NULL,
-        sort_order INTEGER DEFAULT 0 NOT NULL,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updated_at TEXT
-      )
-    `),
-    database.prepare("CREATE INDEX IF NOT EXISTS storefront_reviews_visible_order_idx ON storefront_reviews (is_visible, sort_order, id)"),
   ]);
 
   await ensureStorefrontGoogleSheetsSyncTriggers(database);

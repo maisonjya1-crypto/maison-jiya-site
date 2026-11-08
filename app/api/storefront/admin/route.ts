@@ -142,12 +142,14 @@ async function snapshot(database: D1Database) {
     ORDER BY placement, sort_order, id DESC
   `).all<StorefrontMarketingSectionRow>()).results;
 
-  const reviews = (await database.prepare(`
+  // Table créée par migrations/0019_storefront_reviews.sql ; liste vide si la migration n'est pas encore passée.
+  type ReviewRow = { id: number; customerName: string; city: string; rating: number; body: string; productId: number | null; source: string; reviewDate: string | null; isVisible: number; sortOrder: number; createdAt: string };
+  const reviews: ReviewRow[] = await database.prepare(`
     SELECT id, customer_name AS customerName, city, rating, body, product_id AS productId, source,
            review_date AS reviewDate, is_visible AS isVisible, sort_order AS sortOrder, created_at AS createdAt
     FROM storefront_reviews
     ORDER BY sort_order, COALESCE(review_date, created_at) DESC, id DESC
-  `).all<{ id: number; customerName: string; city: string; rating: number; body: string; productId: number | null; source: string; reviewDate: string | null; isVisible: number; sortOrder: number; createdAt: string }>()).results;
+  `).all<ReviewRow>().then((result) => result.results || []).catch(() => []);
 
   const media = await getStorefrontMedia(database);
   const allowedProductIds = new Set(products.map((product) => product.productId));

@@ -26,7 +26,7 @@ test("le logiciel crée, modifie, masque et supprime un avis, avec une photo uni
   assert.match(cms, /switchTab\("reviews"\)\}>Avis clients/);
   assert.match(cms, /N’invente jamais d’avis/);
   assert.match(cms, /uploadMany\("review", review\.id, "gallery", files, 1\)/);
-  assert.match(read("db/storefront-cms.ts"), /CREATE TABLE IF NOT EXISTS storefront_reviews/);
+  assert.doesNotMatch(read("db/storefront-cms.ts"), /CREATE TABLE IF NOT EXISTS storefront_reviews/);
 });
 
 test("la boutique n'affiche que les avis visibles et ne casse pas si la table manque", () => {

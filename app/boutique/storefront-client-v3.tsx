@@ -501,13 +501,11 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
   useEffect(() => {
     if (metaConsent !== "accepted") return;
     const pixelId = catalog?.metaPixelId || "";
-    if (pixelId && enableMetaPixel(pixelId)) {
-      if (pageItem) track("ViewContent", { content_ids: [pageItem.productCode], content_name: pageItem.name, content_type: pageItem.kind, value: pageItem.salePrice, currency: "MAD" });
-      else track("ViewContent", { content_name: "Maison Jiya Boutique", content_type: "product_group" });
+    // Sur une page produit, la mesure du produit est faite plus bas (une fois le produit trouvé).
+    if (pixelId && enableMetaPixel(pixelId) && !productKey) {
+      track("ViewContent", { content_name: "Maison Jiya Boutique", content_type: "product_group" });
     }
-    // Une seule mesure par page : le produit affiché ne change pas sans rechargement.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catalog?.metaPixelId, metaConsent]);
+  }, [catalog?.metaPixelId, metaConsent, productKey]);
 
   useEffect(() => {
     const refreshIfNeeded = () => {
@@ -708,6 +706,15 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
   const isProductPage = Boolean(productKey);
   const pageItem = isProductPage && productKey !== "missing" ? items.find((item) => itemKey(item) === productKey) || null : null;
   const home = isProductPage ? "/boutique" : "";
+  const pageTrack = pageItem ? { code: pageItem.productCode, name: pageItem.name, kind: pageItem.kind, price: pageItem.salePrice } : null;
+  const pageTrackKey = pageTrack ? `${pageTrack.kind}:${pageTrack.code}` : "";
+  const pixelId = catalog?.metaPixelId || "";
+  useEffect(() => {
+    if (metaConsent !== "accepted" || !pageTrack || !pixelId || !enableMetaPixel(pixelId)) return;
+    track("ViewContent", { content_ids: [pageTrack.code], content_name: pageTrack.name, content_type: pageTrack.kind, value: pageTrack.price, currency: "MAD" });
+    // Une seule mesure par produit affiché (le catalogue se rafraîchit sans changer de produit).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metaConsent, pixelId, pageTrackKey]);
   const relatedItems = pageItem
     ? [...items.filter((item) => item.category === pageItem.category && itemKey(item) !== itemKey(pageItem)), ...items.filter((item) => item.category !== pageItem.category)].filter((item) => item.available).slice(0, 8)
     : [];
