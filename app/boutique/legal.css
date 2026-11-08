@@ -2,8 +2,10 @@
 .mj-legal-page *{box-sizing:border-box}
 .mj-legal-header{min-height:90px;background:#090909;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:22px max(22px,calc((100vw - 1100px)/2));gap:20px}
 .mj-legal-header a{color:#fff;text-decoration:none}
-.mj-legal-logo{font-family:Georgia,serif;font-size:28px;letter-spacing:.14em}
-.mj-legal-logo small{display:block;font:9px Arial,sans-serif;letter-spacing:.3em}
+.mj-legal-logo{display:flex;align-items:center;gap:12px;font-family:"Noto Serif Display",Georgia,serif;font-size:15px;letter-spacing:.24em}
+.mj-legal-logo img{height:38px;width:auto}
+.mj-legal-logo span{display:grid;gap:3px;padding-left:12px;border-left:1px solid #322a28}
+.mj-legal-logo small{display:block;font:italic 12px "Noto Serif Display",Georgia,serif;letter-spacing:0;color:#cfa995}
 .mj-legal-back{font-size:12px}
 .mj-legal-content{max-width:850px;margin:0 auto;padding:54px 22px 75px}
 .mj-legal-eyebrow{font-size:10px;letter-spacing:.16em;font-weight:700;color:#927046}
@@ -19,3 +21,28 @@
 .mj-legal-footer{display:flex;justify-content:center;flex-wrap:wrap;gap:16px 26px;padding:30px 20px;background:#141414}
 .mj-legal-footer a{color:#e8e3d7;font-size:12px;text-decoration:none}
 @media(max-width:600px){.mj-legal-header{padding:18px 20px;min-height:78px}.mj-legal-content{padding:34px 18px 60px}.mj-legal-header .mj-legal-back{font-size:11px}}
+
+/* Suivi de commande */
+.mj-track{display:grid;gap:22px;margin-top:28px}
+.mj-track-form{display:grid;gap:14px;padding:24px;border:1px solid #dedbd6;border-radius:12px;background:#fff}
+.mj-track-form label{display:grid;gap:6px;font-size:13px;font-weight:700;color:#3c3835}
+.mj-track-form input{height:48px;padding:0 14px;border:1px solid #cfc9c1;border-radius:8px;font-size:16px}
+.mj-track-form input:focus{outline:2px solid #cfa995;outline-offset:1px}
+.mj-track-form button{min-height:50px;border:0;border-radius:8px;background:#0e0c0c;color:#f3ede4;font-weight:700;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+.mj-track-form button:disabled{opacity:.6}
+.mj-track-form small{color:#6b655f;line-height:1.5}
+.mj-track-error{margin:0;padding:12px 14px;border:1px solid #e0897a;border-radius:8px;background:#fff3f0;color:#9b2f1d;font-weight:700}
+.mj-track-result{padding:24px;border-radius:12px;background:#0e0c0c;color:#f3ede4}
+.mj-track-result header small{color:#cfa995;letter-spacing:.12em;text-transform:uppercase;font-size:11px}
+.mj-track-result h2{margin:6px 0;font:400 32px "Noto Serif Display",Georgia,serif;color:#f3ede4}
+.mj-track-result header p{margin:0;color:#ada39c;font-size:15px;line-height:1.6}
+.mj-track-steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin:22px 0;padding:0;list-style:none}
+.mj-track-steps li{display:grid;gap:8px;font-size:12px;color:#7d746e}
+.mj-track-steps li::before{content:"";height:4px;border-radius:4px;background:#322a28}
+.mj-track-steps li.done,.mj-track-steps li.current{color:#f3ede4}
+.mj-track-steps li.done::before,.mj-track-steps li.current::before{background:#cfa995}
+.mj-track-steps li.current span{font-weight:700}
+.mj-track-result dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:0}
+.mj-track-result dt{color:#ada39c;font-size:12px}
+.mj-track-result dd{margin:2px 0 0;font-size:15px}
+@media(max-width:600px){.mj-track-steps{grid-template-columns:1fr;gap:10px}.mj-track-steps li{grid-template-columns:28px 1fr;align-items:center}.mj-track-steps li::before{height:4px}.mj-track-result dl{grid-template-columns:1fr}}

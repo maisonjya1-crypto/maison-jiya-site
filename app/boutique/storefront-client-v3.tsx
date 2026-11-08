@@ -836,6 +836,7 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
       <div><img className="mj-footer-logo" src="/brand/maison-jiya-logo.svg" alt={brand} width={682} height={522} loading="lazy" /><small>{localized?.shippingNote || catalog?.shippingNote}</small></div>
       <nav className="mj-legal-links" aria-label="Informations boutique">
         {aboutText && <a href={`${home}#a-propos`}>{ui.about}</a>}
+        <a href="/boutique/suivi">{lang === "ar" ? "تتبع طلبي" : lang === "en" ? "Track my order" : "Suivre ma commande"}</a>
         <a href="/boutique/mentions-legales">Mentions légales</a>
         <a href="/boutique/conditions-vente">Conditions de vente</a>
         <a href="/boutique/livraison-retours">Livraison et retours</a>
@@ -911,6 +912,6 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
       </section>
     </div>}
 
-    {confirmation && <div className="storefront-v3-overlay"><section className="storefront-v3-success" role="dialog" aria-modal="true" aria-label={t.orderSuccess}><span>✓</span><h2>{t.orderSuccess}</h2><p>{t.orderSuccessText}</p><div><small>{t.orderRef}</small><strong>{confirmation.orderRef}</strong><small>{t.total}</small><strong>{money(confirmation.total, lang)}</strong></div>{waUrl && <a href={waUrl} target="_blank" rel="noreferrer">{t.whatsapp}</a>}<button type="button" onClick={() => setConfirmation(null)}>{t.close}</button></section></div>}
+    {confirmation && <div className="storefront-v3-overlay"><section className="storefront-v3-success" role="dialog" aria-modal="true" aria-label={t.orderSuccess}><span>✓</span><h2>{t.orderSuccess}</h2><p>{t.orderSuccessText}</p><div><small>{t.orderRef}</small><strong>{confirmation.orderRef}</strong><small>{t.total}</small><strong>{money(confirmation.total, lang)}</strong></div><a href={`/boutique/suivi?ref=${encodeURIComponent(confirmation.orderRef)}`}>{lang === "ar" ? "تتبع طلبي" : lang === "en" ? "Track my order" : "Suivre ma commande"}</a>{waUrl && <a href={waUrl} target="_blank" rel="noreferrer">{t.whatsapp}</a>}<button type="button" onClick={() => setConfirmation(null)}>{t.close}</button></section></div>}
   </main>;
 }
