@@ -1310,3 +1310,25 @@
   .app-shell .today-card { min-height: 0; padding: 16px 18px; }
   .app-shell .today-value { font-size: 28px; }
 }
+
+/* Client à risque, messages WhatsApp et taux par produit/ville */
+.customer-risk-badge { display: inline-block; margin-inline-start: 6px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 1.5; vertical-align: middle; white-space: nowrap; }
+.mobile-order-client .customer-risk-badge { margin: 4px 0 2px; }
+.customer-risk-badge.risk-trusted { background: rgba(31, 138, 84, .12); color: #1f7a4d; }
+.customer-risk-badge.risk-watch { background: rgba(214, 140, 18, .16); color: #9a5b00; }
+.customer-risk-badge.risk-high { background: rgba(196, 48, 43, .14); color: #b0261f; }
+.customer-risk-note { margin: 8px 0 0; padding: 8px 10px; border-radius: 10px; font-size: 13px; line-height: 1.45; }
+.customer-risk-note strong { margin-inline-end: 4px; }
+.customer-risk-note.risk-new { background: rgba(120, 120, 140, .1); }
+.customer-risk-note.risk-trusted { background: rgba(31, 138, 84, .1); color: #1f6e46; }
+.customer-risk-note.risk-watch { background: rgba(214, 140, 18, .14); color: #8a5200; }
+.customer-risk-note.risk-high { background: rgba(196, 48, 43, .12); color: #a1231d; }
+.order-whatsapp-templates { display: grid; gap: 8px; margin-top: 10px; }
+.order-whatsapp-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.order-whatsapp-head [role="group"] { display: flex; gap: 2px; padding: 2px; border: 1px solid rgba(120, 110, 130, .3); border-radius: 8px; }
+.order-whatsapp-head button { min-width: 40px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.order-whatsapp-head button.active { background: #1f9d55; color: #fff; }
+.order-whatsapp-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.order-whatsapp-list a { padding: 6px 10px; border: 1px solid rgba(31, 157, 85, .45); border-radius: 999px; color: #157a42; font-size: 12px; font-weight: 700; text-decoration: none; background: rgba(31, 157, 85, .08); }
+.order-whatsapp-list a:hover { background: #1f9d55; color: #fff; }
+.report-rate-grid td small { display: block; opacity: .7; font-size: 11px; }

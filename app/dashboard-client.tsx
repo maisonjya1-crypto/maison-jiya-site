@@ -17,6 +17,8 @@ import { buildDashboardPilotage } from "../lib/dashboard-pilotage";
 import { buildDashboardAlerts } from "../lib/dashboard-alerts";
 import { buildDashboardDecisions } from "../lib/dashboard-decisions";
 import { categoryForNature, productNatureOptions, suggestProductCode } from "../lib/product-code";
+import { buildCustomerIndex, customerHistory, outcomeRates, riskLabel, whatsappLink, whatsappTemplates, type InsightOrder, type RateRow, type WhatsappLang } from "../lib/order-insights";
+import { PUBLIC_SITE_URL } from "../lib/site";
 
 type Order = {
   id: number;
@@ -700,10 +702,37 @@ const exactOrderProfit = (order: Order) => {
   }
   return orderContributionBeforeGlobalAds(order);
 };
+const TRACKING_PAGE_URL = `${PUBLIC_SITE_URL}/boutique/suivi`;
 const whatsappUrl = (phone: string | null, orderRef: string) => {
   const digits = (phone || "").replace(/\D/g, "").replace(/^0/, "212");
   return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(`Bonjour, nous vous contactons concernant votre commande Maison Jiya ${orderRef}.`)}` : "";
 };
+
+/* Badge « client à risque » : historique du même numéro (hors commande affichée). */
+function CustomerRiskBadge({ order, index }: { order: Order; index: Map<string, InsightOrder[]> }) {
+  const info = riskLabel(customerHistory(index, order as InsightOrder));
+  if (info.level === "new") return null;
+  return <span className={`customer-risk-badge risk-${info.level}`} title={info.detail}>{info.short}</span>;
+}
+
+/* Messages WhatsApp prêts à envoyer depuis une commande (français ou arabe). */
+function OrderWhatsappTemplates({ order }: { order: Order }) {
+  const [lang, setLang] = useState<WhatsappLang>("fr");
+  if (!order.phone || order.phone === STORE_ANONYMOUS_PHONE) return null;
+  const templates = whatsappTemplates(order as InsightOrder, { lang, trackingBaseUrl: TRACKING_PAGE_URL });
+  return <div className="order-whatsapp-templates">
+    <div className="order-whatsapp-head">
+      <strong>Messages WhatsApp</strong>
+      <div role="group" aria-label="Langue du message">
+        <button type="button" className={lang === "fr" ? "active" : ""} aria-pressed={lang === "fr"} onClick={() => setLang("fr")}>FR</button>
+        <button type="button" className={lang === "ar" ? "active" : ""} aria-pressed={lang === "ar"} onClick={() => setLang("ar")}>عربي</button>
+      </div>
+    </div>
+    <div className="order-whatsapp-list">
+      {templates.map((template) => <a key={template.key} href={whatsappLink(order.phone, template.text)} target="_blank" rel="noopener noreferrer" title={template.text} dir={lang === "ar" ? "rtl" : "ltr"}>{template.label}</a>)}
+    </div>
+  </div>;
+}
 const themeOptions: { key: ThemeKey; name: string; mode: "Clair" | "Sombre"; description: string; colors: string[] }[] = [
   { key: "mauve-froid", name: "Mauve froid", mode: "Clair", description: "Mauve élégant, blanc doux et rose froid.", colors: ["#6f5680", "#a77ea7", "#f7f4f8", "#ffffff"] },
   { key: "rose-poudre", name: "Rose poudré", mode: "Clair", description: "Rose subtil, prune douce et blanc rosé.", colors: ["#a85e78", "#d190a5", "#fff7f8", "#ffffff"] },
@@ -1402,7 +1431,7 @@ export default function DashboardClient() {
         {loading ? <Loading /> : <Page active={active} setActive={setActive} data={data} metrics={metrics} delivery={delivery} open={openEntry} edit={openOrder} print={printOrderSlip} remove={deleteOrder} editEntity={openEntity} removeEntity={deleteEntity} restoreProduct={restoreProduct} moveStock={openStock} countInventory={openInventory} submit={submit} />}
       </section>
       {modal && <EntryModal kind={modal} carrierNames={carrierNames} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} purchases={data.purchases} supplierInvoices={data.supplierInvoices} ads={data.ads} inventorySession={data.inventorySessions.find((session) => session.status === "En cours") || null} close={() => setModal(null)} submit={submit} />}
-      {selectedOrder && <OrderModal order={selectedOrder} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} ads={data.ads} close={() => setSelectedOrder(null)} print={() => printOrderSlip(selectedOrder)} submit={submit} />}
+      {selectedOrder && <OrderModal order={selectedOrder} allOrders={data.orders} history={data.orderStatusHistory.filter((entry) => entry.orderId === selectedOrder.id)} carrierNames={carrierNames} ads={data.ads} close={() => setSelectedOrder(null)} print={() => printOrderSlip(selectedOrder)} submit={submit} />}
       {selectedEntity && <EntityModal selection={selectedEntity} products={data.products.filter((product) => !product.archivedAt)} suppliers={data.suppliers} close={() => setSelectedEntity(null)} submit={submit} />}
       {stockSelection && <StockMovementModal selection={stockSelection} close={() => setStockSelection(null)} submit={submit} />}
       {inventorySelection && <InventoryCountModal product={inventorySelection} close={() => setInventorySelection(null)} submit={submit} />}
@@ -1971,7 +2000,7 @@ function Page({
       <section className="content-grid">
         <article className="panel orders-panel">
           <PanelHead kicker="Opérations" title="Commandes récentes" action="Voir tout →" onClick={() => setActive("Commandes")} />
-          <OrderTable orders={data.orders.slice(0, 5)} onEdit={edit} onPrint={print} onDelete={remove} />
+          <OrderTable orders={data.orders.slice(0, 5)} allOrders={data.orders} onEdit={edit} onPrint={print} onDelete={remove} />
         </article>
         <article className="panel delivery-panel">
           <PanelHead kicker="Livraison" title="État des colis" total={String(deliveryOrderCount)} />
@@ -3790,7 +3819,8 @@ function OrdersPage({ orders, onAdd, onEdit, onPrint, onDelete }: { orders: Orde
     </section>
   );
 }
-function OrderTable({ orders, onEdit, onPrint, onDelete }: { orders: Order[]; onEdit: (o: Order) => void; onPrint: (o: Order) => void; onDelete: (o: Order) => void }) {
+function OrderTable({ orders, allOrders, onEdit, onPrint, onDelete }: { orders: Order[]; allOrders?: Order[]; onEdit: (o: Order) => void; onPrint: (o: Order) => void; onDelete: (o: Order) => void }) {
+  const customerIndex = useMemo(() => buildCustomerIndex((allOrders || orders) as InsightOrder[]), [allOrders, orders]);
   return (
     <>
       <div className="desktop-order-table table-scroll">
@@ -3817,6 +3847,7 @@ function OrderTable({ orders, onEdit, onPrint, onDelete }: { orders: Order[]; on
                   </td>
                   <td>
                     {o.customerName}
+                    <CustomerRiskBadge order={o} index={customerIndex} />
                     <small>{o.products} · {o.source} · {o.fulfillmentType === "Magasin physique" ? "Magasin" : "Livraison"}</small>
                   </td>
                   <td>{o.city}</td>
@@ -3854,6 +3885,7 @@ function OrderTable({ orders, onEdit, onPrint, onDelete }: { orders: Order[]; on
               </div>
               <div className="mobile-order-client">
                 <strong>{o.customerName}</strong>
+                <CustomerRiskBadge order={o} index={customerIndex} />
                 <small>{o.city} · {o.products}</small>
               </div>
               <div className="mobile-order-money">
@@ -6002,6 +6034,12 @@ function groupOrderAnalysis(orders: Order[], label: (order: Order) => string): A
   });
   return [...grouped.values()].sort((left, right) => right.profit - left.profit);
 }
+/* Taux par produit / ville : confirmation (confirmées / décidées), livraison et retour (sur colis terminés). */
+function RateTable({ title, rows }: { title: string; rows: RateRow[] }) {
+  const pct = (value: number | null) => value === null ? "—" : `${value.toFixed(value % 1 ? 1 : 0)} %`;
+  const tone = (value: number | null, good: number, bad: number, higherIsBetter = true) => value === null ? "" : (higherIsBetter ? value >= good : value <= good) ? "money-positive" : (higherIsBetter ? value < bad : value > bad) ? "money-negative" : "";
+  return <section className="panel report-table"><PanelHead kicker="90 derniers jours" title={title} total={`${rows.length} ligne${rows.length === 1 ? "" : "s"}`} /><div className="table-scroll"><table><thead><tr><th>Élément</th><th>Commandes</th><th>Confirmation</th><th>Livraison</th><th>Retours</th><th>En attente</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={row.label}><td><strong>{row.label}</strong></td><td>{row.orders}</td><td className={tone(row.confirmationRate, 70, 50)}>{pct(row.confirmationRate)}<small>{row.confirmed} / {row.confirmed + row.cancelled}</small></td><td className={tone(row.deliveryRate, 80, 60)}>{pct(row.deliveryRate)}<small>{row.delivered} / {row.delivered + row.returned}</small></td><td className={tone(row.returnRate, 20, 40, false)}>{pct(row.returnRate)}<small>{row.returned} retour{row.returned === 1 ? "" : "s"}</small></td><td>{row.pending}</td></tr>) : <tr><td colSpan={6}>Aucune commande sur la période.</td></tr>}</tbody></table></div></section>;
+}
 function AnalysisTable({ title, rows }: { title: string; rows: AnalysisRow[] }) {
   return <section className="panel report-table"><PanelHead kicker="Analyse automatique" title={title} total={`${rows.length} ligne${rows.length === 1 ? "" : "s"}`} /><div className="table-scroll"><table><thead><tr><th>Élément</th><th>Commandes</th><th>CA</th><th>Marge commandes</th><th>Taux</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={row.label}><td><strong>{row.label}</strong></td><td>{row.orders}</td><td>{money(row.revenue)}</td><td className={moneyTone(row.profit)}>{money(row.profit)}</td><td>{row.revenue ? `${((row.profit / row.revenue) * 100).toFixed(1)}%` : "0%"}</td></tr>) : <tr><td colSpan={5}>Aucune donnée pour le moment.</td></tr>}</tbody></table></div></section>;
 }
@@ -6932,6 +6970,10 @@ function ReportsPage({ data }: { data: Data }) {
     ...dormantProducts.map((product) => ({ key: `dormant-${product.id}`, level: "warning", title: `${product.name} : stock dormant`, detail: `${product.stockQuantity} unité(s) sans sortie depuis au moins 45 jours` })),
   ];
   const platformRows = groupOrderAnalysis(completed.filter((order) => ["Facebook", "Instagram", "TikTok", "WhatsApp"].includes(order.source)), (order) => order.source);
+  const rateStartKey = businessDateKey(new Date(now.getTime() - 89 * 86_400_000));
+  const rateOrders = data.orders.filter((order) => businessDateKey(order.createdAt) >= rateStartKey) as InsightOrder[];
+  const productRates = outcomeRates(rateOrders, (order) => order.products);
+  const cityRates = outcomeRates(rateOrders, (order) => order.city);
   const campaignRows = groupOrderAnalysis(completed.filter((order) => order.campaign), (order) => order.campaign);
   return <div className="reports-page">
     <section className="report-automation-banner"><div><span>↻</span><div><strong>Rapports automatiques actifs</strong><p>Les chiffres quotidiens, hebdomadaires et mensuels se recalculent à chaque commande, paiement, retour, achat, dépense ou publicité.</p></div></div><small>Actualisé maintenant</small></section>
@@ -6939,6 +6981,7 @@ function ReportsPage({ data }: { data: Data }) {
     <section className="financial-account-grid"><article><span>Caisse / espèces</span><strong className={moneyTone(storeCash)}>{money(storeCash)}</strong><small>Ventes magasin et mouvements payés en espèces</small></article><article><span>Banque / carte</span><strong className={moneyTone(bank)}>{money(bank)}</strong><small>Virements et paiements affectés à Banque ou Carte</small></article><article><span>Autres comptes</span><strong className={moneyTone(otherAccounts)}>{money(otherAccounts)}</strong><small>Mouvements explicitement classés « Autre »</small></article><article><span>Argent transporteurs</span><strong>{money(carrierMoney)}</strong><small>Livré, en attente de virement</small></article><article><span>Créances en cours</span><strong>{money(receivables)}</strong><small>Confirmé ou en transit</small></article></section>
     <section className="allocation-report"><div><span className="card-kicker">Mouvements automatiques enregistrés</span><h2>{money(positiveProfit)} affectés</h2><p>Chaque vente encaissée crée trois enveloppes théoriques à partir de la marge commande. Les dépenses Meta réelles et charges restent déduites globalement pour éviter le double comptage.</p></div><div><article><span>Réinvestissement · {allocationPolicy.reinvestment}%</span><strong>{money(allocationAmount("Réinvestissement"))}</strong></article><article><span>Salaire personnel · {allocationPolicy.salary}%</span><strong>{money(allocationAmount("Salaire personnel"))}</strong></article><article><span>Fonds d’urgence · {allocationPolicy.emergency}%</span><strong>{money(allocationAmount("Fonds d’urgence"))}</strong></article></div></section>
     <section className="panel alerts-panel"><PanelHead kicker="Surveillance automatique" title="Alertes actives" total={String(alerts.length)} />{alerts.length ? <div className="alerts-list">{alerts.map((alert) => <article className={alert.level} key={alert.key}><span aria-hidden="true">{alert.level === "danger" ? "!" : "◷"}</span><div><strong>{alert.title}</strong><small>{alert.detail}</small></div></article>)}</div> : <div className="pending-empty">✓ Aucun stock critique, colis bloqué ou encaissement en retard détecté.</div>}</section>
+    <div className="report-analysis-grid report-rate-grid"><RateTable title="Taux de confirmation, livraison et retour par produit" rows={productRates} /><RateTable title="Taux de confirmation, livraison et retour par ville" rows={cityRates} /></div>
     <div className="report-analysis-grid"><AnalysisTable title="Marge commandes par produit" rows={groupOrderAnalysis(completed, (order) => order.products)} /><AnalysisTable title="Marge commandes par ville" rows={groupOrderAnalysis(completed, (order) => order.city)} /><AnalysisTable title="Marge commandes par source" rows={groupOrderAnalysis(completed, (order) => order.source)} /><AnalysisTable title="Marge commandes par agence" rows={groupOrderAnalysis(completed.filter((order) => order.fulfillmentType !== "Magasin physique"), (order) => order.carrier)} /><AnalysisTable title="Facebook, Instagram, TikTok et WhatsApp" rows={platformRows} /><AnalysisTable title="Campagnes reliées aux commandes" rows={campaignRows} /></div>
     <section className="panel exact-profit-panel"><PanelHead kicker="Rentabilité" title="Marge par commande avant dépenses globales" total={`${completed.length} livrée${completed.length === 1 ? "" : "s"}`} /><p className="profitability-note">Cette marge retire le produit, la livraison, les frais et les retours. La dépense Meta réelle et les charges d’exploitation sont déduites au niveau global, pas artificiellement réparties sur chaque commande.</p><div className="table-scroll"><table><thead><tr><th>Commande</th><th>Produit</th><th>Source / campagne</th><th>Vente</th><th>Produit</th><th>Livraison</th><th>Frais</th><th>Pub attribuée*</th><th>Retour</th><th>Marge commande</th></tr></thead><tbody>{completed.slice(0, 200).map((order) => <tr key={order.id}><td><strong>{order.orderRef}</strong><small>{dateLabel(deliveryRecognitionDate(order, data.orderStatusHistory) || order.createdAt)}</small></td><td>{order.products}</td><td>{order.source}<small>{order.campaign || "Sans campagne"}</small></td><td>{money(order.saleAmount)}</td><td>{money(order.productCost)}</td><td>{money(order.shippingCost)}</td><td>{money(order.fees)}</td><td>{money(order.adCost)}</td><td>{money(order.returnCost)}</td><td className={moneyTone(exactOrderProfit(order))}><strong>{money(exactOrderProfit(order))}</strong></td></tr>)}</tbody></table></div></section>
   </div>;
@@ -8012,7 +8055,8 @@ function EntryModal({ kind, carrierNames, products, suppliers, purchases, suppli
     </div>
   );
 }
-function OrderModal({ order, history, carrierNames, ads, close, print, submit }: { order: Order; history: OrderStatusHistory[]; carrierNames: string[]; ads: Ad[]; close: () => void; print: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+function OrderModal({ order, allOrders = [], history, carrierNames, ads, close, print, submit }: { order: Order; allOrders?: Order[]; history: OrderStatusHistory[]; carrierNames: string[]; ads: Ad[]; close: () => void; print: () => void; submit: (a: string, v: Record<string, FormDataEntryValue>) => Promise<void> }) {
+  const risk = useMemo(() => riskLabel(customerHistory(buildCustomerIndex(allOrders as InsightOrder[]), order as InsightOrder)), [allOrders, order]);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [selectedStatus, setSelectedStatus] = useState(order.status);
@@ -8042,6 +8086,8 @@ function OrderModal({ order, history, carrierNames, ads, close, print, submit }:
             <p>
               {order.products} · {money(order.saleAmount)}
             </p>
+            {order.fulfillmentType !== "Magasin physique" && <p className={`customer-risk-note risk-${risk.level}`}><strong>{risk.short}</strong> {risk.detail}</p>}
+            <OrderWhatsappTemplates order={order} />
           </div>
           <button onClick={close} aria-label="Fermer">
             ×
