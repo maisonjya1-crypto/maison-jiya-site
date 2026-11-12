@@ -869,6 +869,7 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
         <div className="mj-hero-actions">
           <a className="mj-button" href="#catalogue">{ui.heroCta}</a>
           {waUrl && <a className="mj-button ghost" href={waUrl} target="_blank" rel="noreferrer">{t.whatsapp}</a>}
+          <a className="mj-button ghost" href="/boutique/suivi">{lang === "ar" ? "تتبع طلبي" : lang === "en" ? "Track my order" : "Suivre ma commande"}</a>
         </div>
         <ul className="mj-trust"><li>{t.cashOnDelivery}</li><li>{t.confirmation}</li><li>{t.moroccoDelivery}</li></ul>
       </div>
@@ -964,7 +965,7 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
         <a href="/boutique/suivi">{lang === "ar" ? "تتبع طلبي" : lang === "en" ? "Track my order" : "Suivre ma commande"}</a>
         <a href="/boutique/mentions-legales">Mentions légales</a>
         <a href="/boutique/conditions-vente">Conditions de vente</a>
-        <a href="/boutique/livraison-retours">Livraison et retours</a>
+        <a href="/boutique/livraison-retours">Livraison et paiement</a>
         <a href="/boutique/confidentialite">Confidentialité</a>
         {catalog?.metaPixelId && <button type="button" onClick={() => setCookieSettingsOpen(true)}>Cookies publicitaires</button>}
       </nav>
@@ -1043,7 +1044,7 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
             <input name="privacyAcknowledged" type="checkbox" required value="yes" />
             <span>{lang === "ar" ? <>أوافق على استخدام بياناتي لتأكيد طلبي وتسليمه، وقد اطلعت على <a href="/boutique/confidentialite" target="_blank" rel="noopener noreferrer">سياسة الخصوصية</a>.</> : lang === "en" ? <>I agree to the use of my details to confirm and deliver my order, and I have read the <a href="/boutique/confidentialite" target="_blank" rel="noopener noreferrer">privacy policy</a>.</> : <>J&apos;accepte l&apos;utilisation de mes coordonnées pour confirmer et livrer ma commande, et j&apos;ai pris connaissance de la <a href="/boutique/confidentialite" target="_blank" rel="noopener noreferrer">politique de confidentialité</a>.</>}</span>
           </label>
-          <p className="mj-checkout-legal-link"><a href="/boutique/conditions-vente" target="_blank" rel="noopener noreferrer">Conditions de vente</a> · <a href="/boutique/livraison-retours" target="_blank" rel="noopener noreferrer">Livraison et retours</a></p>
+          <p className="mj-checkout-legal-link"><a href="/boutique/conditions-vente" target="_blank" rel="noopener noreferrer">Conditions de vente</a> · <a href="/boutique/livraison-retours" target="_blank" rel="noopener noreferrer">Livraison et paiement</a></p>
           {submitError && <p className="storefront-v3-submit-error" role="alert">{submitError}</p>}
           <button className="storefront-v3-submit" disabled={submitting}>{submitting ? t.sending : t.confirmOrder}</button>
           <small className="storefront-v3-cod">{t.cashOnDelivery} · {t.confirmation}</small>

@@ -15,7 +15,7 @@ export default function ConditionsVente() {
       <p>Le paiement est effectué à la livraison. La zone desservie, les frais et les délais applicables sont communiqués avant confirmation. Aucune carte bancaire n&apos;est recueillie par le site.</p>
     </section>
     <section><h2>4. Retours et réclamations</h2>
-      <p>Les droits du consommateur prévus par la loi marocaine n° 31-08 s&apos;appliquent, notamment les droits liés à la vente à distance et à la conformité, selon les conditions et exceptions légales. Pour organiser un retour ou signaler un litige, contactez-nous avec la référence de commande. Voir <a href="/boutique/livraison-retours">Livraison et retours</a>.</p>
+      <p>Les droits du consommateur prévus par la loi marocaine n° 31-08 s&apos;appliquent, notamment les droits liés à la vente à distance et à la conformité, selon les conditions et exceptions légales. Pour organiser un retour ou signaler un litige, contactez-nous avec la référence de commande. Voir <a href="/boutique/livraison-retours">Livraison et paiement</a>.</p>
     </section>
     <section><h2>5. Données personnelles</h2>
       <p>Les renseignements fournis lors d&apos;une commande sont utilisés pour son traitement. Consultez notre <a href="/boutique/confidentialite">politique de confidentialité</a> pour connaître vos droits et les traitements réalisés.</p>
