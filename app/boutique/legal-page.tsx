@@ -22,7 +22,7 @@ export default function LegalPage({ title, introduction, children }: { title: st
       <a href="/boutique/suivi">Suivre ma commande</a>
       <a href="/boutique/mentions-legales">Mentions légales</a>
       <a href="/boutique/confidentialite">Confidentialité</a>
-      <a href="/boutique/livraison-retours">Livraison et retours</a>
+      <a href="/boutique/livraison-retours">Livraison et paiement</a>
       <a href="/boutique/conditions-vente">Conditions de vente</a>
     </footer>
   </main>;
