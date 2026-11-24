@@ -9,6 +9,7 @@ export function robotsTxt() {
     "User-agent: *",
     "Allow: /",
     "Allow: /api/storefront/media/",
+    "Allow: /api/storefront/feed",
     "Disallow: /api/",
     "Disallow: /telecharger-app",
     "",

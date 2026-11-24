@@ -7,6 +7,7 @@ import { syncMetaAds } from "../db/meta";
 import { reconcileOrderAllocations } from "../db/allocations";
 import { processGoogleSheetsSyncQueue } from "../db/google-sheets-sync";
 import { getRawDb } from "../db";
+import { sendDeliveredPurchases } from "../lib/meta-capi";
 import { seoFileResponse } from "../lib/seo-files";
 import { productPath } from "../lib/product-slug";
 import { loadStorefrontCatalogFast } from "../db/storefront-public-fast";
@@ -92,7 +93,11 @@ const worker = {
     if (controller.cron === "*/5 * * * *") {
       ctx.waitUntil(
         getRawDb()
-          .then((database) => processGoogleSheetsSyncQueue(database))
+          .then(async (database) => {
+            await processGoogleSheetsSyncQueue(database);
+            // Purchase Meta (API Conversions) pour les commandes passées « Livrée ».
+            await sendDeliveredPurchases(database).catch((error) => console.error("Maison Jiya Meta CAPI purchases failed", error instanceof Error ? error.message : String(error)));
+          })
           .then(() => undefined)
           .catch((error) => console.error("Maison Jiya scheduled Google Sheets sync failed", error instanceof Error ? error.message : String(error))),
       );

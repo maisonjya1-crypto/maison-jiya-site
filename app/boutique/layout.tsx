@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { GOOGLE_SITE_VERIFICATION, PUBLIC_SITE_URL, STOREFRONT_URL } from "../../lib/site";
+import { FACEBOOK_DOMAIN_VERIFICATION, GOOGLE_SITE_VERIFICATION, PUBLIC_SITE_URL, STOREFRONT_URL } from "../../lib/site";
 import "./storefront-modern.css";
 import "./legal.css";
 
@@ -35,6 +35,7 @@ export const metadata: Metadata = {
   },
   twitter: { card: "summary_large_image", title, description, images: ["/brand/og-maison-jiya.jpg"] },
   ...(GOOGLE_SITE_VERIFICATION ? { verification: { google: GOOGLE_SITE_VERIFICATION } } : {}),
+  ...(FACEBOOK_DOMAIN_VERIFICATION ? { other: { "facebook-domain-verification": FACEBOOK_DOMAIN_VERIFICATION } } : {}),
 };
 
 export const viewport: Viewport = {

@@ -5,6 +5,7 @@ import { ensurePlatformUpgrades } from "../../../../db/platform-upgrades";
 import { notifyNewOrder } from "../../../../db/push-notifications";
 import { ensureStorefrontCms, getStorefrontPromotions } from "../../../../db/storefront-cms";
 import { giftBoxFromSettings, giftBoxTotal } from "../../../../lib/storefront-extras";
+import { attributionFromRequest, sendLeadEvent } from "../../../../lib/meta-capi";
 import { calculateIndependentPromotions, normalizeEligibleCategories, type StorefrontPromotion } from "../../../../lib/storefront-promotions";
 
 type RequestedCartItem = { kind: "product" | "offer"; id: number; quantity: number };
@@ -385,6 +386,19 @@ export async function POST(request: Request) {
     ]);
 
     await notifyNewOrder(database);
+
+    // API Conversions Meta : uniquement si le client a accepté les cookies Meta sur la boutique.
+    const marketing = attributionFromRequest(payload.marketing, request);
+    if (marketing) {
+      await database.prepare("UPDATE orders SET marketing_attribution_json = ? WHERE order_ref = ?").bind(JSON.stringify(marketing), orderRef).run().catch(() => undefined);
+      await sendLeadEvent(database, {
+        orderRef,
+        total: saleAmount,
+        items: capturedItems.map((item) => ({ productCode: item.productCode, quantity: item.quantity, unitPrice: Math.round((item.lineSaleAmount / Math.max(1, item.quantity)) * 100) / 100 })),
+        customer: { phone, city, name: customerName },
+        attribution: marketing,
+      });
+    }
 
     return Response.json({
       ok: true,
