@@ -331,7 +331,7 @@ body:has(.mj-shop-root) { background: #0e0c0c; }
 /* Bulle WhatsApp : dans le coin, au-dessus de la barre panier seulement quand elle est affichée */
 .mj-shop .storefront-v3-wa { position: fixed; z-index: 34; inset-inline-end: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: #25d366; color: #fff; box-shadow: 0 10px 26px #0008, 0 0 0 3px var(--onyx); transition: bottom .25s ease; }
 .mj-shop .storefront-v3-wa.above-cart { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
-.mj-shop .storefront-v3-wa svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.mj-shop .storefront-v3-wa img { width: 30px; height: 30px; }
 
 /* Bandeau cookies */
 .mj-shop .mj-meta-consent { position: fixed; z-index: 60; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); max-width: 520px; margin-inline: auto; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--onyx-2); box-shadow: 0 20px 50px #000b; }

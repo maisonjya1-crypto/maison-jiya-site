@@ -983,7 +983,8 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
       <span>{ui.cartBar} · {itemCount}</span><strong>{money(total, lang)}</strong>
     </button>}
     {waUrl && <a className={`storefront-v3-wa ${itemCount > 0 && !cartOpen && !checkoutOpen ? "above-cart" : ""}`} href={waUrl} target="_blank" rel="noreferrer" aria-label={t.whatsapp}>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0-7.8 13.5L3 21l4.6-1.2A9 9 0 1 0 12 3Z" /></svg>
+      {/* Icône officielle WhatsApp fournie par Maison Jiya (public/brand/whatsapp-icon.png). */}
+      <img src="/brand/whatsapp-icon.png" alt="" width={30} height={30} />
     </a>}
 
     {zoomImage && <div className="storefront-v3-overlay mj-zoom" role="dialog" aria-modal="true" onClick={() => setZoomImage("")}>
