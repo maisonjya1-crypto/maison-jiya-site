@@ -3,7 +3,7 @@
 // uniquement sur l'adresse privée workers.dev.
 const PUBLIC_PATHS = [
   /^\/boutique(?:\/|\.|\?|$)/,
-  /^\/api\/storefront\/(?:catalog|media|orders|track)(?:\/|\?|$)/,
+  /^\/api\/storefront\/(?:catalog|media|orders|track|feed)(?:\/|\?|$)/,
   /^\/(?:assets|brand|_vinext|_next)\//,
   /^\/(?:robots\.txt|sitemap\.xml|favicon\.ico|manifest\.webmanifest)$/,
 ];

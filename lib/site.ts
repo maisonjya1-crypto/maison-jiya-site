@@ -16,3 +16,7 @@ export function absoluteUrl(path: string) {
 // Code de vérification Google Search Console (balise HTML « google-site-verification »).
 // Laisser vide tant que le site n'est pas ajouté dans Search Console.
 export const GOOGLE_SITE_VERIFICATION = "";
+
+// Code de vérification du domaine Meta (Business Manager → Domaines → Balise meta).
+// Laisser vide tant que le domaine n'est pas ajouté dans Meta.
+export const FACEBOOK_DOMAIN_VERIFICATION = "";

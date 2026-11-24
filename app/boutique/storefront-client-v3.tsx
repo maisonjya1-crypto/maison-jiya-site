@@ -217,6 +217,17 @@ function trackLeadOnce(orderRef: string, total: number, lines: Array<{ item: Cat
   try { localStorage.setItem(storageKey, "1"); } catch { /* le tracking reste facultatif */ }
 }
 
+// Identifiants Meta du navigateur (cookies _fbp/_fbc posés par le Pixel), envoyés seulement
+// si le client a accepté les cookies Meta : ils servent à l'API Conversions côté serveur.
+function metaMarketingPayload(consent: boolean) {
+  if (!consent || typeof document === "undefined") return { consent: false };
+  const cookie = (name: string) => document.cookie.split("; ").find((entry) => entry.startsWith(`${name}=`))?.slice(name.length + 1) || "";
+  let fbc = cookie("_fbc");
+  const fbclid = new URLSearchParams(window.location.search).get("fbclid");
+  if (!fbc && fbclid) fbc = `fb.1.${Date.now()}.${fbclid}`;
+  return { consent: true, fbp: cookie("_fbp"), fbc, url: window.location.href.split("#")[0] };
+}
+
 function JyMark() {
   return <svg className="mj-jy" viewBox={`0 0 ${JY_MARK.width} ${JY_MARK.height}`} aria-hidden="true" focusable="false"><path fillRule="evenodd" d={JY_MARK.d} /></svg>;
 }
@@ -639,6 +650,7 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
           privacyAcknowledged: form.get("privacyAcknowledged") === "yes",
           utmSource: utm.source, utmMedium: utm.medium, utmCampaign: utm.campaign,
           giftBox: giftBoxLine.count > 0,
+          marketing: metaMarketingPayload(metaConsent === "accepted"),
           items: cartLines.map((line) => ({ kind: line.item.kind, id: line.item.id, quantity: line.quantity })),
         }),
       });
@@ -647,8 +659,8 @@ export default function StorefrontClientV3({ initialCatalog, productKey }: { ini
       const orderRef = body.orderRef || "";
       const orderTotal = Number(body.total ?? total);
       // Paiement à la livraison : une commande envoyée n'est pas encore un achat.
-      // Seul « Lead » est envoyé ici ; « Purchase » sera réservé aux commandes livrées
-      // (API Conversions côté serveur, à brancher).
+      // « Lead » ici (même event_id que l'API Conversions) ; « Purchase » est envoyé par le
+      // serveur quand la commande passe « Livrée » dans le logiciel.
       trackLeadOnce(orderRef, orderTotal, cartLines);
       setConfirmation({ orderRef, total: orderTotal });
       setCart({});
